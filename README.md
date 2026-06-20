@@ -45,7 +45,7 @@ go run ./cmd/atlas-agent
 
 ## Phase 0 Goal
 
-The first goal is a stable backend-agent-UI loop before connecting Atlas to PX4 SITL:
+The first goal is a stable backend-agent-UI loop connected to PX4 SITL telemetry:
 
 ```text
 Agent starts
@@ -57,21 +57,20 @@ Agent starts
 
 ## Phase 1 Goal
 
-The next goal is live vehicle state:
+The next goal is live vehicle state from PX4:
 
 ```text
-Telemetry source
+PX4 SITL
+  -> mavsdk_server
   -> atlas-agent
   -> atlas-backend
   -> atlas-ui
 ```
 
-The first Phase 1 implementation uses simulated telemetry from `atlas-agent`.
-PX4 SITL telemetry can replace that source once the API shape is proven.
-
-Select the current source with:
+Start PX4 SITL and `mavsdk_server`, then run the agent:
 
 ```sh
-ATLAS_TELEMETRY_SOURCE=simulated
+ATLAS_MAVSDK_GRPC_ADDR=127.0.0.1:50051
+ATLAS_PX4_SYSTEM_ADDRESS=udpin://0.0.0.0:14540
 ```
 # atlas
