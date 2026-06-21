@@ -9,11 +9,14 @@ type Drone struct {
 }
 
 type Agent struct {
-	ID              string
-	DroneID         string
-	Version         string
-	RegisteredAt    time.Time
-	LastHeartbeatAt time.Time
+	ID                               string
+	DroneID                          string
+	Version                          string
+	RegisteredAt                     time.Time
+	LastHeartbeatAt                  time.Time
+	CommandChannelState              CommandChannelState
+	CommandChannelConnectedAt        time.Time
+	CommandChannelLastDisconnectedAt time.Time
 }
 
 type AgentStatus string
@@ -23,6 +26,13 @@ const (
 	AgentStatusOnline     AgentStatus = "online"
 	AgentStatusStale      AgentStatus = "stale"
 	AgentStatusOffline    AgentStatus = "offline"
+)
+
+type CommandChannelState string
+
+const (
+	CommandChannelDisconnected CommandChannelState = "disconnected"
+	CommandChannelConnected    CommandChannelState = "connected"
 )
 
 const (

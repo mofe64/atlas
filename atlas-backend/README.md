@@ -10,6 +10,25 @@ In the first skeleton it exposes only basic process endpoints:
 - `POST /api/agents/{agentId}/heartbeat`
 - `POST /api/agents/{agentId}/telemetry`
 - `GET /api/drones`
+- `GET /api/drones/stream`
+- `POST /api/drones/{droneId}/commands/{command}`
+
+It also exposes a gRPC backend-agent channel on `ATLAS_AGENT_GRPC_ADDR`.
+The agent opens this outbound stream, sends heartbeat and telemetry messages over
+it, and the backend pushes authorized commands over it when the agent is
+connected.
+
+`GET /api/drones` and `GET /api/drones/stream` expose these as separate
+operator-facing health signals:
+
+- `status` is derived from heartbeat age.
+- `telemetry.state` is derived from latest telemetry freshness.
+- `commandChannel.state` shows whether the agent gRPC stream is connected.
+
+Command delivery uses a short lease. When the backend sends a command to an
+agent, it records `sent_to_agent`, increments the delivery attempt, and sets a
+lease deadline. The agent clears that lease by reporting `agent_received`. If the
+lease expires first, the command becomes eligible for redelivery.
 
 Run locally:
 
@@ -21,6 +40,12 @@ Use `ATLAS_BACKEND_ADDR` to change the listen address:
 
 ```sh
 ATLAS_BACKEND_ADDR=:8081 go run ./cmd/atlas-backend
+```
+
+Use `ATLAS_AGENT_GRPC_ADDR` to change the agent gRPC listen address:
+
+```sh
+ATLAS_AGENT_GRPC_ADDR=:9091 go run ./cmd/atlas-backend
 ```
 
 Register a local development agent:

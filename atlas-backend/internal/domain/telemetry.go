@@ -29,6 +29,7 @@ type TelemetrySnapshot struct {
 	Latitude          float64
 	Longitude         float64
 	HeadingDeg        float64
+	GroundSpeedMPS    float64
 	GPSFix            string
 	SatellitesVisible int
 	HomePositionSet   bool

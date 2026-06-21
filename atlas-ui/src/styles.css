@@ -20,3 +20,95 @@ textarea,
 select {
   font: inherit;
 }
+
+.atlas-waypoint-marker {
+  width: 30px;
+  height: 30px;
+  border: 2px solid #f8f7f1;
+  border-radius: 999px;
+  background: #cf5f38;
+  color: #f8f7f1;
+  box-shadow: 0 8px 18px rgb(24 33 31 / 0.28);
+  cursor: grab;
+  display: grid;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+  place-items: center;
+}
+
+.atlas-waypoint-marker:active {
+  cursor: grabbing;
+}
+
+.atlas-waypoint-marker-selected {
+  background: #18211f;
+  border-color: #789b6f;
+}
+
+.atlas-waypoint-marker-readonly {
+  cursor: default;
+  background: #6f7f78;
+}
+
+.atlas-waypoint-marker-complete {
+  cursor: default;
+  background: #789b6f;
+}
+
+.atlas-waypoint-marker-active {
+  cursor: default;
+  background: #18211f;
+  border-color: #cf5f38;
+  box-shadow:
+    0 0 0 7px rgb(207 95 56 / 0.24),
+    0 8px 18px rgb(24 33 31 / 0.28);
+}
+
+.atlas-drone-marker {
+  width: 22px;
+  height: 22px;
+  border: 3px solid #f8f7f1;
+  border-radius: 999px;
+  background: #789b6f;
+  box-shadow:
+    0 0 0 6px rgb(120 155 111 / 0.22),
+    0 8px 18px rgb(24 33 31 / 0.22);
+}
+
+.atlas-operator-marker {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #f8f7f1;
+  border-radius: 999px;
+  background: #6a9fb8;
+  box-shadow:
+    0 0 0 8px rgb(106 159 184 / 0.2),
+    0 8px 18px rgb(24 33 31 / 0.2);
+}
+
+.atlas-live-drone-marker {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #f8f7f1;
+  border-radius: 999px;
+  background: #789b6f;
+  box-shadow:
+    0 0 0 8px rgb(120 155 111 / 0.22),
+    0 10px 20px rgb(24 33 31 / 0.24);
+  display: grid;
+  place-items: center;
+}
+
+.atlas-live-drone-marker-heading {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 14px solid #18211f;
+  transform-origin: 50% 65%;
+}
+
+.maplibregl-ctrl button {
+  border-radius: 0;
+}

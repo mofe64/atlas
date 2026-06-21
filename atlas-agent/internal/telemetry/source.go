@@ -1,10 +1,12 @@
 package telemetry
 
 import (
+	"context"
 	"strings"
 	"time"
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/backend"
+	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
 )
 
 type Source interface {
@@ -24,7 +26,7 @@ func WithMAVSDKGRPCAddr(addr string) SourceOption {
 	}
 }
 
-func NewSource(options ...SourceOption) (Source, error) {
+func NewSource(ctx context.Context, options ...SourceOption) (Source, error) {
 	cfg := sourceConfig{
 		mavsdkGRPCAddr: "127.0.0.1:50051",
 	}
@@ -32,5 +34,10 @@ func NewSource(options ...SourceOption) (Source, error) {
 		option(&cfg)
 	}
 
-	return NewPX4Source(cfg.mavsdkGRPCAddr)
+	gateway, err := vehicle.NewMAVSDKGateway(cfg.mavsdkGRPCAddr)
+	if err != nil {
+		return nil, err
+	}
+
+	return NewGatewaySource(ctx, "px4", gateway)
 }

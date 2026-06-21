@@ -23,6 +23,14 @@ Pinned commit:
 ```
 
 Atlas uses these protobuf definitions to generate Go gRPC clients for `mavsdk_server`.
+The current generated MAVSDK services are:
+
+```text
+action
+core
+telemetry
+```
+
 The generated clients live under:
 
 ```text

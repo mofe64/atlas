@@ -21,6 +21,30 @@ atlas-ui       React, TypeScript, Tailwind frontend
 
 ## Local Development
 
+Full PX4 SITL stack:
+
+```sh
+scripts/start-sitl.sh
+```
+
+This starts PX4 SITL, `mavsdk_server`, Atlas Backend, Atlas Agent, and Atlas UI
+in order. Logs are written under `.atlas-run/logs/`, and Ctrl-C stops the
+managed processes.
+
+If your PX4 checkout is not beside this repo, point the script at it:
+
+```sh
+ATLAS_PX4_DIR=/path/to/PX4-Autopilot scripts/start-sitl.sh
+```
+
+Useful development variants:
+
+```sh
+scripts/start-sitl.sh --skip-px4
+scripts/start-sitl.sh --skip-px4 --skip-mavsdk
+scripts/start-sitl.sh --dry-run
+```
+
 Backend:
 
 ```sh

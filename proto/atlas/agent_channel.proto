@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package atlas.agentchannel.v1;
+
+option go_package = "github.com/sunnyside/atlas/atlas-proto/agentchannelpb;agentchannelpb";
+
+service AgentChannelService {
+  rpc Connect(stream AgentToBackend) returns (stream BackendToAgent);
+}
+
+message AgentToBackend {
+  string agent_id = 1;
+
+  oneof payload {
+    AgentHello hello = 2;
+    CommandStatus command_status = 3;
+    Heartbeat heartbeat = 4;
+    Telemetry telemetry = 5;
+    MissionExecutionStatus mission_execution_status = 6;
+  }
+}
+
+message BackendToAgent {
+  oneof payload {
+    CommandEnvelope command = 1;
+    Ping ping = 2;
+    MissionExecutionEnvelope mission_execution = 3;
+  }
+}
+
+message AgentHello {
+  string drone_id = 1;
+  string agent_version = 2;
+  string drone_name = 3;
+}
+
+message Heartbeat {
+  string agent_version = 1;
+}
+
+message Telemetry {
+  string observed_at = 1;
+  double battery_percent = 2;
+  double relative_altitude_m = 3;
+  string flight_mode = 4;
+  bool armed = 5;
+  bool in_air = 6;
+  double latitude = 7;
+  double longitude = 8;
+  double heading_deg = 9;
+  string gps_fix = 10;
+  int32 satellites_visible = 11;
+  bool home_position_set = 12;
+  string source = 13;
+  double ground_speed_mps = 14;
+}
+
+message CommandEnvelope {
+  string command_id = 1;
+  string drone_id = 2;
+  string command_type = 3;
+  string requested_by = 4;
+}
+
+message CommandStatus {
+  string command_id = 1;
+  string state = 2;
+  string result_message = 3;
+}
+
+message MissionExecutionEnvelope {
+  string execution_id = 1;
+  string mission_id = 2;
+  string drone_id = 3;
+  string action = 4;
+  string requested_by = 5;
+  repeated MissionWaypoint waypoints = 6;
+  string completion_action = 7;
+}
+
+message MissionWaypoint {
+  int32 sequence = 1;
+  double latitude = 2;
+  double longitude = 3;
+  double relative_altitude_m = 4;
+  optional double speed_mps = 5;
+  optional double loiter_time_s = 6;
+}
+
+message MissionExecutionStatus {
+  string execution_id = 1;
+  string state = 2;
+  string result_message = 3;
+  int32 current_mission_item = 4;
+  int32 total_mission_items = 5;
+}
+
+message Ping {
+  string nonce = 1;
+}
