@@ -1,12 +1,12 @@
 # Atlas Agent
 
-Atlas Agent is the onboard service that will eventually run on the drone companion computer.
+Atlas Agent is the onboard vehicle-agent service that will eventually run on the drone companion computer.
 
-The first implementation only proves the backend-agent loop:
+The first implementation only proves the backend-vehicle-agent loop:
 
 1. Register with Atlas Backend.
-2. Send a heartbeat over the backend-agent gRPC stream every five seconds.
-3. Let the backend derive online/stale/offline state.
+2. Send a heartbeat over the backend-vehicle-agent gRPC stream every five seconds.
+3. Let the backend derive online/stale/offline state for the vehicle agent.
 
 Phase 1 reads real PX4 SITL telemetry through `mavsdk_server` using generated
 Go gRPC clients from `MAVSDK-Proto`. The agent does not generate simulated
@@ -23,7 +23,7 @@ commands instead of importing generated MAVSDK protobuf packages directly.
 The MAVSDK gateway currently implements telemetry plus arm, takeoff,
 return-to-launch, and land actions.
 
-Command delivery uses a gRPC backend-agent stream when available. The agent opens
+Command delivery uses a gRPC backend-vehicle-agent stream when available. The vehicle agent opens
 an outbound stream to the backend, the backend pushes authorized commands over
 that stream, and the agent reports command lifecycle status back on the same
 connection. HTTP command polling remains available as a fallback path.
@@ -41,8 +41,8 @@ The agent applies outbound backpressure by message importance:
 If the backend is unavailable when the agent starts, the agent keeps retrying
 registration with capped exponential backoff.
 
-If a heartbeat fails later, the agent re-enters registration retry. This lets the
-agent recover after a backend restart that clears the in-memory registry.
+If a heartbeat fails later, the vehicle agent re-enters registration retry. This lets the
+vehicle agent recover after a backend restart, network interruption, or lost session.
 
 Run locally:
 
@@ -54,11 +54,11 @@ Configuration:
 
 ```sh
 ATLAS_BACKEND_URL=http://127.0.0.1:8080
-ATLAS_AGENT_ID=agent-001
+ATLAS_VEHICLE_AGENT_ID=agent-001
 ATLAS_DRONE_ID=drone-001
 ATLAS_DRONE_NAME="Training Quad 1"
-ATLAS_AGENT_VERSION=0.1.0-dev
-ATLAS_AGENT_GRPC_ADDR=127.0.0.1:9090
+ATLAS_VEHICLE_AGENT_VERSION=0.1.0-dev
+ATLAS_VEHICLE_AGENT_GRPC_ADDR=127.0.0.1:9090
 ATLAS_MAVSDK_GRPC_ADDR=127.0.0.1:50051
 ATLAS_PX4_SYSTEM_ADDRESS=udpin://0.0.0.0:14540
 ```
@@ -78,7 +78,7 @@ Telemetry source:
 px4   PX4 telemetry through mavsdk_server gRPC
 ```
 
-Generate Atlas backend-agent gRPC clients after editing `proto/atlas/*.proto`:
+Generate Atlas backend-vehicle-agent gRPC clients after editing `proto/atlas/*.proto`:
 
 ```sh
 ../scripts/generate-atlas-proto-go.sh

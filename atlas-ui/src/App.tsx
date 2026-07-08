@@ -49,7 +49,7 @@ import {
   type MissionDetail,
   type MissionExecution,
   type MissionExecutionState,
-  type OperatorCommand,
+  type CommandRequest,
   createDroneMission,
   fetchDroneMissions,
   fetchDrones,
@@ -99,8 +99,8 @@ const commandStateStyles: Record<CommandState, string> = {
   requested: "bg-atlas-ink/10 text-atlas-ink/70",
   authorized: "bg-atlas-sky/20 text-atlas-ink",
   rejected_by_policy: "bg-atlas-signal/20 text-atlas-ink",
-  sent_to_agent: "bg-atlas-sky/20 text-atlas-ink",
-  agent_received: "bg-atlas-sky/20 text-atlas-ink",
+  sent_to_vehicle_agent: "bg-atlas-sky/20 text-atlas-ink",
+  vehicle_agent_received: "bg-atlas-sky/20 text-atlas-ink",
   sent_to_vehicle: "bg-atlas-sky/20 text-atlas-ink",
   vehicle_acked: "bg-atlas-field/25 text-atlas-ink",
   vehicle_rejected: "bg-atlas-signal/20 text-atlas-ink",
@@ -139,8 +139,8 @@ const commandActions: Array<{
 
 const lifecycleSteps: Array<{ state: CommandState; label: string; shortLabel: string }> = [
   { state: "authorized", label: "Authorized", shortLabel: "Auth" },
-  { state: "sent_to_agent", label: "Sent to agent", shortLabel: "Sent" },
-  { state: "agent_received", label: "Agent received", shortLabel: "Agent" },
+  { state: "sent_to_vehicle_agent", label: "Sent to vehicle agent", shortLabel: "Sent" },
+  { state: "vehicle_agent_received", label: "Vehicle agent received", shortLabel: "V-Agent" },
   { state: "sent_to_vehicle", label: "Sent to vehicle", shortLabel: "PX4" },
   { state: "vehicle_acked", label: "Vehicle acknowledged", shortLabel: "Ack" },
   { state: "telemetry_confirmed", label: "Telemetry confirmed", shortLabel: "Confirm" },
@@ -217,7 +217,7 @@ const fallbackMissionCenter: [number, number] = [-0.1278, 51.5074];
 
 export function App() {
   const [drones, setDrones] = useState<Drone[]>([]);
-  const [commandsByDrone, setCommandsByDrone] = useState<Record<string, OperatorCommand[]>>({});
+  const [commandsByDrone, setCommandsByDrone] = useState<Record<string, CommandRequest[]>>({});
   const [commandErrors, setCommandErrors] = useState<Record<string, string | null>>({});
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
@@ -442,7 +442,7 @@ function FleetWorkspace({
   onCommand,
 }: {
   drones: Drone[];
-  commandsByDrone: Record<string, OperatorCommand[]>;
+  commandsByDrone: Record<string, CommandRequest[]>;
   commandErrors: Record<string, string | null>;
   pendingCommands: Record<string, boolean>;
   loading: boolean;
@@ -514,7 +514,7 @@ function FleetWorkspace({
                         </span>
                       </div>
                       <p className="mt-2 text-sm text-atlas-ink/65">
-                        {drone.id} through {drone.agentId}
+                        {drone.id} through {drone.vehicleAgentId}
                       </p>
                       <p className="mt-1 text-sm text-atlas-ink/65">
                         {statusDescriptions[drone.status]}
@@ -812,7 +812,7 @@ function DroneMissionManagement({ drones, droneId }: { drones: Drone[]; droneId:
                 Drone missions
               </p>
               <h2 className="mt-1 truncate text-xl font-semibold">{drone?.name ?? droneId}</h2>
-              <p className="mt-1 truncate text-sm text-atlas-ink/60">{drone?.agentId ?? droneId}</p>
+              <p className="mt-1 truncate text-sm text-atlas-ink/60">{drone?.vehicleAgentId ?? droneId}</p>
             </div>
             {drone && (
               <span
@@ -2625,7 +2625,7 @@ function CommandPanel({
   onCommand,
 }: {
   drone: Drone;
-  commands: OperatorCommand[];
+  commands: CommandRequest[];
   error?: string | null;
   pendingCommands: Record<string, boolean>;
   onCommand: (action: CommandAction) => void;
@@ -2825,12 +2825,12 @@ function formatCommandChannelTime(drone: Drone) {
   return formatTime(drone.commandChannel.lastDisconnectedAt);
 }
 
-function mergeCommand(commands: OperatorCommand[], command: OperatorCommand) {
+function mergeCommand(commands: CommandRequest[], command: CommandRequest) {
   return mergeCommands([command], commands);
 }
 
-function mergeCommands(primary: OperatorCommand[], secondary: OperatorCommand[]) {
-  const byID = new Map<string, OperatorCommand>();
+function mergeCommands(primary: CommandRequest[], secondary: CommandRequest[]) {
+  const byID = new Map<string, CommandRequest>();
   for (const command of secondary) {
     byID.set(command.id, command);
   }
@@ -2859,7 +2859,7 @@ function mergeMissionExecutions(
   );
 }
 
-function commandTypeLabel(type: OperatorCommand["type"]) {
+function commandTypeLabel(type: CommandRequest["type"]) {
   switch (type) {
     case "arm":
       return "Arm";

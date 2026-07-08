@@ -9,39 +9,47 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/sunnyside/atlas/atlas-backend/internal/agentchannelpb/atlas"
-	"github.com/sunnyside/atlas/atlas-backend/internal/domain"
-	"github.com/sunnyside/atlas/atlas-backend/internal/registry"
+	"github.com/sunnyside/atlas/atlas-backend/internal/models"
+	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
+	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
+	pb "github.com/sunnyside/atlas/atlas-backend/internal/vehicleagentchannelpb/atlas"
 )
 
 type Hub struct {
 	mu          sync.RWMutex
 	connections map[string]*connection
-	registry    registry.Store
+	deps        Dependencies
 	logger      *slog.Logger
 }
 
+type Dependencies struct {
+	VehicleAgents *svc.VehicleAgentService
+	Telemetry     *svc.TelemetryService
+	Commands      *svc.CommandService
+	Missions      *svc.MissionService
+}
+
 type Server struct {
-	pb.UnimplementedAgentChannelServiceServer
+	pb.UnimplementedVehicleAgentChannelServiceServer
 
 	hub *Hub
 }
 
 type connection struct {
 	agentID string
-	send    chan *pb.BackendToAgent
+	send    chan *pb.BackendToVehicleAgent
 	done    chan struct{}
 	once    sync.Once
 }
 
-func NewHub(reg registry.Store, logger *slog.Logger) *Hub {
+func NewHub(deps Dependencies, logger *slog.Logger) *Hub {
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	return &Hub{
 		connections: make(map[string]*connection),
-		registry:    reg,
+		deps:        deps,
 		logger:      logger,
 	}
 }
@@ -50,47 +58,47 @@ func NewServer(hub *Hub) *Server {
 	return &Server{hub: hub}
 }
 
-func (h *Hub) DispatchCommand(ctx context.Context, command domain.OperatorCommand) (domain.OperatorCommand, bool) {
-	if h.connectionForAgent(command.AgentID) == nil {
-		return domain.OperatorCommand{}, false
+func (h *Hub) DispatchCommand(ctx context.Context, command models.CommandRequest) (models.CommandRequest, bool) {
+	if h.connectionForVehicleAgent(command.VehicleAgentID) == nil {
+		return models.CommandRequest{}, false
 	}
 
-	claimed, err := h.registry.ClaimCommandForAgent(command.AgentID, command.ID, time.Now().UTC())
+	claimed, err := h.deps.Commands.ClaimCommandForVehicleAgent(ctx, command.VehicleAgentID, command.ID, time.Now().UTC())
 	if err != nil {
-		h.logger.Warn("command could not be claimed for gRPC delivery", "command_id", command.ID, "agent_id", command.AgentID, "error", err)
-		return domain.OperatorCommand{}, false
+		h.logger.Warn("command could not be claimed for gRPC delivery", "command_request_id", command.ID, "vehicle_agent_id", command.VehicleAgentID, "error", err)
+		return models.CommandRequest{}, false
 	}
 
 	if !h.enqueueCommand(ctx, claimed) {
-		h.logger.Warn("connected agent command queue is unavailable", "command_id", command.ID, "agent_id", command.AgentID)
+		h.logger.Warn("connected vehicle-agent command queue is unavailable", "command_request_id", command.ID, "vehicle_agent_id", command.VehicleAgentID)
 	}
 
 	return claimed, true
 }
 
-func (h *Hub) DispatchMissionExecution(ctx context.Context, execution domain.MissionExecution) (domain.MissionExecution, bool) {
-	if h.connectionForAgent(execution.AgentID) == nil {
-		return domain.MissionExecution{}, false
+func (h *Hub) DispatchMissionExecution(ctx context.Context, execution models.MissionExecution) (models.MissionExecution, bool) {
+	if h.connectionForVehicleAgent(execution.VehicleAgentID) == nil {
+		return models.MissionExecution{}, false
 	}
 
-	claimed, err := h.registry.ClaimMissionExecutionForAgent(execution.AgentID, execution.ID, time.Now().UTC())
+	claimed, err := h.deps.Missions.ClaimMissionExecutionForVehicleAgent(ctx, execution.VehicleAgentID, execution.ID, time.Now().UTC())
 	if err != nil {
-		h.logger.Warn("mission execution could not be claimed for gRPC delivery", "execution_id", execution.ID, "agent_id", execution.AgentID, "error", err)
-		return domain.MissionExecution{}, false
+		h.logger.Warn("mission execution could not be claimed for gRPC delivery", "execution_id", execution.ID, "vehicle_agent_id", execution.VehicleAgentID, "error", err)
+		return models.MissionExecution{}, false
 	}
 
 	if !h.enqueueMissionExecution(ctx, claimed) {
-		h.logger.Warn("connected agent mission execution queue is unavailable", "execution_id", execution.ID, "agent_id", execution.AgentID)
+		h.logger.Warn("connected vehicle-agent mission execution queue is unavailable", "execution_id", execution.ID, "vehicle_agent_id", execution.VehicleAgentID)
 	}
 
 	return claimed, true
 }
 
-func (h *Hub) DispatchPendingForAgent(ctx context.Context, agentID string) {
+func (h *Hub) DispatchPendingForVehicleAgent(ctx context.Context, agentID string) {
 	for ctx.Err() == nil {
-		command, ok, err := h.registry.NextCommandForAgent(agentID, time.Now().UTC())
+		command, ok, err := h.deps.Commands.NextCommandForVehicleAgent(ctx, agentID, time.Now().UTC())
 		if err != nil {
-			h.logger.Warn("pending command lookup failed", "agent_id", agentID, "error", err)
+			h.logger.Warn("pending command lookup failed", "vehicle_agent_id", agentID, "error", err)
 			return
 		}
 
@@ -99,15 +107,15 @@ func (h *Hub) DispatchPendingForAgent(ctx context.Context, agentID string) {
 		}
 
 		if !h.enqueueCommand(ctx, command) {
-			h.logger.Warn("pending command could not be enqueued", "command_id", command.ID, "agent_id", agentID)
+			h.logger.Warn("pending command could not be enqueued", "command_request_id", command.ID, "vehicle_agent_id", agentID)
 			return
 		}
 	}
 
 	for ctx.Err() == nil {
-		execution, ok, err := h.registry.NextMissionExecutionForAgent(agentID, time.Now().UTC())
+		execution, ok, err := h.deps.Missions.NextMissionExecutionForVehicleAgent(ctx, agentID, time.Now().UTC())
 		if err != nil {
-			h.logger.Warn("pending mission execution lookup failed", "agent_id", agentID, "error", err)
+			h.logger.Warn("pending mission execution lookup failed", "vehicle_agent_id", agentID, "error", err)
 			return
 		}
 
@@ -116,44 +124,48 @@ func (h *Hub) DispatchPendingForAgent(ctx context.Context, agentID string) {
 		}
 
 		if !h.enqueueMissionExecution(ctx, execution) {
-			h.logger.Warn("pending mission execution could not be enqueued", "execution_id", execution.ID, "agent_id", agentID)
+			h.logger.Warn("pending mission execution could not be enqueued", "execution_id", execution.ID, "vehicle_agent_id", agentID)
 			return
 		}
 	}
 }
 
-func (s *Server) Connect(stream pb.AgentChannelService_ConnectServer) error {
+func (s *Server) Connect(stream pb.VehicleAgentChannelService_ConnectServer) error {
+	ctx := stream.Context()
 	first, err := stream.Recv()
 	if err != nil {
 		return err
 	}
 
-	agentID := first.GetAgentId()
+	agentID := first.GetVehicleAgentId()
 	hello := first.GetHello()
 	if agentID == "" || hello == nil {
-		return errors.New("agent channel must start with hello")
+		return errors.New("vehicle-agent channel must start with hello")
 	}
 
-	s.hub.registry.RegisterAgent(registry.RegisterAgentInput{
-		AgentID:      agentID,
-		DroneID:      hello.GetDroneId(),
-		DroneName:    hello.GetDroneName(),
-		AgentVersion: hello.GetAgentVersion(),
-	}, time.Now().UTC())
+	if _, err := s.hub.deps.VehicleAgents.RegisterVehicleAgent(ctx, repository.RegisterVehicleAgentInput{
+		VehicleAgentID:      agentID,
+		DroneID:             hello.GetDroneId(),
+		DroneName:           hello.GetDroneName(),
+		VehicleAgentVersion: hello.GetVehicleAgentVersion(),
+	}, time.Now().UTC()); err != nil {
+		s.hub.logger.Warn("vehicle-agent gRPC registration failed", "vehicle_agent_id", agentID, "error", err)
+		return err
+	}
 
 	conn := newConnection(agentID)
 	s.hub.register(conn)
 	defer s.hub.unregister(agentID, conn)
-	if _, err := s.hub.registry.RecordCommandChannelConnected(agentID, time.Now().UTC()); err != nil {
-		s.hub.logger.Warn("failed to record connected agent gRPC channel", "agent_id", agentID, "error", err)
+	if _, err := s.hub.deps.VehicleAgents.RecordCommandChannelConnected(ctx, agentID, time.Now().UTC()); err != nil {
+		s.hub.logger.Warn("failed to record connected vehicle-agent gRPC channel", "vehicle_agent_id", agentID, "error", err)
 	}
 
 	s.hub.logger.Info(
-		"agent gRPC channel connected",
-		"agent_id", agentID,
+		"vehicle-agent gRPC channel connected",
+		"vehicle_agent_id", agentID,
 		"drone_id", hello.GetDroneId(),
 		"drone_name", hello.GetDroneName(),
-		"agent_version", hello.GetAgentVersion(),
+		"vehicle_agent_version", hello.GetVehicleAgentVersion(),
 	)
 
 	errs := make(chan error, 1)
@@ -161,12 +173,12 @@ func (s *Server) Connect(stream pb.AgentChannelService_ConnectServer) error {
 		errs <- s.receive(stream, agentID)
 	}()
 
-	go s.hub.DispatchPendingForAgent(stream.Context(), agentID)
+	go s.hub.DispatchPendingForVehicleAgent(ctx, agentID)
 
 	for {
 		select {
-		case <-stream.Context().Done():
-			return stream.Context().Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-conn.done:
 			return nil
 		case err := <-errs:
@@ -182,137 +194,137 @@ func (s *Server) Connect(stream pb.AgentChannelService_ConnectServer) error {
 	}
 }
 
-func (s *Server) receive(stream pb.AgentChannelService_ConnectServer, agentID string) error {
+func (s *Server) receive(stream pb.VehicleAgentChannelService_ConnectServer, agentID string) error {
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
 			return err
 		}
 
-		if msg.GetAgentId() != agentID {
-			s.hub.logger.Warn("ignoring agent channel message with mismatched agent id", "connected_agent_id", agentID, "message_agent_id", msg.GetAgentId())
+		if msg.GetVehicleAgentId() != agentID {
+			s.hub.logger.Warn("ignoring vehicle-agent channel message with mismatched vehicle agent id", "connected_vehicle_agent_id", agentID, "message_vehicle_agent_id", msg.GetVehicleAgentId())
 			continue
 		}
 
 		status := msg.GetCommandStatus()
 		if status != nil {
-			s.recordCommandStatus(agentID, status)
+			s.recordCommandStatus(stream.Context(), agentID, status)
 			continue
 		}
 
 		missionStatus := msg.GetMissionExecutionStatus()
 		if missionStatus != nil {
-			s.recordMissionExecutionStatus(agentID, missionStatus)
+			s.recordMissionExecutionStatus(stream.Context(), agentID, missionStatus)
 			continue
 		}
 
 		heartbeat := msg.GetHeartbeat()
 		if heartbeat != nil {
-			s.recordHeartbeat(agentID, heartbeat)
+			s.recordHeartbeat(stream.Context(), agentID, heartbeat)
 			continue
 		}
 
 		telemetry := msg.GetTelemetry()
 		if telemetry != nil {
-			s.recordTelemetry(agentID, telemetry)
+			s.recordTelemetry(stream.Context(), agentID, telemetry)
 			continue
 		}
 	}
 }
 
-func (s *Server) recordCommandStatus(agentID string, status *pb.CommandStatus) {
-	_, err := s.hub.registry.UpdateCommandStatus(registry.UpdateCommandStatusInput{
-		AgentID:       agentID,
-		CommandID:     status.GetCommandId(),
-		State:         domain.CommandState(status.GetState()),
-		ResultMessage: status.GetResultMessage(),
+func (s *Server) recordCommandStatus(ctx context.Context, agentID string, status *pb.CommandStatus) {
+	_, err := s.hub.deps.Commands.UpdateCommandStatus(ctx, repository.UpdateCommandStatusInput{
+		VehicleAgentID: agentID,
+		CommandID:      status.GetCommandId(),
+		State:          models.CommandState(status.GetState()),
+		ResultMessage:  status.GetResultMessage(),
 	}, time.Now().UTC())
 	if err != nil {
-		s.hub.logger.Warn("agent command status rejected", "agent_id", agentID, "command_id", status.GetCommandId(), "state", status.GetState(), "error", err)
+		s.hub.logger.Warn("vehicle-agent command status rejected", "vehicle_agent_id", agentID, "command_request_id", status.GetCommandId(), "state", status.GetState(), "error", err)
 		return
 	}
 
-	s.hub.logger.Info("agent command status accepted", "agent_id", agentID, "command_id", status.GetCommandId(), "state", status.GetState())
+	s.hub.logger.Info("vehicle-agent command status accepted", "vehicle_agent_id", agentID, "command_request_id", status.GetCommandId(), "state", status.GetState())
 }
 
-func (s *Server) recordMissionExecutionStatus(agentID string, status *pb.MissionExecutionStatus) {
-	_, err := s.hub.registry.UpdateMissionExecutionStatus(registry.UpdateMissionExecutionStatusInput{
-		AgentID:            agentID,
+func (s *Server) recordMissionExecutionStatus(ctx context.Context, agentID string, status *pb.MissionExecutionStatus) {
+	_, err := s.hub.deps.Missions.UpdateMissionExecutionStatus(ctx, repository.UpdateMissionExecutionStatusInput{
+		VehicleAgentID:     agentID,
 		ExecutionID:        status.GetExecutionId(),
-		State:              domain.MissionExecutionState(status.GetState()),
+		State:              models.MissionExecutionState(status.GetState()),
 		ResultMessage:      status.GetResultMessage(),
 		CurrentMissionItem: int(status.GetCurrentMissionItem()),
 		TotalMissionItems:  int(status.GetTotalMissionItems()),
 	}, time.Now().UTC())
 	if err != nil {
-		s.hub.logger.Warn("agent mission execution status rejected", "agent_id", agentID, "execution_id", status.GetExecutionId(), "state", status.GetState(), "error", err)
+		s.hub.logger.Warn("vehicle-agent mission execution status rejected", "vehicle_agent_id", agentID, "execution_id", status.GetExecutionId(), "state", status.GetState(), "error", err)
 		return
 	}
 
-	s.hub.logger.Info("agent mission execution status accepted", "agent_id", agentID, "execution_id", status.GetExecutionId(), "state", status.GetState(), "current_mission_item", status.GetCurrentMissionItem(), "total_mission_items", status.GetTotalMissionItems())
+	s.hub.logger.Info("vehicle-agent mission execution status accepted", "vehicle_agent_id", agentID, "execution_id", status.GetExecutionId(), "state", status.GetState(), "current_mission_item", status.GetCurrentMissionItem(), "total_mission_items", status.GetTotalMissionItems())
 }
 
-func (s *Server) recordHeartbeat(agentID string, heartbeat *pb.Heartbeat) {
-	agent, err := s.hub.registry.RecordHeartbeat(registry.HeartbeatInput{
-		AgentID:      agentID,
-		AgentVersion: heartbeat.GetAgentVersion(),
+func (s *Server) recordHeartbeat(ctx context.Context, agentID string, heartbeat *pb.Heartbeat) {
+	agent, err := s.hub.deps.VehicleAgents.RecordVehicleAgentHeartbeat(ctx, repository.VehicleAgentHeartbeatInput{
+		VehicleAgentID:      agentID,
+		VehicleAgentVersion: heartbeat.GetVehicleAgentVersion(),
 	}, time.Now().UTC())
 	if err != nil {
-		s.hub.logger.Warn("agent gRPC heartbeat rejected", "agent_id", agentID, "error", err)
+		s.hub.logger.Warn("vehicle-agent gRPC heartbeat rejected", "vehicle_agent_id", agentID, "error", err)
 		return
 	}
 
-	s.hub.logger.Info("agent gRPC heartbeat accepted", "agent_id", agent.ID, "drone_id", agent.DroneID)
+	s.hub.logger.Info("vehicle-agent gRPC heartbeat accepted", "vehicle_agent_id", agent.ID, "drone_id", agent.DroneID)
 }
 
-func (s *Server) recordTelemetry(agentID string, telemetry *pb.Telemetry) {
+func (s *Server) recordTelemetry(ctx context.Context, agentID string, telemetry *pb.Telemetry) {
 	snapshot, err := telemetryToSnapshot(agentID, telemetry)
 	if err != nil {
-		s.hub.logger.Warn("agent gRPC telemetry rejected", "agent_id", agentID, "error", err)
+		s.hub.logger.Warn("vehicle-agent gRPC telemetry rejected", "vehicle_agent_id", agentID, "error", err)
 		return
 	}
 
-	recorded, err := s.hub.registry.RecordTelemetry(snapshot, time.Now().UTC())
+	recorded, err := s.hub.deps.Telemetry.RecordTelemetry(ctx, snapshot, time.Now().UTC())
 	if err != nil {
-		s.hub.logger.Warn("agent gRPC telemetry rejected", "agent_id", agentID, "error", err)
+		s.hub.logger.Warn("vehicle-agent gRPC telemetry rejected", "vehicle_agent_id", agentID, "error", err)
 		return
 	}
 
-	s.hub.logger.Info("agent gRPC telemetry accepted", "agent_id", agentID, "drone_id", recorded.DroneID, "source", recorded.Source)
+	s.hub.logger.Info("vehicle-agent gRPC telemetry accepted", "vehicle_agent_id", agentID, "drone_id", recorded.DroneID, "source", recorded.Source)
 }
 
-func telemetryToSnapshot(agentID string, telemetry *pb.Telemetry) (domain.TelemetrySnapshot, error) {
+func telemetryToSnapshot(agentID string, telemetry *pb.Telemetry) (models.TelemetrySnapshot, error) {
 	observedAt, err := time.Parse(time.RFC3339Nano, telemetry.GetObservedAt())
 	if err != nil {
-		return domain.TelemetrySnapshot{}, errors.New("observed_at must be an RFC3339 timestamp")
+		return models.TelemetrySnapshot{}, errors.New("observed_at must be an RFC3339 timestamp")
 	}
 
 	if telemetry.GetBatteryPercent() < 0 || telemetry.GetBatteryPercent() > 100 {
-		return domain.TelemetrySnapshot{}, errors.New("battery_percent must be between 0 and 100")
+		return models.TelemetrySnapshot{}, errors.New("battery_percent must be between 0 and 100")
 	}
 
 	if telemetry.GetLatitude() < -90 || telemetry.GetLatitude() > 90 {
-		return domain.TelemetrySnapshot{}, errors.New("latitude must be between -90 and 90")
+		return models.TelemetrySnapshot{}, errors.New("latitude must be between -90 and 90")
 	}
 
 	if telemetry.GetLongitude() < -180 || telemetry.GetLongitude() > 180 {
-		return domain.TelemetrySnapshot{}, errors.New("longitude must be between -180 and 180")
+		return models.TelemetrySnapshot{}, errors.New("longitude must be between -180 and 180")
 	}
 
 	if strings.TrimSpace(telemetry.GetFlightMode()) == "" {
-		return domain.TelemetrySnapshot{}, errors.New("flight_mode is required")
+		return models.TelemetrySnapshot{}, errors.New("flight_mode is required")
 	}
 
 	if strings.TrimSpace(telemetry.GetGpsFix()) == "" {
-		return domain.TelemetrySnapshot{}, errors.New("gps_fix is required")
+		return models.TelemetrySnapshot{}, errors.New("gps_fix is required")
 	}
 
 	if strings.TrimSpace(telemetry.GetSource()) == "" {
-		return domain.TelemetrySnapshot{}, errors.New("source is required")
+		return models.TelemetrySnapshot{}, errors.New("source is required")
 	}
 
-	return domain.TelemetrySnapshot{
-		AgentID:           agentID,
+	return models.TelemetrySnapshot{
+		VehicleAgentID:    agentID,
 		ObservedAt:        observedAt.UTC(),
 		BatteryPercent:    telemetry.GetBatteryPercent(),
 		RelativeAltitudeM: telemetry.GetRelativeAltitudeM(),
@@ -341,21 +353,21 @@ func (h *Hub) register(conn *connection) {
 	h.connections[conn.agentID] = conn
 }
 
-func (h *Hub) connectionForAgent(agentID string) *connection {
+func (h *Hub) connectionForVehicleAgent(agentID string) *connection {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	return h.connections[agentID]
 }
 
-func (h *Hub) enqueueCommand(ctx context.Context, command domain.OperatorCommand) bool {
-	conn := h.connectionForAgent(command.AgentID)
+func (h *Hub) enqueueCommand(ctx context.Context, command models.CommandRequest) bool {
+	conn := h.connectionForVehicleAgent(command.VehicleAgentID)
 	if conn == nil {
 		return false
 	}
 
-	msg := &pb.BackendToAgent{
-		Payload: &pb.BackendToAgent_Command{
+	msg := &pb.BackendToVehicleAgent{
+		Payload: &pb.BackendToVehicleAgent_Command{
 			Command: &pb.CommandEnvelope{
 				CommandId:   command.ID,
 				DroneId:     command.DroneID,
@@ -368,20 +380,20 @@ func (h *Hub) enqueueCommand(ctx context.Context, command domain.OperatorCommand
 	return conn.enqueue(ctx, msg)
 }
 
-func (h *Hub) enqueueMissionExecution(ctx context.Context, execution domain.MissionExecution) bool {
-	conn := h.connectionForAgent(execution.AgentID)
+func (h *Hub) enqueueMissionExecution(ctx context.Context, execution models.MissionExecution) bool {
+	conn := h.connectionForVehicleAgent(execution.VehicleAgentID)
 	if conn == nil {
 		return false
 	}
 
-	mission, ok := h.registry.MissionByID(execution.MissionID)
+	mission, ok := h.deps.Missions.GetMissionByID(ctx, execution.MissionID)
 	if !ok {
 		h.logger.Warn("mission execution references missing mission", "execution_id", execution.ID, "mission_id", execution.MissionID)
 		return false
 	}
 
-	msg := &pb.BackendToAgent{
-		Payload: &pb.BackendToAgent_MissionExecution{
+	msg := &pb.BackendToVehicleAgent{
+		Payload: &pb.BackendToVehicleAgent_MissionExecution{
 			MissionExecution: &pb.MissionExecutionEnvelope{
 				ExecutionId:      execution.ID,
 				MissionId:        execution.MissionID,
@@ -397,20 +409,20 @@ func (h *Hub) enqueueMissionExecution(ctx context.Context, execution domain.Miss
 	return conn.enqueue(ctx, msg)
 }
 
-func missionExecutionAction(state domain.MissionExecutionState) string {
+func missionExecutionAction(state models.MissionExecutionState) string {
 	switch state {
-	case domain.MissionExecutionStateUploadRequested:
+	case models.MissionExecutionStateUploadRequested:
 		return "upload"
-	case domain.MissionExecutionStateStartRequested:
+	case models.MissionExecutionStateStartRequested:
 		return "start"
-	case domain.MissionExecutionStateRTLRequested:
+	case models.MissionExecutionStateRTLRequested:
 		return "return_to_launch"
 	default:
 		return string(state)
 	}
 }
 
-func missionWaypointsToProto(waypoints []domain.MissionWaypoint) []*pb.MissionWaypoint {
+func missionWaypointsToProto(waypoints []models.MissionWaypoint) []*pb.MissionWaypoint {
 	res := make([]*pb.MissionWaypoint, 0, len(waypoints))
 	for _, waypoint := range waypoints {
 		item := &pb.MissionWaypoint{
@@ -437,24 +449,26 @@ func (h *Hub) unregister(agentID string, conn *connection) {
 
 	if h.connections[agentID] == conn {
 		delete(h.connections, agentID)
-		if _, err := h.registry.RecordCommandChannelDisconnected(agentID, time.Now().UTC()); err != nil {
-			h.logger.Warn("failed to record disconnected agent gRPC channel", "agent_id", agentID, "error", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := h.deps.VehicleAgents.RecordCommandChannelDisconnected(ctx, agentID, time.Now().UTC()); err != nil {
+			h.logger.Warn("failed to record disconnected vehicle-agent gRPC channel", "vehicle_agent_id", agentID, "error", err)
 		}
 	}
 
 	conn.close()
-	h.logger.Info("agent gRPC channel disconnected", "agent_id", agentID)
+	h.logger.Info("vehicle-agent gRPC channel disconnected", "vehicle_agent_id", agentID)
 }
 
 func newConnection(agentID string) *connection {
 	return &connection{
 		agentID: agentID,
-		send:    make(chan *pb.BackendToAgent, 16),
+		send:    make(chan *pb.BackendToVehicleAgent, 16),
 		done:    make(chan struct{}),
 	}
 }
 
-func (c *connection) enqueue(ctx context.Context, msg *pb.BackendToAgent) bool {
+func (c *connection) enqueue(ctx context.Context, msg *pb.BackendToVehicleAgent) bool {
 	select {
 	case <-ctx.Done():
 		return false

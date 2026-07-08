@@ -1,18 +1,18 @@
 syntax = "proto3";
 
-package atlas.agentchannel.v1;
+package atlas.vehicleagentchannel.v1;
 
-option go_package = "github.com/sunnyside/atlas/atlas-proto/agentchannelpb;agentchannelpb";
+option go_package = "github.com/sunnyside/atlas/atlas-proto/vehicleagentchannelpb;vehicleagentchannelpb";
 
-service AgentChannelService {
-  rpc Connect(stream AgentToBackend) returns (stream BackendToAgent);
+service VehicleAgentChannelService {
+  rpc Connect(stream VehicleAgentToBackend) returns (stream BackendToVehicleAgent);
 }
 
-message AgentToBackend {
-  string agent_id = 1;
+message VehicleAgentToBackend {
+  string vehicle_agent_id = 1;
 
   oneof payload {
-    AgentHello hello = 2;
+    VehicleAgentHello hello = 2;
     CommandStatus command_status = 3;
     Heartbeat heartbeat = 4;
     Telemetry telemetry = 5;
@@ -20,7 +20,7 @@ message AgentToBackend {
   }
 }
 
-message BackendToAgent {
+message BackendToVehicleAgent {
   oneof payload {
     CommandEnvelope command = 1;
     Ping ping = 2;
@@ -28,14 +28,14 @@ message BackendToAgent {
   }
 }
 
-message AgentHello {
+message VehicleAgentHello {
   string drone_id = 1;
-  string agent_version = 2;
+  string vehicle_agent_version = 2;
   string drone_name = 3;
 }
 
 message Heartbeat {
-  string agent_version = 1;
+  string vehicle_agent_version = 1;
 }
 
 message Telemetry {

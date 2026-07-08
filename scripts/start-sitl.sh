@@ -16,10 +16,8 @@ ATLAS_PX4_SYSTEM_ADDRESS="${ATLAS_PX4_SYSTEM_ADDRESS:-udpin://0.0.0.0:14540}"
 
 ATLAS_BACKEND_ADDR="${ATLAS_BACKEND_ADDR:-:8080}"
 ATLAS_BACKEND_URL="${ATLAS_BACKEND_URL:-http://127.0.0.1:8080}"
-ATLAS_AGENT_GRPC_ADDR="${ATLAS_AGENT_GRPC_ADDR:-127.0.0.1:9090}"
-ATLAS_STORE="${ATLAS_STORE:-postgres}"
+ATLAS_VEHICLE_AGENT_GRPC_ADDR="${ATLAS_VEHICLE_AGENT_GRPC_ADDR:-127.0.0.1:9090}"
 ATLAS_DATABASE_URL="${ATLAS_DATABASE_URL:-postgres://atlas:atlas@127.0.0.1:5432/atlas?sslmode=disable}"
-ATLAS_SQLITE_PATH="${ATLAS_SQLITE_PATH:-"${ROOT_DIR}/.atlas-run/atlas.db"}"
 ATLAS_DB_HOST="${ATLAS_DB_HOST:-127.0.0.1}"
 ATLAS_DB_PORT="${ATLAS_DB_PORT:-5432}"
 ATLAS_DB_NAME="${ATLAS_DB_NAME:-atlas}"
@@ -27,10 +25,10 @@ ATLAS_DB_USER="${ATLAS_DB_USER:-atlas}"
 ATLAS_DB_PASSWORD="${ATLAS_DB_PASSWORD:-atlas}"
 ATLAS_DB_COMPOSE_SERVICE="${ATLAS_DB_COMPOSE_SERVICE:-postgres}"
 
-ATLAS_AGENT_ID="${ATLAS_AGENT_ID:-agent-001}"
+ATLAS_VEHICLE_AGENT_ID="${ATLAS_VEHICLE_AGENT_ID:-agent-001}"
 ATLAS_DRONE_ID="${ATLAS_DRONE_ID:-drone-001}"
 ATLAS_DRONE_NAME="${ATLAS_DRONE_NAME:-Training Quad 1}"
-ATLAS_AGENT_VERSION="${ATLAS_AGENT_VERSION:-0.1.0-dev}"
+ATLAS_VEHICLE_AGENT_VERSION="${ATLAS_VEHICLE_AGENT_VERSION:-0.1.0-dev}"
 
 ATLAS_UI_HOST="${ATLAS_UI_HOST:-127.0.0.1}"
 ATLAS_UI_PORT="${ATLAS_UI_PORT:-5173}"
@@ -77,10 +75,8 @@ Useful environment overrides:
   ATLAS_PX4_SYSTEM_ADDRESS
   ATLAS_BACKEND_ADDR
   ATLAS_BACKEND_URL
-  ATLAS_AGENT_GRPC_ADDR
-  ATLAS_STORE
+  ATLAS_VEHICLE_AGENT_GRPC_ADDR
   ATLAS_DATABASE_URL
-  ATLAS_SQLITE_PATH
   ATLAS_DB_HOST
   ATLAS_DB_PORT
   ATLAS_DB_NAME
@@ -305,16 +301,11 @@ compose_command() {
     return
   fi
 
-  fail "Docker Compose is required for ATLAS_STORE=postgres"
+  fail "Docker Compose is required for the Atlas Postgres database"
 }
 
 start_postgres() {
   local compose
-
-  if [[ "$ATLAS_STORE" != "postgres" ]]; then
-    log "using ATLAS_STORE=${ATLAS_STORE}; skipping postgres startup"
-    return
-  fi
 
   require_command docker
   compose="$(compose_command)"
@@ -420,11 +411,7 @@ assert_prerequisites() {
   require_command curl
   require_command lsof
 
-  if [[ "$ATLAS_STORE" != "postgres" && "$ATLAS_STORE" != "sqlite" ]]; then
-    fail "ATLAS_STORE must be postgres or sqlite"
-  fi
-
-  if [[ "$SKIP_BACKEND" -eq 0 && "$ATLAS_STORE" == "postgres" ]]; then
+  if [[ "$SKIP_BACKEND" -eq 0 ]]; then
     require_command docker
     compose_command >/dev/null
   fi
@@ -442,7 +429,7 @@ assert_prerequisites() {
 
   if [[ "$SKIP_BACKEND" -eq 0 ]]; then
     require_tcp_port_free "atlas-backend HTTP" "$(tcp_port_from_addr "$ATLAS_BACKEND_ADDR")"
-    require_tcp_port_free "atlas-backend agent gRPC" "$(tcp_port_from_addr "$ATLAS_AGENT_GRPC_ADDR")"
+    require_tcp_port_free "atlas-backend vehicle-agent gRPC" "$(tcp_port_from_addr "$ATLAS_VEHICLE_AGENT_GRPC_ADDR")"
   fi
 
   if [[ "$SKIP_PX4" -eq 0 ]]; then
@@ -512,7 +499,7 @@ if [[ "$SKIP_BACKEND" -eq 0 ]]; then
   start_process \
     "atlas-backend" \
     "${ROOT_DIR}/atlas-backend" \
-    "env ATLAS_BACKEND_ADDR=\"${ATLAS_BACKEND_ADDR}\" ATLAS_AGENT_GRPC_ADDR=\"${ATLAS_AGENT_GRPC_ADDR}\" ATLAS_STORE=\"${ATLAS_STORE}\" ATLAS_DATABASE_URL=\"${ATLAS_DATABASE_URL}\" ATLAS_SQLITE_PATH=\"${ATLAS_SQLITE_PATH}\" go run ./cmd/atlas-backend"
+    "env ATLAS_BACKEND_ADDR=\"${ATLAS_BACKEND_ADDR}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_DATABASE_URL=\"${ATLAS_DATABASE_URL}\" go run ./cmd/atlas-backend"
   wait_for_http "atlas-backend" "${ATLAS_BACKEND_URL}/healthz" 30
 fi
 
@@ -520,7 +507,7 @@ if [[ "$SKIP_AGENT" -eq 0 ]]; then
   start_process \
     "atlas-agent" \
     "${ROOT_DIR}/atlas-agent" \
-    "env ATLAS_BACKEND_URL=\"${ATLAS_BACKEND_URL}\" ATLAS_AGENT_ID=\"${ATLAS_AGENT_ID}\" ATLAS_DRONE_ID=\"${ATLAS_DRONE_ID}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_AGENT_VERSION=\"${ATLAS_AGENT_VERSION}\" ATLAS_AGENT_GRPC_ADDR=\"${ATLAS_AGENT_GRPC_ADDR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_PX4_SYSTEM_ADDRESS=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" go run ./cmd/atlas-agent"
+    "env ATLAS_BACKEND_URL=\"${ATLAS_BACKEND_URL}\" ATLAS_VEHICLE_AGENT_ID=\"${ATLAS_VEHICLE_AGENT_ID}\" ATLAS_DRONE_ID=\"${ATLAS_DRONE_ID}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_VEHICLE_AGENT_VERSION=\"${ATLAS_VEHICLE_AGENT_VERSION}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_PX4_SYSTEM_ADDRESS=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" go run ./cmd/atlas-agent"
 fi
 
 if [[ "$SKIP_UI" -eq 0 ]]; then

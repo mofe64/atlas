@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/sunnyside/atlas/atlas-backend/internal/agentchannel"
-	agentchannelpb "github.com/sunnyside/atlas/atlas-backend/internal/agentchannelpb/atlas"
+	"github.com/sunnyside/atlas/atlas-backend/internal/database"
 	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi"
-	"github.com/sunnyside/atlas/atlas-backend/internal/registry"
+	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
+	"github.com/sunnyside/atlas/atlas-backend/internal/services"
+	vehicleagentchannelpb "github.com/sunnyside/atlas/atlas-backend/internal/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 )
 
@@ -29,31 +31,31 @@ func main() {
 		addr = ":8080"
 	}
 
-	agentGRPCAddr := os.Getenv("ATLAS_AGENT_GRPC_ADDR")
-	if agentGRPCAddr == "" {
-		agentGRPCAddr = ":9090"
+	vehicleAgentGRPCAddr := os.Getenv("ATLAS_VEHICLE_AGENT_GRPC_ADDR")
+	if vehicleAgentGRPCAddr == "" {
+		vehicleAgentGRPCAddr = ":9090"
 	}
 
-	reg, closeStore, err := openRegistry(context.Background(), logger)
+	deps, closeDB, err := openDependencies(context.Background(), logger)
 	if err != nil {
-		logger.Error("failed to open registry store", "error", err)
+		logger.Error("failed to open postgres db", "error", err)
 		os.Exit(1)
 	}
-	defer closeStore()
-	channelHub := agentchannel.NewHub(reg, logger)
+	defer closeDB()
+	channelHub := agentchannel.NewHub(deps.agentChannel, logger)
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewRouterWithRegistryAndDispatchers(reg, channelHub, channelHub),
+		Handler:           httpapi.NewRouterWithDispatchers(deps.httpAPI, channelHub, channelHub),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	grpcServer := grpc.NewServer()
-	agentchannelpb.RegisterAgentChannelServiceServer(grpcServer, agentchannel.NewServer(channelHub))
+	vehicleagentchannelpb.RegisterVehicleAgentChannelServiceServer(grpcServer, agentchannel.NewServer(channelHub))
 
-	agentListener, err := net.Listen("tcp", agentGRPCAddr)
+	agentListener, err := net.Listen("tcp", vehicleAgentGRPCAddr)
 	if err != nil {
-		logger.Error("failed to listen for agent gRPC channel", "addr", agentGRPCAddr, "error", err)
+		logger.Error("failed to listen for vehicle-agent gRPC channel", "addr", vehicleAgentGRPCAddr, "error", err)
 		os.Exit(1)
 	}
 
@@ -64,7 +66,7 @@ func main() {
 	}()
 
 	go func() {
-		logger.Info("starting atlas backend agent gRPC channel", "addr", agentGRPCAddr)
+		logger.Info("starting atlas backend vehicle-agent gRPC channel", "addr", vehicleAgentGRPCAddr)
 		errs <- grpcServer.Serve(agentListener)
 	}()
 
@@ -94,44 +96,50 @@ func main() {
 	logger.Info("atlas backend stopped")
 }
 
-func openRegistry(ctx context.Context, logger *slog.Logger) (registry.Store, func(), error) {
-	storeKind := strings.ToLower(strings.TrimSpace(os.Getenv("ATLAS_STORE")))
-	if storeKind == "" {
-		storeKind = "postgres"
+type backendDependencies struct {
+	httpAPI      httpapi.Dependencies
+	agentChannel agentchannel.Dependencies
+}
+
+func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependencies, func(), error) {
+	dsn := strings.TrimSpace(os.Getenv("ATLAS_DATABASE_URL"))
+	if dsn == "" {
+		dsn = "postgres://atlas:atlas@127.0.0.1:5432/atlas?sslmode=disable"
 	}
 
-	switch storeKind {
-	case "postgres":
-		dsn := strings.TrimSpace(os.Getenv("ATLAS_DATABASE_URL"))
-		if dsn == "" {
-			dsn = "postgres://atlas:atlas@127.0.0.1:5432/atlas?sslmode=disable"
-		}
-		store, err := registry.OpenPostgresStore(ctx, dsn)
-		if err != nil {
-			return nil, func() {}, err
-		}
-		logger.Info("using postgres registry store")
-		return store, func() {
-			if err := store.Close(); err != nil {
-				logger.Warn("failed to close postgres store", "error", err)
-			}
-		}, nil
-	case "sqlite":
-		path := strings.TrimSpace(os.Getenv("ATLAS_SQLITE_PATH"))
-		if path == "" {
-			path = ".atlas-run/atlas.db"
-		}
-		store, err := registry.OpenSQLiteStore(ctx, path)
-		if err != nil {
-			return nil, func() {}, err
-		}
-		logger.Info("using sqlite registry store", "path", path)
-		return store, func() {
-			if err := store.Close(); err != nil {
-				logger.Warn("failed to close sqlite store", "error", err)
-			}
-		}, nil
-	default:
-		return nil, func() {}, errors.New("ATLAS_STORE must be postgres or sqlite")
+	db, err := database.OpenPostgres(ctx, dsn)
+	if err != nil {
+		return backendDependencies{}, func() {}, err
 	}
+	logger.Info("using postgres db repository")
+
+	txManager := postgresrepo.NewTxManager(db)
+	repos := txManager.Repositories()
+	appServices := services.New(services.Dependencies{
+		TxManager:    txManager,
+		Repositories: repos,
+	})
+
+	deps := backendDependencies{
+		httpAPI: httpapi.Dependencies{
+			VehicleAgents: appServices.VehicleAgents,
+			Telemetry:     appServices.Telemetry,
+			Commands:      appServices.Commands,
+			Missions:      appServices.Missions,
+			Fleet:         appServices.Fleet,
+		},
+		agentChannel: agentchannel.Dependencies{
+			VehicleAgents: appServices.VehicleAgents,
+			Telemetry:     appServices.Telemetry,
+			Commands:      appServices.Commands,
+			Missions:      appServices.Missions,
+		},
+	}
+	closeDB := func() {
+		if err := db.Close(); err != nil {
+			logger.Warn("failed to close postgres db", "error", err)
+		}
+	}
+
+	return deps, closeDB, nil
 }

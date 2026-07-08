@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,15 +11,19 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/sunnyside/atlas/atlas-backend/internal/domain"
-	"github.com/sunnyside/atlas/atlas-backend/internal/registry"
+	"github.com/sunnyside/atlas/atlas-backend/internal/database"
+	"github.com/sunnyside/atlas/atlas-backend/internal/models"
+	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
+	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
+	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
+	"github.com/sunnyside/atlas/atlas-backend/internal/testutil"
 )
 
 func TestHealthz(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 
-	NewRouter().ServeHTTP(rec, req)
+	NewRouter(Dependencies{}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
@@ -39,16 +44,16 @@ func TestHealthz(t *testing.T) {
 }
 
 func TestRegisterHeartbeatAndListDrones(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
 	registerBody := []byte(`{
-		"agentId": "agent-001",
+		"vehicleAgentId": "agent-001",
 		"droneId": "drone-001",
 		"droneName": "Training Quad 1",
-		"agentVersion": "0.1.0"
+		"vehicleAgentVersion": "0.1.0"
 	}`)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/agents/register", bytes.NewReader(registerBody))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/register", bytes.NewReader(registerBody))
 	registerRec := httptest.NewRecorder()
 
 	router.ServeHTTP(registerRec, registerReq)
@@ -57,8 +62,8 @@ func TestRegisterHeartbeatAndListDrones(t *testing.T) {
 		t.Fatalf("expected register status %d, got %d: %s", http.StatusOK, registerRec.Code, registerRec.Body.String())
 	}
 
-	heartbeatBody := []byte(`{"agentVersion": "0.1.0"}`)
-	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/heartbeat", bytes.NewReader(heartbeatBody))
+	heartbeatBody := []byte(`{"vehicleAgentVersion": "0.1.0"}`)
+	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/heartbeat", bytes.NewReader(heartbeatBody))
 	heartbeatRec := httptest.NewRecorder()
 
 	router.ServeHTTP(heartbeatRec, heartbeatReq)
@@ -89,23 +94,23 @@ func TestRegisterHeartbeatAndListDrones(t *testing.T) {
 		t.Fatalf("expected online drone, got %q", drones[0].Status)
 	}
 
-	if drones[0].AgentID != "agent-001" {
-		t.Fatalf("expected agent-001, got %q", drones[0].AgentID)
+	if drones[0].VehicleAgentID != "agent-001" {
+		t.Fatalf("expected agent-001, got %q", drones[0].VehicleAgentID)
 	}
 
-	if drones[0].CommandChannel.State != string(domain.CommandChannelDisconnected) {
+	if drones[0].CommandChannel.State != string(models.CommandChannelDisconnected) {
 		t.Fatalf("expected disconnected command channel, got %q", drones[0].CommandChannel.State)
 	}
 }
 
 func TestListDronesIncludesCommandChannelState(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 
 	connectedAt := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
-	if _, err := reg.RecordCommandChannelConnected("agent-001", connectedAt); err != nil {
+	if _, err := repo.RecordCommandChannelConnected(context.Background(), "agent-001", connectedAt); err != nil {
 		t.Fatalf("record command channel connected: %v", err)
 	}
 
@@ -122,7 +127,7 @@ func TestListDronesIncludesCommandChannelState(t *testing.T) {
 		t.Fatalf("expected one drone, got %d", len(drones))
 	}
 
-	if drones[0].CommandChannel.State != string(domain.CommandChannelConnected) {
+	if drones[0].CommandChannel.State != string(models.CommandChannelConnected) {
 		t.Fatalf("expected connected command channel, got %q", drones[0].CommandChannel.State)
 	}
 
@@ -132,16 +137,16 @@ func TestListDronesIncludesCommandChannelState(t *testing.T) {
 }
 
 func TestRecordTelemetryAndListDrones(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
 	registerBody := []byte(`{
-		"agentId": "agent-001",
+		"vehicleAgentId": "agent-001",
 		"droneId": "drone-001",
 		"droneName": "Training Quad 1",
-		"agentVersion": "0.1.0"
+		"vehicleAgentVersion": "0.1.0"
 	}`)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/agents/register", bytes.NewReader(registerBody))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/register", bytes.NewReader(registerBody))
 	registerRec := httptest.NewRecorder()
 	router.ServeHTTP(registerRec, registerReq)
 
@@ -164,7 +169,7 @@ func TestRecordTelemetryAndListDrones(t *testing.T) {
 		"homePositionSet": true,
 		"source": "px4"
 	}`)
-	telemetryReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/telemetry", bytes.NewReader(telemetryBody))
+	telemetryReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/telemetry", bytes.NewReader(telemetryBody))
 	telemetryRec := httptest.NewRecorder()
 	router.ServeHTTP(telemetryRec, telemetryReq)
 
@@ -195,10 +200,10 @@ func TestRecordTelemetryAndListDrones(t *testing.T) {
 }
 
 func TestListDronesIncludesRecentCommands(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -237,10 +242,10 @@ func TestListDronesIncludesRecentCommands(t *testing.T) {
 }
 
 func TestDroneStreamSendsFleetSnapshotWithCommands(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -285,10 +290,10 @@ func TestDroneStreamSendsFleetSnapshotWithCommands(t *testing.T) {
 }
 
 func TestRequestCommandAuthorizedWithFreshTelemetry(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -320,10 +325,10 @@ func TestRequestCommandAuthorizedWithFreshTelemetry(t *testing.T) {
 }
 
 func TestRequestCommandRejectedWithoutFreshTelemetry(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/takeoff", nil)
@@ -349,10 +354,10 @@ func TestRequestCommandRejectedWithoutFreshTelemetry(t *testing.T) {
 }
 
 func TestAgentFetchesNextAuthorizedCommand(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -364,7 +369,7 @@ func TestAgentFetchesNextAuthorizedCommand(t *testing.T) {
 		t.Fatalf("expected request status %d, got %d: %s", http.StatusAccepted, requestRec.Code, requestRec.Body.String())
 	}
 
-	fetchReq := httptest.NewRequest(http.MethodGet, "/api/agents/agent-001/commands/next", nil)
+	fetchReq := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
 	fetchRec := httptest.NewRecorder()
 	router.ServeHTTP(fetchRec, fetchReq)
 
@@ -381,16 +386,16 @@ func TestAgentFetchesNextAuthorizedCommand(t *testing.T) {
 		t.Fatalf("expected arm command, got %q", command.Type)
 	}
 
-	if command.State != "sent_to_agent" {
-		t.Fatalf("expected sent_to_agent, got %q", command.State)
+	if command.State != "sent_to_vehicle_agent" {
+		t.Fatalf("expected sent_to_vehicle_agent, got %q", command.State)
 	}
 }
 
 func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -425,10 +430,10 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 }
 
 func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -497,10 +502,10 @@ func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
 }
 
 func TestCreateMissionRejectedWithValidationErrors(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 
 	body := []byte(`{
@@ -536,8 +541,8 @@ func TestCreateMissionRejectedWithValidationErrors(t *testing.T) {
 }
 
 func TestRequestMissionUploadCreatesExecution(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -610,10 +615,10 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 }
 
 func TestRequestMissionUploadRejectsRejectedMission(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 
 	body := []byte(`{"name": "", "waypoints": []}`)
@@ -640,8 +645,8 @@ func TestRequestMissionUploadRejectsRejectedMission(t *testing.T) {
 }
 
 func TestRequestMissionStartRequiresUploadedExecution(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -662,8 +667,8 @@ func TestRequestMissionStartRequiresUploadedExecution(t *testing.T) {
 }
 
 func TestRequestMissionStartAcceptsGroundedVehicleForLaunchWorkflow(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -679,7 +684,7 @@ func TestRequestMissionStartAcceptsGroundedVehicleForLaunchWorkflow(t *testing.T
 		t.Fatalf("decode upload execution: %v", err)
 	}
 
-	if _, err := reg.RecordMissionExecutionUploaded(uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
+	if _, err := repo.RecordMissionExecutionUploaded(context.Background(), uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
 		t.Fatalf("record uploaded execution: %v", err)
 	}
 
@@ -696,14 +701,14 @@ func TestRequestMissionStartAcceptsGroundedVehicleForLaunchWorkflow(t *testing.T
 		t.Fatalf("decode start execution: %v", err)
 	}
 
-	if body.State != string(domain.MissionExecutionStateStartRequested) {
+	if body.State != string(models.MissionExecutionStateStartRequested) {
 		t.Fatalf("expected start_requested, got %q", body.State)
 	}
 }
 
 func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -719,10 +724,10 @@ func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T)
 		t.Fatalf("decode upload execution: %v", err)
 	}
 
-	if _, err := reg.RecordMissionExecutionUploaded(uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
+	if _, err := repo.RecordMissionExecutionUploaded(context.Background(), uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
 		t.Fatalf("record uploaded execution: %v", err)
 	}
-	recordAirborneTelemetry(t, reg)
+	recordAirborneTelemetry(t, repo)
 
 	startReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/start", nil)
 	startReq.Header.Set("X-Atlas-Operator-ID", "start-operator")
@@ -781,8 +786,8 @@ func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T)
 }
 
 func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -798,10 +803,10 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 		t.Fatalf("decode upload execution: %v", err)
 	}
 
-	if _, err := reg.RecordMissionExecutionUploaded(uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
+	if _, err := repo.RecordMissionExecutionUploaded(context.Background(), uploaded.ID, "uploaded to vehicle", time.Now().UTC()); err != nil {
 		t.Fatalf("record uploaded execution: %v", err)
 	}
-	recordAirborneTelemetry(t, reg)
+	recordAirborneTelemetry(t, repo)
 
 	startReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/start", nil)
 	startRec := httptest.NewRecorder()
@@ -811,11 +816,11 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 		t.Fatalf("expected start accepted, got %d: %s", startRec.Code, startRec.Body.String())
 	}
 
-	if _, err := reg.UpdateMissionExecutionStatus(registry.UpdateMissionExecutionStatusInput{
-		AgentID:       "agent-001",
-		ExecutionID:   uploaded.ID,
-		State:         domain.MissionExecutionStateActive,
-		ResultMessage: "mission started",
+	if _, err := repo.UpdateMissionExecutionStatus(context.Background(), repository.UpdateMissionExecutionStatusInput{
+		VehicleAgentID: "agent-001",
+		ExecutionID:    uploaded.ID,
+		State:          models.MissionExecutionStateActive,
+		ResultMessage:  "mission started",
 	}, time.Now().UTC()); err != nil {
 		t.Fatalf("mark mission active: %v", err)
 	}
@@ -838,7 +843,7 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 		t.Fatalf("expected abort on execution %q, got %q", uploaded.ID, aborted.ID)
 	}
 
-	if aborted.State != string(domain.MissionExecutionStateRTLRequested) {
+	if aborted.State != string(models.MissionExecutionStateRTLRequested) {
 		t.Fatalf("expected rtl_requested, got %q", aborted.State)
 	}
 
@@ -848,8 +853,8 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 }
 
 func TestListMissionExecutionEvents(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 	mission := createValidatedMissionViaAPI(t, router)
 
 	uploadReq := httptest.NewRequest(http.MethodPost, "/api/missions/"+mission.ID+"/upload", nil)
@@ -883,12 +888,12 @@ func TestListMissionExecutionEvents(t *testing.T) {
 }
 
 func TestAgentFetchesNoContentWhenNoPendingCommand(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/agents/agent-001/commands/next", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -898,10 +903,10 @@ func TestAgentFetchesNoContentWhenNoPendingCommand(t *testing.T) {
 }
 
 func TestAgentReportsCommandStatus(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -914,7 +919,7 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 		t.Fatalf("decode requested command: %v", err)
 	}
 
-	fetchReq := httptest.NewRequest(http.MethodGet, "/api/agents/agent-001/commands/next", nil)
+	fetchReq := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
 	fetchRec := httptest.NewRecorder()
 	router.ServeHTTP(fetchRec, fetchReq)
 
@@ -923,7 +928,7 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 	}
 
 	body := []byte(`{"state":"vehicle_acked","resultMessage":"accepted by vehicle"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -946,10 +951,10 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 }
 
 func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -963,7 +968,7 @@ func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
 	}
 
 	body := []byte(`{"state":"vehicle_acked"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -973,10 +978,10 @@ func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
 }
 
 func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
-	reg := registry.NewMemoryRegistry()
-	router := NewRouterWithRegistry(reg)
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -990,7 +995,7 @@ func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
 	}
 
 	body := []byte(`{"state":"authorized"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -1002,7 +1007,7 @@ func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
 func createValidatedMissionViaAPI(t *testing.T, router http.Handler) missionResponse {
 	t.Helper()
 
-	registerTestAgent(t, router)
+	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
@@ -1032,16 +1037,16 @@ func createValidatedMissionViaAPI(t *testing.T, router http.Handler) missionResp
 	return mission
 }
 
-func registerTestAgent(t *testing.T, router http.Handler) {
+func registerTestVehicleAgent(t *testing.T, router http.Handler) {
 	t.Helper()
 
 	registerBody := []byte(`{
-		"agentId": "agent-001",
+		"vehicleAgentId": "agent-001",
 		"droneId": "drone-001",
 		"droneName": "Training Quad 1",
-		"agentVersion": "0.1.0"
+		"vehicleAgentVersion": "0.1.0"
 	}`)
-	registerReq := httptest.NewRequest(http.MethodPost, "/api/agents/register", bytes.NewReader(registerBody))
+	registerReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/register", bytes.NewReader(registerBody))
 	registerRec := httptest.NewRecorder()
 	router.ServeHTTP(registerRec, registerReq)
 
@@ -1053,8 +1058,8 @@ func registerTestAgent(t *testing.T, router http.Handler) {
 func sendTestHeartbeat(t *testing.T, router http.Handler) {
 	t.Helper()
 
-	heartbeatBody := []byte(`{"agentVersion": "0.1.0"}`)
-	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/heartbeat", bytes.NewReader(heartbeatBody))
+	heartbeatBody := []byte(`{"vehicleAgentVersion": "0.1.0"}`)
+	heartbeatReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/heartbeat", bytes.NewReader(heartbeatBody))
 	heartbeatRec := httptest.NewRecorder()
 	router.ServeHTTP(heartbeatRec, heartbeatReq)
 
@@ -1081,7 +1086,7 @@ func sendTestTelemetry(t *testing.T, router http.Handler) {
 		"homePositionSet": true,
 		"source": "px4"
 	}`)
-	telemetryReq := httptest.NewRequest(http.MethodPost, "/api/agents/agent-001/telemetry", bytes.NewReader(telemetryBody))
+	telemetryReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/telemetry", bytes.NewReader(telemetryBody))
 	telemetryRec := httptest.NewRecorder()
 	router.ServeHTTP(telemetryRec, telemetryReq)
 
@@ -1090,12 +1095,16 @@ func sendTestTelemetry(t *testing.T, router http.Handler) {
 	}
 }
 
-func recordAirborneTelemetry(t *testing.T, reg *registry.MemoryRegistry) {
+type telemetryWorkflow interface {
+	RecordTelemetry(context.Context, models.TelemetrySnapshot, time.Time) (models.TelemetrySnapshot, error)
+}
+
+func recordAirborneTelemetry(t *testing.T, repo telemetryWorkflow) {
 	t.Helper()
 
 	now := time.Now().UTC()
-	if _, err := reg.RecordTelemetry(domain.TelemetrySnapshot{
-		AgentID:           "agent-001",
+	if _, err := repo.RecordTelemetry(context.Background(), models.TelemetrySnapshot{
+		VehicleAgentID:    "agent-001",
 		ObservedAt:        now,
 		BatteryPercent:    82,
 		RelativeAltitudeM: 12.5,
@@ -1111,5 +1120,62 @@ func recordAirborneTelemetry(t *testing.T, reg *registry.MemoryRegistry) {
 		Source:            "px4",
 	}, now); err != nil {
 		t.Fatalf("record airborne telemetry: %v", err)
+	}
+}
+
+type testRepository struct {
+	*svc.VehicleAgentService
+	*svc.TelemetryService
+	*svc.CommandService
+	*svc.MissionService
+	repos repository.Repositories
+	deps  Dependencies
+}
+
+func (r *testRepository) dependencies() Dependencies {
+	return r.deps
+}
+
+func (r *testRepository) ListDrones(ctx context.Context, now time.Time) []repository.DroneSnapshot {
+	return r.repos.Drones.ListDrones(ctx, now)
+}
+
+func (r *testRepository) GetTelemetryForDrone(ctx context.Context, droneID string) (models.TelemetrySnapshot, bool) {
+	return r.repos.Telemetry.GetTelemetryForDrone(ctx, droneID)
+}
+
+func newTestRepository(t *testing.T) *testRepository {
+	t.Helper()
+
+	db, err := database.OpenPostgres(context.Background(), testutil.DatabaseURL(t))
+	if err != nil {
+		t.Fatalf("open postgres test db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close postgres test db: %v", err)
+		}
+	})
+
+	txManager := postgresrepo.NewTxManager(db)
+	repos := txManager.Repositories()
+	appServices := svc.New(svc.Dependencies{
+		TxManager:    txManager,
+		Repositories: repos,
+	})
+
+	return &testRepository{
+		VehicleAgentService: appServices.VehicleAgents,
+		TelemetryService:    appServices.Telemetry,
+		CommandService:      appServices.Commands,
+		MissionService:      appServices.Missions,
+		repos:               repos,
+		deps: Dependencies{
+			VehicleAgents: appServices.VehicleAgents,
+			Telemetry:     appServices.Telemetry,
+			Commands:      appServices.Commands,
+			Missions:      appServices.Missions,
+			Fleet:         appServices.Fleet,
+		},
 	}
 }

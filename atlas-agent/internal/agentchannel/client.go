@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"time"
 
-	pb "github.com/sunnyside/atlas/atlas-agent/internal/agentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
+	pb "github.com/sunnyside/atlas/atlas-agent/internal/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -21,11 +21,11 @@ const (
 	commandTypeReturnToLaunch = "return_to_launch"
 	commandTypeLand           = "land"
 
-	commandStateAgentReceived   = "agent_received"
-	commandStateSentToVehicle   = "sent_to_vehicle"
-	commandStateVehicleAcked    = "vehicle_acked"
-	commandStateVehicleRejected = "vehicle_rejected"
-	commandStateFailed          = "failed"
+	commandStateVehicleAgentReceived = "vehicle_agent_received"
+	commandStateSentToVehicle        = "sent_to_vehicle"
+	commandStateVehicleAcked         = "vehicle_acked"
+	commandStateVehicleRejected      = "vehicle_rejected"
+	commandStateFailed               = "failed"
 
 	missionActionUpload = "upload"
 	missionActionStart  = "start"
@@ -44,16 +44,16 @@ const (
 var errUnsupportedCommand = errors.New("unsupported command type")
 
 type Config struct {
-	Addr              string
-	AgentID           string
-	DroneID           string
-	DroneName         string
-	AgentVersion      string
-	HeartbeatInterval time.Duration
-	TelemetryInterval time.Duration
-	CommandTimeout    time.Duration
-	RetryMin          time.Duration
-	RetryMax          time.Duration
+	Addr                string
+	VehicleAgentID      string
+	DroneID             string
+	DroneName           string
+	VehicleAgentVersion string
+	HeartbeatInterval   time.Duration
+	TelemetryInterval   time.Duration
+	CommandTimeout      time.Duration
+	RetryMin            time.Duration
+	RetryMax            time.Duration
 }
 
 type commandOutcome struct {
@@ -67,16 +67,16 @@ type missionExecutionOutcome struct {
 }
 
 type outboundQueues struct {
-	critical  chan *pb.AgentToBackend
-	heartbeat chan *pb.AgentToBackend
-	telemetry chan *pb.AgentToBackend
+	critical  chan *pb.VehicleAgentToBackend
+	heartbeat chan *pb.VehicleAgentToBackend
+	telemetry chan *pb.VehicleAgentToBackend
 }
 
 func newOutboundQueues() outboundQueues {
 	return outboundQueues{
-		critical:  make(chan *pb.AgentToBackend, 16),
-		heartbeat: make(chan *pb.AgentToBackend, 2),
-		telemetry: make(chan *pb.AgentToBackend, 1),
+		critical:  make(chan *pb.VehicleAgentToBackend, 16),
+		heartbeat: make(chan *pb.VehicleAgentToBackend, 2),
+		telemetry: make(chan *pb.VehicleAgentToBackend, 1),
 	}
 }
 
@@ -99,7 +99,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.G
 			return
 		}
 
-		logger.Warn("agent gRPC channel disconnected; retrying", "error", err, "retry_after", backoff.String())
+		logger.Warn("vehicle-agent gRPC channel disconnected; retrying", "error", err, "retry_after", backoff.String())
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
@@ -115,14 +115,14 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.G
 func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source) error {
 	conn, err := grpc.NewClient(cfg.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return fmt.Errorf("create agent channel client: %w", err)
+		return fmt.Errorf("create vehicle-agent channel client: %w", err)
 	}
 	defer conn.Close()
 
-	client := pb.NewAgentChannelServiceClient(conn)
+	client := pb.NewVehicleAgentChannelServiceClient(conn)
 	stream, err := client.Connect(ctx)
 	if err != nil {
-		return fmt.Errorf("connect agent channel: %w", err)
+		return fmt.Errorf("connect vehicle-agent channel: %w", err)
 	}
 
 	sendCtx, cancel := context.WithCancel(ctx)
@@ -130,25 +130,25 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 
 	outbound := newOutboundQueues()
 	errs := make(chan error, 2)
-	inbound := make(chan *pb.BackendToAgent, 16)
+	inbound := make(chan *pb.BackendToVehicleAgent, 16)
 
 	go sendLoop(sendCtx, stream, outbound, errs)
 	go receiveLoop(stream, inbound, errs)
 
-	if !enqueueCritical(sendCtx, outbound, &pb.AgentToBackend{
-		AgentId: cfg.AgentID,
-		Payload: &pb.AgentToBackend_Hello{
-			Hello: &pb.AgentHello{
-				DroneId:      cfg.DroneID,
-				AgentVersion: cfg.AgentVersion,
-				DroneName:    cfg.DroneName,
+	if !enqueueCritical(sendCtx, outbound, &pb.VehicleAgentToBackend{
+		VehicleAgentId: cfg.VehicleAgentID,
+		Payload: &pb.VehicleAgentToBackend_Hello{
+			Hello: &pb.VehicleAgentHello{
+				DroneId:             cfg.DroneID,
+				VehicleAgentVersion: cfg.VehicleAgentVersion,
+				DroneName:           cfg.DroneName,
 			},
 		},
 	}) {
 		return sendCtx.Err()
 	}
 
-	logger.Info("agent gRPC channel connected", "addr", cfg.Addr, "agent_id", cfg.AgentID)
+	logger.Info("vehicle-agent gRPC channel connected", "addr", cfg.Addr, "vehicle_agent_id", cfg.VehicleAgentID)
 
 	go sendHeartbeats(sendCtx, outbound, cfg)
 	if telemetrySource != nil {
@@ -176,10 +176,10 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 			if command != nil {
 				if outcome, ok := processedCommands[command.GetCommandId()]; ok {
 					logger.Warn("duplicate gRPC command received; replaying prior result", "command_id", command.GetCommandId(), "type", command.GetCommandType())
-					if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), commandStateAgentReceived, "") {
+					if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateVehicleAgentReceived, "") {
 						return ctx.Err()
 					}
-					if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), outcome.state, outcome.resultMessage) {
+					if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), outcome.state, outcome.resultMessage) {
 						return ctx.Err()
 					}
 					continue
@@ -201,7 +201,7 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 			missionExecutionKey := missionExecutionProcessingKey(missionExecution)
 			if outcome, ok := processedMissionExecutions[missionExecutionKey]; ok {
 				logger.Warn("duplicate gRPC mission execution received; replaying prior result", "execution_id", missionExecution.GetExecutionId(), "action", missionExecution.GetAction())
-				if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, missionExecution.GetExecutionId(), outcome.state, outcome.resultMessage) {
+				if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, missionExecution.GetExecutionId(), outcome.state, outcome.resultMessage) {
 					return ctx.Err()
 				}
 				continue
@@ -225,11 +225,11 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 		"requested_by", command.GetRequestedBy(),
 	)
 
-	if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), commandStateAgentReceived, "") {
+	if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateVehicleAgentReceived, "") {
 		return commandOutcome{}, ctx.Err()
 	}
 
-	if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), commandStateSentToVehicle, "") {
+	if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateSentToVehicle, "") {
 		return commandOutcome{}, ctx.Err()
 	}
 
@@ -247,7 +247,7 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 			state = commandStateFailed
 		}
 
-		if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), state, err.Error()) {
+		if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), state, err.Error()) {
 			return commandOutcome{}, ctx.Err()
 		}
 		logger.Error("gRPC command execution failed", "command_id", command.GetCommandId(), "type", command.GetCommandType(), "error", err)
@@ -255,7 +255,7 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 	}
 
 	resultMessage := "accepted by vehicle"
-	if !sendCommandStatus(ctx, outbound, cfg.AgentID, command.GetCommandId(), commandStateVehicleAcked, resultMessage) {
+	if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateVehicleAcked, resultMessage) {
 		return commandOutcome{}, ctx.Err()
 	}
 
@@ -281,13 +281,13 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 
 	switch execution.GetAction() {
 	case missionActionUpload:
-		if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateUploading, "") {
+		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateUploading, "") {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
 
 		if err := gateway.UploadMission(ctx, missionEnvelopeToPlan(execution)); err != nil {
 			resultMessage := err.Error()
-			if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateUploadFailed, resultMessage) {
+			if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateUploadFailed, resultMessage) {
 				return missionExecutionOutcome{}, ctx.Err()
 			}
 
@@ -296,7 +296,7 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		}
 
 		resultMessage := "uploaded to vehicle"
-		if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateUploadedToVehicle, resultMessage) {
+		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateUploadedToVehicle, resultMessage) {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
 
@@ -305,7 +305,7 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 	case missionActionStart:
 		if err := startMissionWorkflow(ctx, gateway); err != nil {
 			resultMessage := err.Error()
-			if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
+			if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
 				return missionExecutionOutcome{}, ctx.Err()
 			}
 
@@ -314,18 +314,18 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		}
 
 		resultMessage := "mission started"
-		if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateActive, resultMessage) {
+		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateActive, resultMessage) {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
 
-		go monitorMissionProgress(ctx, logger, outbound, cfg.AgentID, gateway, execution)
+		go monitorMissionProgress(ctx, logger, outbound, cfg.VehicleAgentID, gateway, execution)
 
 		logger.Info("gRPC mission started", "execution_id", execution.GetExecutionId(), "mission_id", execution.GetMissionId())
 		return missionExecutionOutcome{state: missionExecutionStateActive, resultMessage: resultMessage}, nil
 	case missionActionRTL:
 		if err := gateway.ReturnToLaunch(ctx); err != nil {
 			resultMessage := err.Error()
-			if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
+			if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
 				return missionExecutionOutcome{}, ctx.Err()
 			}
 
@@ -334,7 +334,7 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		}
 
 		resultMessage := "RTL accepted by vehicle; mission abort in progress"
-		if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateRTLRequested, resultMessage) {
+		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateRTLRequested, resultMessage) {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
 
@@ -342,7 +342,7 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		return missionExecutionOutcome{state: missionExecutionStateRTLRequested, resultMessage: resultMessage}, nil
 	default:
 		resultMessage := fmt.Sprintf("unsupported mission execution action: %s", execution.GetAction())
-		if !sendMissionExecutionStatus(ctx, outbound, cfg.AgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
+		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
 		return missionExecutionOutcome{state: missionExecutionStateFailed, resultMessage: resultMessage}, nil
@@ -445,7 +445,7 @@ func executeVehicleCommand(ctx context.Context, gateway vehicle.Gateway, command
 	}
 }
 
-func sendLoop(ctx context.Context, stream pb.AgentChannelService_ConnectClient, outbound outboundQueues, errs chan<- error) {
+func sendLoop(ctx context.Context, stream pb.VehicleAgentChannelService_ConnectClient, outbound outboundQueues, errs chan<- error) {
 	for {
 		msg, ok := nextOutboundMessage(ctx, outbound)
 		if !ok {
@@ -459,7 +459,7 @@ func sendLoop(ctx context.Context, stream pb.AgentChannelService_ConnectClient, 
 	}
 }
 
-func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.AgentToBackend, bool) {
+func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.VehicleAgentToBackend, bool) {
 	select {
 	case <-ctx.Done():
 		return nil, false
@@ -496,7 +496,7 @@ func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.Agen
 	}
 }
 
-func receiveLoop(stream pb.AgentChannelService_ConnectClient, inbound chan<- *pb.BackendToAgent, errs chan<- error) {
+func receiveLoop(stream pb.VehicleAgentChannelService_ConnectClient, inbound chan<- *pb.BackendToVehicleAgent, errs chan<- error) {
 	for {
 		msg, err := stream.Recv()
 		if err != nil {
@@ -529,11 +529,11 @@ func sendHeartbeats(ctx context.Context, outbound outboundQueues, cfg Config) {
 }
 
 func sendHeartbeat(ctx context.Context, outbound outboundQueues, cfg Config) {
-	if !enqueueHeartbeat(ctx, outbound, &pb.AgentToBackend{
-		AgentId: cfg.AgentID,
-		Payload: &pb.AgentToBackend_Heartbeat{
+	if !enqueueHeartbeat(ctx, outbound, &pb.VehicleAgentToBackend{
+		VehicleAgentId: cfg.VehicleAgentID,
+		Payload: &pb.VehicleAgentToBackend_Heartbeat{
 			Heartbeat: &pb.Heartbeat{
-				AgentVersion: cfg.AgentVersion,
+				VehicleAgentVersion: cfg.VehicleAgentVersion,
 			},
 		},
 	}) {
@@ -569,9 +569,9 @@ func sendTelemetrySnapshot(ctx context.Context, logger *slog.Logger, outbound ou
 		return
 	}
 
-	if !enqueueTelemetry(ctx, outbound, &pb.AgentToBackend{
-		AgentId: cfg.AgentID,
-		Payload: &pb.AgentToBackend_Telemetry{
+	if !enqueueTelemetry(ctx, outbound, &pb.VehicleAgentToBackend{
+		VehicleAgentId: cfg.VehicleAgentID,
+		Payload: &pb.VehicleAgentToBackend_Telemetry{
 			Telemetry: &pb.Telemetry{
 				ObservedAt:        snapshot.ObservedAt.UTC().Format(time.RFC3339Nano),
 				BatteryPercent:    snapshot.BatteryPercent,
@@ -595,9 +595,9 @@ func sendTelemetrySnapshot(ctx context.Context, logger *slog.Logger, outbound ou
 }
 
 func sendCommandStatus(ctx context.Context, outbound outboundQueues, agentID string, commandID string, state string, resultMessage string) bool {
-	return enqueueCritical(ctx, outbound, &pb.AgentToBackend{
-		AgentId: agentID,
-		Payload: &pb.AgentToBackend_CommandStatus{
+	return enqueueCritical(ctx, outbound, &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_CommandStatus{
 			CommandStatus: &pb.CommandStatus{
 				CommandId:     commandID,
 				State:         state,
@@ -612,9 +612,9 @@ func sendMissionExecutionStatus(ctx context.Context, outbound outboundQueues, ag
 }
 
 func sendMissionExecutionStatusWithProgress(ctx context.Context, outbound outboundQueues, agentID string, executionID string, state string, resultMessage string, progress vehicle.MissionProgressEvent) bool {
-	return enqueueCritical(ctx, outbound, &pb.AgentToBackend{
-		AgentId: agentID,
-		Payload: &pb.AgentToBackend_MissionExecutionStatus{
+	return enqueueCritical(ctx, outbound, &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_MissionExecutionStatus{
 			MissionExecutionStatus: &pb.MissionExecutionStatus{
 				ExecutionId:        executionID,
 				State:              state,
@@ -626,7 +626,7 @@ func sendMissionExecutionStatusWithProgress(ctx context.Context, outbound outbou
 	})
 }
 
-func enqueueCritical(ctx context.Context, outbound outboundQueues, msg *pb.AgentToBackend) bool {
+func enqueueCritical(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -635,7 +635,7 @@ func enqueueCritical(ctx context.Context, outbound outboundQueues, msg *pb.Agent
 	}
 }
 
-func enqueueHeartbeat(ctx context.Context, outbound outboundQueues, msg *pb.AgentToBackend) bool {
+func enqueueHeartbeat(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -646,7 +646,7 @@ func enqueueHeartbeat(ctx context.Context, outbound outboundQueues, msg *pb.Agen
 	}
 }
 
-func enqueueTelemetry(ctx context.Context, outbound outboundQueues, msg *pb.AgentToBackend) bool {
+func enqueueTelemetry(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
 		return false

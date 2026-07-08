@@ -3,10 +3,10 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROTO_DIR="${ROOT_DIR}/proto"
-PROTO_FILE="${PROTO_DIR}/atlas/agent_channel.proto"
+PROTO_FILE="${PROTO_DIR}/atlas/vehicle_agent_channel.proto"
 
-BACKEND_OUT_DIR="${ROOT_DIR}/atlas-backend/internal/agentchannelpb"
-AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent/internal/agentchannelpb"
+BACKEND_OUT_DIR="${ROOT_DIR}/atlas-backend/internal/vehicleagentchannelpb"
+AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent/internal/vehicleagentchannelpb"
 
 export PATH="$(go env GOPATH)/bin:${PATH}"
 

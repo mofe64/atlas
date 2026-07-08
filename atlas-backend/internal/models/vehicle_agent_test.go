@@ -1,42 +1,42 @@
-package domain
+package models
 
 import (
 	"testing"
 	"time"
 )
 
-func TestStatusFromHeartbeat(t *testing.T) {
+func TestVehicleAgentStatusFromHeartbeat(t *testing.T) {
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 
 	tests := []struct {
 		name            string
 		lastHeartbeatAt time.Time
-		want            AgentStatus
+		want            VehicleAgentStatus
 	}{
 		{
 			name: "registered when heartbeat has never arrived",
-			want: AgentStatusRegistered,
+			want: VehicleAgentStatusRegistered,
 		},
 		{
 			name:            "online inside online window",
 			lastHeartbeatAt: now.Add(-OnlineWindow),
-			want:            AgentStatusOnline,
+			want:            VehicleAgentStatusOnline,
 		},
 		{
 			name:            "stale after online window",
 			lastHeartbeatAt: now.Add(-(OnlineWindow + time.Second)),
-			want:            AgentStatusStale,
+			want:            VehicleAgentStatusStale,
 		},
 		{
 			name:            "offline after stale window",
 			lastHeartbeatAt: now.Add(-(StaleWindow + time.Second)),
-			want:            AgentStatusOffline,
+			want:            VehicleAgentStatusOffline,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := StatusFromHeartbeat(tt.lastHeartbeatAt, now)
+			got := VehicleAgentStatusFromHeartbeat(tt.lastHeartbeatAt, now)
 			if got != tt.want {
 				t.Fatalf("expected %q, got %q", tt.want, got)
 			}

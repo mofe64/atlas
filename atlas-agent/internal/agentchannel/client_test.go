@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/sunnyside/atlas/atlas-agent/internal/agentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
+	pb "github.com/sunnyside/atlas/atlas-agent/internal/vehicleagentchannelpb/atlas"
 )
 
 func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
@@ -22,8 +22,8 @@ func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
 	}
 
 	msg := <-outbound.telemetry
-	if msg.GetAgentId() != "new" {
-		t.Fatalf("expected latest telemetry message, got %q", msg.GetAgentId())
+	if msg.GetVehicleAgentId() != "new" {
+		t.Fatalf("expected latest telemetry message, got %q", msg.GetVehicleAgentId())
 	}
 
 	if len(outbound.telemetry) != 0 {
@@ -53,8 +53,8 @@ func TestTelemetryBackpressureDoesNotBlockCriticalMessages(t *testing.T) {
 		t.Fatal("expected outbound message")
 	}
 
-	if msg.GetAgentId() != "critical" {
-		t.Fatalf("expected critical message first, got %q", msg.GetAgentId())
+	if msg.GetVehicleAgentId() != "critical" {
+		t.Fatalf("expected critical message first, got %q", msg.GetVehicleAgentId())
 	}
 }
 
@@ -104,7 +104,7 @@ func TestHandleMissionUploadCallsGatewayAndReportsUploaded(t *testing.T) {
 
 	speed := 6.5
 	loiterTime := 12.0
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId:      "mex-000001",
 		MissionId:        "msn-000001",
 		DroneId:          "drone-001",
@@ -168,7 +168,7 @@ func TestHandleMissionUploadReportsGatewayFailure(t *testing.T) {
 	outbound := newOutboundQueues()
 	gateway := &fakeGateway{uploadErr: errors.New("upload rejected")}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId: "mex-000001",
 		MissionId:   "msn-000001",
 		DroneId:     "drone-001",
@@ -197,7 +197,7 @@ func TestHandleMissionStartCallsGatewayAndReportsActive(t *testing.T) {
 	outbound := newOutboundQueues()
 	gateway := &fakeGateway{}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId: "mex-000001",
 		MissionId:   "msn-000001",
 		DroneId:     "drone-001",
@@ -233,7 +233,7 @@ func TestHandleMissionRTLCallsGatewayAndReportsRTLRequested(t *testing.T) {
 	outbound := newOutboundQueues()
 	gateway := &fakeGateway{}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId: "mex-000001",
 		MissionId:   "msn-000001",
 		DroneId:     "drone-001",
@@ -261,7 +261,7 @@ func TestHandleMissionStartStopsWhenArmFails(t *testing.T) {
 	outbound := newOutboundQueues()
 	gateway := &fakeGateway{armErr: errors.New("arm rejected")}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId: "mex-000001",
 		MissionId:   "msn-000001",
 		DroneId:     "drone-001",
@@ -290,7 +290,7 @@ func TestHandleMissionStartStopsWhenTakeoffFails(t *testing.T) {
 	outbound := newOutboundQueues()
 	gateway := &fakeGateway{takeoffErr: errors.New("takeoff rejected")}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId: "mex-000001",
 		MissionId:   "msn-000001",
 		DroneId:     "drone-001",
@@ -323,7 +323,7 @@ func TestHandleMissionStartReportsProgressCompletionAndHold(t *testing.T) {
 	close(progress)
 	gateway := &fakeGateway{progress: progress}
 
-	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{AgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
+	outcome, err := handleMissionExecution(context.Background(), nil, outbound, Config{VehicleAgentID: "agent-001"}, gateway, &pb.MissionExecutionEnvelope{
 		ExecutionId:      "mex-000001",
 		MissionId:        "msn-000001",
 		DroneId:          "drone-001",
@@ -410,8 +410,8 @@ func assertNextAgentID(t *testing.T, outbound outboundQueues, want string) {
 		t.Fatalf("expected message %q", want)
 	}
 
-	if msg.GetAgentId() != want {
-		t.Fatalf("expected %q, got %q", want, msg.GetAgentId())
+	if msg.GetVehicleAgentId() != want {
+		t.Fatalf("expected %q, got %q", want, msg.GetVehicleAgentId())
 	}
 }
 
@@ -434,31 +434,31 @@ func nextMissionStatus(t *testing.T, outbound outboundQueues) *pb.MissionExecuti
 	return status
 }
 
-func testCommandStatusMessage(agentID string) *pb.AgentToBackend {
-	return &pb.AgentToBackend{
-		AgentId: agentID,
-		Payload: &pb.AgentToBackend_CommandStatus{
+func testCommandStatusMessage(agentID string) *pb.VehicleAgentToBackend {
+	return &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_CommandStatus{
 			CommandStatus: &pb.CommandStatus{
 				CommandId: "cmd-000001",
-				State:     commandStateAgentReceived,
+				State:     commandStateVehicleAgentReceived,
 			},
 		},
 	}
 }
 
-func testHeartbeatMessage(agentID string) *pb.AgentToBackend {
-	return &pb.AgentToBackend{
-		AgentId: agentID,
-		Payload: &pb.AgentToBackend_Heartbeat{
-			Heartbeat: &pb.Heartbeat{AgentVersion: "test"},
+func testHeartbeatMessage(agentID string) *pb.VehicleAgentToBackend {
+	return &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_Heartbeat{
+			Heartbeat: &pb.Heartbeat{VehicleAgentVersion: "test"},
 		},
 	}
 }
 
-func testTelemetryMessage(agentID string) *pb.AgentToBackend {
-	return &pb.AgentToBackend{
-		AgentId: agentID,
-		Payload: &pb.AgentToBackend_Telemetry{
+func testTelemetryMessage(agentID string) *pb.VehicleAgentToBackend {
+	return &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_Telemetry{
 			Telemetry: &pb.Telemetry{Source: "px4"},
 		},
 	}

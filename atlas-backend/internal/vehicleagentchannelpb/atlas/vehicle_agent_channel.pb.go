@@ -2,9 +2,9 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v7.35.0
-// source: atlas/agent_channel.proto
+// source: atlas/vehicle_agent_channel.proto
 
-package agentchannelpb
+package vehicleagentchannelpb
 
 import (
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
@@ -21,36 +21,36 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type AgentToBackend struct {
-	state   protoimpl.MessageState `protogen:"open.v1"`
-	AgentId string                 `protobuf:"bytes,1,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
+type VehicleAgentToBackend struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	VehicleAgentId string                 `protobuf:"bytes,1,opt,name=vehicle_agent_id,json=vehicleAgentId,proto3" json:"vehicle_agent_id,omitempty"`
 	// Types that are valid to be assigned to Payload:
 	//
-	//	*AgentToBackend_Hello
-	//	*AgentToBackend_CommandStatus
-	//	*AgentToBackend_Heartbeat
-	//	*AgentToBackend_Telemetry
-	//	*AgentToBackend_MissionExecutionStatus
-	Payload       isAgentToBackend_Payload `protobuf_oneof:"payload"`
+	//	*VehicleAgentToBackend_Hello
+	//	*VehicleAgentToBackend_CommandStatus
+	//	*VehicleAgentToBackend_Heartbeat
+	//	*VehicleAgentToBackend_Telemetry
+	//	*VehicleAgentToBackend_MissionExecutionStatus
+	Payload       isVehicleAgentToBackend_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *AgentToBackend) Reset() {
-	*x = AgentToBackend{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[0]
+func (x *VehicleAgentToBackend) Reset() {
+	*x = VehicleAgentToBackend{}
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AgentToBackend) String() string {
+func (x *VehicleAgentToBackend) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AgentToBackend) ProtoMessage() {}
+func (*VehicleAgentToBackend) ProtoMessage() {}
 
-func (x *AgentToBackend) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[0]
+func (x *VehicleAgentToBackend) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -61,131 +61,131 @@ func (x *AgentToBackend) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentToBackend.ProtoReflect.Descriptor instead.
-func (*AgentToBackend) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{0}
+// Deprecated: Use VehicleAgentToBackend.ProtoReflect.Descriptor instead.
+func (*VehicleAgentToBackend) Descriptor() ([]byte, []int) {
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{0}
 }
 
-func (x *AgentToBackend) GetAgentId() string {
+func (x *VehicleAgentToBackend) GetVehicleAgentId() string {
 	if x != nil {
-		return x.AgentId
+		return x.VehicleAgentId
 	}
 	return ""
 }
 
-func (x *AgentToBackend) GetPayload() isAgentToBackend_Payload {
+func (x *VehicleAgentToBackend) GetPayload() isVehicleAgentToBackend_Payload {
 	if x != nil {
 		return x.Payload
 	}
 	return nil
 }
 
-func (x *AgentToBackend) GetHello() *AgentHello {
+func (x *VehicleAgentToBackend) GetHello() *VehicleAgentHello {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentToBackend_Hello); ok {
+		if x, ok := x.Payload.(*VehicleAgentToBackend_Hello); ok {
 			return x.Hello
 		}
 	}
 	return nil
 }
 
-func (x *AgentToBackend) GetCommandStatus() *CommandStatus {
+func (x *VehicleAgentToBackend) GetCommandStatus() *CommandStatus {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentToBackend_CommandStatus); ok {
+		if x, ok := x.Payload.(*VehicleAgentToBackend_CommandStatus); ok {
 			return x.CommandStatus
 		}
 	}
 	return nil
 }
 
-func (x *AgentToBackend) GetHeartbeat() *Heartbeat {
+func (x *VehicleAgentToBackend) GetHeartbeat() *Heartbeat {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentToBackend_Heartbeat); ok {
+		if x, ok := x.Payload.(*VehicleAgentToBackend_Heartbeat); ok {
 			return x.Heartbeat
 		}
 	}
 	return nil
 }
 
-func (x *AgentToBackend) GetTelemetry() *Telemetry {
+func (x *VehicleAgentToBackend) GetTelemetry() *Telemetry {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentToBackend_Telemetry); ok {
+		if x, ok := x.Payload.(*VehicleAgentToBackend_Telemetry); ok {
 			return x.Telemetry
 		}
 	}
 	return nil
 }
 
-func (x *AgentToBackend) GetMissionExecutionStatus() *MissionExecutionStatus {
+func (x *VehicleAgentToBackend) GetMissionExecutionStatus() *MissionExecutionStatus {
 	if x != nil {
-		if x, ok := x.Payload.(*AgentToBackend_MissionExecutionStatus); ok {
+		if x, ok := x.Payload.(*VehicleAgentToBackend_MissionExecutionStatus); ok {
 			return x.MissionExecutionStatus
 		}
 	}
 	return nil
 }
 
-type isAgentToBackend_Payload interface {
-	isAgentToBackend_Payload()
+type isVehicleAgentToBackend_Payload interface {
+	isVehicleAgentToBackend_Payload()
 }
 
-type AgentToBackend_Hello struct {
-	Hello *AgentHello `protobuf:"bytes,2,opt,name=hello,proto3,oneof"`
+type VehicleAgentToBackend_Hello struct {
+	Hello *VehicleAgentHello `protobuf:"bytes,2,opt,name=hello,proto3,oneof"`
 }
 
-type AgentToBackend_CommandStatus struct {
+type VehicleAgentToBackend_CommandStatus struct {
 	CommandStatus *CommandStatus `protobuf:"bytes,3,opt,name=command_status,json=commandStatus,proto3,oneof"`
 }
 
-type AgentToBackend_Heartbeat struct {
+type VehicleAgentToBackend_Heartbeat struct {
 	Heartbeat *Heartbeat `protobuf:"bytes,4,opt,name=heartbeat,proto3,oneof"`
 }
 
-type AgentToBackend_Telemetry struct {
+type VehicleAgentToBackend_Telemetry struct {
 	Telemetry *Telemetry `protobuf:"bytes,5,opt,name=telemetry,proto3,oneof"`
 }
 
-type AgentToBackend_MissionExecutionStatus struct {
+type VehicleAgentToBackend_MissionExecutionStatus struct {
 	MissionExecutionStatus *MissionExecutionStatus `protobuf:"bytes,6,opt,name=mission_execution_status,json=missionExecutionStatus,proto3,oneof"`
 }
 
-func (*AgentToBackend_Hello) isAgentToBackend_Payload() {}
+func (*VehicleAgentToBackend_Hello) isVehicleAgentToBackend_Payload() {}
 
-func (*AgentToBackend_CommandStatus) isAgentToBackend_Payload() {}
+func (*VehicleAgentToBackend_CommandStatus) isVehicleAgentToBackend_Payload() {}
 
-func (*AgentToBackend_Heartbeat) isAgentToBackend_Payload() {}
+func (*VehicleAgentToBackend_Heartbeat) isVehicleAgentToBackend_Payload() {}
 
-func (*AgentToBackend_Telemetry) isAgentToBackend_Payload() {}
+func (*VehicleAgentToBackend_Telemetry) isVehicleAgentToBackend_Payload() {}
 
-func (*AgentToBackend_MissionExecutionStatus) isAgentToBackend_Payload() {}
+func (*VehicleAgentToBackend_MissionExecutionStatus) isVehicleAgentToBackend_Payload() {}
 
-type BackendToAgent struct {
+type BackendToVehicleAgent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
 	//
-	//	*BackendToAgent_Command
-	//	*BackendToAgent_Ping
-	//	*BackendToAgent_MissionExecution
-	Payload       isBackendToAgent_Payload `protobuf_oneof:"payload"`
+	//	*BackendToVehicleAgent_Command
+	//	*BackendToVehicleAgent_Ping
+	//	*BackendToVehicleAgent_MissionExecution
+	Payload       isBackendToVehicleAgent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *BackendToAgent) Reset() {
-	*x = BackendToAgent{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[1]
+func (x *BackendToVehicleAgent) Reset() {
+	*x = BackendToVehicleAgent{}
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *BackendToAgent) String() string {
+func (x *BackendToVehicleAgent) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*BackendToAgent) ProtoMessage() {}
+func (*BackendToVehicleAgent) ProtoMessage() {}
 
-func (x *BackendToAgent) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[1]
+func (x *BackendToVehicleAgent) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -196,91 +196,91 @@ func (x *BackendToAgent) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use BackendToAgent.ProtoReflect.Descriptor instead.
-func (*BackendToAgent) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{1}
+// Deprecated: Use BackendToVehicleAgent.ProtoReflect.Descriptor instead.
+func (*BackendToVehicleAgent) Descriptor() ([]byte, []int) {
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *BackendToAgent) GetPayload() isBackendToAgent_Payload {
+func (x *BackendToVehicleAgent) GetPayload() isBackendToVehicleAgent_Payload {
 	if x != nil {
 		return x.Payload
 	}
 	return nil
 }
 
-func (x *BackendToAgent) GetCommand() *CommandEnvelope {
+func (x *BackendToVehicleAgent) GetCommand() *CommandEnvelope {
 	if x != nil {
-		if x, ok := x.Payload.(*BackendToAgent_Command); ok {
+		if x, ok := x.Payload.(*BackendToVehicleAgent_Command); ok {
 			return x.Command
 		}
 	}
 	return nil
 }
 
-func (x *BackendToAgent) GetPing() *Ping {
+func (x *BackendToVehicleAgent) GetPing() *Ping {
 	if x != nil {
-		if x, ok := x.Payload.(*BackendToAgent_Ping); ok {
+		if x, ok := x.Payload.(*BackendToVehicleAgent_Ping); ok {
 			return x.Ping
 		}
 	}
 	return nil
 }
 
-func (x *BackendToAgent) GetMissionExecution() *MissionExecutionEnvelope {
+func (x *BackendToVehicleAgent) GetMissionExecution() *MissionExecutionEnvelope {
 	if x != nil {
-		if x, ok := x.Payload.(*BackendToAgent_MissionExecution); ok {
+		if x, ok := x.Payload.(*BackendToVehicleAgent_MissionExecution); ok {
 			return x.MissionExecution
 		}
 	}
 	return nil
 }
 
-type isBackendToAgent_Payload interface {
-	isBackendToAgent_Payload()
+type isBackendToVehicleAgent_Payload interface {
+	isBackendToVehicleAgent_Payload()
 }
 
-type BackendToAgent_Command struct {
+type BackendToVehicleAgent_Command struct {
 	Command *CommandEnvelope `protobuf:"bytes,1,opt,name=command,proto3,oneof"`
 }
 
-type BackendToAgent_Ping struct {
+type BackendToVehicleAgent_Ping struct {
 	Ping *Ping `protobuf:"bytes,2,opt,name=ping,proto3,oneof"`
 }
 
-type BackendToAgent_MissionExecution struct {
+type BackendToVehicleAgent_MissionExecution struct {
 	MissionExecution *MissionExecutionEnvelope `protobuf:"bytes,3,opt,name=mission_execution,json=missionExecution,proto3,oneof"`
 }
 
-func (*BackendToAgent_Command) isBackendToAgent_Payload() {}
+func (*BackendToVehicleAgent_Command) isBackendToVehicleAgent_Payload() {}
 
-func (*BackendToAgent_Ping) isBackendToAgent_Payload() {}
+func (*BackendToVehicleAgent_Ping) isBackendToVehicleAgent_Payload() {}
 
-func (*BackendToAgent_MissionExecution) isBackendToAgent_Payload() {}
+func (*BackendToVehicleAgent_MissionExecution) isBackendToVehicleAgent_Payload() {}
 
-type AgentHello struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DroneId       string                 `protobuf:"bytes,1,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
-	AgentVersion  string                 `protobuf:"bytes,2,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
-	DroneName     string                 `protobuf:"bytes,3,opt,name=drone_name,json=droneName,proto3" json:"drone_name,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+type VehicleAgentHello struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	DroneId             string                 `protobuf:"bytes,1,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
+	VehicleAgentVersion string                 `protobuf:"bytes,2,opt,name=vehicle_agent_version,json=vehicleAgentVersion,proto3" json:"vehicle_agent_version,omitempty"`
+	DroneName           string                 `protobuf:"bytes,3,opt,name=drone_name,json=droneName,proto3" json:"drone_name,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
-func (x *AgentHello) Reset() {
-	*x = AgentHello{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[2]
+func (x *VehicleAgentHello) Reset() {
+	*x = VehicleAgentHello{}
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *AgentHello) String() string {
+func (x *VehicleAgentHello) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*AgentHello) ProtoMessage() {}
+func (*VehicleAgentHello) ProtoMessage() {}
 
-func (x *AgentHello) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[2]
+func (x *VehicleAgentHello) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -291,26 +291,26 @@ func (x *AgentHello) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use AgentHello.ProtoReflect.Descriptor instead.
-func (*AgentHello) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{2}
+// Deprecated: Use VehicleAgentHello.ProtoReflect.Descriptor instead.
+func (*VehicleAgentHello) Descriptor() ([]byte, []int) {
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *AgentHello) GetDroneId() string {
+func (x *VehicleAgentHello) GetDroneId() string {
 	if x != nil {
 		return x.DroneId
 	}
 	return ""
 }
 
-func (x *AgentHello) GetAgentVersion() string {
+func (x *VehicleAgentHello) GetVehicleAgentVersion() string {
 	if x != nil {
-		return x.AgentVersion
+		return x.VehicleAgentVersion
 	}
 	return ""
 }
 
-func (x *AgentHello) GetDroneName() string {
+func (x *VehicleAgentHello) GetDroneName() string {
 	if x != nil {
 		return x.DroneName
 	}
@@ -318,15 +318,15 @@ func (x *AgentHello) GetDroneName() string {
 }
 
 type Heartbeat struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AgentVersion  string                 `protobuf:"bytes,1,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	VehicleAgentVersion string                 `protobuf:"bytes,1,opt,name=vehicle_agent_version,json=vehicleAgentVersion,proto3" json:"vehicle_agent_version,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Heartbeat) Reset() {
 	*x = Heartbeat{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[3]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -338,7 +338,7 @@ func (x *Heartbeat) String() string {
 func (*Heartbeat) ProtoMessage() {}
 
 func (x *Heartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[3]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,12 +351,12 @@ func (x *Heartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Heartbeat.ProtoReflect.Descriptor instead.
 func (*Heartbeat) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{3}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *Heartbeat) GetAgentVersion() string {
+func (x *Heartbeat) GetVehicleAgentVersion() string {
 	if x != nil {
-		return x.AgentVersion
+		return x.VehicleAgentVersion
 	}
 	return ""
 }
@@ -383,7 +383,7 @@ type Telemetry struct {
 
 func (x *Telemetry) Reset() {
 	*x = Telemetry{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[4]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -395,7 +395,7 @@ func (x *Telemetry) String() string {
 func (*Telemetry) ProtoMessage() {}
 
 func (x *Telemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[4]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -408,7 +408,7 @@ func (x *Telemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Telemetry.ProtoReflect.Descriptor instead.
 func (*Telemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{4}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Telemetry) GetObservedAt() string {
@@ -521,7 +521,7 @@ type CommandEnvelope struct {
 
 func (x *CommandEnvelope) Reset() {
 	*x = CommandEnvelope{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[5]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -533,7 +533,7 @@ func (x *CommandEnvelope) String() string {
 func (*CommandEnvelope) ProtoMessage() {}
 
 func (x *CommandEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[5]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -546,7 +546,7 @@ func (x *CommandEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandEnvelope.ProtoReflect.Descriptor instead.
 func (*CommandEnvelope) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{5}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CommandEnvelope) GetCommandId() string {
@@ -588,7 +588,7 @@ type CommandStatus struct {
 
 func (x *CommandStatus) Reset() {
 	*x = CommandStatus{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[6]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -600,7 +600,7 @@ func (x *CommandStatus) String() string {
 func (*CommandStatus) ProtoMessage() {}
 
 func (x *CommandStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[6]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -613,7 +613,7 @@ func (x *CommandStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CommandStatus.ProtoReflect.Descriptor instead.
 func (*CommandStatus) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{6}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CommandStatus) GetCommandId() string {
@@ -652,7 +652,7 @@ type MissionExecutionEnvelope struct {
 
 func (x *MissionExecutionEnvelope) Reset() {
 	*x = MissionExecutionEnvelope{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[7]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -664,7 +664,7 @@ func (x *MissionExecutionEnvelope) String() string {
 func (*MissionExecutionEnvelope) ProtoMessage() {}
 
 func (x *MissionExecutionEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[7]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -677,7 +677,7 @@ func (x *MissionExecutionEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionExecutionEnvelope.ProtoReflect.Descriptor instead.
 func (*MissionExecutionEnvelope) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{7}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *MissionExecutionEnvelope) GetExecutionId() string {
@@ -743,7 +743,7 @@ type MissionWaypoint struct {
 
 func (x *MissionWaypoint) Reset() {
 	*x = MissionWaypoint{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[8]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -755,7 +755,7 @@ func (x *MissionWaypoint) String() string {
 func (*MissionWaypoint) ProtoMessage() {}
 
 func (x *MissionWaypoint) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[8]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -768,7 +768,7 @@ func (x *MissionWaypoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionWaypoint.ProtoReflect.Descriptor instead.
 func (*MissionWaypoint) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{8}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MissionWaypoint) GetSequence() int32 {
@@ -826,7 +826,7 @@ type MissionExecutionStatus struct {
 
 func (x *MissionExecutionStatus) Reset() {
 	*x = MissionExecutionStatus{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[9]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -838,7 +838,7 @@ func (x *MissionExecutionStatus) String() string {
 func (*MissionExecutionStatus) ProtoMessage() {}
 
 func (x *MissionExecutionStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[9]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -851,7 +851,7 @@ func (x *MissionExecutionStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionExecutionStatus.ProtoReflect.Descriptor instead.
 func (*MissionExecutionStatus) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{9}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MissionExecutionStatus) GetExecutionId() string {
@@ -898,7 +898,7 @@ type Ping struct {
 
 func (x *Ping) Reset() {
 	*x = Ping{}
-	mi := &file_atlas_agent_channel_proto_msgTypes[10]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -910,7 +910,7 @@ func (x *Ping) String() string {
 func (*Ping) ProtoMessage() {}
 
 func (x *Ping) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_agent_channel_proto_msgTypes[10]
+	mi := &file_atlas_vehicle_agent_channel_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -923,7 +923,7 @@ func (x *Ping) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ping.ProtoReflect.Descriptor instead.
 func (*Ping) Descriptor() ([]byte, []int) {
-	return file_atlas_agent_channel_proto_rawDescGZIP(), []int{10}
+	return file_atlas_vehicle_agent_channel_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Ping) GetNonce() string {
@@ -933,32 +933,31 @@ func (x *Ping) GetNonce() string {
 	return ""
 }
 
-var File_atlas_agent_channel_proto protoreflect.FileDescriptor
+var File_atlas_vehicle_agent_channel_proto protoreflect.FileDescriptor
 
-const file_atlas_agent_channel_proto_rawDesc = "" +
+const file_atlas_vehicle_agent_channel_proto_rawDesc = "" +
 	"\n" +
-	"\x19atlas/agent_channel.proto\x12\x15atlas.agentchannel.v1\"\xaf\x03\n" +
-	"\x0eAgentToBackend\x12\x19\n" +
-	"\bagent_id\x18\x01 \x01(\tR\aagentId\x129\n" +
-	"\x05hello\x18\x02 \x01(\v2!.atlas.agentchannel.v1.AgentHelloH\x00R\x05hello\x12M\n" +
-	"\x0ecommand_status\x18\x03 \x01(\v2$.atlas.agentchannel.v1.CommandStatusH\x00R\rcommandStatus\x12@\n" +
-	"\theartbeat\x18\x04 \x01(\v2 .atlas.agentchannel.v1.HeartbeatH\x00R\theartbeat\x12@\n" +
-	"\ttelemetry\x18\x05 \x01(\v2 .atlas.agentchannel.v1.TelemetryH\x00R\ttelemetry\x12i\n" +
-	"\x18mission_execution_status\x18\x06 \x01(\v2-.atlas.agentchannel.v1.MissionExecutionStatusH\x00R\x16missionExecutionStatusB\t\n" +
-	"\apayload\"\xf2\x01\n" +
-	"\x0eBackendToAgent\x12B\n" +
-	"\acommand\x18\x01 \x01(\v2&.atlas.agentchannel.v1.CommandEnvelopeH\x00R\acommand\x121\n" +
-	"\x04ping\x18\x02 \x01(\v2\x1b.atlas.agentchannel.v1.PingH\x00R\x04ping\x12^\n" +
-	"\x11mission_execution\x18\x03 \x01(\v2/.atlas.agentchannel.v1.MissionExecutionEnvelopeH\x00R\x10missionExecutionB\t\n" +
-	"\apayload\"k\n" +
+	"!atlas/vehicle_agent_channel.proto\x12\x1catlas.vehicleagentchannel.v1\"\xef\x03\n" +
+	"\x15VehicleAgentToBackend\x12(\n" +
+	"\x10vehicle_agent_id\x18\x01 \x01(\tR\x0evehicleAgentId\x12G\n" +
+	"\x05hello\x18\x02 \x01(\v2/.atlas.vehicleagentchannel.v1.VehicleAgentHelloH\x00R\x05hello\x12T\n" +
+	"\x0ecommand_status\x18\x03 \x01(\v2+.atlas.vehicleagentchannel.v1.CommandStatusH\x00R\rcommandStatus\x12G\n" +
+	"\theartbeat\x18\x04 \x01(\v2'.atlas.vehicleagentchannel.v1.HeartbeatH\x00R\theartbeat\x12G\n" +
+	"\ttelemetry\x18\x05 \x01(\v2'.atlas.vehicleagentchannel.v1.TelemetryH\x00R\ttelemetry\x12p\n" +
+	"\x18mission_execution_status\x18\x06 \x01(\v24.atlas.vehicleagentchannel.v1.MissionExecutionStatusH\x00R\x16missionExecutionStatusB\t\n" +
+	"\apayload\"\x8e\x02\n" +
+	"\x15BackendToVehicleAgent\x12I\n" +
+	"\acommand\x18\x01 \x01(\v2-.atlas.vehicleagentchannel.v1.CommandEnvelopeH\x00R\acommand\x128\n" +
+	"\x04ping\x18\x02 \x01(\v2\".atlas.vehicleagentchannel.v1.PingH\x00R\x04ping\x12e\n" +
+	"\x11mission_execution\x18\x03 \x01(\v26.atlas.vehicleagentchannel.v1.MissionExecutionEnvelopeH\x00R\x10missionExecutionB\t\n" +
+	"\apayload\"\x81\x01\n" +
+	"\x11VehicleAgentHello\x12\x19\n" +
+	"\bdrone_id\x18\x01 \x01(\tR\adroneId\x122\n" +
+	"\x15vehicle_agent_version\x18\x02 \x01(\tR\x13vehicleAgentVersion\x12\x1d\n" +
 	"\n" +
-	"AgentHello\x12\x19\n" +
-	"\bdrone_id\x18\x01 \x01(\tR\adroneId\x12#\n" +
-	"\ragent_version\x18\x02 \x01(\tR\fagentVersion\x12\x1d\n" +
-	"\n" +
-	"drone_name\x18\x03 \x01(\tR\tdroneName\"0\n" +
-	"\tHeartbeat\x12#\n" +
-	"\ragent_version\x18\x01 \x01(\tR\fagentVersion\"\xe4\x03\n" +
+	"drone_name\x18\x03 \x01(\tR\tdroneName\"?\n" +
+	"\tHeartbeat\x122\n" +
+	"\x15vehicle_agent_version\x18\x01 \x01(\tR\x13vehicleAgentVersion\"\xe4\x03\n" +
 	"\tTelemetry\x12\x1f\n" +
 	"\vobserved_at\x18\x01 \x01(\tR\n" +
 	"observedAt\x12'\n" +
@@ -988,15 +987,15 @@ const file_atlas_agent_channel_proto_rawDesc = "" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12\x14\n" +
 	"\x05state\x18\x02 \x01(\tR\x05state\x12%\n" +
-	"\x0eresult_message\x18\x03 \x01(\tR\rresultMessage\"\xa5\x02\n" +
+	"\x0eresult_message\x18\x03 \x01(\tR\rresultMessage\"\xac\x02\n" +
 	"\x18MissionExecutionEnvelope\x12!\n" +
 	"\fexecution_id\x18\x01 \x01(\tR\vexecutionId\x12\x1d\n" +
 	"\n" +
 	"mission_id\x18\x02 \x01(\tR\tmissionId\x12\x19\n" +
 	"\bdrone_id\x18\x03 \x01(\tR\adroneId\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12!\n" +
-	"\frequested_by\x18\x05 \x01(\tR\vrequestedBy\x12D\n" +
-	"\twaypoints\x18\x06 \x03(\v2&.atlas.agentchannel.v1.MissionWaypointR\twaypoints\x12+\n" +
+	"\frequested_by\x18\x05 \x01(\tR\vrequestedBy\x12K\n" +
+	"\twaypoints\x18\x06 \x03(\v2-.atlas.vehicleagentchannel.v1.MissionWaypointR\twaypoints\x12+\n" +
 	"\x11completion_action\x18\a \x01(\tR\x10completionAction\"\x82\x02\n" +
 	"\x0fMissionWaypoint\x12\x1a\n" +
 	"\bsequence\x18\x01 \x01(\x05R\bsequence\x12\x1a\n" +
@@ -1015,48 +1014,48 @@ const file_atlas_agent_channel_proto_rawDesc = "" +
 	"\x14current_mission_item\x18\x04 \x01(\x05R\x12currentMissionItem\x12.\n" +
 	"\x13total_mission_items\x18\x05 \x01(\x05R\x11totalMissionItems\"\x1c\n" +
 	"\x04Ping\x12\x14\n" +
-	"\x05nonce\x18\x01 \x01(\tR\x05nonce2r\n" +
-	"\x13AgentChannelService\x12[\n" +
-	"\aConnect\x12%.atlas.agentchannel.v1.AgentToBackend\x1a%.atlas.agentchannel.v1.BackendToAgent(\x010\x01BFZDgithub.com/sunnyside/atlas/atlas-proto/agentchannelpb;agentchannelpbb\x06proto3"
+	"\x05nonce\x18\x01 \x01(\tR\x05nonce2\x95\x01\n" +
+	"\x1aVehicleAgentChannelService\x12w\n" +
+	"\aConnect\x123.atlas.vehicleagentchannel.v1.VehicleAgentToBackend\x1a3.atlas.vehicleagentchannel.v1.BackendToVehicleAgent(\x010\x01BTZRgithub.com/sunnyside/atlas/atlas-proto/vehicleagentchannelpb;vehicleagentchannelpbb\x06proto3"
 
 var (
-	file_atlas_agent_channel_proto_rawDescOnce sync.Once
-	file_atlas_agent_channel_proto_rawDescData []byte
+	file_atlas_vehicle_agent_channel_proto_rawDescOnce sync.Once
+	file_atlas_vehicle_agent_channel_proto_rawDescData []byte
 )
 
-func file_atlas_agent_channel_proto_rawDescGZIP() []byte {
-	file_atlas_agent_channel_proto_rawDescOnce.Do(func() {
-		file_atlas_agent_channel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_atlas_agent_channel_proto_rawDesc), len(file_atlas_agent_channel_proto_rawDesc)))
+func file_atlas_vehicle_agent_channel_proto_rawDescGZIP() []byte {
+	file_atlas_vehicle_agent_channel_proto_rawDescOnce.Do(func() {
+		file_atlas_vehicle_agent_channel_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_atlas_vehicle_agent_channel_proto_rawDesc), len(file_atlas_vehicle_agent_channel_proto_rawDesc)))
 	})
-	return file_atlas_agent_channel_proto_rawDescData
+	return file_atlas_vehicle_agent_channel_proto_rawDescData
 }
 
-var file_atlas_agent_channel_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
-var file_atlas_agent_channel_proto_goTypes = []any{
-	(*AgentToBackend)(nil),           // 0: atlas.agentchannel.v1.AgentToBackend
-	(*BackendToAgent)(nil),           // 1: atlas.agentchannel.v1.BackendToAgent
-	(*AgentHello)(nil),               // 2: atlas.agentchannel.v1.AgentHello
-	(*Heartbeat)(nil),                // 3: atlas.agentchannel.v1.Heartbeat
-	(*Telemetry)(nil),                // 4: atlas.agentchannel.v1.Telemetry
-	(*CommandEnvelope)(nil),          // 5: atlas.agentchannel.v1.CommandEnvelope
-	(*CommandStatus)(nil),            // 6: atlas.agentchannel.v1.CommandStatus
-	(*MissionExecutionEnvelope)(nil), // 7: atlas.agentchannel.v1.MissionExecutionEnvelope
-	(*MissionWaypoint)(nil),          // 8: atlas.agentchannel.v1.MissionWaypoint
-	(*MissionExecutionStatus)(nil),   // 9: atlas.agentchannel.v1.MissionExecutionStatus
-	(*Ping)(nil),                     // 10: atlas.agentchannel.v1.Ping
+var file_atlas_vehicle_agent_channel_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_atlas_vehicle_agent_channel_proto_goTypes = []any{
+	(*VehicleAgentToBackend)(nil),    // 0: atlas.vehicleagentchannel.v1.VehicleAgentToBackend
+	(*BackendToVehicleAgent)(nil),    // 1: atlas.vehicleagentchannel.v1.BackendToVehicleAgent
+	(*VehicleAgentHello)(nil),        // 2: atlas.vehicleagentchannel.v1.VehicleAgentHello
+	(*Heartbeat)(nil),                // 3: atlas.vehicleagentchannel.v1.Heartbeat
+	(*Telemetry)(nil),                // 4: atlas.vehicleagentchannel.v1.Telemetry
+	(*CommandEnvelope)(nil),          // 5: atlas.vehicleagentchannel.v1.CommandEnvelope
+	(*CommandStatus)(nil),            // 6: atlas.vehicleagentchannel.v1.CommandStatus
+	(*MissionExecutionEnvelope)(nil), // 7: atlas.vehicleagentchannel.v1.MissionExecutionEnvelope
+	(*MissionWaypoint)(nil),          // 8: atlas.vehicleagentchannel.v1.MissionWaypoint
+	(*MissionExecutionStatus)(nil),   // 9: atlas.vehicleagentchannel.v1.MissionExecutionStatus
+	(*Ping)(nil),                     // 10: atlas.vehicleagentchannel.v1.Ping
 }
-var file_atlas_agent_channel_proto_depIdxs = []int32{
-	2,  // 0: atlas.agentchannel.v1.AgentToBackend.hello:type_name -> atlas.agentchannel.v1.AgentHello
-	6,  // 1: atlas.agentchannel.v1.AgentToBackend.command_status:type_name -> atlas.agentchannel.v1.CommandStatus
-	3,  // 2: atlas.agentchannel.v1.AgentToBackend.heartbeat:type_name -> atlas.agentchannel.v1.Heartbeat
-	4,  // 3: atlas.agentchannel.v1.AgentToBackend.telemetry:type_name -> atlas.agentchannel.v1.Telemetry
-	9,  // 4: atlas.agentchannel.v1.AgentToBackend.mission_execution_status:type_name -> atlas.agentchannel.v1.MissionExecutionStatus
-	5,  // 5: atlas.agentchannel.v1.BackendToAgent.command:type_name -> atlas.agentchannel.v1.CommandEnvelope
-	10, // 6: atlas.agentchannel.v1.BackendToAgent.ping:type_name -> atlas.agentchannel.v1.Ping
-	7,  // 7: atlas.agentchannel.v1.BackendToAgent.mission_execution:type_name -> atlas.agentchannel.v1.MissionExecutionEnvelope
-	8,  // 8: atlas.agentchannel.v1.MissionExecutionEnvelope.waypoints:type_name -> atlas.agentchannel.v1.MissionWaypoint
-	0,  // 9: atlas.agentchannel.v1.AgentChannelService.Connect:input_type -> atlas.agentchannel.v1.AgentToBackend
-	1,  // 10: atlas.agentchannel.v1.AgentChannelService.Connect:output_type -> atlas.agentchannel.v1.BackendToAgent
+var file_atlas_vehicle_agent_channel_proto_depIdxs = []int32{
+	2,  // 0: atlas.vehicleagentchannel.v1.VehicleAgentToBackend.hello:type_name -> atlas.vehicleagentchannel.v1.VehicleAgentHello
+	6,  // 1: atlas.vehicleagentchannel.v1.VehicleAgentToBackend.command_status:type_name -> atlas.vehicleagentchannel.v1.CommandStatus
+	3,  // 2: atlas.vehicleagentchannel.v1.VehicleAgentToBackend.heartbeat:type_name -> atlas.vehicleagentchannel.v1.Heartbeat
+	4,  // 3: atlas.vehicleagentchannel.v1.VehicleAgentToBackend.telemetry:type_name -> atlas.vehicleagentchannel.v1.Telemetry
+	9,  // 4: atlas.vehicleagentchannel.v1.VehicleAgentToBackend.mission_execution_status:type_name -> atlas.vehicleagentchannel.v1.MissionExecutionStatus
+	5,  // 5: atlas.vehicleagentchannel.v1.BackendToVehicleAgent.command:type_name -> atlas.vehicleagentchannel.v1.CommandEnvelope
+	10, // 6: atlas.vehicleagentchannel.v1.BackendToVehicleAgent.ping:type_name -> atlas.vehicleagentchannel.v1.Ping
+	7,  // 7: atlas.vehicleagentchannel.v1.BackendToVehicleAgent.mission_execution:type_name -> atlas.vehicleagentchannel.v1.MissionExecutionEnvelope
+	8,  // 8: atlas.vehicleagentchannel.v1.MissionExecutionEnvelope.waypoints:type_name -> atlas.vehicleagentchannel.v1.MissionWaypoint
+	0,  // 9: atlas.vehicleagentchannel.v1.VehicleAgentChannelService.Connect:input_type -> atlas.vehicleagentchannel.v1.VehicleAgentToBackend
+	1,  // 10: atlas.vehicleagentchannel.v1.VehicleAgentChannelService.Connect:output_type -> atlas.vehicleagentchannel.v1.BackendToVehicleAgent
 	10, // [10:11] is the sub-list for method output_type
 	9,  // [9:10] is the sub-list for method input_type
 	9,  // [9:9] is the sub-list for extension type_name
@@ -1064,39 +1063,39 @@ var file_atlas_agent_channel_proto_depIdxs = []int32{
 	0,  // [0:9] is the sub-list for field type_name
 }
 
-func init() { file_atlas_agent_channel_proto_init() }
-func file_atlas_agent_channel_proto_init() {
-	if File_atlas_agent_channel_proto != nil {
+func init() { file_atlas_vehicle_agent_channel_proto_init() }
+func file_atlas_vehicle_agent_channel_proto_init() {
+	if File_atlas_vehicle_agent_channel_proto != nil {
 		return
 	}
-	file_atlas_agent_channel_proto_msgTypes[0].OneofWrappers = []any{
-		(*AgentToBackend_Hello)(nil),
-		(*AgentToBackend_CommandStatus)(nil),
-		(*AgentToBackend_Heartbeat)(nil),
-		(*AgentToBackend_Telemetry)(nil),
-		(*AgentToBackend_MissionExecutionStatus)(nil),
+	file_atlas_vehicle_agent_channel_proto_msgTypes[0].OneofWrappers = []any{
+		(*VehicleAgentToBackend_Hello)(nil),
+		(*VehicleAgentToBackend_CommandStatus)(nil),
+		(*VehicleAgentToBackend_Heartbeat)(nil),
+		(*VehicleAgentToBackend_Telemetry)(nil),
+		(*VehicleAgentToBackend_MissionExecutionStatus)(nil),
 	}
-	file_atlas_agent_channel_proto_msgTypes[1].OneofWrappers = []any{
-		(*BackendToAgent_Command)(nil),
-		(*BackendToAgent_Ping)(nil),
-		(*BackendToAgent_MissionExecution)(nil),
+	file_atlas_vehicle_agent_channel_proto_msgTypes[1].OneofWrappers = []any{
+		(*BackendToVehicleAgent_Command)(nil),
+		(*BackendToVehicleAgent_Ping)(nil),
+		(*BackendToVehicleAgent_MissionExecution)(nil),
 	}
-	file_atlas_agent_channel_proto_msgTypes[8].OneofWrappers = []any{}
+	file_atlas_vehicle_agent_channel_proto_msgTypes[8].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_agent_channel_proto_rawDesc), len(file_atlas_agent_channel_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_vehicle_agent_channel_proto_rawDesc), len(file_atlas_vehicle_agent_channel_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_atlas_agent_channel_proto_goTypes,
-		DependencyIndexes: file_atlas_agent_channel_proto_depIdxs,
-		MessageInfos:      file_atlas_agent_channel_proto_msgTypes,
+		GoTypes:           file_atlas_vehicle_agent_channel_proto_goTypes,
+		DependencyIndexes: file_atlas_vehicle_agent_channel_proto_depIdxs,
+		MessageInfos:      file_atlas_vehicle_agent_channel_proto_msgTypes,
 	}.Build()
-	File_atlas_agent_channel_proto = out.File
-	file_atlas_agent_channel_proto_goTypes = nil
-	file_atlas_agent_channel_proto_depIdxs = nil
+	File_atlas_vehicle_agent_channel_proto = out.File
+	file_atlas_vehicle_agent_channel_proto_goTypes = nil
+	file_atlas_vehicle_agent_channel_proto_depIdxs = nil
 }

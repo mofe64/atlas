@@ -1,56 +1,100 @@
 package domain
 
-import "testing"
+import (
+	"testing"
+	"time"
 
-func TestMissionValidationStatusUsesStableAPIValues(t *testing.T) {
-	tests := map[MissionValidationStatus]string{
-		MissionValidationStatusNotValidated: "not_validated",
-		MissionValidationStatusValidated:    "validated",
-		MissionValidationStatusRejected:     "rejected",
+	"github.com/sunnyside/atlas/atlas-backend/internal/models"
+)
+
+func TestValidateMissionUsesSafetyContextAndWaypointRules(t *testing.T) {
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	mission := models.Mission{
+		Name:             "",
+		CompletionAction: models.MissionCompletionAction("invalid"),
+		Waypoints: []models.MissionWaypoint{
+			{
+				Sequence:          1,
+				Latitude:          91,
+				Longitude:         181,
+				RelativeAltitudeM: 0,
+			},
+		},
 	}
 
-	for status, want := range tests {
-		if string(status) != want {
-			t.Fatalf("expected %q, got %q", want, status)
+	got := ValidateMission(mission, MissionValidationContext{
+		HasActiveAgent: false,
+		Telemetry: models.TelemetrySnapshot{
+			ReceivedAt:      now.Add(-(models.TelemetryFreshWindow + time.Second)),
+			BatteryPercent:  MinimumMissionBatteryPercent - 1,
+			GPSFix:          "2d",
+			HomePositionSet: false,
+		},
+		Now: now,
+	})
+
+	for _, field := range []string{
+		"agent",
+		"telemetry",
+		"homePositionSet",
+		"gpsFix",
+		"batteryPercent",
+		"name",
+		"completionAction",
+		"waypoints[0].latitude",
+		"waypoints[0].longitude",
+		"waypoints[0].relativeAltitudeM",
+	} {
+		if !hasValidationError(got, field) {
+			t.Fatalf("expected validation error for %q in %#v", field, got)
 		}
 	}
 }
 
-func TestMissionCompletionActionUsesStableAPIValues(t *testing.T) {
-	tests := map[MissionCompletionAction]string{
-		MissionCompletionActionHold:           "hold",
-		MissionCompletionActionReturnToLaunch: "return_to_launch",
-		MissionCompletionActionLand:           "land",
-	}
+func TestMissionStartPreconditionFailureRequiresOnlineAgentAndFreshTelemetry(t *testing.T) {
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	agent := models.VehicleAgent{LastHeartbeatAt: now}
+	telemetry := models.TelemetrySnapshot{ReceivedAt: now}
 
-	for action, want := range tests {
-		if string(action) != want {
-			t.Fatalf("expected %q, got %q", want, action)
-		}
+	if reason, failed := MissionStartPreconditionFailure(agent, true, telemetry, now); failed || reason != "" {
+		t.Fatalf("expected start preconditions to pass, got failed=%v reason=%q", failed, reason)
+	}
+	if reason, failed := MissionStartPreconditionFailure(models.VehicleAgent{}, false, telemetry, now); !failed || reason != "drone has no active registered agent" {
+		t.Fatalf("expected missing agent failure, got failed=%v reason=%q", failed, reason)
+	}
+	if reason, failed := MissionStartPreconditionFailure(agent, true, models.TelemetrySnapshot{}, now); !failed || reason != "fresh telemetry is required before mission start" {
+		t.Fatalf("expected stale telemetry failure, got failed=%v reason=%q", failed, reason)
 	}
 }
 
-func TestMissionExecutionStateUsesStableAPIValues(t *testing.T) {
-	tests := map[MissionExecutionState]string{
-		MissionExecutionStateUnknown:           "unknown",
-		MissionExecutionStateCreated:           "created",
-		MissionExecutionStateUploadRequested:   "upload_requested",
-		MissionExecutionStateUploading:         "uploading",
-		MissionExecutionStateUploadFailed:      "upload_failed",
-		MissionExecutionStateUploadedToVehicle: "uploaded_to_vehicle",
-		MissionExecutionStateStartRequested:    "start_requested",
-		MissionExecutionStateActive:            "active",
-		MissionExecutionStateHold:              "hold",
-		MissionExecutionStatePausedOrHold:      "paused_or_hold",
-		MissionExecutionStateRTLRequested:      "rtl_requested",
-		MissionExecutionStateCompleted:         "completed",
-		MissionExecutionStateAborted:           "aborted",
-		MissionExecutionStateFailed:            "failed",
+func TestApplyAgentReportedMissionExecutionStateStampsProgressAndCompletion(t *testing.T) {
+	now := time.Date(2026, 7, 8, 12, 0, 0, 0, time.UTC)
+	execution := models.MissionExecution{
+		State:      models.MissionExecutionStateActive,
+		LeaseUntil: now.Add(time.Minute),
 	}
 
-	for state, want := range tests {
-		if string(state) != want {
-			t.Fatalf("expected %q, got %q", want, state)
+	got := ApplyAgentReportedMissionExecutionState(execution, models.MissionExecutionStateCompleted, "done", 3, 4, now)
+
+	if got.State != models.MissionExecutionStateCompleted {
+		t.Fatalf("expected completed, got %q", got.State)
+	}
+	if !got.LeaseUntil.IsZero() {
+		t.Fatalf("expected lease to be cleared")
+	}
+	if got.CurrentMissionItem != 3 || got.TotalMissionItems != 4 || got.ProgressUpdatedAt != now {
+		t.Fatalf("expected progress fields to be stamped, got current=%d total=%d at=%v", got.CurrentMissionItem, got.TotalMissionItems, got.ProgressUpdatedAt)
+	}
+	if got.CompletedAt != now {
+		t.Fatalf("expected completed timestamp %v, got %v", now, got.CompletedAt)
+	}
+}
+
+func hasValidationError(errors []models.MissionValidationError, field string) bool {
+	for _, err := range errors {
+		if err.Field == field {
+			return true
 		}
 	}
+	return false
 }

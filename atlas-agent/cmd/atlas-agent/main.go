@@ -49,27 +49,27 @@ func main() {
 	)
 
 	go agentchannel.Run(ctx, logger, agentchannel.Config{
-		Addr:              cfg.AgentGRPCAddr,
-		AgentID:           cfg.AgentID,
-		DroneID:           cfg.DroneID,
-		DroneName:         cfg.DroneName,
-		AgentVersion:      cfg.AgentVersion,
-		HeartbeatInterval: cfg.HeartbeatInterval,
-		TelemetryInterval: cfg.TelemetryInterval,
-		CommandTimeout:    cfg.CommandTimeout,
-		RetryMin:          cfg.RegisterRetryMin,
-		RetryMax:          cfg.RegisterRetryMax,
+		Addr:                cfg.VehicleAgentGRPCAddr,
+		VehicleAgentID:      cfg.VehicleAgentID,
+		DroneID:             cfg.DroneID,
+		DroneName:           cfg.DroneName,
+		VehicleAgentVersion: cfg.VehicleAgentVersion,
+		HeartbeatInterval:   cfg.HeartbeatInterval,
+		TelemetryInterval:   cfg.TelemetryInterval,
+		CommandTimeout:      cfg.CommandTimeout,
+		RetryMin:            cfg.RegisterRetryMin,
+		RetryMax:            cfg.RegisterRetryMax,
 	}, gateway, telemetrySource)
 
 	register, err := registerWithRetry(ctx, logger, client, cfg)
 	if err != nil {
-		logger.Error("agent stopped before registration completed", "error", err)
+		logger.Error("vehicle agent stopped before registration completed", "error", err)
 		os.Exit(1)
 	}
 
 	logger.Info(
-		"agent registered",
-		"agent_id", register.AgentID,
+		"vehicle agent registered",
+		"vehicle_agent_id", register.VehicleAgentID,
 		"drone_id", register.DroneID,
 		"status", register.Status,
 		"heartbeat_interval_seconds", register.HeartbeatIntervalSeconds,
@@ -81,7 +81,7 @@ func main() {
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("atlas agent stopped")
+			logger.Info("atlas vehicle agent stopped")
 			return
 		case <-commandTicker.C:
 			processNextCommand(ctx, logger, client, cfg, gateway)
@@ -89,22 +89,24 @@ func main() {
 	}
 }
 
-func registerWithRetry(ctx context.Context, logger *slog.Logger, client *backend.Client, cfg config.Config) (backend.RegisterAgentResponse, error) {
+func registerWithRetry(ctx context.Context, logger *slog.Logger, client *backend.Client, cfg config.Config) (backend.RegisterVehicleAgentResponse, error) {
 	backoff := cfg.RegisterRetryMin
 
 	for {
-		res, err := client.RegisterAgent(ctx, backend.RegisterAgentRequest{
-			AgentID:      cfg.AgentID,
-			DroneID:      cfg.DroneID,
-			DroneName:    cfg.DroneName,
-			AgentVersion: cfg.AgentVersion,
+		res, err := client.RegisterVehicleAgent(ctx, backend.RegisterVehicleAgentRequest{
+			VehicleAgentID:      cfg.VehicleAgentID,
+			DroneID:             cfg.DroneID,
+			DroneName:           cfg.DroneName,
+			VehicleAgentVersion: cfg.VehicleAgentVersion,
 		})
+		// TODO: Handle structured backend registration failures when the API exposes them.
+		// For now, every registration error is treated as retryable.
 		if err == nil {
 			return res, nil
 		}
 
 		logger.Warn(
-			"agent registration failed; retrying",
+			"vehicle-agent registration failed; retrying",
 			"error", err,
 			"retry_after", backoff.String(),
 		)
@@ -113,7 +115,7 @@ func registerWithRetry(ctx context.Context, logger *slog.Logger, client *backend
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return backend.RegisterAgentResponse{}, ctx.Err()
+			return backend.RegisterVehicleAgentResponse{}, ctx.Err()
 		case <-timer.C:
 		}
 
@@ -131,7 +133,7 @@ func nextBackoff(current time.Duration, max time.Duration) time.Duration {
 }
 
 func processNextCommand(ctx context.Context, logger *slog.Logger, client *backend.Client, cfg config.Config, gateway vehicle.Gateway) {
-	command, ok, err := client.FetchNextCommand(ctx, cfg.AgentID)
+	command, ok, err := client.FetchNextCommand(ctx, cfg.VehicleAgentID)
 	if err != nil {
 		logger.Warn("command poll failed", "error", err)
 		return
@@ -149,8 +151,8 @@ func processNextCommand(ctx context.Context, logger *slog.Logger, client *backen
 		"requested_by", command.RequestedBy,
 	)
 
-	reportCommandStatus(ctx, logger, client, cfg.AgentID, command.ID, backend.CommandStateAgentReceived, "")
-	reportCommandStatus(ctx, logger, client, cfg.AgentID, command.ID, backend.CommandStateSentToVehicle, "")
+	reportCommandStatus(ctx, logger, client, cfg.VehicleAgentID, command.ID, backend.CommandStateVehicleAgentReceived, "")
+	reportCommandStatus(ctx, logger, client, cfg.VehicleAgentID, command.ID, backend.CommandStateSentToVehicle, "")
 
 	commandCtx, cancel := context.WithTimeout(ctx, cfg.CommandTimeout)
 	defer cancel()
@@ -161,12 +163,12 @@ func processNextCommand(ctx context.Context, logger *slog.Logger, client *backen
 			state = backend.CommandStateFailed
 		}
 
-		reportCommandStatus(ctx, logger, client, cfg.AgentID, command.ID, state, err.Error())
+		reportCommandStatus(ctx, logger, client, cfg.VehicleAgentID, command.ID, state, err.Error())
 		logger.Error("command execution failed", "command_id", command.ID, "type", command.Type, "error", err)
 		return
 	}
 
-	reportCommandStatus(ctx, logger, client, cfg.AgentID, command.ID, backend.CommandStateVehicleAcked, "accepted by vehicle")
+	reportCommandStatus(ctx, logger, client, cfg.VehicleAgentID, command.ID, backend.CommandStateVehicleAcked, "accepted by vehicle")
 	logger.Info("command acknowledged by vehicle", "command_id", command.ID, "type", command.Type)
 }
 

@@ -33,8 +33,8 @@ export type CommandState =
   | "requested"
   | "authorized"
   | "rejected_by_policy"
-  | "sent_to_agent"
-  | "agent_received"
+  | "sent_to_vehicle_agent"
+  | "vehicle_agent_received"
   | "sent_to_vehicle"
   | "vehicle_acked"
   | "vehicle_rejected"
@@ -58,10 +58,10 @@ export type MissionExecutionState =
   | "aborted"
   | "failed";
 
-export type OperatorCommand = {
+export type CommandRequest = {
   id: string;
   droneId: string;
-  agentId: string;
+  vehicleAgentId: string;
   type: CommandType;
   state: CommandState;
   requestedBy: string;
@@ -74,14 +74,14 @@ export type OperatorCommand = {
   policyReason?: string;
   resultMessage?: string;
   telemetryState: TelemetryState;
-  agentStatus: DroneStatus;
+  vehicleAgentStatus: DroneStatus;
 };
 
 export type MissionExecution = {
   id: string;
   missionId: string;
   droneId: string;
-  agentId: string;
+  vehicleAgentId: string;
   requestedBy: string;
   uploadRequestedBy?: string;
   startRequestedBy?: string;
@@ -109,7 +109,7 @@ export type MissionExecutionEvent = {
   executionId: string;
   missionId: string;
   droneId: string;
-  agentId: string;
+  vehicleAgentId: string;
   type: string;
   state: MissionExecutionState;
   message: string;
@@ -178,13 +178,13 @@ export type CreateMissionInput = {
 export type Drone = {
   id: string;
   name: string;
-  agentId: string;
+  vehicleAgentId: string;
   status: DroneStatus;
   lastSeenAt: string;
   lastHeartbeatAt?: string;
   telemetry?: Telemetry;
   commandChannel: CommandChannel;
-  commands: OperatorCommand[];
+  commands: CommandRequest[];
   missionExecution?: MissionExecution;
 };
 
@@ -201,7 +201,7 @@ export async function fetchDrones(signal?: AbortSignal): Promise<Drone[]> {
 export async function requestDroneCommand(
   droneId: string,
   action: CommandAction,
-): Promise<OperatorCommand> {
+): Promise<CommandRequest> {
   const response = await fetch(
     `/api/drones/${encodeURIComponent(droneId)}/commands/${action}`,
     {
@@ -212,7 +212,7 @@ export async function requestDroneCommand(
     },
   );
 
-  const body = (await response.json()) as OperatorCommand | { error?: string };
+  const body = (await response.json()) as CommandRequest | { error?: string };
 
   if (!response.ok) {
     if ("state" in body) {
@@ -222,7 +222,7 @@ export async function requestDroneCommand(
     throw new Error("error" in body && body.error ? body.error : `Backend returned ${response.status}`);
   }
 
-  return body as OperatorCommand;
+  return body as CommandRequest;
 }
 
 export async function fetchDroneMissions(droneId: string): Promise<Mission[]> {
