@@ -1,4 +1,6 @@
-package agentchannel
+// Package vehicleagentchannel implements the onboard agent side of the
+// long-lived gRPC stream to the Atlas backend.
+package vehicleagentchannel
 
 import (
 	"context"
@@ -9,8 +11,8 @@ import (
 	"time"
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
+	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
-	pb "github.com/sunnyside/atlas/atlas-agent/internal/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -43,6 +45,8 @@ const (
 
 var errUnsupportedCommand = errors.New("unsupported command type")
 
+// Config contains the identity, timing, and retry settings needed to keep the
+// vehicle-agent channel connected to the backend.
 type Config struct {
 	Addr                string
 	VehicleAgentID      string
@@ -56,22 +60,31 @@ type Config struct {
 	RetryMax            time.Duration
 }
 
+// commandOutcome remembers the final state sent for a command during this
+// process lifetime so duplicate deliveries can replay the same result.
 type commandOutcome struct {
 	state         string
 	resultMessage string
 }
 
+// missionExecutionOutcome remembers the final state sent for a mission action
+// during this process lifetime so duplicate deliveries are idempotent.
 type missionExecutionOutcome struct {
 	state         string
 	resultMessage string
 }
 
+// outboundQueues separates message priorities. Command and mission status are
+// critical, heartbeats are useful liveness signals, and telemetry is allowed to
+// drop old samples under backpressure.
 type outboundQueues struct {
 	critical  chan *pb.VehicleAgentToBackend
 	heartbeat chan *pb.VehicleAgentToBackend
 	telemetry chan *pb.VehicleAgentToBackend
 }
 
+// newOutboundQueues sizes each queue according to how much loss or delay Atlas
+// can tolerate for that message class.
 func newOutboundQueues() outboundQueues {
 	return outboundQueues{
 		critical:  make(chan *pb.VehicleAgentToBackend, 16),
@@ -80,6 +93,8 @@ func newOutboundQueues() outboundQueues {
 	}
 }
 
+// Run keeps the gRPC channel alive until ctx is cancelled. Each disconnect
+// returns from connectOnce and is retried with bounded exponential backoff.
 func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source) {
 	if logger == nil {
 		logger = slog.Default()
@@ -112,6 +127,9 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.G
 	}
 }
 
+// connectOnce establishes one stream session, sends the required hello message,
+// starts sender/receiver goroutines, and processes backend instructions until
+// the stream fails or the context is cancelled.
 func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source) error {
 	conn, err := grpc.NewClient(cfg.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -135,6 +153,8 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 	go sendLoop(sendCtx, stream, outbound, errs)
 	go receiveLoop(stream, inbound, errs)
 
+	// The backend requires hello as the first message so it can register this
+	// agent and associate the stream with one drone before accepting updates.
 	if !enqueueCritical(sendCtx, outbound, &pb.VehicleAgentToBackend{
 		VehicleAgentId: cfg.VehicleAgentID,
 		Payload: &pb.VehicleAgentToBackend_Hello{
@@ -162,6 +182,9 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 	processedCommands := make(map[string]commandOutcome)
 	processedMissionExecutions := make(map[string]missionExecutionOutcome)
 
+	// The main session loop consumes backend-to-agent work. Command and mission
+	// handling runs synchronously here so each item reports a clear ordered
+	// status sequence back to the backend.
 	for {
 		select {
 		case <-ctx.Done():
@@ -174,6 +197,9 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 		case msg := <-inbound:
 			command := msg.GetCommand()
 			if command != nil {
+				// Backend redelivery can happen after lease expiry or reconnect.
+				// Replaying the prior result avoids executing the same vehicle
+				// command twice within this process lifetime.
 				if outcome, ok := processedCommands[command.GetCommandId()]; ok {
 					logger.Warn("duplicate gRPC command received; replaying prior result", "command_id", command.GetCommandId(), "type", command.GetCommandType())
 					if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateVehicleAgentReceived, "") {
@@ -200,6 +226,8 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 
 			missionExecutionKey := missionExecutionProcessingKey(missionExecution)
 			if outcome, ok := processedMissionExecutions[missionExecutionKey]; ok {
+				// Upload/start/RTL are separate actions on the same execution id,
+				// so the idempotency key includes the action as well as the id.
 				logger.Warn("duplicate gRPC mission execution received; replaying prior result", "execution_id", missionExecution.GetExecutionId(), "action", missionExecution.GetAction())
 				if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, missionExecution.GetExecutionId(), outcome.state, outcome.resultMessage) {
 					return ctx.Err()
@@ -216,6 +244,8 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 	}
 }
 
+// handleCommand translates one backend command envelope into a vehicle gateway
+// call and reports each significant state transition back to the backend.
 func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQueues, cfg Config, gateway vehicle.Gateway, command *pb.CommandEnvelope) (commandOutcome, error) {
 	logger.Info(
 		"gRPC command received",
@@ -229,6 +259,8 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 		return commandOutcome{}, ctx.Err()
 	}
 
+	// "sent_to_vehicle" means the agent is about to call PX4/MAVSDK through
+	// the Gateway abstraction. It does not yet mean the vehicle accepted it.
 	if !sendCommandStatus(ctx, outbound, cfg.VehicleAgentID, command.GetCommandId(), commandStateSentToVehicle, "") {
 		return commandOutcome{}, ctx.Err()
 	}
@@ -241,6 +273,8 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	// Vehicle command calls can hang on real transports, so each command gets a
+	// bounded execution context independent of the longer stream context.
 	if err := executeVehicleCommand(commandCtx, gateway, command.GetCommandType()); err != nil {
 		state := commandStateVehicleRejected
 		if errors.Is(err, errUnsupportedCommand) {
@@ -263,6 +297,9 @@ func handleCommand(ctx context.Context, logger *slog.Logger, outbound outboundQu
 	return commandOutcome{state: commandStateVehicleAcked, resultMessage: resultMessage}, nil
 }
 
+// handleMissionExecution translates a backend mission action into vehicle
+// gateway calls. Upload, start, and RTL have different state progressions, so
+// they are handled as separate action branches.
 func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound outboundQueues, cfg Config, gateway vehicle.Gateway, execution *pb.MissionExecutionEnvelope) (missionExecutionOutcome, error) {
 	if logger == nil {
 		logger = slog.Default()
@@ -281,6 +318,8 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 
 	switch execution.GetAction() {
 	case missionActionUpload:
+		// Upload sends the full waypoint payload to the vehicle but does not
+		// start flying. The operator must request start separately.
 		if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateUploading, "") {
 			return missionExecutionOutcome{}, ctx.Err()
 		}
@@ -303,6 +342,8 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		logger.Info("gRPC mission uploaded to vehicle", "execution_id", execution.GetExecutionId(), "mission_id", execution.GetMissionId())
 		return missionExecutionOutcome{state: missionExecutionStateUploadedToVehicle, resultMessage: resultMessage}, nil
 	case missionActionStart:
+		// Start assumes upload already succeeded. Progress is monitored
+		// asynchronously after the vehicle accepts the start command.
 		if err := startMissionWorkflow(ctx, gateway); err != nil {
 			resultMessage := err.Error()
 			if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
@@ -323,6 +364,8 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 		logger.Info("gRPC mission started", "execution_id", execution.GetExecutionId(), "mission_id", execution.GetMissionId())
 		return missionExecutionOutcome{state: missionExecutionStateActive, resultMessage: resultMessage}, nil
 	case missionActionRTL:
+		// Abort is represented as return-to-launch. Telemetry on the backend
+		// later settles the execution once the aircraft is no longer airborne.
 		if err := gateway.ReturnToLaunch(ctx); err != nil {
 			resultMessage := err.Error()
 			if !sendMissionExecutionStatus(ctx, outbound, cfg.VehicleAgentID, execution.GetExecutionId(), missionExecutionStateFailed, resultMessage) {
@@ -349,6 +392,8 @@ func handleMissionExecution(ctx context.Context, logger *slog.Logger, outbound o
 	}
 }
 
+// startMissionWorkflow groups the pre-start setup and actual mission start call
+// so mission start handling reads as one application workflow.
 func startMissionWorkflow(ctx context.Context, gateway vehicle.Gateway) error {
 	if err := gateway.PrepareMissionStart(ctx); err != nil {
 		return err
@@ -361,6 +406,9 @@ func startMissionWorkflow(ctx context.Context, gateway vehicle.Gateway) error {
 	return nil
 }
 
+// monitorMissionProgress streams mission progress updates back to the backend
+// until the gateway reports completion, the progress channel closes, or the
+// connection context is cancelled.
 func monitorMissionProgress(ctx context.Context, logger *slog.Logger, outbound outboundQueues, agentID string, gateway vehicle.Gateway, execution *pb.MissionExecutionEnvelope) {
 	progressCh, err := gateway.MissionProgress(ctx)
 	if err != nil {
@@ -379,6 +427,8 @@ func monitorMissionProgress(ctx context.Context, logger *slog.Logger, outbound o
 				return
 			}
 
+			// Avoid sending duplicate progress rows when the vehicle repeats the
+			// same mission item count.
 			if progress.Current != lastCurrent || progress.Total != lastTotal {
 				message := fmt.Sprintf("mission progress %d/%d", progress.Current, progress.Total)
 				if !sendMissionExecutionStatusWithProgress(ctx, outbound, agentID, execution.GetExecutionId(), missionExecutionStateActive, message, progress) {
@@ -394,6 +444,8 @@ func monitorMissionProgress(ctx context.Context, logger *slog.Logger, outbound o
 					return
 				}
 
+				// Some missions intentionally hold at the final waypoint rather
+				// than moving into a generic completed state only.
 				if execution.GetCompletionAction() == string(vehicle.MissionCompletionActionHold) {
 					if !sendMissionExecutionStatusWithProgress(ctx, outbound, agentID, execution.GetExecutionId(), missionExecutionStateHold, "mission complete; holding at final waypoint", progress) {
 						return
@@ -405,6 +457,8 @@ func monitorMissionProgress(ctx context.Context, logger *slog.Logger, outbound o
 	}
 }
 
+// missionEnvelopeToPlan converts the backend protobuf payload into the vehicle
+// gateway mission type used by the MAVSDK-facing layer.
 func missionEnvelopeToPlan(execution *pb.MissionExecutionEnvelope) vehicle.MissionPlan {
 	waypoints := execution.GetWaypoints()
 	plan := vehicle.MissionPlan{
@@ -426,10 +480,14 @@ func missionEnvelopeToPlan(execution *pb.MissionExecutionEnvelope) vehicle.Missi
 	return plan
 }
 
+// missionExecutionProcessingKey distinguishes separate actions on the same
+// mission execution, such as upload followed later by start.
 func missionExecutionProcessingKey(execution *pb.MissionExecutionEnvelope) string {
 	return execution.GetExecutionId() + ":" + execution.GetAction()
 }
 
+// executeVehicleCommand maps Atlas command names to concrete vehicle gateway
+// operations.
 func executeVehicleCommand(ctx context.Context, gateway vehicle.Gateway, commandType string) error {
 	switch commandType {
 	case commandTypeArm:
@@ -445,6 +503,8 @@ func executeVehicleCommand(ctx context.Context, gateway vehicle.Gateway, command
 	}
 }
 
+// sendLoop is the only goroutine that writes to the gRPC stream. Keeping one
+// writer avoids concurrent Send calls on the same client stream.
 func sendLoop(ctx context.Context, stream pb.VehicleAgentChannelService_ConnectClient, outbound outboundQueues, errs chan<- error) {
 	for {
 		msg, ok := nextOutboundMessage(ctx, outbound)
@@ -459,6 +519,8 @@ func sendLoop(ctx context.Context, stream pb.VehicleAgentChannelService_ConnectC
 	}
 }
 
+// nextOutboundMessage chooses the next agent-to-backend message by priority.
+// Critical status beats heartbeat, and heartbeat beats telemetry.
 func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.VehicleAgentToBackend, bool) {
 	select {
 	case <-ctx.Done():
@@ -496,6 +558,8 @@ func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.Vehi
 	}
 }
 
+// receiveLoop is the only goroutine that reads backend-to-agent messages from
+// the stream and forwards them to the session loop.
 func receiveLoop(stream pb.VehicleAgentChannelService_ConnectClient, inbound chan<- *pb.BackendToVehicleAgent, errs chan<- error) {
 	for {
 		msg, err := stream.Recv()
@@ -507,6 +571,7 @@ func receiveLoop(stream pb.VehicleAgentChannelService_ConnectClient, inbound cha
 	}
 }
 
+// sendHeartbeats reports agent liveness at the configured interval.
 func sendHeartbeats(ctx context.Context, outbound outboundQueues, cfg Config) {
 	interval := cfg.HeartbeatInterval
 	if interval == 0 {
@@ -528,6 +593,7 @@ func sendHeartbeats(ctx context.Context, outbound outboundQueues, cfg Config) {
 	}
 }
 
+// sendHeartbeat enqueues one heartbeat message if the heartbeat queue has room.
 func sendHeartbeat(ctx context.Context, outbound outboundQueues, cfg Config) {
 	if !enqueueHeartbeat(ctx, outbound, &pb.VehicleAgentToBackend{
 		VehicleAgentId: cfg.VehicleAgentID,
@@ -541,6 +607,8 @@ func sendHeartbeat(ctx context.Context, outbound outboundQueues, cfg Config) {
 	}
 }
 
+// sendTelemetrySnapshots periodically samples the telemetry source and enqueues
+// the latest snapshot for backend fleet views.
 func sendTelemetrySnapshots(ctx context.Context, logger *slog.Logger, outbound outboundQueues, cfg Config, source telemetry.Source) {
 	interval := cfg.TelemetryInterval
 	if interval == 0 {
@@ -562,6 +630,8 @@ func sendTelemetrySnapshots(ctx context.Context, logger *slog.Logger, outbound o
 	}
 }
 
+// sendTelemetrySnapshot reads one telemetry sample and serializes it into the
+// protobuf wire format expected by the backend channel server.
 func sendTelemetrySnapshot(ctx context.Context, logger *slog.Logger, outbound outboundQueues, cfg Config, source telemetry.Source) {
 	snapshot, err := source.Read(time.Now().UTC())
 	if err != nil {
@@ -594,6 +664,7 @@ func sendTelemetrySnapshot(ctx context.Context, logger *slog.Logger, outbound ou
 	}
 }
 
+// sendCommandStatus reports command lifecycle updates to the backend services.
 func sendCommandStatus(ctx context.Context, outbound outboundQueues, agentID string, commandID string, state string, resultMessage string) bool {
 	return enqueueCritical(ctx, outbound, &pb.VehicleAgentToBackend{
 		VehicleAgentId: agentID,
@@ -607,10 +678,14 @@ func sendCommandStatus(ctx context.Context, outbound outboundQueues, agentID str
 	})
 }
 
+// sendMissionExecutionStatus reports mission lifecycle updates without progress
+// counters.
 func sendMissionExecutionStatus(ctx context.Context, outbound outboundQueues, agentID string, executionID string, state string, resultMessage string) bool {
 	return sendMissionExecutionStatusWithProgress(ctx, outbound, agentID, executionID, state, resultMessage, vehicle.MissionProgressEvent{})
 }
 
+// sendMissionExecutionStatusWithProgress reports mission lifecycle updates and,
+// when available, the current mission item counters.
 func sendMissionExecutionStatusWithProgress(ctx context.Context, outbound outboundQueues, agentID string, executionID string, state string, resultMessage string, progress vehicle.MissionProgressEvent) bool {
 	return enqueueCritical(ctx, outbound, &pb.VehicleAgentToBackend{
 		VehicleAgentId: agentID,
@@ -626,6 +701,8 @@ func sendMissionExecutionStatusWithProgress(ctx context.Context, outbound outbou
 	})
 }
 
+// enqueueCritical blocks until a critical status message is queued or the
+// context is cancelled. These messages are part of command/mission correctness.
 func enqueueCritical(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
@@ -635,6 +712,8 @@ func enqueueCritical(ctx context.Context, outbound outboundQueues, msg *pb.Vehic
 	}
 }
 
+// enqueueHeartbeat is best-effort. If heartbeats are already backed up, the
+// channel is unhealthy enough that another heartbeat does not need to queue.
 func enqueueHeartbeat(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
@@ -646,6 +725,9 @@ func enqueueHeartbeat(ctx context.Context, outbound outboundQueues, msg *pb.Vehi
 	}
 }
 
+// enqueueTelemetry keeps the newest telemetry sample and drops an older queued
+// sample when necessary. For fleet views, latest state is more useful than stale
+// historical samples.
 func enqueueTelemetry(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
 	select {
 	case <-ctx.Done():
@@ -670,6 +752,7 @@ func enqueueTelemetry(ctx context.Context, outbound outboundQueues, msg *pb.Vehi
 	}
 }
 
+// nextBackoff doubles reconnect delay until the configured maximum.
 func nextBackoff(current time.Duration, max time.Duration) time.Duration {
 	next := current * 2
 	if next > max {

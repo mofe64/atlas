@@ -10,10 +10,10 @@ import (
 	"syscall"
 	"time"
 
-	agentchannel "github.com/sunnyside/atlas/atlas-agent/internal/agentchannel"
 	"github.com/sunnyside/atlas/atlas-agent/internal/backend"
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
+	"github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannel"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
 )
 
@@ -48,7 +48,7 @@ func main() {
 		"px4_system_address", cfg.PX4SystemAddress,
 	)
 
-	go agentchannel.Run(ctx, logger, agentchannel.Config{
+	go vehicleagentchannel.Run(ctx, logger, vehicleagentchannel.Config{
 		Addr:                cfg.VehicleAgentGRPCAddr,
 		VehicleAgentID:      cfg.VehicleAgentID,
 		DroneID:             cfg.DroneID,

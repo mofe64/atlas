@@ -1,4 +1,4 @@
-package agentchannel
+package vehicleagentchannel
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
 	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
 	"github.com/sunnyside/atlas/atlas-backend/internal/testutil"
-	pb "github.com/sunnyside/atlas/atlas-backend/internal/vehicleagentchannelpb/atlas"
+	pb "github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"

@@ -1,4 +1,6 @@
-package agentchannel
+// Package vehicleagentchannel implements the backend side of the long-lived
+// gRPC stream used by onboard vehicle agents.
+package vehicleagentchannel
 
 import (
 	"context"
@@ -12,7 +14,7 @@ import (
 	"github.com/sunnyside/atlas/atlas-backend/internal/models"
 	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
 	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
-	pb "github.com/sunnyside/atlas/atlas-backend/internal/vehicleagentchannelpb/atlas"
+	pb "github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannelpb/atlas"
 )
 
 type Hub struct {
@@ -22,6 +24,8 @@ type Hub struct {
 	logger      *slog.Logger
 }
 
+// Dependencies are the application services the transport layer calls after it
+// has decoded protobuf messages from the vehicle-agent stream.
 type Dependencies struct {
 	VehicleAgents *svc.VehicleAgentService
 	Telemetry     *svc.TelemetryService
@@ -29,12 +33,17 @@ type Dependencies struct {
 	Missions      *svc.MissionService
 }
 
+// Server implements the generated VehicleAgentChannelServiceServer interface.
+// It is intentionally thin: protocol handling stays here, while business rules
+// stay in services.
 type Server struct {
 	pb.UnimplementedVehicleAgentChannelServiceServer
 
 	hub *Hub
 }
 
+// connection represents one active backend-to-agent send queue for a vehicle
+// agent. The Hub keeps only the latest connection per agent id.
 type connection struct {
 	agentID string
 	send    chan *pb.BackendToVehicleAgent
@@ -42,6 +51,8 @@ type connection struct {
 	once    sync.Once
 }
 
+// NewHub creates the in-memory connection registry used by HTTP handlers and
+// the gRPC server to find connected vehicle agents.
 func NewHub(deps Dependencies, logger *slog.Logger) *Hub {
 	if logger == nil {
 		logger = slog.Default()
@@ -54,10 +65,14 @@ func NewHub(deps Dependencies, logger *slog.Logger) *Hub {
 	}
 }
 
+// NewServer binds the gRPC server implementation to the shared connection hub.
 func NewServer(hub *Hub) *Server {
 	return &Server{hub: hub}
 }
 
+// DispatchCommand is called by the HTTP API after an operator creates a command.
+// If the target vehicle agent is connected, the command is claimed and queued
+// for immediate stream delivery.
 func (h *Hub) DispatchCommand(ctx context.Context, command models.CommandRequest) (models.CommandRequest, bool) {
 	if h.connectionForVehicleAgent(command.VehicleAgentID) == nil {
 		return models.CommandRequest{}, false
@@ -76,6 +91,9 @@ func (h *Hub) DispatchCommand(ctx context.Context, command models.CommandRequest
 	return claimed, true
 }
 
+// DispatchMissionExecution is called by the HTTP API after an operator requests
+// mission upload, mission start, or mission abort. It mirrors command dispatch:
+// claim first, then enqueue only if the agent still has a live stream.
 func (h *Hub) DispatchMissionExecution(ctx context.Context, execution models.MissionExecution) (models.MissionExecution, bool) {
 	if h.connectionForVehicleAgent(execution.VehicleAgentID) == nil {
 		return models.MissionExecution{}, false
@@ -94,6 +112,9 @@ func (h *Hub) DispatchMissionExecution(ctx context.Context, execution models.Mis
 	return claimed, true
 }
 
+// DispatchPendingForVehicleAgent drains already-authorized work after an agent
+// connects. This is what lets Atlas recover command and mission delivery after
+// an agent restart or temporary network drop.
 func (h *Hub) DispatchPendingForVehicleAgent(ctx context.Context, agentID string) {
 	for ctx.Err() == nil {
 		command, ok, err := h.deps.Commands.NextCommandForVehicleAgent(ctx, agentID, time.Now().UTC())
@@ -130,6 +151,9 @@ func (h *Hub) DispatchPendingForVehicleAgent(ctx context.Context, agentID string
 	}
 }
 
+// Connect owns one bidirectional gRPC stream from a vehicle agent. The first
+// message must be a hello so the backend can register the agent before it
+// accepts status, heartbeat, telemetry, command, or mission traffic.
 func (s *Server) Connect(stream pb.VehicleAgentChannelService_ConnectServer) error {
 	ctx := stream.Context()
 	first, err := stream.Recv()
@@ -143,6 +167,8 @@ func (s *Server) Connect(stream pb.VehicleAgentChannelService_ConnectServer) err
 		return errors.New("vehicle-agent channel must start with hello")
 	}
 
+	// Registering on hello makes reconnects idempotent and keeps the active
+	// agent record aligned with the stream that can receive commands.
 	if _, err := s.hub.deps.VehicleAgents.RegisterVehicleAgent(ctx, repository.RegisterVehicleAgentInput{
 		VehicleAgentID:      agentID,
 		DroneID:             hello.GetDroneId(),
@@ -173,8 +199,12 @@ func (s *Server) Connect(stream pb.VehicleAgentChannelService_ConnectServer) err
 		errs <- s.receive(stream, agentID)
 	}()
 
+	// A newly connected agent may already have work waiting in the database.
+	// Delivery is queued outside the registration transaction.
 	go s.hub.DispatchPendingForVehicleAgent(ctx, agentID)
 
+	// This select loop is the stream bridge: receive side errors terminate the
+	// stream, while queued backend messages are sent to the connected agent.
 	for {
 		select {
 		case <-ctx.Done():
@@ -194,6 +224,9 @@ func (s *Server) Connect(stream pb.VehicleAgentChannelService_ConnectServer) err
 	}
 }
 
+// receive handles agent-to-backend messages on the stream. Each protobuf oneof
+// branch is translated into one service call so transport parsing stays out of
+// the application layer.
 func (s *Server) receive(stream pb.VehicleAgentChannelService_ConnectServer, agentID string) error {
 	for {
 		msg, err := stream.Recv()
@@ -201,6 +234,9 @@ func (s *Server) receive(stream pb.VehicleAgentChannelService_ConnectServer, age
 			return err
 		}
 
+		// The stream is associated with the agent id from the hello message.
+		// Mismatched ids are ignored so one stream cannot mutate another agent's
+		// command, telemetry, or mission state.
 		if msg.GetVehicleAgentId() != agentID {
 			s.hub.logger.Warn("ignoring vehicle-agent channel message with mismatched vehicle agent id", "connected_vehicle_agent_id", agentID, "message_vehicle_agent_id", msg.GetVehicleAgentId())
 			continue
@@ -232,6 +268,8 @@ func (s *Server) receive(stream pb.VehicleAgentChannelService_ConnectServer, age
 	}
 }
 
+// recordCommandStatus applies the command state reported by the agent after it
+// receives or executes a vehicle command.
 func (s *Server) recordCommandStatus(ctx context.Context, agentID string, status *pb.CommandStatus) {
 	_, err := s.hub.deps.Commands.UpdateCommandStatus(ctx, repository.UpdateCommandStatusInput{
 		VehicleAgentID: agentID,
@@ -247,6 +285,8 @@ func (s *Server) recordCommandStatus(ctx context.Context, agentID string, status
 	s.hub.logger.Info("vehicle-agent command status accepted", "vehicle_agent_id", agentID, "command_request_id", status.GetCommandId(), "state", status.GetState())
 }
 
+// recordMissionExecutionStatus applies mission progress or completion reported
+// by the agent after mission upload, start, progress, or abort work.
 func (s *Server) recordMissionExecutionStatus(ctx context.Context, agentID string, status *pb.MissionExecutionStatus) {
 	_, err := s.hub.deps.Missions.UpdateMissionExecutionStatus(ctx, repository.UpdateMissionExecutionStatusInput{
 		VehicleAgentID:     agentID,
@@ -264,6 +304,8 @@ func (s *Server) recordMissionExecutionStatus(ctx context.Context, agentID strin
 	s.hub.logger.Info("vehicle-agent mission execution status accepted", "vehicle_agent_id", agentID, "execution_id", status.GetExecutionId(), "state", status.GetState(), "current_mission_item", status.GetCurrentMissionItem(), "total_mission_items", status.GetTotalMissionItems())
 }
 
+// recordHeartbeat refreshes vehicle-agent liveness. The services layer also
+// updates the owning drone's last-seen timestamp.
 func (s *Server) recordHeartbeat(ctx context.Context, agentID string, heartbeat *pb.Heartbeat) {
 	agent, err := s.hub.deps.VehicleAgents.RecordVehicleAgentHeartbeat(ctx, repository.VehicleAgentHeartbeatInput{
 		VehicleAgentID:      agentID,
@@ -277,6 +319,8 @@ func (s *Server) recordHeartbeat(ctx context.Context, agentID string, heartbeat 
 	s.hub.logger.Info("vehicle-agent gRPC heartbeat accepted", "vehicle_agent_id", agent.ID, "drone_id", agent.DroneID)
 }
 
+// recordTelemetry validates and stores the latest aircraft state reported by
+// the agent. Telemetry can also confirm commands or settle mission aborts.
 func (s *Server) recordTelemetry(ctx context.Context, agentID string, telemetry *pb.Telemetry) {
 	snapshot, err := telemetryToSnapshot(agentID, telemetry)
 	if err != nil {
@@ -293,6 +337,8 @@ func (s *Server) recordTelemetry(ctx context.Context, agentID string, telemetry 
 	s.hub.logger.Info("vehicle-agent gRPC telemetry accepted", "vehicle_agent_id", agentID, "drone_id", recorded.DroneID, "source", recorded.Source)
 }
 
+// telemetryToSnapshot converts the protobuf wire message into the domain model
+// accepted by TelemetryService, while enforcing basic transport-level validation.
 func telemetryToSnapshot(agentID string, telemetry *pb.Telemetry) (models.TelemetrySnapshot, error) {
 	observedAt, err := time.Parse(time.RFC3339Nano, telemetry.GetObservedAt())
 	if err != nil {
@@ -342,6 +388,8 @@ func telemetryToSnapshot(agentID string, telemetry *pb.Telemetry) (models.Teleme
 	}, nil
 }
 
+// register makes this stream the active delivery path for the agent. If an
+// older stream exists, it is closed so commands do not go to two places.
 func (h *Hub) register(conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -353,6 +401,8 @@ func (h *Hub) register(conn *connection) {
 	h.connections[conn.agentID] = conn
 }
 
+// connectionForVehicleAgent returns the current live stream, if any, for an
+// agent. Callers use nil to mean "fall back to persisted pending delivery".
 func (h *Hub) connectionForVehicleAgent(agentID string) *connection {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -360,6 +410,8 @@ func (h *Hub) connectionForVehicleAgent(agentID string) *connection {
 	return h.connections[agentID]
 }
 
+// enqueueCommand translates a persisted command request into the protobuf
+// envelope consumed by the onboard agent.
 func (h *Hub) enqueueCommand(ctx context.Context, command models.CommandRequest) bool {
 	conn := h.connectionForVehicleAgent(command.VehicleAgentID)
 	if conn == nil {
@@ -380,6 +432,9 @@ func (h *Hub) enqueueCommand(ctx context.Context, command models.CommandRequest)
 	return conn.enqueue(ctx, msg)
 }
 
+// enqueueMissionExecution translates a mission execution into a protobuf
+// instruction. The mission definition is loaded here because the agent needs
+// the full waypoint payload to upload it to the vehicle.
 func (h *Hub) enqueueMissionExecution(ctx context.Context, execution models.MissionExecution) bool {
 	conn := h.connectionForVehicleAgent(execution.VehicleAgentID)
 	if conn == nil {
@@ -409,6 +464,8 @@ func (h *Hub) enqueueMissionExecution(ctx context.Context, execution models.Miss
 	return conn.enqueue(ctx, msg)
 }
 
+// missionExecutionAction maps backend mission states to the small action
+// vocabulary understood by the agent.
 func missionExecutionAction(state models.MissionExecutionState) string {
 	switch state {
 	case models.MissionExecutionStateUploadRequested:
@@ -422,6 +479,8 @@ func missionExecutionAction(state models.MissionExecutionState) string {
 	}
 }
 
+// missionWaypointsToProto converts stored mission waypoints into the protobuf
+// shape sent over the gRPC stream.
 func missionWaypointsToProto(waypoints []models.MissionWaypoint) []*pb.MissionWaypoint {
 	res := make([]*pb.MissionWaypoint, 0, len(waypoints))
 	for _, waypoint := range waypoints {
@@ -443,6 +502,9 @@ func missionWaypointsToProto(waypoints []models.MissionWaypoint) []*pb.MissionWa
 	return res
 }
 
+// unregister removes a stream only if it is still the active stream for the
+// agent. This protects a new reconnect from being removed by an older stream's
+// deferred cleanup.
 func (h *Hub) unregister(agentID string, conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -460,6 +522,7 @@ func (h *Hub) unregister(agentID string, conn *connection) {
 	h.logger.Info("vehicle-agent gRPC channel disconnected", "vehicle_agent_id", agentID)
 }
 
+// newConnection creates the bounded send queue used by the Connect loop.
 func newConnection(agentID string) *connection {
 	return &connection{
 		agentID: agentID,
@@ -468,6 +531,8 @@ func newConnection(agentID string) *connection {
 	}
 }
 
+// enqueue writes a backend-to-agent message unless the request context or the
+// connection has already closed.
 func (c *connection) enqueue(ctx context.Context, msg *pb.BackendToVehicleAgent) bool {
 	select {
 	case <-ctx.Done():
@@ -479,6 +544,7 @@ func (c *connection) enqueue(ctx context.Context, msg *pb.BackendToVehicleAgent)
 	}
 }
 
+// close broadcasts connection shutdown exactly once.
 func (c *connection) close() {
 	c.once.Do(func() {
 		close(c.done)

@@ -1,4 +1,4 @@
-package agentchannel
+package vehicleagentchannel
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
+	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
-	pb "github.com/sunnyside/atlas/atlas-agent/internal/vehicleagentchannelpb/atlas"
 )
 
 func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {

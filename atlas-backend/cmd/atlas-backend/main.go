@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sunnyside/atlas/atlas-backend/internal/agentchannel"
 	"github.com/sunnyside/atlas/atlas-backend/internal/database"
 	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi"
 	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
 	"github.com/sunnyside/atlas/atlas-backend/internal/services"
-	vehicleagentchannelpb "github.com/sunnyside/atlas/atlas-backend/internal/vehicleagentchannelpb/atlas"
+	"github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannel"
+	vehicleagentchannelpb "github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 )
 
@@ -42,7 +42,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer closeDB()
-	channelHub := agentchannel.NewHub(deps.agentChannel, logger)
+	channelHub := vehicleagentchannel.NewHub(deps.vehicleAgentChannel, logger)
 
 	server := &http.Server{
 		Addr:              addr,
@@ -51,7 +51,7 @@ func main() {
 	}
 
 	grpcServer := grpc.NewServer()
-	vehicleagentchannelpb.RegisterVehicleAgentChannelServiceServer(grpcServer, agentchannel.NewServer(channelHub))
+	vehicleagentchannelpb.RegisterVehicleAgentChannelServiceServer(grpcServer, vehicleagentchannel.NewServer(channelHub))
 
 	agentListener, err := net.Listen("tcp", vehicleAgentGRPCAddr)
 	if err != nil {
@@ -97,8 +97,8 @@ func main() {
 }
 
 type backendDependencies struct {
-	httpAPI      httpapi.Dependencies
-	agentChannel agentchannel.Dependencies
+	httpAPI             httpapi.Dependencies
+	vehicleAgentChannel vehicleagentchannel.Dependencies
 }
 
 func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependencies, func(), error) {
@@ -128,7 +128,7 @@ func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependen
 			Missions:      appServices.Missions,
 			Fleet:         appServices.Fleet,
 		},
-		agentChannel: agentchannel.Dependencies{
+		vehicleAgentChannel: vehicleagentchannel.Dependencies{
 			VehicleAgents: appServices.VehicleAgents,
 			Telemetry:     appServices.Telemetry,
 			Commands:      appServices.Commands,

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/sunnyside/atlas/atlas-backend/internal/database"
+	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi/dtos"
 	"github.com/sunnyside/atlas/atlas-backend/internal/models"
 	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
 	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
@@ -29,7 +30,7 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
 	}
 
-	var body healthResponse
+	var body dtos.HealthResponse
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -81,7 +82,7 @@ func TestRegisterHeartbeatAndListDrones(t *testing.T) {
 		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
 	}
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&drones); err != nil {
 		t.Fatalf("decode drones: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestListDronesIncludesCommandChannelState(t *testing.T) {
 	listRec := httptest.NewRecorder()
 	router.ServeHTTP(listRec, listReq)
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&drones); err != nil {
 		t.Fatalf("decode drones: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestRecordTelemetryAndListDrones(t *testing.T) {
 	listRec := httptest.NewRecorder()
 	router.ServeHTTP(listRec, listReq)
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&drones); err != nil {
 		t.Fatalf("decode drones: %v", err)
 	}
@@ -223,7 +224,7 @@ func TestListDronesIncludesRecentCommands(t *testing.T) {
 		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
 	}
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&drones); err != nil {
 		t.Fatalf("decode drones: %v", err)
 	}
@@ -267,7 +268,7 @@ func TestDroneStreamSendsFleetSnapshotWithCommands(t *testing.T) {
 	}
 	defer conn.Close()
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := conn.ReadJSON(&drones); err != nil {
 		t.Fatalf("read drone stream snapshot: %v", err)
 	}
@@ -306,7 +307,7 @@ func TestRequestCommandAuthorizedWithFreshTelemetry(t *testing.T) {
 		t.Fatalf("expected command status %d, got %d: %s", http.StatusAccepted, rec.Code, rec.Body.String())
 	}
 
-	var command commandResponse
+	var command dtos.CommandResponse
 	if err := json.NewDecoder(rec.Body).Decode(&command); err != nil {
 		t.Fatalf("decode command: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestRequestCommandRejectedWithoutFreshTelemetry(t *testing.T) {
 		t.Fatalf("expected command status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
 	}
 
-	var command commandResponse
+	var command dtos.CommandResponse
 	if err := json.NewDecoder(rec.Body).Decode(&command); err != nil {
 		t.Fatalf("decode command: %v", err)
 	}
@@ -377,7 +378,7 @@ func TestAgentFetchesNextAuthorizedCommand(t *testing.T) {
 		t.Fatalf("expected fetch status %d, got %d: %s", http.StatusOK, fetchRec.Code, fetchRec.Body.String())
 	}
 
-	var command commandResponse
+	var command dtos.CommandResponse
 	if err := json.NewDecoder(fetchRec.Body).Decode(&command); err != nil {
 		t.Fatalf("decode command: %v", err)
 	}
@@ -415,7 +416,7 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
 	}
 
-	var commands []commandResponse
+	var commands []dtos.CommandResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&commands); err != nil {
 		t.Fatalf("decode commands: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
 		t.Fatalf("expected mission status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
 	}
 
-	var mission missionResponse
+	var mission dtos.MissionResponse
 	if err := json.NewDecoder(rec.Body).Decode(&mission); err != nil {
 		t.Fatalf("decode mission: %v", err)
 	}
@@ -487,7 +488,7 @@ func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
 		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
 	}
 
-	var missions []missionResponse
+	var missions []dtos.MissionResponse
 	if err := json.NewDecoder(listRec.Body).Decode(&missions); err != nil {
 		t.Fatalf("decode missions: %v", err)
 	}
@@ -522,7 +523,7 @@ func TestCreateMissionRejectedWithValidationErrors(t *testing.T) {
 		t.Fatalf("expected mission status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
 	}
 
-	var mission missionResponse
+	var mission dtos.MissionResponse
 	if err := json.NewDecoder(rec.Body).Decode(&mission); err != nil {
 		t.Fatalf("decode mission: %v", err)
 	}
@@ -554,7 +555,7 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 		t.Fatalf("expected upload status %d, got %d: %s", http.StatusAccepted, rec.Code, rec.Body.String())
 	}
 
-	var execution missionExecutionResponse
+	var execution dtos.MissionExecutionResponse
 	if err := json.NewDecoder(rec.Body).Decode(&execution); err != nil {
 		t.Fatalf("decode execution: %v", err)
 	}
@@ -583,7 +584,7 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 		t.Fatalf("expected mission detail status %d, got %d: %s", http.StatusOK, detailRec.Code, detailRec.Body.String())
 	}
 
-	var detail missionDetailResponse
+	var detail dtos.MissionDetailResponse
 	if err := json.NewDecoder(detailRec.Body).Decode(&detail); err != nil {
 		t.Fatalf("decode mission detail: %v", err)
 	}
@@ -604,7 +605,7 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 		t.Fatalf("expected mission executions status %d, got %d: %s", http.StatusOK, executionsRec.Code, executionsRec.Body.String())
 	}
 
-	var executions []missionExecutionResponse
+	var executions []dtos.MissionExecutionResponse
 	if err := json.NewDecoder(executionsRec.Body).Decode(&executions); err != nil {
 		t.Fatalf("decode mission executions: %v", err)
 	}
@@ -630,7 +631,7 @@ func TestRequestMissionUploadRejectsRejectedMission(t *testing.T) {
 		t.Fatalf("expected create conflict, got %d: %s", createRec.Code, createRec.Body.String())
 	}
 
-	var mission missionResponse
+	var mission dtos.MissionResponse
 	if err := json.NewDecoder(createRec.Body).Decode(&mission); err != nil {
 		t.Fatalf("decode mission: %v", err)
 	}
@@ -679,7 +680,7 @@ func TestRequestMissionStartAcceptsGroundedVehicleForLaunchWorkflow(t *testing.T
 		t.Fatalf("expected upload accepted, got %d: %s", uploadRec.Code, uploadRec.Body.String())
 	}
 
-	var uploaded missionExecutionResponse
+	var uploaded dtos.MissionExecutionResponse
 	if err := json.NewDecoder(uploadRec.Body).Decode(&uploaded); err != nil {
 		t.Fatalf("decode upload execution: %v", err)
 	}
@@ -696,7 +697,7 @@ func TestRequestMissionStartAcceptsGroundedVehicleForLaunchWorkflow(t *testing.T
 		t.Fatalf("expected start accepted, got %d: %s", startRec.Code, startRec.Body.String())
 	}
 
-	var body missionExecutionResponse
+	var body dtos.MissionExecutionResponse
 	if err := json.NewDecoder(startRec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode start execution: %v", err)
 	}
@@ -719,7 +720,7 @@ func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T)
 		t.Fatalf("expected upload accepted, got %d: %s", uploadRec.Code, uploadRec.Body.String())
 	}
 
-	var uploaded missionExecutionResponse
+	var uploaded dtos.MissionExecutionResponse
 	if err := json.NewDecoder(uploadRec.Body).Decode(&uploaded); err != nil {
 		t.Fatalf("decode upload execution: %v", err)
 	}
@@ -738,7 +739,7 @@ func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T)
 		t.Fatalf("expected start accepted, got %d: %s", startRec.Code, startRec.Body.String())
 	}
 
-	var started missionExecutionResponse
+	var started dtos.MissionExecutionResponse
 	if err := json.NewDecoder(startRec.Body).Decode(&started); err != nil {
 		t.Fatalf("decode started execution: %v", err)
 	}
@@ -771,7 +772,7 @@ func TestRequestMissionStartMovesUploadedExecutionToStartRequested(t *testing.T)
 		t.Fatalf("expected drones status %d, got %d: %s", http.StatusOK, dronesRec.Code, dronesRec.Body.String())
 	}
 
-	var drones []droneResponse
+	var drones []dtos.DroneResponse
 	if err := json.NewDecoder(dronesRec.Body).Decode(&drones); err != nil {
 		t.Fatalf("decode drones: %v", err)
 	}
@@ -798,7 +799,7 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 		t.Fatalf("expected upload accepted, got %d: %s", uploadRec.Code, uploadRec.Body.String())
 	}
 
-	var uploaded missionExecutionResponse
+	var uploaded dtos.MissionExecutionResponse
 	if err := json.NewDecoder(uploadRec.Body).Decode(&uploaded); err != nil {
 		t.Fatalf("decode upload execution: %v", err)
 	}
@@ -834,7 +835,7 @@ func TestRequestMissionAbortMovesActiveExecutionToRTLRequested(t *testing.T) {
 		t.Fatalf("expected abort accepted, got %d: %s", abortRec.Code, abortRec.Body.String())
 	}
 
-	var aborted missionExecutionResponse
+	var aborted dtos.MissionExecutionResponse
 	if err := json.NewDecoder(abortRec.Body).Decode(&aborted); err != nil {
 		t.Fatalf("decode abort execution: %v", err)
 	}
@@ -873,7 +874,7 @@ func TestListMissionExecutionEvents(t *testing.T) {
 		t.Fatalf("expected events status %d, got %d: %s", http.StatusOK, eventsRec.Code, eventsRec.Body.String())
 	}
 
-	var events []missionExecutionEventResponse
+	var events []dtos.MissionExecutionEventResponse
 	if err := json.NewDecoder(eventsRec.Body).Decode(&events); err != nil {
 		t.Fatalf("decode events: %v", err)
 	}
@@ -914,7 +915,7 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested commandResponse
+	var requested dtos.CommandResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
 		t.Fatalf("decode requested command: %v", err)
 	}
@@ -936,7 +937,7 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 		t.Fatalf("expected status update %d, got %d: %s", http.StatusOK, statusRec.Code, statusRec.Body.String())
 	}
 
-	var updated commandResponse
+	var updated dtos.CommandResponse
 	if err := json.NewDecoder(statusRec.Body).Decode(&updated); err != nil {
 		t.Fatalf("decode updated command: %v", err)
 	}
@@ -962,7 +963,7 @@ func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested commandResponse
+	var requested dtos.CommandResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
 		t.Fatalf("decode requested command: %v", err)
 	}
@@ -989,7 +990,7 @@ func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested commandResponse
+	var requested dtos.CommandResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
 		t.Fatalf("decode requested command: %v", err)
 	}
@@ -1004,7 +1005,7 @@ func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
 	}
 }
 
-func createValidatedMissionViaAPI(t *testing.T, router http.Handler) missionResponse {
+func createValidatedMissionViaAPI(t *testing.T, router http.Handler) dtos.MissionResponse {
 	t.Helper()
 
 	registerTestVehicleAgent(t, router)
@@ -1025,7 +1026,7 @@ func createValidatedMissionViaAPI(t *testing.T, router http.Handler) missionResp
 		t.Fatalf("expected mission status %d, got %d: %s", http.StatusCreated, rec.Code, rec.Body.String())
 	}
 
-	var mission missionResponse
+	var mission dtos.MissionResponse
 	if err := json.NewDecoder(rec.Body).Decode(&mission); err != nil {
 		t.Fatalf("decode mission: %v", err)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi/dtos"
 	"github.com/sunnyside/atlas/atlas-backend/internal/models"
 	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
 	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
@@ -40,222 +41,6 @@ type Dependencies struct {
 	Commands      *svc.CommandService
 	Missions      *svc.MissionService
 	Fleet         *svc.FleetService
-}
-
-type healthResponse struct {
-	Service string `json:"service"`
-	Status  string `json:"status"`
-	Time    string `json:"time"`
-}
-
-type versionResponse struct {
-	Service string `json:"service"`
-	Version string `json:"version"`
-}
-
-type registerVehicleAgentRequest struct {
-	VehicleAgentID      string `json:"vehicleAgentId"`
-	DroneID             string `json:"droneId"`
-	DroneName           string `json:"droneName"`
-	VehicleAgentVersion string `json:"vehicleAgentVersion"`
-}
-
-type registerVehicleAgentResponse struct {
-	VehicleAgentID           string `json:"vehicleAgentId"`
-	DroneID                  string `json:"droneId"`
-	Status                   string `json:"status"`
-	HeartbeatIntervalSeconds int    `json:"heartbeatIntervalSeconds"`
-}
-
-type heartbeatRequest struct {
-	VehicleAgentVersion string `json:"vehicleAgentVersion"`
-}
-
-type heartbeatResponse struct {
-	VehicleAgentID     string `json:"vehicleAgentId"`
-	DroneID            string `json:"droneId"`
-	Status             string `json:"status"`
-	LastHeartbeatAt    string `json:"lastHeartbeatAt"`
-	NextHeartbeatAfter int    `json:"nextHeartbeatAfterSeconds"`
-}
-
-type telemetryRequest struct {
-	ObservedAt        string  `json:"observedAt"`
-	BatteryPercent    float64 `json:"batteryPercent"`
-	RelativeAltitudeM float64 `json:"relativeAltitudeM"`
-	FlightMode        string  `json:"flightMode"`
-	Armed             bool    `json:"armed"`
-	InAir             bool    `json:"inAir"`
-	Latitude          float64 `json:"latitude"`
-	Longitude         float64 `json:"longitude"`
-	HeadingDeg        float64 `json:"headingDeg"`
-	GroundSpeedMPS    float64 `json:"groundSpeedMPS"`
-	GPSFix            string  `json:"gpsFix"`
-	SatellitesVisible int     `json:"satellitesVisible"`
-	HomePositionSet   bool    `json:"homePositionSet"`
-	Source            string  `json:"source"`
-}
-
-type telemetryResponse struct {
-	DroneID        string `json:"droneId"`
-	VehicleAgentID string `json:"vehicleAgentId"`
-	TelemetryState string `json:"telemetryState"`
-	ReceivedAt     string `json:"receivedAt"`
-}
-
-type telemetrySnapshotResponse struct {
-	State             string  `json:"state"`
-	ObservedAt        string  `json:"observedAt"`
-	ReceivedAt        string  `json:"receivedAt"`
-	BatteryPercent    float64 `json:"batteryPercent"`
-	RelativeAltitudeM float64 `json:"relativeAltitudeM"`
-	FlightMode        string  `json:"flightMode"`
-	Armed             bool    `json:"armed"`
-	InAir             bool    `json:"inAir"`
-	Latitude          float64 `json:"latitude"`
-	Longitude         float64 `json:"longitude"`
-	HeadingDeg        float64 `json:"headingDeg"`
-	GroundSpeedMPS    float64 `json:"groundSpeedMPS"`
-	GPSFix            string  `json:"gpsFix"`
-	SatellitesVisible int     `json:"satellitesVisible"`
-	HomePositionSet   bool    `json:"homePositionSet"`
-	Source            string  `json:"source"`
-}
-
-type commandChannelResponse struct {
-	State              string `json:"state"`
-	ConnectedAt        string `json:"connectedAt,omitempty"`
-	LastDisconnectedAt string `json:"lastDisconnectedAt,omitempty"`
-}
-
-type commandResponse struct {
-	ID                 string `json:"id"`
-	DroneID            string `json:"droneId"`
-	VehicleAgentID     string `json:"vehicleAgentId"`
-	Type               string `json:"type"`
-	State              string `json:"state"`
-	RequestedBy        string `json:"requestedBy"`
-	RequestedAt        string `json:"requestedAt"`
-	UpdatedAt          string `json:"updatedAt"`
-	LastSentAt         string `json:"lastSentAt,omitempty"`
-	LeaseUntil         string `json:"leaseUntil,omitempty"`
-	VehicleAckedAt     string `json:"vehicleAckedAt,omitempty"`
-	DeliveryAttempt    int    `json:"deliveryAttempt"`
-	PolicyReason       string `json:"policyReason,omitempty"`
-	ResultMessage      string `json:"resultMessage,omitempty"`
-	TelemetryState     string `json:"telemetryState"`
-	VehicleAgentStatus string `json:"vehicleAgentStatus"`
-}
-
-type createMissionRequest struct {
-	Name             string                   `json:"name"`
-	CompletionAction string                   `json:"completionAction,omitempty"`
-	Waypoints        []missionWaypointRequest `json:"waypoints"`
-}
-
-type missionWaypointRequest struct {
-	Latitude          float64  `json:"latitude"`
-	Longitude         float64  `json:"longitude"`
-	RelativeAltitudeM float64  `json:"relativeAltitudeM"`
-	SpeedMPS          *float64 `json:"speedMPS,omitempty"`
-	LoiterTimeS       *float64 `json:"loiterTimeS,omitempty"`
-}
-
-type missionResponse struct {
-	ID               string                    `json:"id"`
-	DroneID          string                    `json:"droneId"`
-	Name             string                    `json:"name"`
-	CreatedBy        string                    `json:"createdBy"`
-	CreatedAt        string                    `json:"createdAt"`
-	UpdatedAt        string                    `json:"updatedAt"`
-	CompletionAction string                    `json:"completionAction"`
-	ValidationStatus string                    `json:"validationStatus"`
-	ValidationErrors []missionValidationError  `json:"validationErrors,omitempty"`
-	Waypoints        []missionWaypointResponse `json:"waypoints"`
-}
-
-type missionWaypointResponse struct {
-	Sequence          int      `json:"sequence"`
-	Latitude          float64  `json:"latitude"`
-	Longitude         float64  `json:"longitude"`
-	RelativeAltitudeM float64  `json:"relativeAltitudeM"`
-	SpeedMPS          *float64 `json:"speedMPS,omitempty"`
-	LoiterTimeS       *float64 `json:"loiterTimeS,omitempty"`
-}
-
-type missionValidationError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
-}
-
-type missionExecutionResponse struct {
-	ID                 string `json:"id"`
-	MissionID          string `json:"missionId"`
-	DroneID            string `json:"droneId"`
-	VehicleAgentID     string `json:"vehicleAgentId"`
-	RequestedBy        string `json:"requestedBy"`
-	UploadRequestedBy  string `json:"uploadRequestedBy,omitempty"`
-	StartRequestedBy   string `json:"startRequestedBy,omitempty"`
-	State              string `json:"state"`
-	CreatedAt          string `json:"createdAt"`
-	UpdatedAt          string `json:"updatedAt"`
-	LastSentAt         string `json:"lastSentAt,omitempty"`
-	LeaseUntil         string `json:"leaseUntil,omitempty"`
-	UploadRequestedAt  string `json:"uploadRequestedAt,omitempty"`
-	UploadedAt         string `json:"uploadedAt,omitempty"`
-	StartRequestedAt   string `json:"startRequestedAt,omitempty"`
-	StartedAt          string `json:"startedAt,omitempty"`
-	CompletedAt        string `json:"completedAt,omitempty"`
-	HoldAt             string `json:"holdAt,omitempty"`
-	FailedAt           string `json:"failedAt,omitempty"`
-	CurrentMissionItem int    `json:"currentMissionItem,omitempty"`
-	TotalMissionItems  int    `json:"totalMissionItems,omitempty"`
-	ProgressUpdatedAt  string `json:"progressUpdatedAt,omitempty"`
-	DeliveryAttempt    int    `json:"deliveryAttempt"`
-	ResultMessage      string `json:"resultMessage,omitempty"`
-}
-
-type missionExecutionEventResponse struct {
-	ID                 string `json:"id"`
-	ExecutionID        string `json:"executionId"`
-	MissionID          string `json:"missionId"`
-	DroneID            string `json:"droneId"`
-	VehicleAgentID     string `json:"vehicleAgentId"`
-	Type               string `json:"type"`
-	State              string `json:"state"`
-	Message            string `json:"message"`
-	CurrentMissionItem int    `json:"currentMissionItem,omitempty"`
-	TotalMissionItems  int    `json:"totalMissionItems,omitempty"`
-	Source             string `json:"source"`
-	CreatedAt          string `json:"createdAt"`
-}
-
-type missionDetailResponse struct {
-	Mission    missionResponse            `json:"mission"`
-	Executions []missionExecutionResponse `json:"executions"`
-}
-
-type missionStreamEventResponse struct {
-	Type   string                `json:"type"`
-	Detail missionDetailResponse `json:"detail"`
-}
-
-type commandStatusRequest struct {
-	State         string `json:"state"`
-	ResultMessage string `json:"resultMessage"`
-}
-
-type droneResponse struct {
-	ID               string                     `json:"id"`
-	Name             string                     `json:"name"`
-	VehicleAgentID   string                     `json:"vehicleAgentId"`
-	Status           string                     `json:"status"`
-	LastSeenAt       string                     `json:"lastSeenAt"`
-	LastHeartbeatAt  string                     `json:"lastHeartbeatAt,omitempty"`
-	Telemetry        *telemetrySnapshotResponse `json:"telemetry,omitempty"`
-	CommandChannel   commandChannelResponse     `json:"commandChannel"`
-	Commands         []commandResponse          `json:"commands"`
-	MissionExecution *missionExecutionResponse  `json:"missionExecution,omitempty"`
 }
 
 func NewRouter(deps Dependencies) http.Handler {
@@ -299,7 +84,7 @@ func NewRouterWithDispatchers(deps Dependencies, commandDispatcher CommandDispat
 }
 
 func healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{
+	writeJSON(w, http.StatusOK, dtos.HealthResponse{
 		Service: serviceName,
 		Status:  "ok",
 		Time:    time.Now().UTC().Format(time.RFC3339),
@@ -307,7 +92,7 @@ func healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func version(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, versionResponse{
+	writeJSON(w, http.StatusOK, dtos.VersionResponse{
 		Service: serviceName,
 		Version: "0.1.0-dev",
 	})
@@ -315,7 +100,7 @@ func version(w http.ResponseWriter, r *http.Request) {
 
 func registerVehicleAgent(repo *svc.VehicleAgentService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req registerVehicleAgentRequest
+		var req dtos.RegisterVehicleAgentRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -337,7 +122,7 @@ func registerVehicleAgent(repo *svc.VehicleAgentService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, registerVehicleAgentResponse{
+		writeJSON(w, http.StatusOK, dtos.RegisterVehicleAgentResponse{
 			VehicleAgentID:           agent.ID,
 			DroneID:                  agent.DroneID,
 			Status:                   "registered",
@@ -350,7 +135,7 @@ func heartbeat(repo *svc.VehicleAgentService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "vehicleAgentID")
 
-		var req heartbeatRequest
+		var req dtos.HeartbeatRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -381,7 +166,7 @@ func heartbeat(repo *svc.VehicleAgentService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, heartbeatResponse{
+		writeJSON(w, http.StatusOK, dtos.HeartbeatResponse{
 			VehicleAgentID:     agent.ID,
 			DroneID:            agent.DroneID,
 			Status:             "online",
@@ -399,7 +184,7 @@ func recordTelemetry(repo *svc.TelemetryService) http.HandlerFunc {
 			return
 		}
 
-		var req telemetryRequest
+		var req dtos.TelemetryRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -423,7 +208,7 @@ func recordTelemetry(repo *svc.TelemetryService) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, telemetryResponse{
+		writeJSON(w, http.StatusOK, dtos.TelemetryResponse{
 			DroneID:        snapshot.DroneID,
 			VehicleAgentID: snapshot.VehicleAgentID,
 			TelemetryState: string(models.TelemetryStateFresh),
@@ -474,7 +259,7 @@ func createMission(repo *svc.MissionService) http.HandlerFunc {
 			return
 		}
 
-		var req createMissionRequest
+		var req dtos.CreateMissionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -525,7 +310,7 @@ func listMissionsForDrone(repo *svc.MissionService) http.HandlerFunc {
 			return
 		}
 
-		res := make([]missionResponse, 0, len(missions))
+		res := make([]dtos.MissionResponse, 0, len(missions))
 		for _, mission := range missions {
 			res = append(res, missionToResponse(mission))
 		}
@@ -825,7 +610,7 @@ func listCommandsForDrone(repo *svc.CommandService) http.HandlerFunc {
 			return
 		}
 
-		res := make([]commandResponse, 0, len(commands))
+		res := make([]dtos.CommandResponse, 0, len(commands))
 		for _, command := range commands {
 			res = append(res, commandToResponse(command))
 		}
@@ -919,7 +704,7 @@ func updateCommandStatus(repo *svc.CommandService) http.HandlerFunc {
 			return
 		}
 
-		var req commandStatusRequest
+		var req dtos.CommandStatusRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -973,18 +758,18 @@ func writeDroneStreamSnapshot(ctx context.Context, conn *websocket.Conn, fleet *
 	return conn.WriteJSON(droneResponses(fleet.ListDrones(ctx, time.Now().UTC(), 8)))
 }
 
-func writeMissionStreamEvent(conn *websocket.Conn, eventType string, detail missionDetailResponse) error {
+func writeMissionStreamEvent(conn *websocket.Conn, eventType string, detail dtos.MissionDetailResponse) error {
 	if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return err
 	}
 
-	return conn.WriteJSON(missionStreamEventResponse{
+	return conn.WriteJSON(dtos.MissionStreamEventResponse{
 		Type:   eventType,
 		Detail: detail,
 	})
 }
 
-func missionDetailSignature(detail missionDetailResponse) string {
+func missionDetailSignature(detail dtos.MissionDetailResponse) string {
 	payload, err := json.Marshal(detail)
 	if err != nil {
 		return ""
@@ -993,12 +778,12 @@ func missionDetailSignature(detail missionDetailResponse) string {
 	return string(payload)
 }
 
-func droneResponses(drones []svc.FleetDrone) []droneResponse {
-	res := make([]droneResponse, 0, len(drones))
+func droneResponses(drones []svc.FleetDrone) []dtos.DroneResponse {
+	res := make([]dtos.DroneResponse, 0, len(drones))
 
 	for _, drone := range drones {
 		snapshot := drone.Snapshot
-		item := droneResponse{
+		item := dtos.DroneResponse{
 			ID:             snapshot.ID,
 			Name:           snapshot.Name,
 			VehicleAgentID: snapshot.VehicleAgentID,
@@ -1013,7 +798,7 @@ func droneResponses(drones []svc.FleetDrone) []droneResponse {
 		}
 
 		if !snapshot.Telemetry.ReceivedAt.IsZero() {
-			item.Telemetry = &telemetrySnapshotResponse{
+			item.Telemetry = &dtos.TelemetrySnapshotResponse{
 				State:             string(snapshot.TelemetryState),
 				ObservedAt:        rfc3339UTC(snapshot.Telemetry.ObservedAt),
 				ReceivedAt:        rfc3339UTC(snapshot.Telemetry.ReceivedAt),
@@ -1044,20 +829,20 @@ func droneResponses(drones []svc.FleetDrone) []droneResponse {
 	return res
 }
 
-func missionDetail(ctx context.Context, fleet *svc.FleetService, missionID string) (missionDetailResponse, error) {
+func missionDetail(ctx context.Context, fleet *svc.FleetService, missionID string) (dtos.MissionDetailResponse, error) {
 	detail, err := fleet.MissionDetail(ctx, missionID)
 	if err != nil {
-		return missionDetailResponse{}, err
+		return dtos.MissionDetailResponse{}, err
 	}
 
-	return missionDetailResponse{
+	return dtos.MissionDetailResponse{
 		Mission:    missionToResponse(detail.Mission),
 		Executions: missionExecutionResponses(detail.Executions),
 	}, nil
 }
 
-func missionExecutionResponses(executions []models.MissionExecution) []missionExecutionResponse {
-	res := make([]missionExecutionResponse, 0, len(executions))
+func missionExecutionResponses(executions []models.MissionExecution) []dtos.MissionExecutionResponse {
+	res := make([]dtos.MissionExecutionResponse, 0, len(executions))
 	for _, execution := range executions {
 		res = append(res, missionExecutionToResponse(execution))
 	}
@@ -1065,8 +850,8 @@ func missionExecutionResponses(executions []models.MissionExecution) []missionEx
 	return res
 }
 
-func missionExecutionEventResponses(events []models.MissionExecutionEvent) []missionExecutionEventResponse {
-	res := make([]missionExecutionEventResponse, 0, len(events))
+func missionExecutionEventResponses(events []models.MissionExecutionEvent) []dtos.MissionExecutionEventResponse {
+	res := make([]dtos.MissionExecutionEventResponse, 0, len(events))
 	for _, event := range events {
 		res = append(res, missionExecutionEventToResponse(event))
 	}
@@ -1074,8 +859,8 @@ func missionExecutionEventResponses(events []models.MissionExecutionEvent) []mis
 	return res
 }
 
-func commandResponses(commands []models.CommandRequest) []commandResponse {
-	res := make([]commandResponse, 0, len(commands))
+func commandResponses(commands []models.CommandRequest) []dtos.CommandResponse {
+	res := make([]dtos.CommandResponse, 0, len(commands))
 	for _, command := range commands {
 		res = append(res, commandToResponse(command))
 	}
@@ -1083,8 +868,8 @@ func commandResponses(commands []models.CommandRequest) []commandResponse {
 	return res
 }
 
-func commandChannelToResponse(channel repository.CommandChannelSnapshot) commandChannelResponse {
-	res := commandChannelResponse{
+func commandChannelToResponse(channel repository.CommandChannelSnapshot) dtos.CommandChannelResponse {
+	res := dtos.CommandChannelResponse{
 		State: string(channel.State),
 	}
 
@@ -1099,7 +884,7 @@ func commandChannelToResponse(channel repository.CommandChannelSnapshot) command
 	return res
 }
 
-func telemetryRequestToSnapshot(agentID string, req telemetryRequest) (models.TelemetrySnapshot, error) {
+func telemetryRequestToSnapshot(agentID string, req dtos.TelemetryRequest) (models.TelemetrySnapshot, error) {
 	observedAt, err := time.Parse(time.RFC3339Nano, req.ObservedAt)
 	if err != nil {
 		return models.TelemetrySnapshot{}, errors.New("observedAt must be an RFC3339 timestamp")
@@ -1165,7 +950,7 @@ func rfc3339UTC(value time.Time) string {
 	return value.UTC().Format(time.RFC3339)
 }
 
-func missionWaypointInputs(waypoints []missionWaypointRequest) []repository.MissionWaypointInput {
+func missionWaypointInputs(waypoints []dtos.MissionWaypointRequest) []repository.MissionWaypointInput {
 	inputs := make([]repository.MissionWaypointInput, 0, len(waypoints))
 	for _, waypoint := range waypoints {
 		inputs = append(inputs, repository.MissionWaypointInput{
@@ -1180,8 +965,8 @@ func missionWaypointInputs(waypoints []missionWaypointRequest) []repository.Miss
 	return inputs
 }
 
-func missionToResponse(mission models.Mission) missionResponse {
-	res := missionResponse{
+func missionToResponse(mission models.Mission) dtos.MissionResponse {
+	res := dtos.MissionResponse{
 		ID:               mission.ID,
 		DroneID:          mission.DroneID,
 		Name:             mission.Name,
@@ -1190,12 +975,12 @@ func missionToResponse(mission models.Mission) missionResponse {
 		UpdatedAt:        rfc3339UTC(mission.UpdatedAt),
 		CompletionAction: string(mission.CompletionAction),
 		ValidationStatus: string(mission.ValidationStatus),
-		Waypoints:        make([]missionWaypointResponse, 0, len(mission.Waypoints)),
-		ValidationErrors: make([]missionValidationError, 0, len(mission.ValidationErrors)),
+		Waypoints:        make([]dtos.MissionWaypointResponse, 0, len(mission.Waypoints)),
+		ValidationErrors: make([]dtos.MissionValidationError, 0, len(mission.ValidationErrors)),
 	}
 
 	for _, waypoint := range mission.Waypoints {
-		res.Waypoints = append(res.Waypoints, missionWaypointResponse{
+		res.Waypoints = append(res.Waypoints, dtos.MissionWaypointResponse{
 			Sequence:          waypoint.Sequence,
 			Latitude:          waypoint.Latitude,
 			Longitude:         waypoint.Longitude,
@@ -1206,7 +991,7 @@ func missionToResponse(mission models.Mission) missionResponse {
 	}
 
 	for _, validationError := range mission.ValidationErrors {
-		res.ValidationErrors = append(res.ValidationErrors, missionValidationError{
+		res.ValidationErrors = append(res.ValidationErrors, dtos.MissionValidationError{
 			Field:   validationError.Field,
 			Message: validationError.Message,
 		})
@@ -1215,8 +1000,8 @@ func missionToResponse(mission models.Mission) missionResponse {
 	return res
 }
 
-func missionExecutionToResponse(execution models.MissionExecution) missionExecutionResponse {
-	res := missionExecutionResponse{
+func missionExecutionToResponse(execution models.MissionExecution) dtos.MissionExecutionResponse {
+	res := dtos.MissionExecutionResponse{
 		ID:                 execution.ID,
 		MissionID:          execution.MissionID,
 		DroneID:            execution.DroneID,
@@ -1276,8 +1061,8 @@ func missionExecutionToResponse(execution models.MissionExecution) missionExecut
 	return res
 }
 
-func missionExecutionEventToResponse(event models.MissionExecutionEvent) missionExecutionEventResponse {
-	return missionExecutionEventResponse{
+func missionExecutionEventToResponse(event models.MissionExecutionEvent) dtos.MissionExecutionEventResponse {
+	return dtos.MissionExecutionEventResponse{
 		ID:                 event.ID,
 		ExecutionID:        event.ExecutionID,
 		MissionID:          event.MissionID,
@@ -1293,8 +1078,8 @@ func missionExecutionEventToResponse(event models.MissionExecutionEvent) mission
 	}
 }
 
-func commandToResponse(command models.CommandRequest) commandResponse {
-	res := commandResponse{
+func commandToResponse(command models.CommandRequest) dtos.CommandResponse {
+	res := dtos.CommandResponse{
 		ID:                 command.ID,
 		DroneID:            command.DroneID,
 		VehicleAgentID:     command.VehicleAgentID,
@@ -1377,7 +1162,7 @@ func isLocalhost(host string) bool {
 	}
 }
 
-func validateRegisterVehicleAgentRequest(req registerVehicleAgentRequest) error {
+func validateRegisterVehicleAgentRequest(req dtos.RegisterVehicleAgentRequest) error {
 	if strings.TrimSpace(req.VehicleAgentID) == "" {
 		return errors.New("vehicleAgentId is required")
 	}

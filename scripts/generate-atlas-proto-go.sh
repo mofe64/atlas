@@ -5,8 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROTO_DIR="${ROOT_DIR}/proto"
 PROTO_FILE="${PROTO_DIR}/atlas/vehicle_agent_channel.proto"
 
-BACKEND_OUT_DIR="${ROOT_DIR}/atlas-backend/internal/vehicleagentchannelpb"
-AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent/internal/vehicleagentchannelpb"
+BACKEND_OUT_DIR="${ROOT_DIR}/atlas-backend/internal/transport/vehicleagentchannelpb"
+AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent/internal/transport/vehicleagentchannelpb"
 
 export PATH="$(go env GOPATH)/bin:${PATH}"
 
