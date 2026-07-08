@@ -6,7 +6,6 @@ import (
 )
 
 type Config struct {
-	BackendURL           string
 	VehicleAgentID       string
 	DroneID              string
 	DroneName            string
@@ -16,15 +15,13 @@ type Config struct {
 	PX4SystemAddress     string
 	HeartbeatInterval    time.Duration
 	TelemetryInterval    time.Duration
-	CommandPollInterval  time.Duration
 	CommandTimeout       time.Duration
-	RegisterRetryMin     time.Duration
-	RegisterRetryMax     time.Duration
+	ChannelRetryMin      time.Duration
+	ChannelRetryMax      time.Duration
 }
 
 func Load() Config {
 	return Config{
-		BackendURL:           envOrDefault("ATLAS_BACKEND_URL", "http://127.0.0.1:8080"),
 		VehicleAgentID:       envOrDefault("ATLAS_VEHICLE_AGENT_ID", "agent-001"),
 		DroneID:              envOrDefault("ATLAS_DRONE_ID", "drone-001"),
 		DroneName:            envOrDefault("ATLAS_DRONE_NAME", "Training Quad 1"),
@@ -34,10 +31,9 @@ func Load() Config {
 		PX4SystemAddress:     envOrDefault("ATLAS_PX4_SYSTEM_ADDRESS", "udpin://0.0.0.0:14540"),
 		HeartbeatInterval:    5 * time.Second,
 		TelemetryInterval:    2 * time.Second,
-		CommandPollInterval:  time.Second,
 		CommandTimeout:       15 * time.Second,
-		RegisterRetryMin:     1 * time.Second,
-		RegisterRetryMax:     30 * time.Second,
+		ChannelRetryMin:      1 * time.Second,
+		ChannelRetryMax:      30 * time.Second,
 	}
 }
 

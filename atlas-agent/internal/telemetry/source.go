@@ -5,13 +5,29 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sunnyside/atlas/atlas-agent/internal/backend"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
 )
 
+type Snapshot struct {
+	ObservedAt        time.Time
+	BatteryPercent    float64
+	RelativeAltitudeM float64
+	FlightMode        string
+	Armed             bool
+	InAir             bool
+	Latitude          float64
+	Longitude         float64
+	HeadingDeg        float64
+	GroundSpeedMPS    float64
+	GPSFix            string
+	SatellitesVisible int
+	HomePositionSet   bool
+	Source            string
+}
+
 type Source interface {
 	Name() string
-	Read(now time.Time) (backend.TelemetryRequest, error)
+	Read(now time.Time) (Snapshot, error)
 }
 
 type sourceConfig struct {

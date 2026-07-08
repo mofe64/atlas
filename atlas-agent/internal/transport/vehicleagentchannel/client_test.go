@@ -388,6 +388,40 @@ func TestMissionExecutionProcessingKeyIncludesAction(t *testing.T) {
 	}
 }
 
+func TestExecuteVehicleCommandRoutesToGatewayMethod(t *testing.T) {
+	tests := []struct {
+		name        string
+		commandType string
+		wantCalls   []string
+	}{
+		{name: "arm", commandType: commandTypeArm, wantCalls: []string{"arm"}},
+		{name: "takeoff", commandType: commandTypeTakeoff, wantCalls: []string{"takeoff"}},
+		{name: "return to launch", commandType: commandTypeReturnToLaunch, wantCalls: []string{"return_to_launch"}},
+		{name: "land", commandType: commandTypeLand, wantCalls: []string{"land"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gateway := &fakeGateway{}
+
+			if err := executeVehicleCommand(context.Background(), gateway, tt.commandType); err != nil {
+				t.Fatalf("execute vehicle command: %v", err)
+			}
+
+			if !equalStrings(gateway.calls, tt.wantCalls) {
+				t.Fatalf("expected gateway calls %v, got %v", tt.wantCalls, gateway.calls)
+			}
+		})
+	}
+}
+
+func TestExecuteVehicleCommandRejectsUnsupportedCommand(t *testing.T) {
+	err := executeVehicleCommand(context.Background(), &fakeGateway{}, "orbit")
+	if !errors.Is(err, errUnsupportedCommand) {
+		t.Fatalf("expected unsupported command error, got %v", err)
+	}
+}
+
 func TestHeartbeatDropsWhenHeartbeatQueueIsFull(t *testing.T) {
 	outbound := newOutboundQueues()
 
@@ -498,6 +532,7 @@ func (g *fakeGateway) ReturnToLaunch(ctx context.Context) error {
 }
 
 func (g *fakeGateway) Land(ctx context.Context) error {
+	g.calls = append(g.calls, "land")
 	return nil
 }
 

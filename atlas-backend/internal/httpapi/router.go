@@ -60,7 +60,6 @@ func NewRouterWithDispatchers(deps Dependencies, commandDispatcher CommandDispat
 		router.Post("/vehicle-agents/register", registerVehicleAgent(deps.VehicleAgents))
 		router.Post("/vehicle-agents/{vehicleAgentID}/heartbeat", heartbeat(deps.VehicleAgents))
 		router.Post("/vehicle-agents/{vehicleAgentID}/telemetry", recordTelemetry(deps.Telemetry))
-		router.Get("/vehicle-agents/{vehicleAgentID}/commands/next", nextCommandForVehicleAgent(deps.Commands))
 		router.Post("/vehicle-agents/{vehicleAgentID}/commands/{commandID}/status", updateCommandStatus(deps.Commands))
 		router.Get("/drones", listDrones(deps.Fleet))
 		router.Get("/drones/stream", streamDrones(deps.Fleet))
@@ -659,34 +658,6 @@ func issueCommand(repo *svc.CommandService, dispatcher CommandDispatcher, comman
 		}
 
 		writeJSON(w, status, commandToResponse(command))
-	}
-}
-
-func nextCommandForVehicleAgent(repo *svc.CommandService) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		agentID := chi.URLParam(r, "vehicleAgentID")
-		if strings.TrimSpace(agentID) == "" {
-			writeError(w, http.StatusBadRequest, "vehicleAgentId is required")
-			return
-		}
-
-		command, ok, err := repo.NextCommandForVehicleAgent(r.Context(), agentID, time.Now().UTC())
-		if err != nil {
-			if errors.Is(err, repository.ErrVehicleAgentNotFound) {
-				writeError(w, http.StatusNotFound, "vehicle agent is not registered")
-				return
-			}
-
-			writeError(w, http.StatusInternalServerError, "failed to fetch next command")
-			return
-		}
-
-		if !ok {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, commandToResponse(command))
 	}
 }
 

@@ -4,9 +4,10 @@ Atlas Agent is the onboard vehicle-agent service that will eventually run on the
 
 The first implementation only proves the backend-vehicle-agent loop:
 
-1. Register with Atlas Backend.
-2. Send a heartbeat over the backend-vehicle-agent gRPC stream every five seconds.
-3. Let the backend derive online/stale/offline state for the vehicle agent.
+1. Open the backend-vehicle-agent gRPC stream and register with a hello message.
+2. Send heartbeat and telemetry messages over that same stream.
+3. Receive authorized commands and mission actions over the stream.
+4. Let the backend derive online/stale/offline state for the vehicle agent.
 
 Phase 1 reads real PX4 SITL telemetry through `mavsdk_server` using generated
 Go gRPC clients from `MAVSDK-Proto`. The agent does not generate simulated
@@ -23,12 +24,11 @@ commands instead of importing generated MAVSDK protobuf packages directly.
 The MAVSDK gateway currently implements telemetry plus arm, takeoff,
 return-to-launch, and land actions.
 
-Command delivery uses a gRPC backend-vehicle-agent stream when available. The vehicle agent opens
-an outbound stream to the backend, the backend pushes authorized commands over
-that stream, and the agent reports command lifecycle status back on the same
-connection. HTTP command polling remains available as a fallback path.
-
-Telemetry and heartbeat now use the gRPC stream.
+Command delivery uses the gRPC backend-vehicle-agent stream. The vehicle agent
+opens an outbound stream to the backend, the backend pushes authorized commands
+over that stream, and the agent reports command lifecycle status back on the
+same connection. Telemetry and heartbeat use the same stream, so the agent does
+not run a separate HTTP polling loop.
 
 The agent applies outbound backpressure by message importance:
 
@@ -39,10 +39,11 @@ The agent applies outbound backpressure by message importance:
   before they can delay command acknowledgements.
 
 If the backend is unavailable when the agent starts, the agent keeps retrying
-registration with capped exponential backoff.
+the gRPC channel connection with capped exponential backoff.
 
-If a heartbeat fails later, the vehicle agent re-enters registration retry. This lets the
-vehicle agent recover after a backend restart, network interruption, or lost session.
+If the stream fails later, the vehicle agent reconnects and sends hello again.
+This lets the vehicle agent recover after a backend restart, network
+interruption, or lost session.
 
 Run locally:
 
@@ -53,7 +54,6 @@ go run ./cmd/atlas-agent
 Configuration:
 
 ```sh
-ATLAS_BACKEND_URL=http://127.0.0.1:8080
 ATLAS_VEHICLE_AGENT_ID=agent-001
 ATLAS_DRONE_ID=drone-001
 ATLAS_DRONE_NAME="Training Quad 1"
@@ -68,7 +68,6 @@ Default runtime intervals:
 ```text
 heartbeat:      5s
 telemetry:      2s
-command poll:   1s
 command timeout: 15s
 ```
 

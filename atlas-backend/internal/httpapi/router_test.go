@@ -354,44 +354,6 @@ func TestRequestCommandRejectedWithoutFreshTelemetry(t *testing.T) {
 	}
 }
 
-func TestAgentFetchesNextAuthorizedCommand(t *testing.T) {
-	repo := newTestRepository(t)
-	router := NewRouter(repo.dependencies())
-
-	registerTestVehicleAgent(t, router)
-	sendTestHeartbeat(t, router)
-	sendTestTelemetry(t, router)
-
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/arm", nil)
-	requestRec := httptest.NewRecorder()
-	router.ServeHTTP(requestRec, requestReq)
-
-	if requestRec.Code != http.StatusAccepted {
-		t.Fatalf("expected request status %d, got %d: %s", http.StatusAccepted, requestRec.Code, requestRec.Body.String())
-	}
-
-	fetchReq := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
-	fetchRec := httptest.NewRecorder()
-	router.ServeHTTP(fetchRec, fetchReq)
-
-	if fetchRec.Code != http.StatusOK {
-		t.Fatalf("expected fetch status %d, got %d: %s", http.StatusOK, fetchRec.Code, fetchRec.Body.String())
-	}
-
-	var command dtos.CommandResponse
-	if err := json.NewDecoder(fetchRec.Body).Decode(&command); err != nil {
-		t.Fatalf("decode command: %v", err)
-	}
-
-	if command.Type != "arm" {
-		t.Fatalf("expected arm command, got %q", command.Type)
-	}
-
-	if command.State != "sent_to_vehicle_agent" {
-		t.Fatalf("expected sent_to_vehicle_agent, got %q", command.State)
-	}
-}
-
 func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
@@ -427,6 +389,19 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 
 	if commands[0].Type != "arm" {
 		t.Fatalf("expected arm command, got %q", commands[0].Type)
+	}
+}
+
+func TestAgentCommandPollingRouteIsNotRegistered(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	req := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected removed polling route to return %d, got %d: %s", http.StatusNotFound, rec.Code, rec.Body.String())
 	}
 }
 
@@ -888,21 +863,6 @@ func TestListMissionExecutionEvents(t *testing.T) {
 	}
 }
 
-func TestAgentFetchesNoContentWhenNoPendingCommand(t *testing.T) {
-	repo := newTestRepository(t)
-	router := NewRouter(repo.dependencies())
-
-	registerTestVehicleAgent(t, router)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("expected status %d, got %d: %s", http.StatusNoContent, rec.Code, rec.Body.String())
-	}
-}
-
 func TestAgentReportsCommandStatus(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
@@ -920,12 +880,8 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 		t.Fatalf("decode requested command: %v", err)
 	}
 
-	fetchReq := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
-	fetchRec := httptest.NewRecorder()
-	router.ServeHTTP(fetchRec, fetchReq)
-
-	if fetchRec.Code != http.StatusOK {
-		t.Fatalf("expected fetch status %d, got %d: %s", http.StatusOK, fetchRec.Code, fetchRec.Body.String())
+	if _, err := repo.dependencies().Commands.ClaimCommandForVehicleAgent(context.Background(), "agent-001", requested.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("claim command for status report setup: %v", err)
 	}
 
 	body := []byte(`{"state":"vehicle_acked","resultMessage":"accepted by vehicle"}`)

@@ -31,7 +31,7 @@ func (s *CommandService) IssueCommand(ctx context.Context, input repository.Requ
 	return command, err
 }
 
-// NextCommandForVehicleAgent leases the next deliverable command for an agent polling the backend stream.
+// NextCommandForVehicleAgent leases the next deliverable command for the gRPC channel to push to an agent.
 func (s *CommandService) NextCommandForVehicleAgent(ctx context.Context, agentID string, now time.Time) (models.CommandRequest, bool, error) {
 	var command models.CommandRequest
 	ok := false
@@ -65,7 +65,7 @@ func (s *CommandService) UpdateCommandStatus(ctx context.Context, input reposito
 	return command, err
 }
 
-// GetCommandByID fetches a command for API reads such as command detail screens or status polling.
+// GetCommandByID fetches a command for API reads such as command detail screens or status refreshes.
 func (s *CommandService) GetCommandByID(ctx context.Context, commandID string) (models.CommandRequest, bool) {
 	return s.repos.Commands.GetCommandByID(ctx, commandID)
 }

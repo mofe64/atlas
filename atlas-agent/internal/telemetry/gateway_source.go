@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sunnyside/atlas/atlas-agent/internal/backend"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
 )
 
@@ -34,12 +33,12 @@ func (s *GatewaySource) Name() string {
 	return s.name
 }
 
-func (s *GatewaySource) Read(now time.Time) (backend.TelemetryRequest, error) {
+func (s *GatewaySource) Read(now time.Time) (Snapshot, error) {
 	for {
 		select {
 		case event, ok := <-s.events:
 			if !ok {
-				return backend.TelemetryRequest{}, errors.New("vehicle telemetry stream closed")
+				return Snapshot{}, errors.New("vehicle telemetry stream closed")
 			}
 			s.latest = event
 		default:
@@ -48,16 +47,16 @@ func (s *GatewaySource) Read(now time.Time) (backend.TelemetryRequest, error) {
 	}
 }
 
-func (s *GatewaySource) latestRequest(now time.Time) (backend.TelemetryRequest, error) {
+func (s *GatewaySource) latestRequest(now time.Time) (Snapshot, error) {
 	if s.latest.ObservedAt.IsZero() {
-		return backend.TelemetryRequest{}, errors.New("vehicle telemetry not ready")
+		return Snapshot{}, errors.New("vehicle telemetry not ready")
 	}
 
 	if now.Sub(s.latest.ObservedAt) > telemetryReadMaxAge {
-		return backend.TelemetryRequest{}, errors.New("vehicle telemetry stale")
+		return Snapshot{}, errors.New("vehicle telemetry stale")
 	}
 
-	return backend.TelemetryRequest{
+	return Snapshot{
 		ObservedAt:        s.latest.ObservedAt.UTC(),
 		BatteryPercent:    s.latest.BatteryPercent,
 		RelativeAltitudeM: s.latest.RelativeAltitudeM,

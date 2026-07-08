@@ -581,7 +581,7 @@ func TestAgentChannelTelemetryUpdatesFleetSnapshot(t *testing.T) {
 	})
 }
 
-func TestAgentChannelDispatchFallsBackWhenAgentDisconnected(t *testing.T) {
+func TestAgentChannelDispatchLeavesCommandAuthorizedWhenAgentDisconnected(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
@@ -606,7 +606,7 @@ func TestAgentChannelDispatchFallsBackWhenAgentDisconnected(t *testing.T) {
 	}
 
 	if stored.State != models.CommandStateAuthorized {
-		t.Fatalf("expected command to remain authorized for polling fallback, got %q", stored.State)
+		t.Fatalf("expected command to remain authorized for gRPC reconnect delivery, got %q", stored.State)
 	}
 }
 
