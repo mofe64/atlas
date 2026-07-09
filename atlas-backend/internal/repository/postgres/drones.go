@@ -80,6 +80,8 @@ func (r *DroneRepository) ListDrones(ctx context.Context, now time.Time) []repos
 			Status:                 models.VehicleAgentStatusFromHeartbeat(agent.LastHeartbeatAt, now),
 			LastSeenAt:             drone.LastSeenAt,
 			LastHeartbeatAt:        agent.LastHeartbeatAt,
+			MAVLinkObserver:        agent.MAVLinkObserverDiagnostics,
+			BackendChannelHealth:   agent.BackendChannelHealth,
 			Telemetry:              telemetry,
 			TelemetryState:         models.TelemetryStateFromReceivedAt(telemetry.ReceivedAt, now),
 			CommandChannel:         generateCommandChannelSnapshot(agent),

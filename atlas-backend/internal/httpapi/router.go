@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi/dtos"
+	"github.com/sunnyside/atlas/atlas-backend/internal/localinputs"
 	"github.com/sunnyside/atlas/atlas-backend/internal/models"
 	"github.com/sunnyside/atlas/atlas-backend/internal/repository"
 	svc "github.com/sunnyside/atlas/atlas-backend/internal/services"
@@ -22,36 +23,52 @@ import (
 const serviceName = "atlas-backend"
 
 const droneStreamInterval = time.Second
+const maxGimbalRateDegS = 90
 
 var droneStreamUpgrader = websocket.Upgrader{
 	CheckOrigin: allowDroneStreamOrigin,
 }
 
-type CommandDispatcher interface {
-	DispatchCommand(ctx context.Context, command models.CommandRequest) (models.CommandRequest, bool)
+type VehicleActionDispatcher interface {
+	DispatchVehicleAction(ctx context.Context, action models.VehicleAction) (models.VehicleAction, bool)
 }
 
 type MissionExecutionDispatcher interface {
 	DispatchMissionExecution(ctx context.Context, execution models.MissionExecution) (models.MissionExecution, bool)
 }
 
+type GimbalControlDispatcher interface {
+	DispatchGimbalControl(ctx context.Context, command models.GimbalControlCommand) bool
+}
+
+type LocalVideoService interface {
+	Status() localinputs.VideoStatus
+	HandleOffer(context.Context, localinputs.VideoOffer) (localinputs.VideoAnswer, error)
+}
+
 type Dependencies struct {
-	VehicleAgents *svc.VehicleAgentService
-	Telemetry     *svc.TelemetryService
-	Commands      *svc.CommandService
-	Missions      *svc.MissionService
-	Fleet         *svc.FleetService
+	VehicleAgents  *svc.VehicleAgentService
+	Telemetry      *svc.TelemetryService
+	VehicleActions *svc.VehicleActionService
+	Missions       *svc.MissionService
+	Fleet          *svc.FleetService
+	Perception     *svc.PerceptionService
+	LocalVideo     LocalVideoService
 }
 
 func NewRouter(deps Dependencies) http.Handler {
-	return NewRouterWithCommandDispatcher(deps, nil)
+	return NewRouterWithVehicleActionDispatcher(deps, nil)
 }
 
-func NewRouterWithCommandDispatcher(deps Dependencies, dispatcher CommandDispatcher) http.Handler {
+func NewRouterWithVehicleActionDispatcher(deps Dependencies, dispatcher VehicleActionDispatcher) http.Handler {
 	return NewRouterWithDispatchers(deps, dispatcher, nil)
 }
 
-func NewRouterWithDispatchers(deps Dependencies, commandDispatcher CommandDispatcher, missionDispatcher MissionExecutionDispatcher) http.Handler {
+func NewRouterWithDispatchers(deps Dependencies, actionDispatcher VehicleActionDispatcher, missionDispatcher MissionExecutionDispatcher) http.Handler {
+	return NewRouterWithGimbalControlDispatcher(deps, actionDispatcher, missionDispatcher, nil)
+}
+
+func NewRouterWithGimbalControlDispatcher(deps Dependencies, actionDispatcher VehicleActionDispatcher, missionDispatcher MissionExecutionDispatcher, gimbalDispatcher GimbalControlDispatcher) http.Handler {
 	router := chi.NewRouter()
 
 	router.Get("/healthz", healthz)
@@ -60,9 +77,13 @@ func NewRouterWithDispatchers(deps Dependencies, commandDispatcher CommandDispat
 		router.Post("/vehicle-agents/register", registerVehicleAgent(deps.VehicleAgents))
 		router.Post("/vehicle-agents/{vehicleAgentID}/heartbeat", heartbeat(deps.VehicleAgents))
 		router.Post("/vehicle-agents/{vehicleAgentID}/telemetry", recordTelemetry(deps.Telemetry))
-		router.Post("/vehicle-agents/{vehicleAgentID}/commands/{commandID}/status", updateCommandStatus(deps.Commands))
+		router.Post("/vehicle-agents/{vehicleAgentID}/actions/{vehicleActionID}/status", updateVehicleActionStatus(deps.VehicleActions))
 		router.Get("/drones", listDrones(deps.Fleet))
 		router.Get("/drones/stream", streamDrones(deps.Fleet))
+		router.Get("/drones/{droneID}/communication-links", listCommunicationLinksForDrone(deps.Fleet))
+		router.Get("/drones/{droneID}/telemetry-feeds", listTelemetryFeedsForDrone(deps.Fleet))
+		router.Get("/drones/{droneID}/perception/events", listPerceptionEvents(deps.Perception))
+		router.Get("/drones/{droneID}/perception/status", perceptionStatus(deps.Perception))
 		router.Get("/drones/{droneID}/missions", listMissionsForDrone(deps.Missions))
 		router.Post("/drones/{droneID}/missions", createMission(deps.Missions))
 		router.Get("/missions/{missionID}", getMission(deps.Fleet))
@@ -72,11 +93,15 @@ func NewRouterWithDispatchers(deps Dependencies, commandDispatcher CommandDispat
 		router.Post("/missions/{missionID}/upload", requestMissionUpload(deps.Missions, missionDispatcher))
 		router.Post("/missions/{missionID}/start", requestMissionStart(deps.Missions, missionDispatcher))
 		router.Post("/missions/{missionID}/abort", requestMissionAbort(deps.Missions, missionDispatcher))
-		router.Get("/drones/{droneID}/commands", listCommandsForDrone(deps.Commands))
-		router.Post("/drones/{droneID}/commands/arm", issueCommand(deps.Commands, commandDispatcher, models.CommandTypeArm))
-		router.Post("/drones/{droneID}/commands/takeoff", issueCommand(deps.Commands, commandDispatcher, models.CommandTypeTakeoff))
-		router.Post("/drones/{droneID}/commands/return-to-launch", issueCommand(deps.Commands, commandDispatcher, models.CommandTypeReturnToLaunch))
-		router.Post("/drones/{droneID}/commands/land", issueCommand(deps.Commands, commandDispatcher, models.CommandTypeLand))
+		router.Get("/drones/{droneID}/actions", listVehicleActionsForDrone(deps.VehicleActions))
+		router.Get("/drones/{droneID}/actions/{vehicleActionID}/events", listVehicleActionEvents(deps.VehicleActions))
+		router.Post("/drones/{droneID}/actions/arm", requestVehicleAction(deps.VehicleActions, actionDispatcher, models.VehicleActionTypeArm))
+		router.Post("/drones/{droneID}/actions/takeoff", requestVehicleAction(deps.VehicleActions, actionDispatcher, models.VehicleActionTypeTakeoff))
+		router.Post("/drones/{droneID}/actions/return-to-launch", requestVehicleAction(deps.VehicleActions, actionDispatcher, models.VehicleActionTypeReturnToLaunch))
+		router.Post("/drones/{droneID}/actions/land", requestVehicleAction(deps.VehicleActions, actionDispatcher, models.VehicleActionTypeLand))
+		router.Post("/drones/{droneID}/gimbal/control", sendGimbalControl(gimbalDispatcher))
+		router.Get("/local-video/status", localVideoStatus(deps.LocalVideo))
+		router.Post("/local-video/webrtc/offer", localVideoOffer(deps.LocalVideo))
 	})
 
 	return router
@@ -208,10 +233,12 @@ func recordTelemetry(repo *svc.TelemetryService) http.HandlerFunc {
 		}
 
 		writeJSON(w, http.StatusOK, dtos.TelemetryResponse{
-			DroneID:        snapshot.DroneID,
-			VehicleAgentID: snapshot.VehicleAgentID,
-			TelemetryState: string(models.TelemetryStateFresh),
-			ReceivedAt:     rfc3339UTC(snapshot.ReceivedAt),
+			DroneID:                   snapshot.DroneID,
+			VehicleAgentID:            snapshot.VehicleAgentID,
+			ActiveTelemetryFeedID:     snapshot.ActiveTelemetryFeedID,
+			SourceCommunicationLinkID: snapshot.SourceCommunicationLinkID,
+			TelemetryState:            string(models.TelemetryStateFresh),
+			ReceivedAt:                rfc3339UTC(snapshot.ReceivedAt),
 		})
 	}
 }
@@ -247,6 +274,222 @@ func streamDrones(fleet *svc.FleetService) http.HandlerFunc {
 				}
 			}
 		}
+	}
+}
+
+func listCommunicationLinksForDrone(fleet *svc.FleetService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		droneID := chi.URLParam(r, "droneID")
+		if strings.TrimSpace(droneID) == "" {
+			writeError(w, http.StatusBadRequest, "droneId is required")
+			return
+		}
+
+		links, err := fleet.ListCommunicationLinksForDrone(r.Context(), droneID)
+		if err != nil {
+			if errors.Is(err, repository.ErrDroneNotFound) {
+				writeError(w, http.StatusNotFound, "drone is not registered")
+				return
+			}
+
+			writeError(w, http.StatusInternalServerError, "failed to list communication links")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, communicationLinkResponses(links))
+	}
+}
+
+func listTelemetryFeedsForDrone(fleet *svc.FleetService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		droneID := chi.URLParam(r, "droneID")
+		if strings.TrimSpace(droneID) == "" {
+			writeError(w, http.StatusBadRequest, "droneId is required")
+			return
+		}
+
+		feeds, err := fleet.ListTelemetryFeedsForDrone(r.Context(), droneID)
+		if err != nil {
+			if errors.Is(err, repository.ErrDroneNotFound) {
+				writeError(w, http.StatusNotFound, "drone is not registered")
+				return
+			}
+
+			writeError(w, http.StatusInternalServerError, "failed to list telemetry feeds")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, telemetryFeedResponses(feeds))
+	}
+}
+
+func listPerceptionEvents(perception *svc.PerceptionService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if perception == nil {
+			writeError(w, http.StatusServiceUnavailable, "perception service is unavailable")
+			return
+		}
+
+		droneID := chi.URLParam(r, "droneID")
+		if strings.TrimSpace(droneID) == "" {
+			writeError(w, http.StatusBadRequest, "droneId is required")
+			return
+		}
+
+		limit := 25
+		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+			parsed, err := strconv.Atoi(rawLimit)
+			if err != nil || parsed < 1 || parsed > 100 {
+				writeError(w, http.StatusBadRequest, "limit must be between 1 and 100")
+				return
+			}
+			limit = parsed
+		}
+
+		events, err := perception.ListPerceptionEvents(r.Context(), droneID, limit)
+		if err != nil {
+			if errors.Is(err, repository.ErrDroneNotFound) {
+				writeError(w, http.StatusNotFound, "drone is not registered")
+				return
+			}
+
+			writeError(w, http.StatusInternalServerError, "failed to list perception events")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, perceptionEventResponses(events))
+	}
+}
+
+func perceptionStatus(perception *svc.PerceptionService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if perception == nil {
+			writeError(w, http.StatusServiceUnavailable, "perception service is unavailable")
+			return
+		}
+
+		droneID := chi.URLParam(r, "droneID")
+		if strings.TrimSpace(droneID) == "" {
+			writeError(w, http.StatusBadRequest, "droneId is required")
+			return
+		}
+
+		status, err := perception.PerceptionStatus(r.Context(), droneID)
+		if err != nil {
+			if errors.Is(err, repository.ErrDroneNotFound) {
+				writeError(w, http.StatusNotFound, "drone is not registered")
+				return
+			}
+
+			writeError(w, http.StatusInternalServerError, "failed to get perception status")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, perceptionStatusToResponse(status))
+	}
+}
+
+func localVideoStatus(video LocalVideoService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if video == nil {
+			writeJSON(w, http.StatusOK, dtos.LocalVideoStatusResponse{
+				Enabled:     false,
+				State:       "disabled",
+				WebRTCReady: false,
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, localVideoStatusResponse(video.Status()))
+	}
+}
+
+func localVideoOffer(video LocalVideoService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if video == nil {
+			writeError(w, http.StatusServiceUnavailable, "local video input is disabled")
+			return
+		}
+
+		var req dtos.LocalVideoOfferRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON request body")
+			return
+		}
+		if strings.TrimSpace(req.Type) == "" {
+			writeError(w, http.StatusBadRequest, "type is required")
+			return
+		}
+		if strings.TrimSpace(req.SDP) == "" {
+			writeError(w, http.StatusBadRequest, "sdp is required")
+			return
+		}
+
+		answer, err := video.HandleOffer(r.Context(), localinputs.VideoOffer{
+			Type: req.Type,
+			SDP:  req.SDP,
+		})
+		if err != nil {
+			if errors.Is(err, localinputs.ErrLocalVideoInvalidOffer) {
+				writeError(w, http.StatusBadRequest, "local video WebRTC offer is invalid")
+				return
+			}
+			if errors.Is(err, localinputs.ErrLocalVideoDisabled) {
+				writeError(w, http.StatusServiceUnavailable, "local video input is disabled")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, "failed to create local video WebRTC answer")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, dtos.LocalVideoAnswerResponse{
+			Type: answer.Type,
+			SDP:  answer.SDP,
+		})
+	}
+}
+
+func sendGimbalControl(dispatcher GimbalControlDispatcher) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if dispatcher == nil {
+			writeError(w, http.StatusServiceUnavailable, "gimbal control dispatcher is unavailable")
+			return
+		}
+
+		droneID := strings.TrimSpace(chi.URLParam(r, "droneID"))
+		if droneID == "" {
+			writeError(w, http.StatusBadRequest, "drone id is required")
+			return
+		}
+
+		var req dtos.GimbalControlRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON request body")
+			return
+		}
+		if err := validateGimbalControlRequest(req); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+		accepted := dispatcher.DispatchGimbalControl(r.Context(), models.GimbalControlCommand{
+			DroneID:           droneID,
+			PitchRateDegS:     req.PitchRateDegS,
+			YawRateDegS:       req.YawRateDegS,
+			TargetSystemID:    req.TargetSystemID,
+			TargetComponentID: req.TargetComponentID,
+			GimbalDeviceID:    req.GimbalDeviceID,
+			RequestedBy:       requestedBy(r),
+		})
+		if !accepted {
+			writeError(w, http.StatusConflict, "no connected agent is available for gimbal control")
+			return
+		}
+
+		writeJSON(w, http.StatusAccepted, dtos.GimbalControlResponse{
+			Accepted: true,
+			State:    "sent",
+		})
 	}
 }
 
@@ -465,6 +708,11 @@ func requestMissionUpload(repo *svc.MissionService, dispatcher MissionExecutionD
 				return
 			}
 
+			if errors.Is(err, repository.ErrMissionVersionNotFound) {
+				writeError(w, http.StatusConflict, "mission has no current version")
+				return
+			}
+
 			if errors.Is(err, repository.ErrVehicleAgentNotFound) {
 				writeError(w, http.StatusConflict, "drone has no registered vehicle agent")
 				return
@@ -580,7 +828,7 @@ func requestMissionAbort(repo *svc.MissionService, dispatcher MissionExecutionDi
 	}
 }
 
-func listCommandsForDrone(repo *svc.CommandService) http.HandlerFunc {
+func listVehicleActionsForDrone(repo *svc.VehicleActionService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		droneID := chi.URLParam(r, "droneID")
 		if strings.TrimSpace(droneID) == "" {
@@ -598,27 +846,27 @@ func listCommandsForDrone(repo *svc.CommandService) http.HandlerFunc {
 			limit = parsed
 		}
 
-		commands, err := repo.ListCommandsForDrone(r.Context(), droneID, limit)
+		actions, err := repo.ListVehicleActionsForDrone(r.Context(), droneID, limit)
 		if err != nil {
 			if errors.Is(err, repository.ErrDroneNotFound) {
 				writeError(w, http.StatusNotFound, "drone is not registered")
 				return
 			}
 
-			writeError(w, http.StatusInternalServerError, "failed to list commands")
+			writeError(w, http.StatusInternalServerError, "failed to list vehicle actions")
 			return
 		}
 
-		res := make([]dtos.CommandResponse, 0, len(commands))
-		for _, command := range commands {
-			res = append(res, commandToResponse(command))
+		res := make([]dtos.VehicleActionResponse, 0, len(actions))
+		for _, action := range actions {
+			res = append(res, vehicleActionToResponse(action))
 		}
 
 		writeJSON(w, http.StatusOK, res)
 	}
 }
 
-func issueCommand(repo *svc.CommandService, dispatcher CommandDispatcher, commandType models.CommandType) http.HandlerFunc {
+func listVehicleActionEvents(repo *svc.VehicleActionService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		droneID := chi.URLParam(r, "droneID")
 		if strings.TrimSpace(droneID) == "" {
@@ -626,10 +874,41 @@ func issueCommand(repo *svc.CommandService, dispatcher CommandDispatcher, comman
 			return
 		}
 
-		command, err := repo.IssueCommand(r.Context(), repository.RequestCommandInput{
-			DroneID:     droneID,
-			Type:        commandType,
-			RequestedBy: requestedBy(r),
+		vehicleActionID := chi.URLParam(r, "vehicleActionID")
+		if strings.TrimSpace(vehicleActionID) == "" {
+			writeError(w, http.StatusBadRequest, "vehicleActionId is required")
+			return
+		}
+
+		action, ok := repo.GetVehicleActionByID(r.Context(), vehicleActionID)
+		if !ok || action.DroneID != droneID {
+			writeError(w, http.StatusNotFound, "vehicle action was not found for this drone")
+			return
+		}
+
+		events, err := repo.ListVehicleActionEvents(r.Context(), vehicleActionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to list vehicle action events")
+			return
+		}
+
+		writeJSON(w, http.StatusOK, vehicleActionEventResponses(events))
+	}
+}
+
+func requestVehicleAction(repo *svc.VehicleActionService, dispatcher VehicleActionDispatcher, actionType models.VehicleActionType) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		droneID := chi.URLParam(r, "droneID")
+		if strings.TrimSpace(droneID) == "" {
+			writeError(w, http.StatusBadRequest, "droneId is required")
+			return
+		}
+
+		action, err := repo.RequestVehicleAction(r.Context(), repository.RequestVehicleActionInput{
+			DroneID:        droneID,
+			Type:           actionType,
+			RequestedBy:    requestedBy(r),
+			IdempotencyKey: idempotencyKey(r),
 		}, time.Now().UTC())
 		if err != nil {
 			if errors.Is(err, repository.ErrDroneNotFound) {
@@ -642,26 +921,26 @@ func issueCommand(repo *svc.CommandService, dispatcher CommandDispatcher, comman
 				return
 			}
 
-			writeError(w, http.StatusInternalServerError, "failed to issue command")
+			writeError(w, http.StatusInternalServerError, "failed to request vehicle action")
 			return
 		}
 
 		status := http.StatusAccepted
-		if command.State == models.CommandStateRejectedByPolicy {
+		if action.State == models.VehicleActionStateRejectedByPolicy {
 			status = http.StatusConflict
-		} else if dispatcher != nil {
+		} else if action.State == models.VehicleActionStateAuthorized && dispatcher != nil {
 			// Dispatch happens after the service transaction commits; network delivery
 			// must never keep a database transaction open.
-			if dispatched, ok := dispatcher.DispatchCommand(r.Context(), command); ok {
-				command = dispatched
+			if dispatched, ok := dispatcher.DispatchVehicleAction(r.Context(), action); ok {
+				action = dispatched
 			}
 		}
 
-		writeJSON(w, status, commandToResponse(command))
+		writeJSON(w, status, vehicleActionToResponse(action))
 	}
 }
 
-func updateCommandStatus(repo *svc.CommandService) http.HandlerFunc {
+func updateVehicleActionStatus(repo *svc.VehicleActionService) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		agentID := chi.URLParam(r, "vehicleAgentID")
 		if strings.TrimSpace(agentID) == "" {
@@ -669,13 +948,13 @@ func updateCommandStatus(repo *svc.CommandService) http.HandlerFunc {
 			return
 		}
 
-		commandID := chi.URLParam(r, "commandID")
-		if strings.TrimSpace(commandID) == "" {
-			writeError(w, http.StatusBadRequest, "commandId is required")
+		vehicleActionID := chi.URLParam(r, "vehicleActionID")
+		if strings.TrimSpace(vehicleActionID) == "" {
+			writeError(w, http.StatusBadRequest, "vehicleActionId is required")
 			return
 		}
 
-		var req dtos.CommandStatusRequest
+		var req dtos.VehicleActionStatusRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON request body")
 			return
@@ -686,38 +965,46 @@ func updateCommandStatus(repo *svc.CommandService) http.HandlerFunc {
 			return
 		}
 
-		command, err := repo.UpdateCommandStatus(r.Context(), repository.UpdateCommandStatusInput{
-			VehicleAgentID: agentID,
-			CommandID:      commandID,
-			State:          models.CommandState(req.State),
-			ResultMessage:  strings.TrimSpace(req.ResultMessage),
+		action, err := repo.UpdateVehicleActionStatus(r.Context(), repository.UpdateVehicleActionStatusInput{
+			VehicleAgentID:   agentID,
+			VehicleActionID:  vehicleActionID,
+			State:            models.VehicleActionState(req.State),
+			ResultMessage:    strings.TrimSpace(req.ResultMessage),
+			AckCorrelationID: strings.TrimSpace(req.AckCorrelationID),
+			RawAckCode:       strings.TrimSpace(req.RawAckCode),
+			Evidence:         req.Evidence,
 		}, time.Now().UTC())
 		if err != nil {
-			if errors.Is(err, repository.ErrCommandNotFound) {
-				writeError(w, http.StatusNotFound, "command was not found")
+			if errors.Is(err, repository.ErrVehicleActionNotFound) {
+				writeError(w, http.StatusNotFound, "vehicle action was not found")
 				return
 			}
 
-			if errors.Is(err, repository.ErrCommandNotAssignedToVehicleAgent) {
-				writeError(w, http.StatusForbidden, "command is not assigned to this vehicle agent")
+			if errors.Is(err, repository.ErrVehicleActionNotAssignedToVehicleAgent) {
+				writeError(w, http.StatusForbidden, "vehicle action is not assigned to this vehicle agent")
 				return
 			}
 
-			if errors.Is(err, repository.ErrInvalidCommandState) {
+			if errors.Is(err, repository.ErrInvalidVehicleActionState) {
 				writeError(w, http.StatusBadRequest, "state cannot be reported by a vehicle agent")
 				return
 			}
 
-			if errors.Is(err, repository.ErrInvalidCommandTransition) {
-				writeError(w, http.StatusConflict, "command cannot transition to requested state")
+			if errors.Is(err, repository.ErrInvalidVehicleActionTransition) {
+				writeError(w, http.StatusConflict, "vehicle action cannot transition to requested state")
 				return
 			}
 
-			writeError(w, http.StatusInternalServerError, "failed to update command status")
+			if errors.Is(err, repository.ErrVehicleActionAckCorrelationMismatch) {
+				writeError(w, http.StatusConflict, "vehicle action ack correlation id does not match")
+				return
+			}
+
+			writeError(w, http.StatusInternalServerError, "failed to update vehicle action status")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, commandToResponse(command))
+		writeJSON(w, http.StatusOK, vehicleActionToResponse(action))
 	}
 }
 
@@ -755,13 +1042,16 @@ func droneResponses(drones []svc.FleetDrone) []dtos.DroneResponse {
 	for _, drone := range drones {
 		snapshot := drone.Snapshot
 		item := dtos.DroneResponse{
-			ID:             snapshot.ID,
-			Name:           snapshot.Name,
-			VehicleAgentID: snapshot.VehicleAgentID,
-			Status:         string(snapshot.Status),
-			LastSeenAt:     rfc3339UTC(snapshot.LastSeenAt),
-			CommandChannel: commandChannelToResponse(snapshot.CommandChannel),
-			Commands:       commandResponses(drone.Commands),
+			ID:              snapshot.ID,
+			Name:            snapshot.Name,
+			VehicleAgentID:  snapshot.VehicleAgentID,
+			Status:          string(snapshot.Status),
+			LastSeenAt:      rfc3339UTC(snapshot.LastSeenAt),
+			MAVLinkObserver: snapshot.MAVLinkObserver,
+			BackendChannel:  snapshot.BackendChannelHealth,
+			CommandChannel:  commandChannelToResponse(snapshot.CommandChannel),
+			Communication:   communicationSummaryFromLinks(drone.CommunicationLinks),
+			VehicleActions:  vehicleActionResponses(drone.VehicleActions),
 		}
 
 		if !snapshot.LastHeartbeatAt.IsZero() {
@@ -770,22 +1060,24 @@ func droneResponses(drones []svc.FleetDrone) []dtos.DroneResponse {
 
 		if !snapshot.Telemetry.ReceivedAt.IsZero() {
 			item.Telemetry = &dtos.TelemetrySnapshotResponse{
-				State:             string(snapshot.TelemetryState),
-				ObservedAt:        rfc3339UTC(snapshot.Telemetry.ObservedAt),
-				ReceivedAt:        rfc3339UTC(snapshot.Telemetry.ReceivedAt),
-				BatteryPercent:    snapshot.Telemetry.BatteryPercent,
-				RelativeAltitudeM: snapshot.Telemetry.RelativeAltitudeM,
-				FlightMode:        snapshot.Telemetry.FlightMode,
-				Armed:             snapshot.Telemetry.Armed,
-				InAir:             snapshot.Telemetry.InAir,
-				Latitude:          snapshot.Telemetry.Latitude,
-				Longitude:         snapshot.Telemetry.Longitude,
-				HeadingDeg:        snapshot.Telemetry.HeadingDeg,
-				GroundSpeedMPS:    snapshot.Telemetry.GroundSpeedMPS,
-				GPSFix:            snapshot.Telemetry.GPSFix,
-				SatellitesVisible: snapshot.Telemetry.SatellitesVisible,
-				HomePositionSet:   snapshot.Telemetry.HomePositionSet,
-				Source:            snapshot.Telemetry.Source,
+				State:                     string(snapshot.TelemetryState),
+				ActiveTelemetryFeedID:     snapshot.Telemetry.ActiveTelemetryFeedID,
+				SourceCommunicationLinkID: snapshot.Telemetry.SourceCommunicationLinkID,
+				ObservedAt:                rfc3339UTC(snapshot.Telemetry.ObservedAt),
+				ReceivedAt:                rfc3339UTC(snapshot.Telemetry.ReceivedAt),
+				BatteryPercent:            snapshot.Telemetry.BatteryPercent,
+				RelativeAltitudeM:         snapshot.Telemetry.RelativeAltitudeM,
+				FlightMode:                snapshot.Telemetry.FlightMode,
+				Armed:                     snapshot.Telemetry.Armed,
+				InAir:                     snapshot.Telemetry.InAir,
+				Latitude:                  snapshot.Telemetry.Latitude,
+				Longitude:                 snapshot.Telemetry.Longitude,
+				HeadingDeg:                snapshot.Telemetry.HeadingDeg,
+				GroundSpeedMPS:            snapshot.Telemetry.GroundSpeedMPS,
+				GPSFix:                    snapshot.Telemetry.GPSFix,
+				SatellitesVisible:         snapshot.Telemetry.SatellitesVisible,
+				HomePositionSet:           snapshot.Telemetry.HomePositionSet,
+				Source:                    snapshot.Telemetry.Source,
 			}
 		}
 
@@ -830,13 +1122,269 @@ func missionExecutionEventResponses(events []models.MissionExecutionEvent) []dto
 	return res
 }
 
-func commandResponses(commands []models.CommandRequest) []dtos.CommandResponse {
-	res := make([]dtos.CommandResponse, 0, len(commands))
-	for _, command := range commands {
-		res = append(res, commandToResponse(command))
+func vehicleActionResponses(actions []models.VehicleAction) []dtos.VehicleActionResponse {
+	res := make([]dtos.VehicleActionResponse, 0, len(actions))
+	for _, action := range actions {
+		res = append(res, vehicleActionToResponse(action))
 	}
 
 	return res
+}
+
+func vehicleActionEventResponses(events []models.VehicleActionEvent) []dtos.VehicleActionEventResponse {
+	res := make([]dtos.VehicleActionEventResponse, 0, len(events))
+	for _, event := range events {
+		res = append(res, vehicleActionEventToResponse(event))
+	}
+
+	return res
+}
+
+func telemetryFeedResponses(feeds []models.TelemetryFeed) []dtos.TelemetryFeedResponse {
+	res := make([]dtos.TelemetryFeedResponse, 0, len(feeds))
+	for _, feed := range feeds {
+		res = append(res, telemetryFeedToResponse(feed))
+	}
+	return res
+}
+
+func telemetryFeedToResponse(feed models.TelemetryFeed) dtos.TelemetryFeedResponse {
+	res := dtos.TelemetryFeedResponse{
+		ID:                  feed.ID,
+		DroneID:             feed.DroneID,
+		SourceType:          string(feed.SourceType),
+		SourceID:            feed.SourceID,
+		CommunicationLinkID: feed.CommunicationLinkID,
+		Status:              string(feed.Status),
+		Priority:            feed.Priority,
+		Freshness:           string(feed.Freshness),
+		LastSequence:        feed.LastSequence,
+		MessageRateHz:       feed.MessageRateHz,
+		FieldsAvailable:     telemetryFieldsAvailableToResponse(feed.FieldsAvailable),
+		StartedAt:           rfc3339UTC(feed.StartedAt),
+		LastError:           feed.LastError,
+	}
+	if !feed.LastTelemetryAt.IsZero() {
+		res.LastTelemetryAt = rfc3339UTC(feed.LastTelemetryAt)
+	}
+	if !feed.EndedAt.IsZero() {
+		res.EndedAt = rfc3339UTC(feed.EndedAt)
+	}
+	return res
+}
+
+func telemetryFieldsAvailableToResponse(fields models.TelemetryFieldsAvailable) dtos.TelemetryFieldsAvailableResponse {
+	return dtos.TelemetryFieldsAvailableResponse{
+		Position:        fields.Position,
+		Altitude:        fields.Altitude,
+		Heading:         fields.Heading,
+		Attitude:        fields.Attitude,
+		Velocity:        fields.Velocity,
+		Battery:         fields.Battery,
+		Armed:           fields.Armed,
+		FlightMode:      fields.FlightMode,
+		GPSHealth:       fields.GPSHealth,
+		HomePosition:    fields.HomePosition,
+		MissionProgress: fields.MissionProgress,
+		SystemHealth:    fields.SystemHealth,
+	}
+}
+
+func perceptionEventResponses(events []models.PerceptionEvent) []dtos.PerceptionEventResponse {
+	res := make([]dtos.PerceptionEventResponse, 0, len(events))
+	for _, event := range events {
+		res = append(res, perceptionEventToResponse(event))
+	}
+	return res
+}
+
+func perceptionEventToResponse(event models.PerceptionEvent) dtos.PerceptionEventResponse {
+	return dtos.PerceptionEventResponse{
+		ID:                 event.ID,
+		DroneID:            event.DroneID,
+		SourceID:           event.VideoSourceID,
+		ObservedAt:         rfc3339UTC(event.ObservedAt),
+		FrameID:            event.FrameID,
+		ModelName:          event.ModelName,
+		ModelVersion:       event.ModelVersion,
+		InferenceLatencyMS: event.InferenceLatencyMS,
+		Detections:         perceptionDetectionResponses(event.Detections),
+		CreatedAt:          rfc3339UTC(event.CreatedAt),
+	}
+}
+
+func perceptionStatusToResponse(status svc.PerceptionStatus) dtos.PerceptionStatusResponse {
+	res := dtos.PerceptionStatusResponse{
+		DroneID:          status.DroneID,
+		SourceID:         status.SourceID,
+		InputConnected:   status.InputConnected,
+		OutputPublishing: status.OutputPublishing,
+		ModelLoaded:      status.ModelLoaded,
+		Accelerator:      status.Accelerator,
+		FPS:              status.FPS,
+		DroppedFrames:    status.DroppedFrames,
+		LastError:        status.LastError,
+		ModelName:        status.ModelName,
+		ModelVersion:     status.ModelVersion,
+		ActiveCounts:     status.ActiveCounts,
+		LatestDetections: perceptionDetectionResponses(status.LatestDetections),
+	}
+	if !status.LastFrameAt.IsZero() {
+		res.LastFrameAt = rfc3339UTC(status.LastFrameAt)
+	}
+	if !status.LastDetectionAt.IsZero() {
+		res.LastDetectionAt = rfc3339UTC(status.LastDetectionAt)
+	}
+	if !status.UpdatedAt.IsZero() {
+		res.UpdatedAt = rfc3339UTC(status.UpdatedAt)
+	}
+	if status.LatestEvent.ID != "" {
+		latest := perceptionEventToResponse(status.LatestEvent)
+		res.LatestEvent = &latest
+	}
+	return res
+}
+
+func perceptionDetectionResponses(detections []models.PerceptionDetection) []dtos.PerceptionDetectionResponse {
+	res := make([]dtos.PerceptionDetectionResponse, 0, len(detections))
+	for _, detection := range detections {
+		res = append(res, dtos.PerceptionDetectionResponse{
+			Class:      detection.ClassName,
+			Confidence: detection.Confidence,
+			BBox:       detection.BBox,
+		})
+	}
+	return res
+}
+
+func communicationLinkResponses(links []models.CommunicationLink) []dtos.CommunicationLinkResponse {
+	res := make([]dtos.CommunicationLinkResponse, 0, len(links))
+	for _, link := range links {
+		res = append(res, communicationLinkToResponse(link))
+	}
+	return res
+}
+
+func localVideoStatusResponse(status localinputs.VideoStatus) dtos.LocalVideoStatusResponse {
+	lastFrameAt := ""
+	if !status.LastFrameAt.IsZero() {
+		lastFrameAt = rfc3339UTC(status.LastFrameAt)
+	}
+
+	return dtos.LocalVideoStatusResponse{
+		Enabled:     status.Enabled,
+		SourceID:    status.SourceID,
+		RTSPURL:     status.RTSPURL,
+		State:       status.State,
+		WebRTCReady: status.WebRTCReady,
+		Codec:       status.Codec,
+		ActivePeers: status.ActivePeers,
+		LastFrameAt: lastFrameAt,
+		LastError:   status.LastError,
+		UpdatedAt:   rfc3339UTC(status.UpdatedAt),
+	}
+}
+
+func communicationLinkToResponse(link models.CommunicationLink) dtos.CommunicationLinkResponse {
+	res := dtos.CommunicationLinkResponse{
+		ID:                            link.ID,
+		DroneID:                       link.DroneID,
+		VehicleAgentID:                link.VehicleAgentID,
+		DroneVehicleAgentConnectionID: link.DroneVehicleAgentConnectionID,
+		LinkType:                      string(link.LinkType),
+		Roles:                         communicationRoleResponses(link.Roles),
+		Status:                        string(link.Status),
+		Transport:                     link.Transport,
+		EndpointDescription:           link.EndpointDescription,
+		CommandEligible:               link.CommandEligible,
+		LatencyMs:                     link.LatencyMs,
+		PacketLossEstimate:            link.PacketLossEstimate,
+		RxBytesPerSec:                 link.RxBytesPerSec,
+		TxBytesPerSec:                 link.TxBytesPerSec,
+		CreatedAt:                     rfc3339UTC(link.CreatedAt),
+		EndedReason:                   link.EndedReason,
+	}
+	if !link.LastSeenAt.IsZero() {
+		res.LastSeenAt = rfc3339UTC(link.LastSeenAt)
+	}
+	if !link.EndedAt.IsZero() {
+		res.EndedAt = rfc3339UTC(link.EndedAt)
+	}
+	return res
+}
+
+func communicationSummaryFromLinks(links []models.CommunicationLink) dtos.CommunicationSummaryResponse {
+	res := dtos.CommunicationSummaryResponse{
+		CommandLinkStatus: string(models.CommunicationLinkStatusUnknown),
+	}
+
+	for _, link := range links {
+		if communicationLinkActive(link) {
+			res.ActiveLinkCount++
+		}
+		switch link.Status {
+		case models.CommunicationLinkStatusDegraded:
+			res.DegradedLinkCount++
+		case models.CommunicationLinkStatusLost:
+			res.LostLinkCount++
+		}
+
+		if res.ActiveTelemetryLinkID == "" &&
+			communicationLinkActive(link) &&
+			communicationLinkHasRole(link, models.CommunicationLinkRoleTelemetry) {
+			res.ActiveTelemetryLinkID = link.ID
+		}
+
+		if res.ActiveCommandLinkID == "" && communicationLinkCanCarryCommand(link) {
+			res.ActiveCommandLinkID = link.ID
+			res.CommandLinkStatus = string(link.Status)
+		}
+	}
+
+	if res.ActiveCommandLinkID == "" {
+		res.CommandLinkStatus = communicationFallbackCommandStatus(links)
+	}
+
+	return res
+}
+
+func communicationFallbackCommandStatus(links []models.CommunicationLink) string {
+	for _, link := range links {
+		if link.CommandEligible && communicationLinkHasRole(link, models.CommunicationLinkRoleCommand) {
+			return string(link.Status)
+		}
+	}
+	return string(models.CommunicationLinkStatusUnknown)
+}
+
+func communicationRoleResponses(roles []models.CommunicationLinkRole) []string {
+	res := make([]string, 0, len(roles))
+	for _, role := range roles {
+		res = append(res, string(role))
+	}
+	return res
+}
+
+func communicationLinkCanCarryCommand(link models.CommunicationLink) bool {
+	return communicationLinkActive(link) &&
+		link.CommandEligible &&
+		link.Status == models.CommunicationLinkStatusConnected &&
+		communicationLinkHasRole(link, models.CommunicationLinkRoleCommand)
+}
+
+func communicationLinkActive(link models.CommunicationLink) bool {
+	return link.EndedAt.IsZero() &&
+		link.Status != models.CommunicationLinkStatusLost &&
+		link.Status != models.CommunicationLinkStatusDisabled
+}
+
+func communicationLinkHasRole(link models.CommunicationLink, role models.CommunicationLinkRole) bool {
+	for _, candidate := range link.Roles {
+		if candidate == role {
+			return true
+		}
+	}
+	return false
 }
 
 func commandChannelToResponse(channel repository.CommandChannelSnapshot) dtos.CommandChannelResponse {
@@ -940,6 +1488,7 @@ func missionToResponse(mission models.Mission) dtos.MissionResponse {
 	res := dtos.MissionResponse{
 		ID:               mission.ID,
 		DroneID:          mission.DroneID,
+		CurrentVersionID: mission.CurrentVersionID,
 		Name:             mission.Name,
 		CreatedBy:        mission.CreatedBy,
 		CreatedAt:        rfc3339UTC(mission.CreatedAt),
@@ -975,6 +1524,7 @@ func missionExecutionToResponse(execution models.MissionExecution) dtos.MissionE
 	res := dtos.MissionExecutionResponse{
 		ID:                 execution.ID,
 		MissionID:          execution.MissionID,
+		MissionVersionID:   execution.MissionVersionID,
 		DroneID:            execution.DroneID,
 		VehicleAgentID:     execution.VehicleAgentID,
 		RequestedBy:        execution.RequestedBy,
@@ -1037,6 +1587,7 @@ func missionExecutionEventToResponse(event models.MissionExecutionEvent) dtos.Mi
 		ID:                 event.ID,
 		ExecutionID:        event.ExecutionID,
 		MissionID:          event.MissionID,
+		MissionVersionID:   event.MissionVersionID,
 		DroneID:            event.DroneID,
 		VehicleAgentID:     event.VehicleAgentID,
 		Type:               event.Type,
@@ -1049,33 +1600,53 @@ func missionExecutionEventToResponse(event models.MissionExecutionEvent) dtos.Mi
 	}
 }
 
-func commandToResponse(command models.CommandRequest) dtos.CommandResponse {
-	res := dtos.CommandResponse{
-		ID:                 command.ID,
-		DroneID:            command.DroneID,
-		VehicleAgentID:     command.VehicleAgentID,
-		Type:               string(command.Type),
-		State:              string(command.State),
-		RequestedBy:        command.RequestedBy,
-		RequestedAt:        rfc3339UTC(command.RequestedAt),
-		UpdatedAt:          rfc3339UTC(command.UpdatedAt),
-		DeliveryAttempt:    command.DeliveryAttempt,
-		PolicyReason:       command.PolicyReason,
-		ResultMessage:      command.ResultMessage,
-		TelemetryState:     string(command.TelemetryState),
-		VehicleAgentStatus: string(command.VehicleAgentStatus),
+func vehicleActionEventToResponse(event models.VehicleActionEvent) dtos.VehicleActionEventResponse {
+	return dtos.VehicleActionEventResponse{
+		ID:                  event.ID,
+		VehicleActionID:     event.VehicleActionID,
+		DroneID:             event.DroneID,
+		VehicleAgentID:      event.VehicleAgentID,
+		Type:                string(event.EventType),
+		State:               string(event.State),
+		Message:             event.Message,
+		Source:              event.Source,
+		RawAckCode:          event.RawAckCode,
+		Evidence:            event.Evidence,
+		TelemetrySnapshotID: event.TelemetrySnapshotID,
+		CreatedAt:           rfc3339UTC(event.CreatedAt),
+	}
+}
+
+func vehicleActionToResponse(action models.VehicleAction) dtos.VehicleActionResponse {
+	res := dtos.VehicleActionResponse{
+		ID:                 action.ID,
+		DroneID:            action.DroneID,
+		VehicleAgentID:     action.VehicleAgentID,
+		Type:               string(action.Type),
+		State:              string(action.State),
+		RequestedBy:        action.RequestedBy,
+		RequestedAt:        rfc3339UTC(action.RequestedAt),
+		UpdatedAt:          rfc3339UTC(action.UpdatedAt),
+		DeliveryAttempt:    action.DeliveryAttempt,
+		IdempotencyKey:     action.IdempotencyKey,
+		AckCorrelationID:   action.AckCorrelationID,
+		RawAckCode:         action.RawAckCode,
+		PolicyReason:       action.PolicyReason,
+		ResultMessage:      action.ResultMessage,
+		TelemetryState:     string(action.TelemetryState),
+		VehicleAgentStatus: string(action.VehicleAgentStatus),
 	}
 
-	if !command.LastSentAt.IsZero() {
-		res.LastSentAt = rfc3339UTC(command.LastSentAt)
+	if !action.LastSentAt.IsZero() {
+		res.LastSentAt = rfc3339UTC(action.LastSentAt)
 	}
 
-	if !command.LeaseUntil.IsZero() {
-		res.LeaseUntil = rfc3339UTC(command.LeaseUntil)
+	if !action.LeaseUntil.IsZero() {
+		res.LeaseUntil = rfc3339UTC(action.LeaseUntil)
 	}
 
-	if !command.VehicleAckedAt.IsZero() {
-		res.VehicleAckedAt = rfc3339UTC(command.VehicleAckedAt)
+	if !action.VehicleAckedAt.IsZero() {
+		res.VehicleAckedAt = rfc3339UTC(action.VehicleAckedAt)
 	}
 
 	return res
@@ -1088,6 +1659,10 @@ func requestedBy(r *http.Request) string {
 	}
 
 	return value
+}
+
+func idempotencyKey(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 }
 
 func allowDroneStreamOrigin(r *http.Request) bool {
@@ -1150,5 +1725,15 @@ func validateRegisterVehicleAgentRequest(req dtos.RegisterVehicleAgentRequest) e
 		return errors.New("vehicleAgentVersion is required")
 	}
 
+	return nil
+}
+
+func validateGimbalControlRequest(req dtos.GimbalControlRequest) error {
+	if req.PitchRateDegS < -maxGimbalRateDegS || req.PitchRateDegS > maxGimbalRateDegS {
+		return errors.New("pitchRateDegS is out of range")
+	}
+	if req.YawRateDegS < -maxGimbalRateDegS || req.YawRateDegS > maxGimbalRateDegS {
+		return errors.New("yawRateDegS is out of range")
+	}
 	return nil
 }

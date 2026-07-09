@@ -6,34 +6,38 @@ import (
 )
 
 type Config struct {
-	VehicleAgentID       string
-	DroneID              string
-	DroneName            string
-	VehicleAgentVersion  string
-	VehicleAgentGRPCAddr string
-	MAVSDKGRPCAddr       string
-	PX4SystemAddress     string
-	HeartbeatInterval    time.Duration
-	TelemetryInterval    time.Duration
-	CommandTimeout       time.Duration
-	ChannelRetryMin      time.Duration
-	ChannelRetryMax      time.Duration
+	VehicleAgentID          string
+	DroneID                 string
+	DroneName               string
+	VehicleAgentVersion     string
+	VehicleAgentGRPCAddr    string
+	MAVSDKGRPCAddr          string
+	PX4SystemAddress        string
+	MAVLinkObserverEndpoint string
+	PerceptionMetadataPath  string
+	HeartbeatInterval       time.Duration
+	TelemetryInterval       time.Duration
+	CommandTimeout          time.Duration
+	ChannelRetryMin         time.Duration
+	ChannelRetryMax         time.Duration
 }
 
 func Load() Config {
 	return Config{
-		VehicleAgentID:       envOrDefault("ATLAS_VEHICLE_AGENT_ID", "agent-001"),
-		DroneID:              envOrDefault("ATLAS_DRONE_ID", "drone-001"),
-		DroneName:            envOrDefault("ATLAS_DRONE_NAME", "Training Quad 1"),
-		VehicleAgentVersion:  envOrDefault("ATLAS_VEHICLE_AGENT_VERSION", "0.1.0-dev"),
-		VehicleAgentGRPCAddr: envOrDefault("ATLAS_VEHICLE_AGENT_GRPC_ADDR", "127.0.0.1:9090"),
-		MAVSDKGRPCAddr:       envOrDefault("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50051"),
-		PX4SystemAddress:     envOrDefault("ATLAS_PX4_SYSTEM_ADDRESS", "udpin://0.0.0.0:14540"),
-		HeartbeatInterval:    5 * time.Second,
-		TelemetryInterval:    2 * time.Second,
-		CommandTimeout:       15 * time.Second,
-		ChannelRetryMin:      1 * time.Second,
-		ChannelRetryMax:      30 * time.Second,
+		VehicleAgentID:          envOrDefault("ATLAS_VEHICLE_AGENT_ID", "agent-001"),
+		DroneID:                 envOrDefault("ATLAS_DRONE_ID", "drone-001"),
+		DroneName:               envOrDefault("ATLAS_DRONE_NAME", "Training Quad 1"),
+		VehicleAgentVersion:     envOrDefault("ATLAS_VEHICLE_AGENT_VERSION", "0.1.0-dev"),
+		VehicleAgentGRPCAddr:    envOrDefault("ATLAS_VEHICLE_AGENT_GRPC_ADDR", "127.0.0.1:9090"),
+		MAVSDKGRPCAddr:          envOrDefault("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50051"),
+		PX4SystemAddress:        envOrDefault("ATLAS_PX4_SYSTEM_ADDRESS", "udpin://0.0.0.0:14540"),
+		MAVLinkObserverEndpoint: envOrDefault("ATLAS_MAVLINK_OBSERVER_ENDPOINT", "udp-server://0.0.0.0:14550"),
+		PerceptionMetadataPath:  envOrDefault("ATLAS_PERCEPTION_METADATA_PATH", "~/.local/state/atlas-agent/perception/metadata.jsonl"),
+		HeartbeatInterval:       5 * time.Second,
+		TelemetryInterval:       2 * time.Second,
+		CommandTimeout:          15 * time.Second,
+		ChannelRetryMin:         1 * time.Second,
+		ChannelRetryMax:         30 * time.Second,
 	}
 }
 

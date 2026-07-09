@@ -41,6 +41,11 @@ func (s *MissionService) GetMissionByID(ctx context.Context, missionID string) (
 	return s.repos.Missions.GetMissionByID(ctx, missionID)
 }
 
+// GetMissionVersionByID fetches an immutable mission payload snapshot.
+func (s *MissionService) GetMissionVersionByID(ctx context.Context, missionVersionID string) (models.MissionVersion, bool, error) {
+	return s.repos.Missions.GetMissionVersionByID(ctx, missionVersionID)
+}
+
 // RequestMissionUpload creates an execution record that asks the active vehicle agent to upload a mission to the vehicle.
 func (s *MissionService) RequestMissionUpload(ctx context.Context, input repository.RequestMissionUploadInput, now time.Time) (models.MissionExecution, error) {
 	var execution models.MissionExecution
@@ -167,7 +172,24 @@ func (s *MissionService) createMission(ctx context.Context, repos repository.Rep
 		mission.ValidationStatus = models.MissionValidationStatusRejected
 	}
 
+	versionID, err := repos.Missions.GenerateMissionVersionID(ctx)
+	if err != nil {
+		return models.Mission{}, err
+	}
+	version := domain.BuildMissionVersion(versionID, mission, 1, now)
+
 	if err := repos.Missions.InsertMission(ctx, mission); err != nil {
+		return models.Mission{}, err
+	}
+	if err := repos.Missions.InsertMissionVersion(ctx, version); err != nil {
+		return models.Mission{}, err
+	}
+	for _, waypoint := range version.Waypoints {
+		if err := repos.Missions.InsertMissionVersionWaypoint(ctx, version.ID, waypoint); err != nil {
+			return models.Mission{}, err
+		}
+	}
+	if err := repos.Missions.SetMissionCurrentVersion(ctx, mission.ID, version.ID, now); err != nil {
 		return models.Mission{}, err
 	}
 	for _, waypoint := range mission.Waypoints {
@@ -175,6 +197,7 @@ func (s *MissionService) createMission(ctx context.Context, repos repository.Rep
 			return models.Mission{}, err
 		}
 	}
+	mission.CurrentVersionID = version.ID
 	return mission, nil
 }
 
@@ -185,6 +208,19 @@ func (s *MissionService) requestMissionUpload(ctx context.Context, repos reposit
 		return models.MissionExecution{}, repository.ErrMissionNotFound
 	}
 	if mission.ValidationStatus != models.MissionValidationStatusValidated {
+		return models.MissionExecution{}, repository.ErrMissionNotValidated
+	}
+	if mission.CurrentVersionID == "" {
+		return models.MissionExecution{}, repository.ErrMissionVersionNotFound
+	}
+	version, ok, err := repos.Missions.GetMissionVersionByID(ctx, mission.CurrentVersionID)
+	if err != nil {
+		return models.MissionExecution{}, err
+	}
+	if !ok {
+		return models.MissionExecution{}, repository.ErrMissionVersionNotFound
+	}
+	if version.ValidationStatus != models.MissionValidationStatusValidated {
 		return models.MissionExecution{}, repository.ErrMissionNotValidated
 	}
 
@@ -214,6 +250,7 @@ func (s *MissionService) requestMissionUpload(ctx context.Context, repos reposit
 	execution := models.MissionExecution{
 		ID:                executionID,
 		MissionID:         mission.ID,
+		MissionVersionID:  version.ID,
 		DroneID:           mission.DroneID,
 		VehicleAgentID:    agent.ID,
 		RequestedBy:       input.RequestedBy,

@@ -49,11 +49,16 @@ func (m *TxManager) WithinTx(ctx context.Context, fn func(ctx context.Context, r
 
 func newRepositories(exec DBExecutor) repository.Repositories {
 	return repository.Repositories{
-		VehicleAgents:     newVehicleAgentRepository(exec),
-		Drones:            newDroneRepository(exec),
-		Telemetry:         newTelemetryRepository(exec),
-		Commands:          newCommandRepository(exec),
-		Missions:          newMissionRepository(exec),
-		MissionExecutions: newMissionExecutionRepository(exec),
+		VehicleAgents:                newVehicleAgentRepository(exec),
+		Drones:                       newDroneRepository(exec),
+		DroneVehicleAgentConnections: newDroneVehicleAgentConnectionRepository(exec),
+		CommunicationLinks:           newCommunicationLinkRepository(exec),
+		TelemetryFeeds:               newTelemetryFeedRepository(exec),
+		Telemetry:                    newTelemetryRepository(exec),
+		TelemetrySamples:             newTelemetrySampleRepository(exec),
+		VehicleActions:               newVehicleActionRepository(exec),
+		Missions:                     newMissionRepository(exec),
+		MissionExecutions:            newMissionExecutionRepository(exec),
+		Perception:                   newPerceptionRepository(exec),
 	}
 }

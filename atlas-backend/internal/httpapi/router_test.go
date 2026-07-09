@@ -44,6 +44,59 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestSendGimbalControlDispatchesTransientCommand(t *testing.T) {
+	dispatcher := &recordingGimbalControlDispatcher{accepted: true}
+	router := NewRouterWithGimbalControlDispatcher(Dependencies{}, nil, nil, dispatcher)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/drones/drone-001/gimbal/control",
+		bytes.NewReader([]byte(`{"pitchRateDegS":-25,"yawRateDegS":12.5}`)),
+	)
+	req.Header.Set("X-Atlas-Operator-ID", "operator-001")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusAccepted, rec.Code, rec.Body.String())
+	}
+	if !dispatcher.called {
+		t.Fatal("expected gimbal control dispatcher to be called")
+	}
+	if dispatcher.command.DroneID != "drone-001" {
+		t.Fatalf("expected drone-001, got %q", dispatcher.command.DroneID)
+	}
+	if dispatcher.command.PitchRateDegS != -25 {
+		t.Fatalf("expected pitch rate -25, got %f", dispatcher.command.PitchRateDegS)
+	}
+	if dispatcher.command.YawRateDegS != 12.5 {
+		t.Fatalf("expected yaw rate 12.5, got %f", dispatcher.command.YawRateDegS)
+	}
+	if dispatcher.command.RequestedBy != "operator-001" {
+		t.Fatalf("expected operator-001 requester, got %q", dispatcher.command.RequestedBy)
+	}
+}
+
+func TestSendGimbalControlRejectsOutOfRangeRateWithoutDispatch(t *testing.T) {
+	dispatcher := &recordingGimbalControlDispatcher{accepted: true}
+	router := NewRouterWithGimbalControlDispatcher(Dependencies{}, nil, nil, dispatcher)
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/drones/drone-001/gimbal/control",
+		bytes.NewReader([]byte(`{"pitchRateDegS":91,"yawRateDegS":0}`)),
+	)
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusBadRequest, rec.Code, rec.Body.String())
+	}
+	if dispatcher.called {
+		t.Fatal("expected invalid gimbal control request not to dispatch")
+	}
+}
+
 func TestRegisterHeartbeatAndListDrones(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
@@ -104,6 +157,100 @@ func TestRegisterHeartbeatAndListDrones(t *testing.T) {
 	}
 }
 
+func TestPerceptionRoutesReturnEventsAndStatus(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+	ctx := context.Background()
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	if _, err := repo.RegisterVehicleAgent(ctx, repository.RegisterVehicleAgentInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		DroneName:           "Training Quad 1",
+		VehicleAgentVersion: "0.1.0",
+	}, now); err != nil {
+		t.Fatalf("register vehicle agent: %v", err)
+	}
+	if _, err := repo.RecordPerceptionEvent(ctx, "agent-001", models.PerceptionEvent{
+		DroneID:            "drone-001",
+		VideoSourceID:      "a8-main",
+		ObservedAt:         now.Add(time.Second),
+		FrameID:            "frame-000001",
+		ModelName:          "yolov6n-hailo",
+		ModelVersion:       "hef-mvp",
+		InferenceLatencyMS: 19.25,
+		Detections: []models.PerceptionDetection{
+			{ClassName: "vehicle", Confidence: 0.87, BBox: [4]float64{0.2, 0.3, 0.25, 0.2}},
+		},
+	}, now.Add(2*time.Second)); err != nil {
+		t.Fatalf("record perception event: %v", err)
+	}
+	if err := repo.RecordPerceptionHealth(ctx, "agent-001", models.PerceptionHealth{
+		DroneID:          "drone-001",
+		SourceID:         "a8-main",
+		InputConnected:   true,
+		OutputPublishing: true,
+		ModelLoaded:      true,
+		Accelerator:      "hailo",
+		FPS:              24.5,
+		LastFrameAt:      now.Add(3 * time.Second),
+		LastDetectionAt:  now.Add(time.Second),
+		ModelName:        "yolov6n-hailo",
+		ModelVersion:     "hef-mvp",
+	}, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("record perception health: %v", err)
+	}
+
+	eventsReq := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/perception/events?limit=5", nil)
+	eventsRec := httptest.NewRecorder()
+	router.ServeHTTP(eventsRec, eventsReq)
+	if eventsRec.Code != http.StatusOK {
+		t.Fatalf("expected perception events status %d, got %d: %s", http.StatusOK, eventsRec.Code, eventsRec.Body.String())
+	}
+	var events []dtos.PerceptionEventResponse
+	if err := json.NewDecoder(eventsRec.Body).Decode(&events); err != nil {
+		t.Fatalf("decode perception events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one perception event, got %d", len(events))
+	}
+	if events[0].Detections[0].Class != "vehicle" {
+		t.Fatalf("expected vehicle detection, got %#v", events[0].Detections)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/perception/status", nil)
+	statusRec := httptest.NewRecorder()
+	router.ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("expected perception status %d, got %d: %s", http.StatusOK, statusRec.Code, statusRec.Body.String())
+	}
+	var status dtos.PerceptionStatusResponse
+	if err := json.NewDecoder(statusRec.Body).Decode(&status); err != nil {
+		t.Fatalf("decode perception status: %v", err)
+	}
+	if status.Accelerator != "hailo" {
+		t.Fatalf("expected hailo accelerator, got %q", status.Accelerator)
+	}
+	if status.ActiveCounts["vehicle"] != 1 {
+		t.Fatalf("expected one vehicle detection, got %#v", status.ActiveCounts)
+	}
+	if status.LatestEvent == nil || status.LatestEvent.FrameID != "frame-000001" {
+		t.Fatalf("expected latest perception event, got %#v", status.LatestEvent)
+	}
+}
+
+type recordingGimbalControlDispatcher struct {
+	accepted bool
+	called   bool
+	command  models.GimbalControlCommand
+}
+
+func (d *recordingGimbalControlDispatcher) DispatchGimbalControl(_ context.Context, command models.GimbalControlCommand) bool {
+	d.called = true
+	d.command = command
+	return d.accepted
+}
+
 func TestListDronesIncludesCommandChannelState(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
@@ -134,6 +281,119 @@ func TestListDronesIncludesCommandChannelState(t *testing.T) {
 
 	if drones[0].CommandChannel.ConnectedAt != connectedAt.Format(time.RFC3339) {
 		t.Fatalf("expected connectedAt %q, got %q", connectedAt.Format(time.RFC3339), drones[0].CommandChannel.ConnectedAt)
+	}
+}
+
+func TestListDronesIncludesCommunicationSummary(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	registerTestVehicleAgent(t, router)
+	link := openTestDroneVehicleAgentConnection(t, repo)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/drones", nil)
+	listRec := httptest.NewRecorder()
+	router.ServeHTTP(listRec, listReq)
+
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
+	}
+
+	var drones []dtos.DroneResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&drones); err != nil {
+		t.Fatalf("decode drones: %v", err)
+	}
+
+	if len(drones) != 1 {
+		t.Fatalf("expected one drone, got %d", len(drones))
+	}
+
+	if drones[0].Communication.ActiveCommandLinkID != link.ID {
+		t.Fatalf("expected active command link %q, got %q", link.ID, drones[0].Communication.ActiveCommandLinkID)
+	}
+	if drones[0].Communication.ActiveTelemetryLinkID != link.ID {
+		t.Fatalf("expected active telemetry link %q, got %q", link.ID, drones[0].Communication.ActiveTelemetryLinkID)
+	}
+	if drones[0].Communication.CommandLinkStatus != string(models.CommunicationLinkStatusConnected) {
+		t.Fatalf("expected connected command link, got %q", drones[0].Communication.CommandLinkStatus)
+	}
+	if drones[0].Communication.ActiveLinkCount != 1 {
+		t.Fatalf("expected one active link, got %d", drones[0].Communication.ActiveLinkCount)
+	}
+}
+
+func TestListDroneCommunicationLinks(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	registerTestVehicleAgent(t, router)
+	link := openTestDroneVehicleAgentConnection(t, repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/communication-links", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var links []dtos.CommunicationLinkResponse
+	if err := json.NewDecoder(rec.Body).Decode(&links); err != nil {
+		t.Fatalf("decode communication links: %v", err)
+	}
+
+	if len(links) != 1 {
+		t.Fatalf("expected one communication link, got %d", len(links))
+	}
+	if links[0].ID != link.ID {
+		t.Fatalf("expected link %q, got %q", link.ID, links[0].ID)
+	}
+	if links[0].LinkType != string(models.CommunicationLinkVehicleAgentGRPC) {
+		t.Fatalf("expected vehicle-agent gRPC link, got %q", links[0].LinkType)
+	}
+	if !links[0].CommandEligible {
+		t.Fatal("expected command eligible communication link")
+	}
+	if !stringSliceContains(links[0].Roles, string(models.CommunicationLinkRoleCommand)) {
+		t.Fatalf("expected command role, got %#v", links[0].Roles)
+	}
+}
+
+func TestListDroneTelemetryFeeds(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	registerTestVehicleAgent(t, router)
+	link := openTestDroneVehicleAgentConnection(t, repo)
+	sendTestTelemetry(t, router)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/telemetry-feeds", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, rec.Code, rec.Body.String())
+	}
+
+	var feeds []dtos.TelemetryFeedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&feeds); err != nil {
+		t.Fatalf("decode telemetry feeds: %v", err)
+	}
+
+	if len(feeds) != 1 {
+		t.Fatalf("expected one telemetry feed, got %d", len(feeds))
+	}
+	if feeds[0].SourceType != string(models.TelemetrySourceAgentDirect) {
+		t.Fatalf("expected agent-direct feed, got %q", feeds[0].SourceType)
+	}
+	if feeds[0].SourceID != "agent-001" {
+		t.Fatalf("expected source agent-001, got %q", feeds[0].SourceID)
+	}
+	if feeds[0].CommunicationLinkID != link.ID {
+		t.Fatalf("expected communication link %q, got %q", link.ID, feeds[0].CommunicationLinkID)
+	}
+	if !feeds[0].FieldsAvailable.Position {
+		t.Fatal("expected position field to be available")
 	}
 }
 
@@ -200,15 +460,16 @@ func TestRecordTelemetryAndListDrones(t *testing.T) {
 	}
 }
 
-func TestListDronesIncludesRecentCommands(t *testing.T) {
+func TestListDronesIncludesRecentVehicleActions(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/arm", nil)
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/arm", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
@@ -233,24 +494,25 @@ func TestListDronesIncludesRecentCommands(t *testing.T) {
 		t.Fatalf("expected one drone, got %d", len(drones))
 	}
 
-	if len(drones[0].Commands) != 1 {
-		t.Fatalf("expected one command in drone snapshot, got %d", len(drones[0].Commands))
+	if len(drones[0].VehicleActions) != 1 {
+		t.Fatalf("expected one vehicle action in drone snapshot, got %d", len(drones[0].VehicleActions))
 	}
 
-	if drones[0].Commands[0].Type != "arm" {
-		t.Fatalf("expected arm command, got %q", drones[0].Commands[0].Type)
+	if drones[0].VehicleActions[0].Type != "arm" {
+		t.Fatalf("expected arm vehicle action, got %q", drones[0].VehicleActions[0].Type)
 	}
 }
 
-func TestDroneStreamSendsFleetSnapshotWithCommands(t *testing.T) {
+func TestDroneStreamSendsFleetSnapshotWithVehicleActions(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/land", nil)
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/land", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
@@ -281,80 +543,52 @@ func TestDroneStreamSendsFleetSnapshotWithCommands(t *testing.T) {
 		t.Fatalf("expected drone-001, got %q", drones[0].ID)
 	}
 
-	if len(drones[0].Commands) != 1 {
-		t.Fatalf("expected one streamed command, got %d", len(drones[0].Commands))
+	if len(drones[0].VehicleActions) != 1 {
+		t.Fatalf("expected one streamed vehicle action, got %d", len(drones[0].VehicleActions))
 	}
 
-	if drones[0].Commands[0].Type != "land" {
-		t.Fatalf("expected land command, got %q", drones[0].Commands[0].Type)
+	if drones[0].VehicleActions[0].Type != "land" {
+		t.Fatalf("expected land vehicle action, got %q", drones[0].VehicleActions[0].Type)
 	}
 }
 
-func TestRequestCommandAuthorizedWithFreshTelemetry(t *testing.T) {
+func TestRequestVehicleActionAuthorizedWithFreshTelemetry(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/arm", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/arm", nil)
 	req.Header.Set("X-Atlas-Operator-ID", "operator-001")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
-		t.Fatalf("expected command status %d, got %d: %s", http.StatusAccepted, rec.Code, rec.Body.String())
+		t.Fatalf("expected vehicle action status %d, got %d: %s", http.StatusAccepted, rec.Code, rec.Body.String())
 	}
 
-	var command dtos.CommandResponse
-	if err := json.NewDecoder(rec.Body).Decode(&command); err != nil {
-		t.Fatalf("decode command: %v", err)
+	var action dtos.VehicleActionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&action); err != nil {
+		t.Fatalf("decode vehicle action: %v", err)
 	}
 
-	if command.Type != "arm" {
-		t.Fatalf("expected arm command, got %q", command.Type)
+	if action.Type != "arm" {
+		t.Fatalf("expected arm vehicle action, got %q", action.Type)
 	}
 
-	if command.State != "authorized" {
-		t.Fatalf("expected authorized command, got %q", command.State)
+	if action.State != "authorized" {
+		t.Fatalf("expected authorized vehicle action, got %q", action.State)
 	}
 
-	if command.RequestedBy != "operator-001" {
-		t.Fatalf("expected operator-001, got %q", command.RequestedBy)
-	}
-}
-
-func TestRequestCommandRejectedWithoutFreshTelemetry(t *testing.T) {
-	repo := newTestRepository(t)
-	router := NewRouter(repo.dependencies())
-
-	registerTestVehicleAgent(t, router)
-	sendTestHeartbeat(t, router)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/takeoff", nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected command status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
-	}
-
-	var command dtos.CommandResponse
-	if err := json.NewDecoder(rec.Body).Decode(&command); err != nil {
-		t.Fatalf("decode command: %v", err)
-	}
-
-	if command.State != "rejected_by_policy" {
-		t.Fatalf("expected rejected command, got %q", command.State)
-	}
-
-	if command.PolicyReason != "telemetry must be fresh" {
-		t.Fatalf("expected telemetry policy reason, got %q", command.PolicyReason)
+	if action.RequestedBy != "operator-001" {
+		t.Fatalf("expected operator-001, got %q", action.RequestedBy)
 	}
 }
 
-func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
+func TestRequestVehicleActionRejectedWithoutCommunicationLink(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
@@ -362,7 +596,67 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/arm", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/arm", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected vehicle action status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
+	}
+
+	var action dtos.VehicleActionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&action); err != nil {
+		t.Fatalf("decode vehicle action: %v", err)
+	}
+
+	if action.State != "rejected_by_policy" {
+		t.Fatalf("expected rejected vehicle action, got %q", action.State)
+	}
+	if action.PolicyReason != "active drone vehicle agent connection is required" {
+		t.Fatalf("expected communication policy reason, got %q", action.PolicyReason)
+	}
+}
+
+func TestRequestVehicleActionRejectedWithoutFreshTelemetry(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	registerTestVehicleAgent(t, router)
+	sendTestHeartbeat(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/takeoff", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected vehicle action status %d, got %d: %s", http.StatusConflict, rec.Code, rec.Body.String())
+	}
+
+	var action dtos.VehicleActionResponse
+	if err := json.NewDecoder(rec.Body).Decode(&action); err != nil {
+		t.Fatalf("decode vehicle action: %v", err)
+	}
+
+	if action.State != "rejected_by_policy" {
+		t.Fatalf("expected rejected vehicle action, got %q", action.State)
+	}
+
+	if action.PolicyReason != "telemetry must be fresh" {
+		t.Fatalf("expected telemetry policy reason, got %q", action.PolicyReason)
+	}
+}
+
+func TestListDroneVehicleActionsReturnsRecentVehicleActions(t *testing.T) {
+	repo := newTestRepository(t)
+	router := NewRouter(repo.dependencies())
+
+	registerTestVehicleAgent(t, router)
+	sendTestHeartbeat(t, router)
+	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
+
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/arm", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
@@ -370,7 +664,7 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 		t.Fatalf("expected request status %d, got %d: %s", http.StatusAccepted, requestRec.Code, requestRec.Body.String())
 	}
 
-	listReq := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/commands?limit=5", nil)
+	listReq := httptest.NewRequest(http.MethodGet, "/api/drones/drone-001/actions?limit=5", nil)
 	listRec := httptest.NewRecorder()
 	router.ServeHTTP(listRec, listReq)
 
@@ -378,25 +672,25 @@ func TestListDroneCommandsReturnsRecentCommands(t *testing.T) {
 		t.Fatalf("expected list status %d, got %d: %s", http.StatusOK, listRec.Code, listRec.Body.String())
 	}
 
-	var commands []dtos.CommandResponse
-	if err := json.NewDecoder(listRec.Body).Decode(&commands); err != nil {
-		t.Fatalf("decode commands: %v", err)
+	var actions []dtos.VehicleActionResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&actions); err != nil {
+		t.Fatalf("decode vehicle actions: %v", err)
 	}
 
-	if len(commands) != 1 {
-		t.Fatalf("expected one command, got %d", len(commands))
+	if len(actions) != 1 {
+		t.Fatalf("expected one vehicle action, got %d", len(actions))
 	}
 
-	if commands[0].Type != "arm" {
-		t.Fatalf("expected arm command, got %q", commands[0].Type)
+	if actions[0].Type != "arm" {
+		t.Fatalf("expected arm vehicle action, got %q", actions[0].Type)
 	}
 }
 
-func TestAgentCommandPollingRouteIsNotRegistered(t *testing.T) {
+func TestAgentVehicleActionPollingRouteIsNotRegistered(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
-	req := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/commands/next", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/vehicle-agents/agent-001/actions/next", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -439,6 +733,10 @@ func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
 		t.Fatalf("expected validated mission, got %q", mission.ValidationStatus)
 	}
 
+	if mission.CurrentVersionID == "" {
+		t.Fatal("expected current version id")
+	}
+
 	if mission.CreatedBy != "operator-001" {
 		t.Fatalf("expected operator-001, got %q", mission.CreatedBy)
 	}
@@ -474,6 +772,10 @@ func TestCreateMissionValidatedWithFreshTelemetry(t *testing.T) {
 
 	if missions[0].CompletionAction != "land" {
 		t.Fatalf("expected listed mission completion action land, got %q", missions[0].CompletionAction)
+	}
+
+	if missions[0].CurrentVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected listed current version %q, got %q", mission.CurrentVersionID, missions[0].CurrentVersionID)
 	}
 }
 
@@ -539,6 +841,10 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 		t.Fatalf("expected mission %q, got %q", mission.ID, execution.MissionID)
 	}
 
+	if execution.MissionVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected mission version %q, got %q", mission.CurrentVersionID, execution.MissionVersionID)
+	}
+
 	if execution.State != "upload_requested" {
 		t.Fatalf("expected upload_requested, got %q", execution.State)
 	}
@@ -572,6 +878,10 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 		t.Fatalf("expected mission execution %q in detail, got %#v", execution.ID, detail.Executions)
 	}
 
+	if detail.Executions[0].MissionVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected detail execution mission version %q, got %q", mission.CurrentVersionID, detail.Executions[0].MissionVersionID)
+	}
+
 	executionsReq := httptest.NewRequest(http.MethodGet, "/api/missions/"+mission.ID+"/executions", nil)
 	executionsRec := httptest.NewRecorder()
 	router.ServeHTTP(executionsRec, executionsReq)
@@ -587,6 +897,10 @@ func TestRequestMissionUploadCreatesExecution(t *testing.T) {
 
 	if len(executions) != 1 || executions[0].ID != execution.ID {
 		t.Fatalf("expected mission execution %q, got %#v", execution.ID, executions)
+	}
+
+	if executions[0].MissionVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected listed execution mission version %q, got %q", mission.CurrentVersionID, executions[0].MissionVersionID)
 	}
 }
 
@@ -863,29 +1177,37 @@ func TestListMissionExecutionEvents(t *testing.T) {
 	}
 }
 
-func TestAgentReportsCommandStatus(t *testing.T) {
+func TestAgentReportsVehicleActionStatus(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/land", nil)
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/land", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested dtos.CommandResponse
+	var requested dtos.VehicleActionResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
-		t.Fatalf("decode requested command: %v", err)
+		t.Fatalf("decode requested vehicle action: %v", err)
 	}
 
-	if _, err := repo.dependencies().Commands.ClaimCommandForVehicleAgent(context.Background(), "agent-001", requested.ID, time.Now().UTC()); err != nil {
-		t.Fatalf("claim command for status report setup: %v", err)
+	if _, err := repo.dependencies().VehicleActions.ClaimVehicleActionForVehicleAgent(context.Background(), "agent-001", requested.ID, time.Now().UTC()); err != nil {
+		t.Fatalf("claim vehicle action for status report setup: %v", err)
 	}
 
-	body := []byte(`{"state":"vehicle_acked","resultMessage":"accepted by vehicle"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	body, err := json.Marshal(dtos.VehicleActionStatusRequest{
+		State:            "vehicle_acked",
+		ResultMessage:    "accepted by vehicle",
+		AckCorrelationID: requested.AckCorrelationID,
+	})
+	if err != nil {
+		t.Fatalf("encode status request: %v", err)
+	}
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/actions/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -893,9 +1215,9 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 		t.Fatalf("expected status update %d, got %d: %s", http.StatusOK, statusRec.Code, statusRec.Body.String())
 	}
 
-	var updated dtos.CommandResponse
+	var updated dtos.VehicleActionResponse
 	if err := json.NewDecoder(statusRec.Body).Decode(&updated); err != nil {
-		t.Fatalf("decode updated command: %v", err)
+		t.Fatalf("decode updated vehicle action: %v", err)
 	}
 
 	if updated.State != "vehicle_acked" {
@@ -907,25 +1229,26 @@ func TestAgentReportsCommandStatus(t *testing.T) {
 	}
 }
 
-func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
+func TestAgentCannotReportVehicleActionResultBeforeFetching(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/land", nil)
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/land", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested dtos.CommandResponse
+	var requested dtos.VehicleActionResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
-		t.Fatalf("decode requested command: %v", err)
+		t.Fatalf("decode requested vehicle action: %v", err)
 	}
 
 	body := []byte(`{"state":"vehicle_acked"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/actions/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -934,25 +1257,26 @@ func TestAgentCannotReportCommandResultBeforeFetching(t *testing.T) {
 	}
 }
 
-func TestAgentCannotReportBackendOwnedCommandState(t *testing.T) {
+func TestAgentCannotReportBackendOwnedVehicleActionState(t *testing.T) {
 	repo := newTestRepository(t)
 	router := NewRouter(repo.dependencies())
 
 	registerTestVehicleAgent(t, router)
 	sendTestHeartbeat(t, router)
 	sendTestTelemetry(t, router)
+	openTestDroneVehicleAgentConnection(t, repo)
 
-	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/commands/land", nil)
+	requestReq := httptest.NewRequest(http.MethodPost, "/api/drones/drone-001/actions/land", nil)
 	requestRec := httptest.NewRecorder()
 	router.ServeHTTP(requestRec, requestReq)
 
-	var requested dtos.CommandResponse
+	var requested dtos.VehicleActionResponse
 	if err := json.NewDecoder(requestRec.Body).Decode(&requested); err != nil {
-		t.Fatalf("decode requested command: %v", err)
+		t.Fatalf("decode requested vehicle action: %v", err)
 	}
 
 	body := []byte(`{"state":"authorized"}`)
-	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/commands/"+requested.ID+"/status", bytes.NewReader(body))
+	statusReq := httptest.NewRequest(http.MethodPost, "/api/vehicle-agents/agent-001/actions/"+requested.ID+"/status", bytes.NewReader(body))
 	statusRec := httptest.NewRecorder()
 	router.ServeHTTP(statusRec, statusReq)
 
@@ -989,6 +1313,10 @@ func createValidatedMissionViaAPI(t *testing.T, router http.Handler) dtos.Missio
 
 	if mission.ValidationStatus != "validated" {
 		t.Fatalf("expected validated mission, got %q", mission.ValidationStatus)
+	}
+
+	if mission.CurrentVersionID == "" {
+		t.Fatal("expected current version id")
 	}
 
 	return mission
@@ -1052,6 +1380,31 @@ func sendTestTelemetry(t *testing.T, router http.Handler) {
 	}
 }
 
+func openTestDroneVehicleAgentConnection(t *testing.T, repo *testRepository) models.CommunicationLink {
+	t.Helper()
+
+	_, link, err := repo.VehicleAgentConnectionService.OpenDroneVehicleAgentConnection(context.Background(), repository.OpenDroneVehicleAgentConnectionInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		VehicleAgentVersion: "0.1.0",
+		RemoteAddress:       "127.0.0.1:50051",
+	}, time.Now().UTC())
+	if err != nil {
+		t.Fatalf("open test drone vehicle agent connection: %v", err)
+	}
+
+	return link
+}
+
+func stringSliceContains(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
 type telemetryWorkflow interface {
 	RecordTelemetry(context.Context, models.TelemetrySnapshot, time.Time) (models.TelemetrySnapshot, error)
 }
@@ -1082,9 +1435,11 @@ func recordAirborneTelemetry(t *testing.T, repo telemetryWorkflow) {
 
 type testRepository struct {
 	*svc.VehicleAgentService
+	*svc.VehicleAgentConnectionService
 	*svc.TelemetryService
-	*svc.CommandService
+	*svc.VehicleActionService
 	*svc.MissionService
+	*svc.PerceptionService
 	repos repository.Repositories
 	deps  Dependencies
 }
@@ -1122,17 +1477,20 @@ func newTestRepository(t *testing.T) *testRepository {
 	})
 
 	return &testRepository{
-		VehicleAgentService: appServices.VehicleAgents,
-		TelemetryService:    appServices.Telemetry,
-		CommandService:      appServices.Commands,
-		MissionService:      appServices.Missions,
-		repos:               repos,
+		VehicleAgentService:           appServices.VehicleAgents,
+		VehicleAgentConnectionService: appServices.VehicleAgentConnections,
+		TelemetryService:              appServices.Telemetry,
+		VehicleActionService:          appServices.VehicleActions,
+		MissionService:                appServices.Missions,
+		PerceptionService:             appServices.Perception,
+		repos:                         repos,
 		deps: Dependencies{
-			VehicleAgents: appServices.VehicleAgents,
-			Telemetry:     appServices.Telemetry,
-			Commands:      appServices.Commands,
-			Missions:      appServices.Missions,
-			Fleet:         appServices.Fleet,
+			VehicleAgents:  appServices.VehicleAgents,
+			Telemetry:      appServices.Telemetry,
+			VehicleActions: appServices.VehicleActions,
+			Missions:       appServices.Missions,
+			Fleet:          appServices.Fleet,
+			Perception:     appServices.Perception,
 		},
 	}
 }

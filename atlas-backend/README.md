@@ -11,12 +11,20 @@ In the first skeleton it exposes only basic process endpoints:
 - `POST /api/vehicle-agents/{vehicleAgentId}/telemetry`
 - `GET /api/drones`
 - `GET /api/drones/stream`
-- `POST /api/drones/{droneId}/commands/{command}`
+- `GET /api/drones/{droneId}/perception/events?limit=25`
+- `GET /api/drones/{droneId}/perception/status`
+- `POST /api/drones/{droneId}/actions/{action}`
 
 It also exposes a gRPC backend-vehicle-agent channel on `ATLAS_VEHICLE_AGENT_GRPC_ADDR`.
 The vehicle agent opens this outbound stream, sends heartbeat and telemetry messages over
-it, and the backend pushes authorized commands over it when the vehicle agent is
+it, and the backend pushes authorized vehicle actions over it when the vehicle agent is
 connected.
+
+The same gRPC stream accepts onboard perception metadata:
+
+- `PerceptionEvent` stores compact detection metadata in `perception_events`.
+- `PerceptionHealth` updates live inference status for the drone.
+- Video frames stay on RTSP/WebRTC and are not stored by these APIs.
 
 `GET /api/drones` and `GET /api/drones/stream` expose these as separate
 operator-facing health signals:
@@ -25,10 +33,10 @@ operator-facing health signals:
 - `telemetry.state` is derived from latest telemetry freshness.
 - `commandChannel.state` shows whether the vehicle-agent gRPC stream is connected.
 
-Command delivery uses a short lease. When the backend sends a command to a
+Vehicle action delivery uses a short lease. When the backend sends an action to a
 vehicle agent, it records `sent_to_vehicle_agent`, increments the delivery attempt, and sets a
 lease deadline. The vehicle agent clears that lease by reporting `vehicle_agent_received`. If the
-lease expires first, the command becomes eligible for redelivery.
+lease expires first, the action becomes eligible for redelivery.
 
 Run locally:
 
@@ -46,6 +54,15 @@ Use `ATLAS_VEHICLE_AGENT_GRPC_ADDR` to change the vehicle-agent gRPC listen addr
 
 ```sh
 ATLAS_VEHICLE_AGENT_GRPC_ADDR=:9091 go run ./cmd/atlas-backend
+```
+
+Ground-machine HM30 defaults:
+
+```sh
+ATLAS_VEHICLE_AGENT_GRPC_ADDR=:9090 \
+ATLAS_LOCAL_INPUTS_ENABLED=true \
+ATLAS_LOCAL_VIDEO_RTSP_URL=rtsp://192.168.144.168:8554/atlas \
+go run ./cmd/atlas-backend
 ```
 
 Register a local development agent:

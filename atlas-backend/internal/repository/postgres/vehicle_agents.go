@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -54,9 +55,24 @@ func (r *VehicleAgentRepository) UpsertVehicleAgentRegistration(ctx context.Cont
 
 func (r *VehicleAgentRepository) UpdateVehicleAgentHeartbeat(ctx context.Context, input repository.VehicleAgentHeartbeatInput, now time.Time) (models.VehicleAgent, error) {
 	var agent models.VehicleAgent
+	diagnosticsRaw, err := json.Marshal(emptyMapIfNil(input.MAVLinkObserverDiagnostics))
+	if err != nil {
+		return models.VehicleAgent{}, err
+	}
+	backendChannelRaw, err := json.Marshal(emptyMapIfNil(input.BackendChannelHealth))
+	if err != nil {
+		return models.VehicleAgent{}, err
+	}
 	res, err := r.exec.ExecContext(ctx, `
-		UPDATE vehicle_agents SET version = $2, vehicle_agent_version = $2, last_seen_at = $3, last_heartbeat_at = $3 WHERE id = $1
-	`, input.VehicleAgentID, input.VehicleAgentVersion, now)
+		UPDATE vehicle_agents
+		SET version = $2,
+		    vehicle_agent_version = $2,
+		    last_seen_at = $3,
+		    last_heartbeat_at = $3,
+		    mavlink_observer_diagnostics = $4,
+		    backend_channel_health = $5
+		WHERE id = $1
+	`, input.VehicleAgentID, input.VehicleAgentVersion, now, diagnosticsRaw, backendChannelRaw)
 	if err != nil {
 		return models.VehicleAgent{}, err
 	}
@@ -79,7 +95,8 @@ func (r *VehicleAgentRepository) SetCommandChannelState(ctx context.Context, age
 const vehicleAgentByIDSQL = `
 	SELECT id, drone_id, companion_device_id, version, vehicle_agent_version, identity_status,
 	       registered_at, last_seen_at, revoked_at, last_heartbeat_at,
-	       command_channel_state, command_channel_connected_at, command_channel_last_disconnected_at
+	       command_channel_state, command_channel_connected_at, command_channel_last_disconnected_at,
+	       mavlink_observer_diagnostics, backend_channel_health
 	FROM vehicle_agents WHERE id = $1
 `
 
@@ -87,6 +104,8 @@ func scanVehicleAgent(row rowScanner) (models.VehicleAgent, error) {
 	var agent models.VehicleAgent
 	var companionDeviceID, agentVersion, identityStatus sql.NullString
 	var lastSeenAt, revokedAt, lastHeartbeatAt, connectedAt, disconnectedAt sql.NullTime
+	var diagnosticsRaw []byte
+	var backendChannelRaw []byte
 	var channelState string
 	err := row.Scan(
 		&agent.ID,
@@ -102,6 +121,8 @@ func scanVehicleAgent(row rowScanner) (models.VehicleAgent, error) {
 		&channelState,
 		&connectedAt,
 		&disconnectedAt,
+		&diagnosticsRaw,
+		&backendChannelRaw,
 	)
 	if err != nil {
 		return models.VehicleAgent{}, err
@@ -121,6 +142,14 @@ func scanVehicleAgent(row rowScanner) (models.VehicleAgent, error) {
 	agent.CommandChannelState = models.CommandChannelState(channelState)
 	agent.CommandChannelConnectedAt = timeFromNull(connectedAt)
 	agent.CommandChannelLastDisconnectedAt = timeFromNull(disconnectedAt)
+	agent.MAVLinkObserverDiagnostics = map[string]any{}
+	if len(diagnosticsRaw) > 0 {
+		_ = json.Unmarshal(diagnosticsRaw, &agent.MAVLinkObserverDiagnostics)
+	}
+	agent.BackendChannelHealth = map[string]any{}
+	if len(backendChannelRaw) > 0 {
+		_ = json.Unmarshal(backendChannelRaw, &agent.BackendChannelHealth)
+	}
 	return agent, nil
 }
 
@@ -172,7 +201,8 @@ func getActiveVehicleAgentForDrone(ctx context.Context, q DBExecutor, droneID st
 	agent, err := scanVehicleAgent(q.QueryRowContext(ctx, `
 		SELECT id, drone_id, companion_device_id, version, vehicle_agent_version, identity_status,
 		       registered_at, last_seen_at, revoked_at, last_heartbeat_at,
-		       command_channel_state, command_channel_connected_at, command_channel_last_disconnected_at
+		       command_channel_state, command_channel_connected_at, command_channel_last_disconnected_at,
+		       mavlink_observer_diagnostics, backend_channel_health
 		FROM vehicle_agents
 		WHERE drone_id = $1 AND identity_status = $2
 		ORDER BY registered_at DESC, id DESC

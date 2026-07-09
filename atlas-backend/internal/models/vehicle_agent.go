@@ -147,6 +147,8 @@ type VehicleAgent struct {
 	CommandChannelState              CommandChannelState
 	CommandChannelConnectedAt        time.Time
 	CommandChannelLastDisconnectedAt time.Time
+	MAVLinkObserverDiagnostics       map[string]any
+	BackendChannelHealth             map[string]any
 }
 
 type DeviceIdentityStatus string

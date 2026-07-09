@@ -6,8 +6,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sunnyside/atlas/atlas-agent/internal/comms"
+	"github.com/sunnyside/atlas/atlas-agent/internal/mavlinkobserver"
+	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
+	"google.golang.org/protobuf/proto"
 )
 
 func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
@@ -31,6 +35,79 @@ func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
 	}
 }
 
+func TestEnqueuePerceptionDropsOldestWhenFull(t *testing.T) {
+	outbound := newOutboundQueues()
+
+	for i := 0; i < cap(outbound.perception); i++ {
+		if !enqueuePerception(context.Background(), outbound, testPerceptionEventMessage("queued")) {
+			t.Fatalf("expected perception enqueue %d", i)
+		}
+	}
+
+	if !enqueuePerception(context.Background(), outbound, testPerceptionEventMessage("latest")) {
+		t.Fatal("expected latest perception enqueue")
+	}
+
+	drained := make([]string, 0, cap(outbound.perception))
+	for len(outbound.perception) > 0 {
+		msg := <-outbound.perception
+		drained = append(drained, msg.GetVehicleAgentId())
+	}
+	if drained[len(drained)-1] != "latest" {
+		t.Fatalf("expected latest perception message to be retained last, got %v", drained)
+	}
+}
+
+func TestSendPerceptionEventSerializesDetectionMetadata(t *testing.T) {
+	outbound := newOutboundQueues()
+	observedAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	if !sendPerceptionEvent(context.Background(), outbound, "agent-001", perception.Event{
+		DroneID:            "drone-001",
+		SourceID:           "a8-main",
+		ObservedAt:         observedAt,
+		FrameID:            "frame-000001",
+		ModelName:          "yolov6n-hailo",
+		ModelVersion:       "hef-mvp",
+		InferenceLatencyMS: 16.75,
+		Detections: []perception.Detection{
+			{ClassName: "person", Confidence: 0.93, BBox: [4]float64{0.1, 0.2, 0.3, 0.4}},
+		},
+	}) {
+		t.Fatal("expected perception event enqueue")
+	}
+
+	msg, ok := nextOutboundMessage(context.Background(), outbound)
+	if !ok {
+		t.Fatal("expected outbound perception event")
+	}
+	event := msg.GetPerceptionEvent()
+	if event == nil {
+		t.Fatalf("expected perception event, got %#v", msg)
+	}
+	if event.GetObservedAt() != observedAt.Format(time.RFC3339Nano) {
+		t.Fatalf("expected observed_at %s, got %q", observedAt.Format(time.RFC3339Nano), event.GetObservedAt())
+	}
+	if event.GetInferenceLatencyMs() != 16.75 {
+		t.Fatalf("expected latency 16.75, got %f", event.GetInferenceLatencyMs())
+	}
+	if len(event.GetDetections()) != 1 || event.GetDetections()[0].GetClassName() != "person" {
+		t.Fatalf("expected person detection, got %#v", event.GetDetections())
+	}
+
+	raw, err := proto.Marshal(msg)
+	if err != nil {
+		t.Fatalf("marshal perception event proto: %v", err)
+	}
+	var decoded pb.VehicleAgentToBackend
+	if err := proto.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal perception event proto: %v", err)
+	}
+	if decoded.GetPerceptionEvent().GetDetections()[0].GetBbox().GetW() != 0.3 {
+		t.Fatalf("expected bbox width 0.3 after proto round trip, got %f", decoded.GetPerceptionEvent().GetDetections()[0].GetBbox().GetW())
+	}
+}
+
 func TestTelemetryBackpressureDoesNotBlockCriticalMessages(t *testing.T) {
 	outbound := newOutboundQueues()
 
@@ -44,8 +121,8 @@ func TestTelemetryBackpressureDoesNotBlockCriticalMessages(t *testing.T) {
 		}
 	}
 
-	if !enqueueCritical(context.Background(), outbound, testCommandStatusMessage("critical")) {
-		t.Fatal("expected critical command status enqueue")
+	if !enqueueCritical(context.Background(), outbound, testVehicleActionStatusMessage("critical")) {
+		t.Fatal("expected critical vehicle action status enqueue")
 	}
 
 	msg, ok := nextOutboundMessage(context.Background(), outbound)
@@ -67,7 +144,7 @@ func TestNextOutboundMessagePrioritizesCriticalThenHeartbeatThenTelemetry(t *tes
 	if !enqueueHeartbeat(context.Background(), outbound, testHeartbeatMessage("heartbeat")) {
 		t.Fatal("expected heartbeat enqueue")
 	}
-	if !enqueueCritical(context.Background(), outbound, testCommandStatusMessage("critical")) {
+	if !enqueueCritical(context.Background(), outbound, testVehicleActionStatusMessage("critical")) {
 		t.Fatal("expected critical enqueue")
 	}
 
@@ -95,6 +172,32 @@ func TestMissionExecutionStatusUsesCriticalQueue(t *testing.T) {
 
 	if status.GetState() != missionExecutionStateUploading {
 		t.Fatalf("expected uploading status, got %q", status.GetState())
+	}
+}
+
+func TestHandleGimbalControlCallsController(t *testing.T) {
+	controller := &fakeGimbalController{}
+
+	handleGimbalControl(context.Background(), nil, controller, &pb.GimbalControlCommand{
+		DroneId:           "drone-001",
+		PitchRateDegS:     20,
+		YawRateDegS:       -15,
+		TargetSystemId:    1,
+		TargetComponentId: 154,
+		GimbalDeviceId:    1,
+	})
+
+	if !controller.called {
+		t.Fatal("expected gimbal controller to be called")
+	}
+	if controller.command.PitchRateDegS != 20 {
+		t.Fatalf("expected pitch rate 20, got %f", controller.command.PitchRateDegS)
+	}
+	if controller.command.YawRateDegS != -15 {
+		t.Fatalf("expected yaw rate -15, got %f", controller.command.YawRateDegS)
+	}
+	if controller.command.TargetComponentID != 154 {
+		t.Fatalf("expected target component 154, got %d", controller.command.TargetComponentID)
 	}
 }
 
@@ -388,24 +491,24 @@ func TestMissionExecutionProcessingKeyIncludesAction(t *testing.T) {
 	}
 }
 
-func TestExecuteVehicleCommandRoutesToGatewayMethod(t *testing.T) {
+func TestExecuteVehicleActionRoutesToGatewayMethod(t *testing.T) {
 	tests := []struct {
-		name        string
-		commandType string
-		wantCalls   []string
+		name       string
+		actionType string
+		wantCalls  []string
 	}{
-		{name: "arm", commandType: commandTypeArm, wantCalls: []string{"arm"}},
-		{name: "takeoff", commandType: commandTypeTakeoff, wantCalls: []string{"takeoff"}},
-		{name: "return to launch", commandType: commandTypeReturnToLaunch, wantCalls: []string{"return_to_launch"}},
-		{name: "land", commandType: commandTypeLand, wantCalls: []string{"land"}},
+		{name: "arm", actionType: vehicleActionTypeArm, wantCalls: []string{"arm"}},
+		{name: "takeoff", actionType: vehicleActionTypeTakeoff, wantCalls: []string{"takeoff"}},
+		{name: "return to launch", actionType: vehicleActionTypeReturnToLaunch, wantCalls: []string{"return_to_launch"}},
+		{name: "land", actionType: vehicleActionTypeLand, wantCalls: []string{"land"}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			gateway := &fakeGateway{}
 
-			if err := executeVehicleCommand(context.Background(), gateway, tt.commandType); err != nil {
-				t.Fatalf("execute vehicle command: %v", err)
+			if err := executeVehicleAction(context.Background(), gateway, tt.actionType); err != nil {
+				t.Fatalf("execute vehicle action: %v", err)
 			}
 
 			if !equalStrings(gateway.calls, tt.wantCalls) {
@@ -415,10 +518,10 @@ func TestExecuteVehicleCommandRoutesToGatewayMethod(t *testing.T) {
 	}
 }
 
-func TestExecuteVehicleCommandRejectsUnsupportedCommand(t *testing.T) {
-	err := executeVehicleCommand(context.Background(), &fakeGateway{}, "orbit")
-	if !errors.Is(err, errUnsupportedCommand) {
-		t.Fatalf("expected unsupported command error, got %v", err)
+func TestExecuteVehicleActionRejectsUnsupportedAction(t *testing.T) {
+	err := executeVehicleAction(context.Background(), &fakeGateway{}, "orbit")
+	if !errors.Is(err, errUnsupportedVehicleAction) {
+		t.Fatalf("expected unsupported vehicle action error, got %v", err)
 	}
 }
 
@@ -433,6 +536,41 @@ func TestHeartbeatDropsWhenHeartbeatQueueIsFull(t *testing.T) {
 
 	if enqueueHeartbeat(context.Background(), outbound, testHeartbeatMessage("dropped")) {
 		t.Fatal("expected heartbeat to drop when heartbeat queue is full")
+	}
+}
+
+func TestSendHeartbeatIncludesBackendChannelHealth(t *testing.T) {
+	outbound := newOutboundQueues()
+	manager := comms.NewBackendChannelManager("127.0.0.1:8080")
+	manager.MarkConnected(time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC))
+
+	sendHeartbeat(context.Background(), outbound, Config{
+		VehicleAgentID:      "agent-001",
+		VehicleAgentVersion: "v0.1.0",
+	}, nil, manager)
+
+	msg, ok := nextOutboundMessage(context.Background(), outbound)
+	if !ok {
+		t.Fatal("expected heartbeat message")
+	}
+
+	heartbeat := msg.GetHeartbeat()
+	if heartbeat == nil {
+		t.Fatalf("expected heartbeat payload, got %#v", msg)
+	}
+
+	health := heartbeat.GetBackendChannel()
+	if health == nil {
+		t.Fatal("expected backend channel health")
+	}
+	if health.GetState() != comms.StateConnected {
+		t.Fatalf("expected connected state, got %q", health.GetState())
+	}
+	if health.GetBackendAddress() != "127.0.0.1:8080" {
+		t.Fatalf("expected backend address, got %q", health.GetBackendAddress())
+	}
+	if health.GetWeakLink() {
+		t.Fatal("expected connected channel not to be weak")
 	}
 }
 
@@ -468,13 +606,13 @@ func nextMissionStatus(t *testing.T, outbound outboundQueues) *pb.MissionExecuti
 	return status
 }
 
-func testCommandStatusMessage(agentID string) *pb.VehicleAgentToBackend {
+func testVehicleActionStatusMessage(agentID string) *pb.VehicleAgentToBackend {
 	return &pb.VehicleAgentToBackend{
 		VehicleAgentId: agentID,
-		Payload: &pb.VehicleAgentToBackend_CommandStatus{
-			CommandStatus: &pb.CommandStatus{
-				CommandId: "cmd-000001",
-				State:     commandStateVehicleAgentReceived,
+		Payload: &pb.VehicleAgentToBackend_VehicleActionStatus{
+			VehicleActionStatus: &pb.VehicleActionStatus{
+				VehicleActionId: "act-000001",
+				State:           vehicleActionStateVehicleAgentReceived,
 			},
 		},
 	}
@@ -494,6 +632,19 @@ func testTelemetryMessage(agentID string) *pb.VehicleAgentToBackend {
 		VehicleAgentId: agentID,
 		Payload: &pb.VehicleAgentToBackend_Telemetry{
 			Telemetry: &pb.Telemetry{Source: "px4"},
+		},
+	}
+}
+
+func testPerceptionEventMessage(agentID string) *pb.VehicleAgentToBackend {
+	return &pb.VehicleAgentToBackend{
+		VehicleAgentId: agentID,
+		Payload: &pb.VehicleAgentToBackend_PerceptionEvent{
+			PerceptionEvent: &pb.PerceptionEvent{
+				SourceId:   "a8-main",
+				ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				ModelName:  "yolov6n-hailo",
+			},
 		},
 	}
 }
@@ -569,6 +720,18 @@ func (g *fakeGateway) MissionProgress(ctx context.Context) (<-chan vehicle.Missi
 	ch := make(chan vehicle.MissionProgressEvent)
 	close(ch)
 	return ch, nil
+}
+
+type fakeGimbalController struct {
+	called  bool
+	command mavlinkobserver.GimbalControlCommand
+	err     error
+}
+
+func (f *fakeGimbalController) SendGimbalControl(_ context.Context, command mavlinkobserver.GimbalControlCommand) error {
+	f.called = true
+	f.command = command
+	return f.err
 }
 
 func equalStrings(got []string, want []string) bool {

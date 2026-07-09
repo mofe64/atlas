@@ -61,28 +61,28 @@ func TestTxManagerRepositoriesShareCallbackTransaction(t *testing.T) {
 	txManager := newTestTxManager(t)
 	ctx := context.Background()
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
-	var command models.CommandRequest
+	var command models.VehicleAction
 
 	err := txManager.WithinTx(ctx, func(ctx context.Context, repos repository.Repositories) error {
 		if err := insertRegisteredAgent(ctx, repos, "agent-shared", "drone-shared", "Shared Tx Quad", now); err != nil {
 			return err
 		}
 
-		commandID, err := repos.Commands.GenerateCommandID(ctx)
+		vehicleActionID, err := repos.VehicleActions.GenerateVehicleActionID(ctx)
 		if err != nil {
 			return err
 		}
-		command = models.CommandRequest{
-			ID:             commandID,
+		command = models.VehicleAction{
+			ID:             vehicleActionID,
 			DroneID:        "drone-shared",
 			VehicleAgentID: "agent-shared",
-			Type:           models.CommandTypeArm,
-			State:          models.CommandStateAuthorized,
+			Type:           models.VehicleActionTypeArm,
+			State:          models.VehicleActionStateAuthorized,
 			RequestedBy:    "test",
 			RequestedAt:    now,
 			UpdatedAt:      now,
 		}
-		return repos.Commands.InsertCommand(ctx, command)
+		return repos.VehicleActions.InsertVehicleAction(ctx, command)
 	})
 	if err != nil {
 		t.Fatalf("within tx: %v", err)
@@ -91,7 +91,7 @@ func TestTxManagerRepositoriesShareCallbackTransaction(t *testing.T) {
 	if command.ID == "" {
 		t.Fatal("expected command created inside shared transaction")
 	}
-	if command.State != models.CommandStateAuthorized {
+	if command.State != models.VehicleActionStateAuthorized {
 		t.Fatalf("expected inserted command to remain authorized, got %q", command.State)
 	}
 }

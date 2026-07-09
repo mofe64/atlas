@@ -14,12 +14,15 @@ import (
 
 	"github.com/sunnyside/atlas/atlas-backend/internal/database"
 	"github.com/sunnyside/atlas/atlas-backend/internal/httpapi"
+	"github.com/sunnyside/atlas/atlas-backend/internal/localinputs"
 	postgresrepo "github.com/sunnyside/atlas/atlas-backend/internal/repository/postgres"
 	"github.com/sunnyside/atlas/atlas-backend/internal/services"
 	"github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannel"
 	vehicleagentchannelpb "github.com/sunnyside/atlas/atlas-backend/internal/transport/vehicleagentchannelpb/atlas"
 	"google.golang.org/grpc"
 )
+
+const vehicleActionSweepInterval = 5 * time.Second
 
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
@@ -42,11 +45,21 @@ func main() {
 		os.Exit(1)
 	}
 	defer closeDB()
+
+	localInputConfig := localinputs.LoadConfigFromEnv()
+	localVideo := localinputs.NewVideoService(localInputConfig)
+
 	channelHub := vehicleagentchannel.NewHub(deps.vehicleAgentChannel, logger)
+	runtimeCtx, stopRuntime := context.WithCancel(context.Background())
+	defer stopRuntime()
+	go runVehicleActionTimeoutSweeper(runtimeCtx, deps.vehicleActions, logger, vehicleActionSweepInterval)
+	localinputs.StartTelemetry(runtimeCtx, logger, localInputConfig, deps.telemetry)
+
+	deps.httpAPI.LocalVideo = localVideo
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           httpapi.NewRouterWithDispatchers(deps.httpAPI, channelHub, channelHub),
+		Handler:           httpapi.NewRouterWithGimbalControlDispatcher(deps.httpAPI, channelHub, channelHub, channelHub),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -85,6 +98,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	stopRuntime()
 
 	grpcServer.GracefulStop()
 
@@ -99,6 +113,8 @@ func main() {
 type backendDependencies struct {
 	httpAPI             httpapi.Dependencies
 	vehicleAgentChannel vehicleagentchannel.Dependencies
+	vehicleActions      *services.VehicleActionService
+	telemetry           *services.TelemetryService
 }
 
 func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependencies, func(), error) {
@@ -121,18 +137,23 @@ func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependen
 	})
 
 	deps := backendDependencies{
+		vehicleActions: appServices.VehicleActions,
+		telemetry:      appServices.Telemetry,
 		httpAPI: httpapi.Dependencies{
-			VehicleAgents: appServices.VehicleAgents,
-			Telemetry:     appServices.Telemetry,
-			Commands:      appServices.Commands,
-			Missions:      appServices.Missions,
-			Fleet:         appServices.Fleet,
+			VehicleAgents:  appServices.VehicleAgents,
+			Telemetry:      appServices.Telemetry,
+			VehicleActions: appServices.VehicleActions,
+			Missions:       appServices.Missions,
+			Fleet:          appServices.Fleet,
+			Perception:     appServices.Perception,
 		},
 		vehicleAgentChannel: vehicleagentchannel.Dependencies{
-			VehicleAgents: appServices.VehicleAgents,
-			Telemetry:     appServices.Telemetry,
-			Commands:      appServices.Commands,
-			Missions:      appServices.Missions,
+			VehicleAgents:           appServices.VehicleAgents,
+			VehicleAgentConnections: appServices.VehicleAgentConnections,
+			Telemetry:               appServices.Telemetry,
+			VehicleActions:          appServices.VehicleActions,
+			Missions:                appServices.Missions,
+			Perception:              appServices.Perception,
 		},
 	}
 	closeDB := func() {
@@ -142,4 +163,27 @@ func openDependencies(ctx context.Context, logger *slog.Logger) (backendDependen
 	}
 
 	return deps, closeDB, nil
+}
+
+func runVehicleActionTimeoutSweeper(ctx context.Context, vehicleActions *services.VehicleActionService, logger *slog.Logger, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			count, err := vehicleActions.SweepTimedOutVehicleActions(ctx, time.Now().UTC())
+			if err != nil {
+				if !errors.Is(err, context.Canceled) {
+					logger.Warn("vehicle action timeout sweep failed", "error", err)
+				}
+				continue
+			}
+			if count > 0 {
+				logger.Info("vehicle action timeout sweep applied", "count", count)
+			}
+		}
+	}
 }

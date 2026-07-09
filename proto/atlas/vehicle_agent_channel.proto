@@ -13,18 +13,21 @@ message VehicleAgentToBackend {
 
   oneof payload {
     VehicleAgentHello hello = 2;
-    CommandStatus command_status = 3;
+    VehicleActionStatus vehicle_action_status = 3;
     Heartbeat heartbeat = 4;
     Telemetry telemetry = 5;
     MissionExecutionStatus mission_execution_status = 6;
+    PerceptionEvent perception_event = 7;
+    PerceptionHealth perception_health = 8;
   }
 }
 
 message BackendToVehicleAgent {
   oneof payload {
-    CommandEnvelope command = 1;
+    VehicleActionEnvelope vehicle_action = 1;
     Ping ping = 2;
     MissionExecutionEnvelope mission_execution = 3;
+    GimbalControlCommand gimbal_control = 4;
   }
 }
 
@@ -36,6 +39,8 @@ message VehicleAgentHello {
 
 message Heartbeat {
   string vehicle_agent_version = 1;
+  MavlinkObserverDiagnostics mavlink_observer = 2;
+  BackendChannelHealth backend_channel = 3;
 }
 
 message Telemetry {
@@ -55,17 +60,112 @@ message Telemetry {
   double ground_speed_mps = 14;
 }
 
-message CommandEnvelope {
-  string command_id = 1;
-  string drone_id = 2;
-  string command_type = 3;
-  string requested_by = 4;
+message PerceptionEvent {
+  string drone_id = 1;
+  string source_id = 2;
+  string observed_at = 3;
+  string frame_id = 4;
+  string model_name = 5;
+  string model_version = 6;
+  double inference_latency_ms = 7;
+  repeated PerceptionDetection detections = 8;
 }
 
-message CommandStatus {
-  string command_id = 1;
+message PerceptionDetection {
+  string class_name = 1;
+  double confidence = 2;
+  NormalizedBBox bbox = 3;
+}
+
+message NormalizedBBox {
+  double x = 1;
+  double y = 2;
+  double w = 3;
+  double h = 4;
+}
+
+message PerceptionHealth {
+  string drone_id = 1;
+  string source_id = 2;
+  bool input_connected = 3;
+  bool output_publishing = 4;
+  bool model_loaded = 5;
+  string accelerator = 6;
+  double fps = 7;
+  uint64 dropped_frames = 8;
+  string last_frame_at = 9;
+  string last_detection_at = 10;
+  string last_error = 11;
+  string model_name = 12;
+  string model_version = 13;
+}
+
+message VehicleActionEnvelope {
+  string vehicle_action_id = 1;
+  string drone_id = 2;
+  string action_type = 3;
+  string requested_by = 4;
+  string ack_correlation_id = 5;
+}
+
+message VehicleActionStatus {
+  string vehicle_action_id = 1;
   string state = 2;
   string result_message = 3;
+  string ack_correlation_id = 4;
+  string raw_ack_code = 5;
+  RawMavlinkCommandAckEvidence raw_mavlink_command_ack = 6;
+}
+
+message RawMavlinkCommandAckEvidence {
+  string observed_at = 1;
+  uint32 source_system_id = 2;
+  uint32 source_component_id = 3;
+  uint32 command = 4;
+  uint32 result = 5;
+  uint32 progress = 6;
+  bool has_progress = 7;
+  int32 result_param2 = 8;
+  bool has_result_param2 = 9;
+  uint32 target_system = 10;
+  bool has_target_system = 11;
+  uint32 target_component = 12;
+  bool has_target_component = 13;
+  string result_label = 14;
+  string match_status = 15;
+}
+
+message MavlinkObserverDiagnostics {
+  bool connected = 1;
+  uint64 packets_seen = 2;
+  string last_packet_at = 3;
+  string last_heartbeat_at = 4;
+  string last_command_ack_at = 5;
+  uint32 last_command_ack_command = 6;
+  uint32 last_command_ack_result = 7;
+  uint32 component_count = 8;
+  repeated MavlinkComponent components = 9;
+}
+
+message MavlinkComponent {
+  uint32 system_id = 1;
+  uint32 component_id = 2;
+  string first_seen_at = 3;
+  string last_seen_at = 4;
+  uint64 packet_count = 5;
+}
+
+message BackendChannelHealth {
+  string state = 1;
+  uint64 reconnect_count = 2;
+  string connected_at = 3;
+  string last_disconnected_at = 4;
+  string last_successful_send_at = 5;
+  string last_heartbeat_sent_at = 6;
+  string last_error = 7;
+  string backend_address = 8;
+  bool weak_link = 9;
+  string weak_link_reason = 10;
 }
 
 message MissionExecutionEnvelope {
@@ -93,6 +193,15 @@ message MissionExecutionStatus {
   string result_message = 3;
   int32 current_mission_item = 4;
   int32 total_mission_items = 5;
+}
+
+message GimbalControlCommand {
+  string drone_id = 1;
+  double pitch_rate_deg_s = 2;
+  double yaw_rate_deg_s = 3;
+  uint32 target_system_id = 4;
+  uint32 target_component_id = 5;
+  uint32 gimbal_device_id = 6;
 }
 
 message Ping {

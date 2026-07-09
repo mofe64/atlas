@@ -182,6 +182,7 @@ func TestRecordTelemetryStoresLatestSnapshot(t *testing.T) {
 		DroneName:           "Training Quad 1",
 		VehicleAgentVersion: "0.1.0",
 	}, now)
+	link := openReadyCommunicationLink(t, repo, now)
 
 	snapshot, err := repo.RecordTelemetry(context.Background(), models.TelemetrySnapshot{
 		VehicleAgentID:    "agent-001",
@@ -199,6 +200,12 @@ func TestRecordTelemetryStoresLatestSnapshot(t *testing.T) {
 	if snapshot.DroneID != "drone-001" {
 		t.Fatalf("expected drone-001, got %q", snapshot.DroneID)
 	}
+	if snapshot.ActiveTelemetryFeedID == "" {
+		t.Fatal("expected active telemetry feed id")
+	}
+	if snapshot.SourceCommunicationLinkID != link.ID {
+		t.Fatalf("expected source communication link %q, got %q", link.ID, snapshot.SourceCommunicationLinkID)
+	}
 
 	drones := repo.ListDrones(context.Background(), now)
 	if drones[0].TelemetryState != models.TelemetryStateFresh {
@@ -207,6 +214,257 @@ func TestRecordTelemetryStoresLatestSnapshot(t *testing.T) {
 
 	if drones[0].Telemetry.BatteryPercent != 82 {
 		t.Fatalf("expected battery 82, got %f", drones[0].Telemetry.BatteryPercent)
+	}
+	if drones[0].Telemetry.ActiveTelemetryFeedID != snapshot.ActiveTelemetryFeedID {
+		t.Fatalf("expected latest telemetry feed %q, got %q", snapshot.ActiveTelemetryFeedID, drones[0].Telemetry.ActiveTelemetryFeedID)
+	}
+	if drones[0].Telemetry.SourceCommunicationLinkID != link.ID {
+		t.Fatalf("expected latest source communication link %q, got %q", link.ID, drones[0].Telemetry.SourceCommunicationLinkID)
+	}
+
+	feed, ok, err := repo.TelemetryFeedRepository.GetTelemetryFeedByID(context.Background(), snapshot.ActiveTelemetryFeedID)
+	if err != nil {
+		t.Fatalf("get telemetry feed: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected telemetry feed")
+	}
+	if feed.SourceType != models.TelemetrySourceAgentDirect {
+		t.Fatalf("expected agent-direct telemetry feed, got %q", feed.SourceType)
+	}
+	if feed.SourceID != "agent-001" {
+		t.Fatalf("expected source agent-001, got %q", feed.SourceID)
+	}
+	if feed.CommunicationLinkID != link.ID {
+		t.Fatalf("expected feed communication link %q, got %q", link.ID, feed.CommunicationLinkID)
+	}
+
+	sample, ok, err := repo.TelemetrySampleRepository.LatestTelemetrySampleForFeed(context.Background(), feed.ID)
+	if err != nil {
+		t.Fatalf("get latest telemetry sample: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected telemetry sample")
+	}
+	if sample.TelemetryFeedID != feed.ID {
+		t.Fatalf("expected sample feed %q, got %q", feed.ID, sample.TelemetryFeedID)
+	}
+	if sample.Snapshot.ActiveTelemetryFeedID != feed.ID {
+		t.Fatalf("expected sample snapshot feed %q, got %q", feed.ID, sample.Snapshot.ActiveTelemetryFeedID)
+	}
+}
+
+func TestRecordPerceptionEventStoresAndListsDetections(t *testing.T) {
+	repo := newTestRepository(t)
+	ctx := context.Background()
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
+
+	if _, err := repo.RegisterVehicleAgent(ctx, repository.RegisterVehicleAgentInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		DroneName:           "Training Quad 1",
+		VehicleAgentVersion: "0.1.0",
+	}, now); err != nil {
+		t.Fatalf("register agent: %v", err)
+	}
+
+	recorded, err := repo.RecordPerceptionEvent(ctx, "agent-001", models.PerceptionEvent{
+		DroneID:            "drone-001",
+		VideoSourceID:      "a8-main",
+		ObservedAt:         now.Add(time.Second),
+		FrameID:            "frame-000001",
+		ModelName:          "yolov6n-hailo",
+		ModelVersion:       "hef-mvp",
+		InferenceLatencyMS: 18.5,
+		Detections: []models.PerceptionDetection{
+			{ClassName: "person", Confidence: 0.92, BBox: [4]float64{0.1, 0.2, 0.3, 0.4}},
+		},
+	}, now.Add(2*time.Second))
+	if err != nil {
+		t.Fatalf("record perception event: %v", err)
+	}
+	if recorded.ID == "" {
+		t.Fatal("expected generated perception event id")
+	}
+
+	events, err := repo.ListPerceptionEvents(ctx, "drone-001", 10)
+	if err != nil {
+		t.Fatalf("list perception events: %v", err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected one perception event, got %d", len(events))
+	}
+	event := events[0]
+	if event.VideoSourceID != "a8-main" {
+		t.Fatalf("expected source a8-main, got %q", event.VideoSourceID)
+	}
+	if event.InferenceLatencyMS != 18.5 {
+		t.Fatalf("expected latency 18.5, got %f", event.InferenceLatencyMS)
+	}
+	if len(event.Detections) != 1 || event.Detections[0].ClassName != "person" {
+		t.Fatalf("expected person detection, got %#v", event.Detections)
+	}
+
+	if err := repo.RecordPerceptionHealth(ctx, "agent-001", models.PerceptionHealth{
+		DroneID:          "drone-001",
+		SourceID:         "a8-main",
+		InputConnected:   true,
+		OutputPublishing: true,
+		ModelLoaded:      true,
+		Accelerator:      "hailo",
+		FPS:              21.5,
+		LastFrameAt:      now.Add(3 * time.Second),
+		LastDetectionAt:  now.Add(time.Second),
+		ModelName:        "yolov6n-hailo",
+		ModelVersion:     "hef-mvp",
+	}, now.Add(3*time.Second)); err != nil {
+		t.Fatalf("record perception health: %v", err)
+	}
+
+	status, err := repo.PerceptionStatus(ctx, "drone-001")
+	if err != nil {
+		t.Fatalf("get perception status: %v", err)
+	}
+	if status.Accelerator != "hailo" {
+		t.Fatalf("expected hailo accelerator, got %q", status.Accelerator)
+	}
+	if status.ActiveCounts["person"] != 1 {
+		t.Fatalf("expected one active person detection, got %#v", status.ActiveCounts)
+	}
+	if status.LatestEvent.ID != event.ID {
+		t.Fatalf("expected latest event %q, got %q", event.ID, status.LatestEvent.ID)
+	}
+}
+
+func TestRecordLocalTelemetryDoesNotOverrideFreshAgentLatest(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+
+	repo.RegisterVehicleAgent(context.Background(), repository.RegisterVehicleAgentInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		DroneName:           "Training Quad 1",
+		VehicleAgentVersion: "0.1.0",
+	}, now)
+	agentLink := openReadyCommunicationLink(t, repo, now)
+
+	agentSnapshot, err := repo.RecordTelemetry(context.Background(), models.TelemetrySnapshot{
+		VehicleAgentID:    "agent-001",
+		ObservedAt:        now,
+		BatteryPercent:    82,
+		RelativeAltitudeM: 12.5,
+		FlightMode:        "HOLD",
+		GPSFix:            "3D",
+		Source:            "px4",
+	}, now)
+	if err != nil {
+		t.Fatalf("record agent telemetry: %v", err)
+	}
+
+	localSnapshot, promoted, err := repo.telemetryService.RecordLocalTelemetry(context.Background(), repository.RecordLocalTelemetryInput{
+		DroneID:             "drone-001",
+		SourceID:            "hm30-local",
+		Source:              "local:hm30-local",
+		Transport:           "MAVLINK_UDP",
+		EndpointDescription: "udp-server://0.0.0.0:14560",
+		Snapshot: models.TelemetrySnapshot{
+			ObservedAt:        now.Add(time.Second),
+			BatteryPercent:    74,
+			RelativeAltitudeM: 20,
+			FlightMode:        "UNKNOWN",
+			GPSFix:            "3D",
+			Source:            "local:hm30-local",
+		},
+	}, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("record local telemetry: %v", err)
+	}
+	if promoted {
+		t.Fatal("expected fresh agent telemetry to remain selected")
+	}
+	if localSnapshot.ActiveTelemetryFeedID == "" {
+		t.Fatal("expected local telemetry feed id")
+	}
+
+	latest, ok := repo.GetTelemetryForDrone(context.Background(), "drone-001")
+	if !ok {
+		t.Fatal("expected latest telemetry")
+	}
+	if latest.ActiveTelemetryFeedID != agentSnapshot.ActiveTelemetryFeedID {
+		t.Fatalf("expected latest feed %q, got %q", agentSnapshot.ActiveTelemetryFeedID, latest.ActiveTelemetryFeedID)
+	}
+	if latest.SourceCommunicationLinkID != agentLink.ID {
+		t.Fatalf("expected latest source link %q, got %q", agentLink.ID, latest.SourceCommunicationLinkID)
+	}
+
+	feeds, err := repo.TelemetryFeedRepository.ListTelemetryFeedsForDrone(context.Background(), "drone-001")
+	if err != nil {
+		t.Fatalf("list telemetry feeds: %v", err)
+	}
+	if len(feeds) != 2 {
+		t.Fatalf("expected agent and local telemetry feeds, got %d", len(feeds))
+	}
+}
+
+func TestRecordLocalTelemetryPromotesWhenAgentLatestIsStale(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+
+	repo.RegisterVehicleAgent(context.Background(), repository.RegisterVehicleAgentInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		DroneName:           "Training Quad 1",
+		VehicleAgentVersion: "0.1.0",
+	}, now)
+	openReadyCommunicationLink(t, repo, now)
+
+	if _, err := repo.RecordTelemetry(context.Background(), models.TelemetrySnapshot{
+		VehicleAgentID:    "agent-001",
+		ObservedAt:        now,
+		BatteryPercent:    82,
+		RelativeAltitudeM: 12.5,
+		FlightMode:        "HOLD",
+		GPSFix:            "3D",
+		Source:            "px4",
+	}, now); err != nil {
+		t.Fatalf("record agent telemetry: %v", err)
+	}
+
+	staleTime := now.Add(models.TelemetryFreshWindow + time.Second)
+	localSnapshot, promoted, err := repo.telemetryService.RecordLocalTelemetry(context.Background(), repository.RecordLocalTelemetryInput{
+		DroneID:             "drone-001",
+		SourceID:            "hm30-local",
+		Source:              "local:hm30-local",
+		Transport:           "MAVLINK_UDP",
+		EndpointDescription: "udp-server://0.0.0.0:14560",
+		Snapshot: models.TelemetrySnapshot{
+			ObservedAt:        staleTime,
+			BatteryPercent:    74,
+			RelativeAltitudeM: 20,
+			FlightMode:        "UNKNOWN",
+			GPSFix:            "3D",
+			Source:            "local:hm30-local",
+		},
+	}, staleTime)
+	if err != nil {
+		t.Fatalf("record local telemetry: %v", err)
+	}
+	if !promoted {
+		t.Fatal("expected stale agent telemetry to allow local fallback selection")
+	}
+
+	latest, ok := repo.GetTelemetryForDrone(context.Background(), "drone-001")
+	if !ok {
+		t.Fatal("expected latest telemetry")
+	}
+	if latest.ActiveTelemetryFeedID != localSnapshot.ActiveTelemetryFeedID {
+		t.Fatalf("expected local feed %q, got %q", localSnapshot.ActiveTelemetryFeedID, latest.ActiveTelemetryFeedID)
+	}
+	if latest.VehicleAgentID != "" {
+		t.Fatalf("expected local fallback latest to have no vehicle agent id, got %q", latest.VehicleAgentID)
+	}
+	if latest.Source != "local:hm30-local" {
+		t.Fatalf("expected local source, got %q", latest.Source)
 	}
 }
 
@@ -284,16 +542,18 @@ func TestRequestCommandAuthorizesWhenAgentOnlineAndTelemetryFresh(t *testing.T) 
 		t.Fatalf("record telemetry: %v", err)
 	}
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	openReadyCommunicationLink(t, repo, now)
+
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if command.State != models.CommandStateAuthorized {
+	if command.State != models.VehicleActionStateAuthorized {
 		t.Fatalf("expected authorized command, got %q", command.State)
 	}
 }
@@ -316,16 +576,18 @@ func TestRequestCommandRejectsWhenTelemetryIsNotFresh(t *testing.T) {
 		t.Fatalf("record heartbeat: %v", err)
 	}
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	openReadyCommunicationLink(t, repo, now)
+
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeTakeoff,
+		Type:        models.VehicleActionTypeTakeoff,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if command.State != models.CommandStateRejectedByPolicy {
+	if command.State != models.VehicleActionStateRejectedByPolicy {
 		t.Fatalf("expected rejected command, got %q", command.State)
 	}
 
@@ -334,29 +596,65 @@ func TestRequestCommandRejectsWhenTelemetryIsNotFresh(t *testing.T) {
 	}
 }
 
-func TestNextCommandForVehicleAgentClaimsOldestAuthorizedCommand(t *testing.T) {
+func TestRequestVehicleActionReusesIdempotencyKey(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	first, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	input := repository.RequestVehicleActionInput{
+		DroneID:        "drone-001",
+		Type:           models.VehicleActionTypeArm,
+		RequestedBy:    "operator-001",
+		IdempotencyKey: "operator-001-arm-0001",
+	}
+	first, err := repo.RequestVehicleAction(context.Background(), input, now)
+	if err != nil {
+		t.Fatalf("request first vehicle action: %v", err)
+	}
+	second, err := repo.RequestVehicleAction(context.Background(), input, now.Add(time.Second))
+	if err != nil {
+		t.Fatalf("request duplicate vehicle action: %v", err)
+	}
+
+	if second.ID != first.ID {
+		t.Fatalf("expected duplicate request to return %q, got %q", first.ID, second.ID)
+	}
+	if second.IdempotencyKey != input.IdempotencyKey {
+		t.Fatalf("expected idempotency key %q, got %q", input.IdempotencyKey, second.IdempotencyKey)
+	}
+
+	actions, err := repo.ListVehicleActionsForDrone(context.Background(), "drone-001", 10)
+	if err != nil {
+		t.Fatalf("list vehicle actions: %v", err)
+	}
+	if len(actions) != 1 {
+		t.Fatalf("expected one stored vehicle action, got %d", len(actions))
+	}
+}
+
+func TestNextVehicleActionForVehicleAgentClaimsOldestAuthorizedCommand(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	registerReadyVehicleAgent(t, repo, now)
+
+	first, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request first command: %v", err)
 	}
 
-	if _, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	if _, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeLand,
+		Type:        models.VehicleActionTypeLand,
 		RequestedBy: "operator-001",
 	}, now.Add(time.Second)); err != nil {
 		t.Fatalf("request second command: %v", err)
 	}
 
-	claimed, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(2*time.Second))
+	claimed, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(2*time.Second))
 	if err != nil {
 		t.Fatalf("next command: %v", err)
 	}
@@ -369,7 +667,7 @@ func TestNextCommandForVehicleAgentClaimsOldestAuthorizedCommand(t *testing.T) {
 		t.Fatalf("expected oldest command %q, got %q", first.ID, claimed.ID)
 	}
 
-	if claimed.State != models.CommandStateSentToVehicleAgent {
+	if claimed.State != models.VehicleActionStateSentToVehicleAgent {
 		t.Fatalf("expected sent_to_vehicle_agent, got %q", claimed.State)
 	}
 
@@ -382,12 +680,12 @@ func TestNextCommandForVehicleAgentClaimsOldestAuthorizedCommand(t *testing.T) {
 	}
 }
 
-func TestNextCommandForVehicleAgentReturnsEmptyWhenNoAuthorizedCommand(t *testing.T) {
+func TestNextVehicleActionForVehicleAgentReturnsEmptyWhenNoAuthorizedCommand(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	_, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now)
+	_, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now)
 	if err != nil {
 		t.Fatalf("next command: %v", err)
 	}
@@ -397,20 +695,20 @@ func TestNextCommandForVehicleAgentReturnsEmptyWhenNoAuthorizedCommand(t *testin
 	}
 }
 
-func TestNextCommandForVehicleAgentDoesNotRedeliverBeforeLeaseExpires(t *testing.T) {
+func TestNextVehicleActionForVehicleAgentDoesNotRedeliverBeforeLeaseExpires(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	if _, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	if _, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now); err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	claimed, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
+	claimed, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("next command: %v", err)
 	}
@@ -418,7 +716,7 @@ func TestNextCommandForVehicleAgentDoesNotRedeliverBeforeLeaseExpires(t *testing
 		t.Fatal("expected first delivery")
 	}
 
-	_, ok, err = repo.NextCommandForVehicleAgent(context.Background(), "agent-001", claimed.LeaseUntil.Add(-time.Millisecond))
+	_, ok, err = repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", claimed.LeaseUntil.Add(-time.Millisecond))
 	if err != nil {
 		t.Fatalf("next command before lease expiry: %v", err)
 	}
@@ -427,20 +725,20 @@ func TestNextCommandForVehicleAgentDoesNotRedeliverBeforeLeaseExpires(t *testing
 	}
 }
 
-func TestNextCommandForVehicleAgentRedeliversAfterLeaseExpires(t *testing.T) {
+func TestNextVehicleActionForVehicleAgentRedeliversAfterLeaseExpires(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	if _, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	if _, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now); err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	first, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
+	first, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
@@ -448,7 +746,7 @@ func TestNextCommandForVehicleAgentRedeliversAfterLeaseExpires(t *testing.T) {
 		t.Fatal("expected first delivery")
 	}
 
-	second, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", first.LeaseUntil)
+	second, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", first.LeaseUntil)
 	if err != nil {
 		t.Fatalf("redelivery: %v", err)
 	}
@@ -469,42 +767,79 @@ func TestNextCommandForVehicleAgentRedeliversAfterLeaseExpires(t *testing.T) {
 	}
 }
 
-func TestUpdateCommandStatusRecordsAgentResult(t *testing.T) {
+func TestSweepTimedOutVehicleActionsTimesOutStaleAuthorizedAction(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+	count, err := repo.SweepTimedOutVehicleActions(context.Background(), now.Add(models.VehicleActionAuthorizationTimeout+time.Second))
+	if err != nil {
+		t.Fatalf("sweep timeouts: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one timed out vehicle action, got %d", count)
+	}
+
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
+	if !ok {
+		t.Fatal("expected stored vehicle action")
+	}
+	if updated.State != models.VehicleActionStateTimedOut {
+		t.Fatalf("expected timed_out, got %q", updated.State)
+	}
+}
+
+func TestUpdateVehicleActionStatusRecordsAgentResult(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	registerReadyVehicleAgent(t, repo, now)
+
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
+		DroneID:     "drone-001",
+		Type:        models.VehicleActionTypeArm,
+		RequestedBy: "operator-001",
+	}, now)
+	if err != nil {
+		t.Fatalf("request command: %v", err)
+	}
+
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
 		t.Fatalf("next command: %v", err)
 	} else if !ok {
 		t.Fatal("expected pending command")
 	}
 
-	updated, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	updated, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: command.AckCorrelationID,
+		RawAckCode:       "MAV_RESULT_ACCEPTED",
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
 
-	if updated.State != models.CommandStateVehicleAcked {
+	if updated.State != models.VehicleActionStateVehicleAcked {
 		t.Fatalf("expected vehicle_acked, got %q", updated.State)
 	}
 
 	if updated.ResultMessage != "accepted by vehicle" {
 		t.Fatalf("expected result message, got %q", updated.ResultMessage)
+	}
+
+	if updated.RawAckCode != "MAV_RESULT_ACCEPTED" {
+		t.Fatalf("expected raw ACK code, got %q", updated.RawAckCode)
 	}
 
 	expectedVehicleAckedAt := now.Add(time.Second)
@@ -517,31 +852,110 @@ func TestUpdateCommandStatusRecordsAgentResult(t *testing.T) {
 	}
 }
 
-func TestRecordTelemetryConfirmsAckedArmCommand(t *testing.T) {
+func TestUpdateVehicleActionStatusRejectsAckCorrelationMismatch(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
 		t.Fatalf("next command: %v", err)
 	} else if !ok {
 		t.Fatal("expected pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	_, err = repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: "wrong-ack",
+	}, now.Add(2*time.Second))
+	if err != repository.ErrVehicleActionAckCorrelationMismatch {
+		t.Fatalf("expected ACK correlation mismatch, got %v", err)
+	}
+}
+
+func TestSweepTimedOutVehicleActionsMarksAckedButNotObserved(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	registerReadyVehicleAgent(t, repo, now)
+
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
+		DroneID:     "drone-001",
+		Type:        models.VehicleActionTypeArm,
+		RequestedBy: "operator-001",
+	}, now)
+	if err != nil {
+		t.Fatalf("request command: %v", err)
+	}
+
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+		t.Fatalf("next command: %v", err)
+	} else if !ok {
+		t.Fatal("expected pending command")
+	}
+
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: command.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
+	}, now.Add(2*time.Second)); err != nil {
+		t.Fatalf("update command status: %v", err)
+	}
+
+	count, err := repo.SweepTimedOutVehicleActions(context.Background(), now.Add(2*time.Second+models.VehicleActionObservationTimeout+time.Second))
+	if err != nil {
+		t.Fatalf("sweep timeouts: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected one ACK-but-not-observed vehicle action, got %d", count)
+	}
+
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
+	if !ok {
+		t.Fatal("expected stored vehicle action")
+	}
+	if updated.State != models.VehicleActionStateAckedButNotObserved {
+		t.Fatalf("expected acked_but_not_observed, got %q", updated.State)
+	}
+}
+
+func TestRecordTelemetryConfirmsAckedArmCommand(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	registerReadyVehicleAgent(t, repo, now)
+
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
+		DroneID:     "drone-001",
+		Type:        models.VehicleActionTypeArm,
+		RequestedBy: "operator-001",
+	}, now)
+	if err != nil {
+		t.Fatalf("request command: %v", err)
+	}
+
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+		t.Fatalf("next command: %v", err)
+	} else if !ok {
+		t.Fatal("expected pending command")
+	}
+
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: command.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
@@ -558,12 +972,12 @@ func TestRecordTelemetryConfirmsAckedArmCommand(t *testing.T) {
 		t.Fatalf("record telemetry: %v", err)
 	}
 
-	updated, ok := repo.GetCommandByID(context.Background(), command.ID)
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
 
-	if updated.State != models.CommandStateTelemetryConfirmed {
+	if updated.State != models.VehicleActionStateTelemetryConfirmed {
 		t.Fatalf("expected telemetry_confirmed, got %q", updated.State)
 	}
 
@@ -577,26 +991,27 @@ func TestRecordTelemetryConfirmsAckedReturnToLaunchCommand(t *testing.T) {
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeReturnToLaunch,
+		Type:        models.VehicleActionTypeReturnToLaunch,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
 		t.Fatalf("next command: %v", err)
 	} else if !ok {
 		t.Fatal("expected pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: command.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
@@ -612,12 +1027,12 @@ func TestRecordTelemetryConfirmsAckedReturnToLaunchCommand(t *testing.T) {
 		t.Fatalf("record telemetry: %v", err)
 	}
 
-	updated, ok := repo.GetCommandByID(context.Background(), command.ID)
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
 
-	if updated.State != models.CommandStateTelemetryConfirmed {
+	if updated.State != models.VehicleActionStateTelemetryConfirmed {
 		t.Fatalf("expected telemetry_confirmed, got %q", updated.State)
 	}
 }
@@ -640,26 +1055,27 @@ func TestRecordTelemetryConfirmsAckedLandCommand(t *testing.T) {
 		t.Fatalf("record in-air telemetry: %v", err)
 	}
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeLand,
+		Type:        models.VehicleActionTypeLand,
 		RequestedBy: "operator-001",
 	}, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(3*time.Second)); err != nil {
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(3*time.Second)); err != nil {
 		t.Fatalf("next command: %v", err)
 	} else if !ok {
 		t.Fatal("expected pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  command.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: command.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(4*time.Second)); err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
@@ -677,12 +1093,12 @@ func TestRecordTelemetryConfirmsAckedLandCommand(t *testing.T) {
 		t.Fatalf("record land telemetry: %v", err)
 	}
 
-	updated, ok := repo.GetCommandByID(context.Background(), command.ID)
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
 
-	if updated.State != models.CommandStateTelemetryConfirmed {
+	if updated.State != models.VehicleActionStateTelemetryConfirmed {
 		t.Fatalf("expected telemetry_confirmed, got %q", updated.State)
 	}
 }
@@ -692,60 +1108,62 @@ func TestRecordTelemetryDoesNotConfirmSupersededTakeoffCommand(t *testing.T) {
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	first, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	first, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeTakeoff,
+		Type:        models.VehicleActionTypeTakeoff,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second)); err != nil {
 		t.Fatalf("next command: %v", err)
 	} else if !ok {
 		t.Fatal("expected pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      first.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  first.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: first.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
 
-	second, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	second, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeTakeoff,
+		Type:        models.VehicleActionTypeTakeoff,
 		RequestedBy: "operator-001",
 	}, now.Add(3*time.Second))
 	if err != nil {
 		t.Fatalf("request second command: %v", err)
 	}
 
-	if _, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(4*time.Second)); err != nil {
+	if _, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(4*time.Second)); err != nil {
 		t.Fatalf("next second command: %v", err)
 	} else if !ok {
 		t.Fatal("expected second pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      second.ID,
-		State:          models.CommandStateVehicleAcked,
-		ResultMessage:  "accepted by vehicle",
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:   "agent-001",
+		VehicleActionID:  second.ID,
+		State:            models.VehicleActionStateVehicleAcked,
+		AckCorrelationID: second.AckCorrelationID,
+		ResultMessage:    "accepted by vehicle",
 	}, now.Add(5*time.Second)); err != nil {
 		t.Fatalf("update second command status: %v", err)
 	}
 
-	firstAfterSecondAck, ok := repo.GetCommandByID(context.Background(), first.ID)
+	firstAfterSecondAck, ok := repo.GetVehicleActionByID(context.Background(), first.ID)
 	if !ok {
 		t.Fatal("expected first stored command")
 	}
 
-	if firstAfterSecondAck.State != models.CommandStateFailed {
+	if firstAfterSecondAck.State != models.VehicleActionStateFailed {
 		t.Fatalf("expected first command to be superseded as failed, got %q", firstAfterSecondAck.State)
 	}
 
@@ -761,21 +1179,21 @@ func TestRecordTelemetryDoesNotConfirmSupersededTakeoffCommand(t *testing.T) {
 		t.Fatalf("record telemetry: %v", err)
 	}
 
-	updatedFirst, ok := repo.GetCommandByID(context.Background(), first.ID)
+	updatedFirst, ok := repo.GetVehicleActionByID(context.Background(), first.ID)
 	if !ok {
 		t.Fatal("expected first stored command")
 	}
 
-	if updatedFirst.State != models.CommandStateFailed {
+	if updatedFirst.State != models.VehicleActionStateFailed {
 		t.Fatalf("expected first command to stay failed, got %q", updatedFirst.State)
 	}
 
-	updatedSecond, ok := repo.GetCommandByID(context.Background(), second.ID)
+	updatedSecond, ok := repo.GetVehicleActionByID(context.Background(), second.ID)
 	if !ok {
 		t.Fatal("expected second stored command")
 	}
 
-	if updatedSecond.State != models.CommandStateTelemetryConfirmed {
+	if updatedSecond.State != models.VehicleActionStateTelemetryConfirmed {
 		t.Fatalf("expected second command to confirm, got %q", updatedSecond.State)
 	}
 }
@@ -785,16 +1203,16 @@ func TestRecordTelemetryDoesNotConfirmCommandBeforeVehicleAck(t *testing.T) {
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	claimed, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
+	claimed, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("next command: %v", err)
 	}
@@ -802,10 +1220,10 @@ func TestRecordTelemetryDoesNotConfirmCommandBeforeVehicleAck(t *testing.T) {
 		t.Fatal("expected pending command")
 	}
 
-	if _, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAgentReceived,
+	if _, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:  "agent-001",
+		VehicleActionID: command.ID,
+		State:           models.VehicleActionStateVehicleAgentReceived,
 	}, now.Add(2*time.Second)); err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
@@ -822,43 +1240,43 @@ func TestRecordTelemetryDoesNotConfirmCommandBeforeVehicleAck(t *testing.T) {
 		t.Fatalf("record telemetry: %v", err)
 	}
 
-	updated, ok := repo.GetCommandByID(context.Background(), command.ID)
+	updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
 
-	if updated.State != models.CommandStateVehicleAgentReceived {
+	if updated.State != models.VehicleActionStateVehicleAgentReceived {
 		t.Fatalf("expected command to remain vehicle_agent_received, got %q", updated.State)
 	}
 
-	if claimed.State != models.CommandStateSentToVehicleAgent {
+	if claimed.State != models.VehicleActionStateSentToVehicleAgent {
 		t.Fatalf("expected claimed command state sent_to_vehicle_agent, got %q", claimed.State)
 	}
 }
 
-func TestListCommandsForDroneReturnsNewestFirstWithLimit(t *testing.T) {
+func TestListVehicleActionsForDroneReturnsNewestFirstWithLimit(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	if _, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	if _, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now); err != nil {
 		t.Fatalf("request first command: %v", err)
 	}
 
-	second, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	second, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeLand,
+		Type:        models.VehicleActionTypeLand,
 		RequestedBy: "operator-001",
 	}, now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("request second command: %v", err)
 	}
 
-	commands, err := repo.ListCommandsForDrone(context.Background(), "drone-001", 1)
+	commands, err := repo.ListVehicleActionsForDrone(context.Background(), "drone-001", 1)
 	if err != nil {
 		t.Fatalf("list commands: %v", err)
 	}
@@ -872,21 +1290,21 @@ func TestListCommandsForDroneReturnsNewestFirstWithLimit(t *testing.T) {
 	}
 }
 
-func TestUpdateCommandStatusClearsDeliveryLeaseOnAck(t *testing.T) {
+func TestUpdateVehicleActionStatusClearsDeliveryLeaseOnAck(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	claimed, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
+	claimed, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("next command: %v", err)
 	}
@@ -897,16 +1315,16 @@ func TestUpdateCommandStatusClearsDeliveryLeaseOnAck(t *testing.T) {
 		t.Fatal("expected delivery lease")
 	}
 
-	updated, err := repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAgentReceived,
+	updated, err := repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:  "agent-001",
+		VehicleActionID: command.ID,
+		State:           models.VehicleActionStateVehicleAgentReceived,
 	}, now.Add(2*time.Second))
 	if err != nil {
 		t.Fatalf("update command status: %v", err)
 	}
 
-	if updated.State != models.CommandStateVehicleAgentReceived {
+	if updated.State != models.VehicleActionStateVehicleAgentReceived {
 		t.Fatalf("expected vehicle_agent_received, got %q", updated.State)
 	}
 
@@ -915,54 +1333,54 @@ func TestUpdateCommandStatusClearsDeliveryLeaseOnAck(t *testing.T) {
 	}
 }
 
-func TestUpdateCommandStatusRejectsResultBeforeCommandIsClaimed(t *testing.T) {
+func TestUpdateVehicleActionStatusRejectsResultBeforeCommandIsClaimed(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	_, err = repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-		VehicleAgentID: "agent-001",
-		CommandID:      command.ID,
-		State:          models.CommandStateVehicleAcked,
+	_, err = repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+		VehicleAgentID:  "agent-001",
+		VehicleActionID: command.ID,
+		State:           models.VehicleActionStateVehicleAcked,
 	}, now.Add(time.Second))
-	if err != repository.ErrInvalidCommandTransition {
+	if err != repository.ErrInvalidVehicleActionTransition {
 		t.Fatalf("expected invalid transition error, got %v", err)
 	}
 }
 
-func TestUpdateCommandStatusRejectsNonAgentState(t *testing.T) {
+func TestUpdateVehicleActionStatusRejectsNonAgentState(t *testing.T) {
 	repo := newTestRepository(t)
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	for _, state := range []models.CommandState{
-		models.CommandStateAuthorized,
-		models.CommandStateTelemetryConfirmed,
+	for _, state := range []models.VehicleActionState{
+		models.VehicleActionStateAuthorized,
+		models.VehicleActionStateTelemetryConfirmed,
 	} {
-		_, err = repo.UpdateCommandStatus(context.Background(), repository.UpdateCommandStatusInput{
-			VehicleAgentID: "agent-001",
-			CommandID:      command.ID,
-			State:          state,
+		_, err = repo.UpdateVehicleActionStatus(context.Background(), repository.UpdateVehicleActionStatusInput{
+			VehicleAgentID:  "agent-001",
+			VehicleActionID: command.ID,
+			State:           state,
 		}, now.Add(time.Second))
-		if err != repository.ErrInvalidCommandState {
+		if err != repository.ErrInvalidVehicleActionState {
 			t.Fatalf("expected invalid state error for %q, got %v", state, err)
 		}
 	}
@@ -1018,6 +1436,68 @@ func TestCreateMissionValidatesAndStoresMission(t *testing.T) {
 
 	if len(missions) != 1 {
 		t.Fatalf("expected one mission, got %d", len(missions))
+	}
+}
+
+func TestCreateMissionCreatesCurrentMissionVersion(t *testing.T) {
+	repo := newTestRepository(t)
+	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	registerReadyVehicleAgent(t, repo, now)
+
+	speed := 5.5
+	loiterTime := 8.0
+	mission, err := repo.CreateMission(context.Background(), repository.CreateMissionInput{
+		DroneID:          "drone-001",
+		Name:             "Versioned route",
+		CreatedBy:        "operator-001",
+		CompletionAction: models.MissionCompletionActionHold,
+		Waypoints: []repository.MissionWaypointInput{
+			{Latitude: 51.5074, Longitude: -0.1278, RelativeAltitudeM: 30, SpeedMPS: &speed, LoiterTimeS: &loiterTime},
+		},
+	}, now)
+	if err != nil {
+		t.Fatalf("create mission: %v", err)
+	}
+
+	if mission.CurrentVersionID == "" {
+		t.Fatal("expected current mission version id")
+	}
+
+	stored, ok := repo.GetMissionByID(context.Background(), mission.ID)
+	if !ok {
+		t.Fatal("expected stored mission")
+	}
+	if stored.CurrentVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected stored current version %q, got %q", mission.CurrentVersionID, stored.CurrentVersionID)
+	}
+
+	version, ok, err := repo.GetMissionVersionByID(context.Background(), mission.CurrentVersionID)
+	if err != nil {
+		t.Fatalf("get mission version: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected mission version")
+	}
+	if version.MissionID != mission.ID {
+		t.Fatalf("expected mission id %q, got %q", mission.ID, version.MissionID)
+	}
+	if version.VersionNumber != 1 {
+		t.Fatalf("expected version number 1, got %d", version.VersionNumber)
+	}
+	if version.ValidationStatus != mission.ValidationStatus {
+		t.Fatalf("expected validation status %q, got %q", mission.ValidationStatus, version.ValidationStatus)
+	}
+	if version.RTLPolicy.CompletionAction != models.MissionCompletionActionHold {
+		t.Fatalf("expected hold completion action, got %q", version.RTLPolicy.CompletionAction)
+	}
+	if len(version.Waypoints) != 1 {
+		t.Fatalf("expected one version waypoint, got %d", len(version.Waypoints))
+	}
+	if version.Waypoints[0].SpeedMPS == nil || *version.Waypoints[0].SpeedMPS != speed {
+		t.Fatalf("expected version waypoint speed %f, got %v", speed, version.Waypoints[0].SpeedMPS)
+	}
+	if version.Waypoints[0].LoiterTimeS == nil || *version.Waypoints[0].LoiterTimeS != loiterTime {
+		t.Fatalf("expected version waypoint loiter time %f, got %v", loiterTime, version.Waypoints[0].LoiterTimeS)
 	}
 }
 
@@ -1133,6 +1613,10 @@ func TestRequestMissionUploadCreatesExecutionForValidatedMission(t *testing.T) {
 
 	if execution.MissionID != mission.ID {
 		t.Fatalf("expected mission %q, got %q", mission.ID, execution.MissionID)
+	}
+
+	if execution.MissionVersionID != mission.CurrentVersionID {
+		t.Fatalf("expected mission version %q, got %q", mission.CurrentVersionID, execution.MissionVersionID)
 	}
 
 	if execution.State != models.MissionExecutionStateUploadRequested {
@@ -1544,6 +2028,12 @@ func TestMissionExecutionEventsAreRecordedChronologically(t *testing.T) {
 		"uploading",
 		"uploaded_to_vehicle",
 	})
+
+	for _, event := range events {
+		if event.MissionVersionID != mission.CurrentVersionID {
+			t.Fatalf("expected event mission version %q, got %q", mission.CurrentVersionID, event.MissionVersionID)
+		}
+	}
 }
 
 func assertMissionValidationError(t *testing.T, validationErrors []models.MissionValidationError, field string) {
@@ -1635,6 +2125,8 @@ func registerReadyVehicleAgent(t *testing.T, repo *testRepository, now time.Time
 		t.Fatalf("record heartbeat: %v", err)
 	}
 
+	openReadyCommunicationLink(t, repo, now)
+
 	if _, err := repo.RecordTelemetry(context.Background(), models.TelemetrySnapshot{
 		VehicleAgentID:  "agent-001",
 		ObservedAt:      now,
@@ -1646,6 +2138,21 @@ func registerReadyVehicleAgent(t *testing.T, repo *testRepository, now time.Time
 	}, now); err != nil {
 		t.Fatalf("record telemetry: %v", err)
 	}
+}
+
+func openReadyCommunicationLink(t *testing.T, repo *testRepository, now time.Time) models.CommunicationLink {
+	t.Helper()
+
+	_, link, err := repo.VehicleAgentConnectionService.OpenDroneVehicleAgentConnection(context.Background(), repository.OpenDroneVehicleAgentConnectionInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		VehicleAgentVersion: "0.1.0",
+		RemoteAddress:       "127.0.0.1:50051",
+	}, now)
+	if err != nil {
+		t.Fatalf("open communication link: %v", err)
+	}
+	return link
 }
 
 func recordAirborneTelemetry(t *testing.T, repo *testRepository, now time.Time) {
@@ -1692,9 +2199,13 @@ type testRepository struct {
 	*VehicleAgentRepository
 	*DroneRepository
 	*TelemetryRepository
+	*TelemetryFeedRepository
+	*TelemetrySampleRepository
 	*svc.VehicleAgentService
-	*svc.CommandService
+	*svc.VehicleAgentConnectionService
+	*svc.VehicleActionService
 	*svc.MissionService
+	*svc.PerceptionService
 }
 
 func (r *testRepository) RecordTelemetry(ctx context.Context, snapshot models.TelemetrySnapshot, now time.Time) (models.TelemetrySnapshot, error) {
@@ -1717,6 +2228,8 @@ func newTestRepository(t *testing.T) *testRepository {
 	txManager := NewTxManager(db)
 	agents := newVehicleAgentRepository(db)
 	telemetry := newTelemetryRepository(db)
+	telemetryFeeds := newTelemetryFeedRepository(db)
+	telemetrySamples := newTelemetrySampleRepository(db)
 	drones := newDroneRepository(db)
 	repos := txManager.Repositories()
 	services := svc.New(svc.Dependencies{
@@ -1725,14 +2238,18 @@ func newTestRepository(t *testing.T) *testRepository {
 	})
 
 	return &testRepository{
-		txManager:              txManager,
-		agents:                 agents,
-		telemetryService:       services.Telemetry,
-		VehicleAgentRepository: agents,
-		DroneRepository:        drones,
-		TelemetryRepository:    telemetry,
-		VehicleAgentService:    services.VehicleAgents,
-		CommandService:         services.Commands,
-		MissionService:         services.Missions,
+		txManager:                     txManager,
+		agents:                        agents,
+		telemetryService:              services.Telemetry,
+		VehicleAgentRepository:        agents,
+		DroneRepository:               drones,
+		TelemetryRepository:           telemetry,
+		TelemetryFeedRepository:       telemetryFeeds,
+		TelemetrySampleRepository:     telemetrySamples,
+		VehicleAgentService:           services.VehicleAgents,
+		VehicleAgentConnectionService: services.VehicleAgentConnections,
+		VehicleActionService:          services.VehicleActions,
+		MissionService:                services.Missions,
+		PerceptionService:             services.Perception,
 	}
 }

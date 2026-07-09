@@ -6,7 +6,6 @@ type ArtifactSync struct {
 	ID                 string
 	DroneID            string
 	VehicleAgentID     string
-	GroundBridgeID     string
 	SourceDeviceID     string
 	MissionExecutionID string
 	ArtifactType       ArtifactType
@@ -90,8 +89,7 @@ type DeviceCredential struct {
 type DeviceCredentialDeviceType string
 
 const (
-	DeviceCredentialDeviceAgent        DeviceCredentialDeviceType = "AGENT"
-	DeviceCredentialDeviceGroundBridge DeviceCredentialDeviceType = "GROUND_BRIDGE"
+	DeviceCredentialDeviceAgent DeviceCredentialDeviceType = "AGENT"
 )
 
 type DeviceCredentialType string

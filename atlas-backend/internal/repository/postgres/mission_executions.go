@@ -32,24 +32,24 @@ func (r *MissionExecutionRepository) GenerateMissionExecutionID(ctx context.Cont
 func (r *MissionExecutionRepository) InsertMissionExecution(ctx context.Context, execution models.MissionExecution) error {
 	return writeMissionExecution(ctx, r.exec, execution, `
 		INSERT INTO mission_executions (
-		  id, mission_id, drone_id, vehicle_agent_id, requested_by, upload_requested_by, start_requested_by,
+		  id, mission_id, mission_version_id, drone_id, vehicle_agent_id, requested_by, upload_requested_by, start_requested_by,
 		  state, created_at, updated_at, last_sent_at, lease_until, upload_requested_at, uploaded_at,
 		  start_requested_at, started_at, completed_at, hold_at, failed_at, current_mission_item,
 		  total_mission_items, progress_updated_at, delivery_attempt, result_message
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	`)
 }
 
 func (r *MissionExecutionRepository) UpdateMissionExecution(ctx context.Context, execution models.MissionExecution) error {
 	return writeMissionExecution(ctx, r.exec, execution, `
 		UPDATE mission_executions SET
-		  mission_id = $2, drone_id = $3, vehicle_agent_id = $4, requested_by = $5,
-		  upload_requested_by = $6, start_requested_by = $7, state = $8,
-		  created_at = $9, updated_at = $10, last_sent_at = $11, lease_until = $12,
-		  upload_requested_at = $13, uploaded_at = $14, start_requested_at = $15,
-		  started_at = $16, completed_at = $17, hold_at = $18, failed_at = $19,
-		  current_mission_item = $20, total_mission_items = $21, progress_updated_at = $22,
-		  delivery_attempt = $23, result_message = $24
+		  mission_id = $2, mission_version_id = $3, drone_id = $4, vehicle_agent_id = $5, requested_by = $6,
+		  upload_requested_by = $7, start_requested_by = $8, state = $9,
+		  created_at = $10, updated_at = $11, last_sent_at = $12, lease_until = $13,
+		  upload_requested_at = $14, uploaded_at = $15, start_requested_at = $16,
+		  started_at = $17, completed_at = $18, hold_at = $19, failed_at = $20,
+		  current_mission_item = $21, total_mission_items = $22, progress_updated_at = $23,
+		  delivery_attempt = $24, result_message = $25
 		WHERE id = $1
 	`)
 }
@@ -122,7 +122,7 @@ func (r *MissionExecutionRepository) ListMissionExecutionEvents(ctx context.Cont
 }
 
 const missionExecutionSelectSQL = `
-	SELECT id, mission_id, drone_id, vehicle_agent_id, requested_by, upload_requested_by,
+	SELECT id, mission_id, mission_version_id, drone_id, vehicle_agent_id, requested_by, upload_requested_by,
 	       start_requested_by, state, created_at, updated_at, last_sent_at, lease_until,
 	       upload_requested_at, uploaded_at, start_requested_at, started_at, completed_at,
 	       hold_at, failed_at, current_mission_item, total_mission_items, progress_updated_at,
@@ -131,7 +131,7 @@ const missionExecutionSelectSQL = `
 `
 
 const missionExecutionEventSelectSQL = `
-	SELECT id, execution_id, mission_id, drone_id, vehicle_agent_id, event_type, state, message,
+	SELECT id, execution_id, mission_id, mission_version_id, drone_id, vehicle_agent_id, event_type, state, message,
 	       current_mission_item, total_mission_items, source, created_at
 	FROM mission_execution_events
 `
@@ -200,6 +200,7 @@ func writeMissionExecution(ctx context.Context, q DBExecutor, execution models.M
 	_, err := q.ExecContext(ctx, query,
 		execution.ID,
 		execution.MissionID,
+		nullString(execution.MissionVersionID),
 		execution.DroneID,
 		execution.VehicleAgentID,
 		execution.RequestedBy,
@@ -229,10 +230,12 @@ func writeMissionExecution(ctx context.Context, q DBExecutor, execution models.M
 func scanMissionExecution(row rowScanner) (models.MissionExecution, error) {
 	var execution models.MissionExecution
 	var state string
+	var missionVersionID sql.NullString
 	var lastSentAt, leaseUntil, uploadRequestedAt, uploadedAt, startRequestedAt, startedAt, completedAt, holdAt, failedAt, progressUpdatedAt sql.NullTime
 	err := row.Scan(
 		&execution.ID,
 		&execution.MissionID,
+		&missionVersionID,
 		&execution.DroneID,
 		&execution.VehicleAgentID,
 		&execution.RequestedBy,
@@ -259,6 +262,7 @@ func scanMissionExecution(row rowScanner) (models.MissionExecution, error) {
 	if err != nil {
 		return models.MissionExecution{}, err
 	}
+	execution.MissionVersionID = missionVersionID.String
 	execution.State = models.MissionExecutionState(state)
 	execution.LastSentAt = timeFromNull(lastSentAt)
 	execution.LeaseUntil = timeFromNull(leaseUntil)
@@ -290,10 +294,12 @@ func scanMissionExecutionEvents(rows *sql.Rows) ([]models.MissionExecutionEvent,
 	for rows.Next() {
 		var event models.MissionExecutionEvent
 		var state string
+		var missionVersionID sql.NullString
 		if err := rows.Scan(
 			&event.ID,
 			&event.ExecutionID,
 			&event.MissionID,
+			&missionVersionID,
 			&event.DroneID,
 			&event.VehicleAgentID,
 			&event.Type,
@@ -306,6 +312,7 @@ func scanMissionExecutionEvents(rows *sql.Rows) ([]models.MissionExecutionEvent,
 		); err != nil {
 			return nil, err
 		}
+		event.MissionVersionID = missionVersionID.String
 		event.State = models.MissionExecutionState(state)
 		events = append(events, event)
 	}

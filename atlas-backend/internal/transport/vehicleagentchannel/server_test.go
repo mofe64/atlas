@@ -19,10 +19,90 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
+func TestBackendChannelHealthToMap(t *testing.T) {
+	raw := backendChannelHealthToMap(&pb.BackendChannelHealth{
+		State:                "connected",
+		ReconnectCount:       3,
+		ConnectedAt:          "2026-07-09T10:00:00Z",
+		LastDisconnectedAt:   "2026-07-09T09:59:00Z",
+		LastSuccessfulSendAt: "2026-07-09T10:00:05Z",
+		LastHeartbeatSentAt:  "2026-07-09T10:00:05Z",
+		LastError:            "",
+		BackendAddress:       "127.0.0.1:8080",
+		WeakLink:             false,
+		WeakLinkReason:       "",
+	})
+
+	if raw["state"] != "connected" {
+		t.Fatalf("expected connected state, got %#v", raw["state"])
+	}
+	if raw["reconnectCount"] != uint64(3) {
+		t.Fatalf("expected reconnect count, got %#v", raw["reconnectCount"])
+	}
+	if raw["backendAddress"] != "127.0.0.1:8080" {
+		t.Fatalf("expected backend address, got %#v", raw["backendAddress"])
+	}
+	if raw["weakLink"] != false {
+		t.Fatalf("expected weak link false, got %#v", raw["weakLink"])
+	}
+}
+
+func TestDispatchGimbalControlEnqueuesTransientCommandForConnectedDrone(t *testing.T) {
+	hub := NewHub(Dependencies{}, slog.Default())
+	conn := newConnection("agent-001", "drone-001", "connection-001", "link-001")
+	hub.register(conn)
+
+	ok := hub.DispatchGimbalControl(context.Background(), models.GimbalControlCommand{
+		DroneID:           "drone-001",
+		PitchRateDegS:     25,
+		YawRateDegS:       -10,
+		TargetSystemID:    1,
+		TargetComponentID: 154,
+		GimbalDeviceID:    1,
+	})
+	if !ok {
+		t.Fatal("expected gimbal control dispatch over connected stream")
+	}
+
+	select {
+	case msg := <-conn.send:
+		command := msg.GetGimbalControl()
+		if command == nil {
+			t.Fatalf("expected gimbal control message, got %#v", msg)
+		}
+		if command.GetDroneId() != "drone-001" {
+			t.Fatalf("expected drone-001, got %q", command.GetDroneId())
+		}
+		if command.GetPitchRateDegS() != 25 {
+			t.Fatalf("expected pitch rate 25, got %f", command.GetPitchRateDegS())
+		}
+		if command.GetYawRateDegS() != -10 {
+			t.Fatalf("expected yaw rate -10, got %f", command.GetYawRateDegS())
+		}
+		if command.GetTargetComponentId() != 154 {
+			t.Fatalf("expected target component 154, got %d", command.GetTargetComponentId())
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for gimbal control message")
+	}
+}
+
+func TestDispatchGimbalControlRejectsDisconnectedDrone(t *testing.T) {
+	hub := NewHub(Dependencies{}, slog.Default())
+
+	ok := hub.DispatchGimbalControl(context.Background(), models.GimbalControlCommand{
+		DroneID:       "drone-001",
+		PitchRateDegS: 25,
+	})
+	if ok {
+		t.Fatal("expected dispatch to reject gimbal control without a connected agent")
+	}
+}
+
 func TestAgentChannelDispatchesCommandAndReceivesStatus(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepository(t)
-	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	registerReadyVehicleAgent(t, repo, now)
 
 	hub := NewHub(repo.dependencies(), slog.Default())
@@ -58,16 +138,16 @@ func TestAgentChannelDispatchesCommandAndReceivesStatus(t *testing.T) {
 		return hub.connections["agent-001"] != nil
 	})
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	if _, ok := hub.DispatchCommand(ctx, command); !ok {
+	if _, ok := hub.DispatchVehicleAction(ctx, command); !ok {
 		t.Fatal("expected command dispatch over connected stream")
 	}
 
@@ -76,16 +156,19 @@ func TestAgentChannelDispatchesCommandAndReceivesStatus(t *testing.T) {
 		t.Fatalf("receive command: %v", err)
 	}
 
-	if msg.GetCommand().GetCommandId() != command.ID {
-		t.Fatalf("expected command %q, got %q", command.ID, msg.GetCommand().GetCommandId())
+	if msg.GetVehicleAction().GetVehicleActionId() != command.ID {
+		t.Fatalf("expected vehicle action %q, got %q", command.ID, msg.GetVehicleAction().GetVehicleActionId())
+	}
+	if msg.GetVehicleAction().GetAckCorrelationId() != command.AckCorrelationID {
+		t.Fatalf("expected ACK correlation id %q, got %q", command.AckCorrelationID, msg.GetVehicleAction().GetAckCorrelationId())
 	}
 
 	if err := stream.Send(&pb.VehicleAgentToBackend{
 		VehicleAgentId: "agent-001",
-		Payload: &pb.VehicleAgentToBackend_CommandStatus{
-			CommandStatus: &pb.CommandStatus{
-				CommandId: command.ID,
-				State:     string(models.CommandStateVehicleAgentReceived),
+		Payload: &pb.VehicleAgentToBackend_VehicleActionStatus{
+			VehicleActionStatus: &pb.VehicleActionStatus{
+				VehicleActionId: command.ID,
+				State:           string(models.VehicleActionStateVehicleAgentReceived),
 			},
 		},
 	}); err != nil {
@@ -94,10 +177,21 @@ func TestAgentChannelDispatchesCommandAndReceivesStatus(t *testing.T) {
 
 	if err := stream.Send(&pb.VehicleAgentToBackend{
 		VehicleAgentId: "agent-001",
-		Payload: &pb.VehicleAgentToBackend_CommandStatus{
-			CommandStatus: &pb.CommandStatus{
-				CommandId: command.ID,
-				State:     string(models.CommandStateVehicleAcked),
+		Payload: &pb.VehicleAgentToBackend_VehicleActionStatus{
+			VehicleActionStatus: &pb.VehicleActionStatus{
+				VehicleActionId:  command.ID,
+				State:            string(models.VehicleActionStateVehicleAcked),
+				AckCorrelationId: command.AckCorrelationID,
+				RawAckCode:       "MAV_RESULT_ACCEPTED",
+				RawMavlinkCommandAck: &pb.RawMavlinkCommandAckEvidence{
+					ObservedAt:        time.Now().UTC().Format(time.RFC3339Nano),
+					SourceSystemId:    1,
+					SourceComponentId: 1,
+					Command:           400,
+					Result:            0,
+					ResultLabel:       "MAV_RESULT_ACCEPTED",
+					MatchStatus:       "matched_command_time_active_action_source",
+				},
 			},
 		},
 	}); err != nil {
@@ -105,27 +199,238 @@ func TestAgentChannelDispatchesCommandAndReceivesStatus(t *testing.T) {
 	}
 
 	waitFor(t, func() bool {
-		updated, ok := repo.GetCommandByID(context.Background(), command.ID)
-		return ok && updated.State == models.CommandStateVehicleAcked
+		updated, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
+		return ok && updated.State == models.VehicleActionStateVehicleAcked
+	})
+
+	events, err := repo.ListVehicleActionEvents(context.Background(), command.ID)
+	if err != nil {
+		t.Fatalf("list vehicle action events: %v", err)
+	}
+	var hasRawAckEvidence bool
+	for _, event := range events {
+		if event.RawAckCode == "MAV_RESULT_ACCEPTED" && event.Evidence["rawMavlinkCommandAck"] != nil {
+			hasRawAckEvidence = true
+		}
+	}
+	if !hasRawAckEvidence {
+		t.Fatalf("expected raw MAVLink ACK evidence event, got %#v", events)
+	}
+}
+
+func TestAgentChannelRecordsPerceptionEventAndHealth(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepository(t)
+
+	hub := NewHub(repo.dependencies(), slog.Default())
+	grpcServer, dialer := newTestServer(t, hub)
+	defer grpcServer.Stop()
+
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(dialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	defer conn.Close()
+
+	stream, err := pb.NewVehicleAgentChannelServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect stream: %v", err)
+	}
+
+	if err := stream.Send(&pb.VehicleAgentToBackend{
+		VehicleAgentId: "agent-perception-001",
+		Payload: &pb.VehicleAgentToBackend_Hello{
+			Hello: &pb.VehicleAgentHello{
+				DroneId:             "drone-perception-001",
+				DroneName:           "Perception Test Quad",
+				VehicleAgentVersion: "0.1.0",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+
+	observedAt := time.Now().UTC()
+	if err := stream.Send(&pb.VehicleAgentToBackend{
+		VehicleAgentId: "agent-perception-001",
+		Payload: &pb.VehicleAgentToBackend_PerceptionEvent{
+			PerceptionEvent: &pb.PerceptionEvent{
+				DroneId:            "drone-perception-001",
+				SourceId:           "a8-main",
+				ObservedAt:         observedAt.Format(time.RFC3339Nano),
+				FrameId:            "frame-000001",
+				ModelName:          "yolov6n-hailo",
+				ModelVersion:       "hef-mvp",
+				InferenceLatencyMs: 17.5,
+				Detections: []*pb.PerceptionDetection{
+					{
+						ClassName:  "person",
+						Confidence: 0.91,
+						Bbox:       &pb.NormalizedBBox{X: 0.1, Y: 0.2, W: 0.3, H: 0.4},
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send perception event: %v", err)
+	}
+
+	if err := stream.Send(&pb.VehicleAgentToBackend{
+		VehicleAgentId: "agent-perception-001",
+		Payload: &pb.VehicleAgentToBackend_PerceptionHealth{
+			PerceptionHealth: &pb.PerceptionHealth{
+				DroneId:          "drone-perception-001",
+				SourceId:         "a8-main",
+				InputConnected:   true,
+				OutputPublishing: true,
+				ModelLoaded:      true,
+				Accelerator:      "hailo",
+				Fps:              22.5,
+				LastFrameAt:      observedAt.Format(time.RFC3339Nano),
+				LastDetectionAt:  observedAt.Format(time.RFC3339Nano),
+				ModelName:        "yolov6n-hailo",
+				ModelVersion:     "hef-mvp",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send perception health: %v", err)
+	}
+
+	waitFor(t, func() bool {
+		events, err := repo.ListPerceptionEvents(ctx, "drone-perception-001", 10)
+		return err == nil && len(events) == 1 && len(events[0].Detections) == 1
+	})
+
+	status, err := repo.PerceptionStatus(ctx, "drone-perception-001")
+	if err != nil {
+		t.Fatalf("get perception status: %v", err)
+	}
+	if status.Accelerator != "hailo" {
+		t.Fatalf("expected hailo status, got %#v", status)
+	}
+}
+
+func TestAgentChannelRecordsConnectionAndCommunicationLinkLifecycle(t *testing.T) {
+	ctx := context.Background()
+	repo := newTestRepository(t)
+
+	hub := NewHub(repo.dependencies(), slog.Default())
+	grpcServer, dialer := newTestServer(t, hub)
+	defer grpcServer.Stop()
+
+	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(dialer), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	defer conn.Close()
+
+	stream, err := pb.NewVehicleAgentChannelServiceClient(conn).Connect(ctx)
+	if err != nil {
+		t.Fatalf("connect stream: %v", err)
+	}
+
+	if err := stream.Send(&pb.VehicleAgentToBackend{
+		VehicleAgentId: "agent-conn-001",
+		Payload: &pb.VehicleAgentToBackend_Hello{
+			Hello: &pb.VehicleAgentHello{
+				DroneId:             "drone-conn-001",
+				DroneName:           "Connection Test Quad",
+				VehicleAgentVersion: "0.1.0",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send hello: %v", err)
+	}
+
+	var connectionRecord models.DroneVehicleAgentConnection
+	waitFor(t, func() bool {
+		var ok bool
+		var err error
+		connectionRecord, ok, err = repo.repos.DroneVehicleAgentConnections.LatestActiveDroneVehicleAgentConnectionForAgent(ctx, "agent-conn-001")
+		return err == nil && ok
+	})
+
+	if connectionRecord.DroneID != "drone-conn-001" {
+		t.Fatalf("expected connection for drone-conn-001, got %q", connectionRecord.DroneID)
+	}
+	if connectionRecord.Transport != "GRPC" {
+		t.Fatalf("expected GRPC transport, got %q", connectionRecord.Transport)
+	}
+
+	linkRecord, ok, err := repo.repos.CommunicationLinks.GetCommunicationLinkForDroneVehicleAgentConnection(ctx, connectionRecord.ID)
+	if err != nil {
+		t.Fatalf("get communication link: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected communication link for connection")
+	}
+	if linkRecord.Status != models.CommunicationLinkStatusConnected {
+		t.Fatalf("expected connected link, got %q", linkRecord.Status)
+	}
+	if linkRecord.LinkType != models.CommunicationLinkVehicleAgentGRPC {
+		t.Fatalf("expected vehicle-agent gRPC link, got %q", linkRecord.LinkType)
+	}
+	if !linkRecord.CommandEligible {
+		t.Fatal("expected vehicle-agent gRPC link to be command eligible")
+	}
+	for _, role := range []models.CommunicationLinkRole{
+		models.CommunicationLinkRoleTelemetry,
+		models.CommunicationLinkRoleCommand,
+		models.CommunicationLinkRoleVideo,
+		models.CommunicationLinkRoleGimbalControl,
+	} {
+		if !hasCommunicationLinkRole(linkRecord.Roles, role) {
+			t.Fatalf("expected vehicle-agent gRPC link role %q in %#v", role, linkRecord.Roles)
+		}
+	}
+
+	heartbeatSentAt := time.Now().UTC()
+	if err := stream.Send(&pb.VehicleAgentToBackend{
+		VehicleAgentId: "agent-conn-001",
+		Payload: &pb.VehicleAgentToBackend_Heartbeat{
+			Heartbeat: &pb.Heartbeat{
+				VehicleAgentVersion: "0.1.1",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("send heartbeat: %v", err)
+	}
+
+	waitFor(t, func() bool {
+		updated, ok, err := repo.repos.DroneVehicleAgentConnections.GetDroneVehicleAgentConnectionByID(ctx, connectionRecord.ID)
+		return err == nil && ok && !updated.LastHeartbeatAt.Before(heartbeatSentAt)
+	})
+
+	if err := stream.CloseSend(); err != nil {
+		t.Fatalf("close stream: %v", err)
+	}
+
+	waitFor(t, func() bool {
+		closed, ok, err := repo.repos.DroneVehicleAgentConnections.GetDroneVehicleAgentConnectionByID(ctx, connectionRecord.ID)
+		if err != nil || !ok || closed.Status != models.DroneVehicleAgentConnectionDisconnected || closed.EndedAt.IsZero() {
+			return false
+		}
+		closedLink, ok, err := repo.repos.CommunicationLinks.GetCommunicationLinkForDroneVehicleAgentConnection(ctx, connectionRecord.ID)
+		return err == nil && ok && closedLink.Status == models.CommunicationLinkStatusLost && !closedLink.EndedAt.IsZero()
 	})
 }
 
 func TestAgentChannelRedeliversExpiredCommandOnConnect(t *testing.T) {
 	ctx := context.Background()
 	repo := newTestRepository(t)
-	now := time.Now().UTC().Add(-2 * models.CommandDeliveryLeaseDuration)
+	now := time.Now().UTC().Add(-2 * models.VehicleActionDeliveryLeaseDuration)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeArm,
+		Type:        models.VehicleActionTypeArm,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
 		t.Fatalf("request command: %v", err)
 	}
 
-	first, ok, err := repo.NextCommandForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
+	first, ok, err := repo.NextVehicleActionForVehicleAgent(context.Background(), "agent-001", now.Add(time.Second))
 	if err != nil {
 		t.Fatalf("first delivery: %v", err)
 	}
@@ -169,11 +474,11 @@ func TestAgentChannelRedeliversExpiredCommandOnConnect(t *testing.T) {
 		t.Fatalf("receive redelivered command: %v", err)
 	}
 
-	if msg.GetCommand().GetCommandId() != command.ID {
-		t.Fatalf("expected redelivered command %q, got %q", command.ID, msg.GetCommand().GetCommandId())
+	if msg.GetVehicleAction().GetVehicleActionId() != command.ID {
+		t.Fatalf("expected redelivered vehicle action %q, got %q", command.ID, msg.GetVehicleAction().GetVehicleActionId())
 	}
 
-	redelivered, ok := repo.GetCommandByID(context.Background(), command.ID)
+	redelivered, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
@@ -586,9 +891,9 @@ func TestAgentChannelDispatchLeavesCommandAuthorizedWhenAgentDisconnected(t *tes
 	now := time.Date(2026, 6, 20, 15, 30, 0, 0, time.UTC)
 	registerReadyVehicleAgent(t, repo, now)
 
-	command, err := repo.IssueCommand(context.Background(), repository.RequestCommandInput{
+	command, err := repo.RequestVehicleAction(context.Background(), repository.RequestVehicleActionInput{
 		DroneID:     "drone-001",
-		Type:        models.CommandTypeLand,
+		Type:        models.VehicleActionTypeLand,
 		RequestedBy: "operator-001",
 	}, now)
 	if err != nil {
@@ -596,16 +901,16 @@ func TestAgentChannelDispatchLeavesCommandAuthorizedWhenAgentDisconnected(t *tes
 	}
 
 	hub := NewHub(repo.dependencies(), slog.Default())
-	if _, ok := hub.DispatchCommand(context.Background(), command); ok {
+	if _, ok := hub.DispatchVehicleAction(context.Background(), command); ok {
 		t.Fatal("expected dispatch to fail without connected vehicle-agent")
 	}
 
-	stored, ok := repo.GetCommandByID(context.Background(), command.ID)
+	stored, ok := repo.GetVehicleActionByID(context.Background(), command.ID)
 	if !ok {
 		t.Fatal("expected stored command")
 	}
 
-	if stored.State != models.CommandStateAuthorized {
+	if stored.State != models.VehicleActionStateAuthorized {
 		t.Fatalf("expected command to remain authorized for gRPC reconnect delivery, got %q", stored.State)
 	}
 }
@@ -656,6 +961,15 @@ func registerReadyVehicleAgent(t *testing.T, repo *testRepository, now time.Time
 	}, now); err != nil {
 		t.Fatalf("record telemetry: %v", err)
 	}
+
+	if _, _, err := repo.VehicleAgentConnectionService.OpenDroneVehicleAgentConnection(context.Background(), repository.OpenDroneVehicleAgentConnectionInput{
+		VehicleAgentID:      "agent-001",
+		DroneID:             "drone-001",
+		VehicleAgentVersion: "0.1.0",
+		RemoteAddress:       "127.0.0.1:50051",
+	}, now); err != nil {
+		t.Fatalf("open communication link: %v", err)
+	}
 }
 
 func createValidatedMission(t *testing.T, repo *testRepository, now time.Time) models.Mission {
@@ -697,11 +1011,22 @@ func waitFor(t *testing.T, condition func() bool) {
 	t.Fatal("condition was not met before deadline")
 }
 
+func hasCommunicationLinkRole(roles []models.CommunicationLinkRole, expected models.CommunicationLinkRole) bool {
+	for _, role := range roles {
+		if role == expected {
+			return true
+		}
+	}
+	return false
+}
+
 type testRepository struct {
 	*svc.VehicleAgentService
+	*svc.VehicleAgentConnectionService
 	*svc.TelemetryService
-	*svc.CommandService
+	*svc.VehicleActionService
 	*svc.MissionService
+	*svc.PerceptionService
 	repos repository.Repositories
 	deps  Dependencies
 }
@@ -735,16 +1060,20 @@ func newTestRepository(t *testing.T) *testRepository {
 	})
 
 	return &testRepository{
-		VehicleAgentService: appServices.VehicleAgents,
-		TelemetryService:    appServices.Telemetry,
-		CommandService:      appServices.Commands,
-		MissionService:      appServices.Missions,
-		repos:               repos,
+		VehicleAgentService:           appServices.VehicleAgents,
+		VehicleAgentConnectionService: appServices.VehicleAgentConnections,
+		TelemetryService:              appServices.Telemetry,
+		VehicleActionService:          appServices.VehicleActions,
+		MissionService:                appServices.Missions,
+		PerceptionService:             appServices.Perception,
+		repos:                         repos,
 		deps: Dependencies{
-			VehicleAgents: appServices.VehicleAgents,
-			Telemetry:     appServices.Telemetry,
-			Commands:      appServices.Commands,
-			Missions:      appServices.Missions,
+			VehicleAgents:           appServices.VehicleAgents,
+			VehicleAgentConnections: appServices.VehicleAgentConnections,
+			Telemetry:               appServices.Telemetry,
+			VehicleActions:          appServices.VehicleActions,
+			Missions:                appServices.Missions,
+			Perception:              appServices.Perception,
 		},
 	}
 }

@@ -50,6 +50,20 @@ func nullString(value string) any {
 	return value
 }
 
+func nullFloat64(value float64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
+func nullInt64(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
 func timeFromNull(value sql.NullTime) time.Time {
 	if !value.Valid {
 		return time.Time{}

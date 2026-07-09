@@ -39,6 +39,23 @@ func BuildMission(id string, droneID string, name string, createdBy string, wayp
 	}
 }
 
+// BuildMissionVersion snapshots the executable mission body. Mission rows may
+// later point at newer versions, but an execution must keep referring to the
+// exact version selected when upload was requested.
+func BuildMissionVersion(id string, mission models.Mission, versionNumber int, now time.Time) models.MissionVersion {
+	return models.MissionVersion{
+		ID:               id,
+		MissionID:        mission.ID,
+		VersionNumber:    versionNumber,
+		Waypoints:        append([]models.MissionWaypoint(nil), mission.Waypoints...),
+		AltitudePolicy:   DefaultMissionAltitudePolicy(),
+		RTLPolicy:        models.MissionRTLPolicy{CompletionAction: mission.CompletionAction},
+		ValidationStatus: mission.ValidationStatus,
+		ValidationErrors: append([]models.MissionValidationError(nil), mission.ValidationErrors...),
+		CreatedAt:        now,
+	}
+}
+
 func NormalizeMissionCompletionAction(action models.MissionCompletionAction) models.MissionCompletionAction {
 	if strings.TrimSpace(string(action)) == "" {
 		return models.MissionCompletionActionReturnToLaunch
@@ -55,6 +72,13 @@ func ValidMissionCompletionAction(action models.MissionCompletionAction) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func DefaultMissionAltitudePolicy() models.MissionAltitudePolicy {
+	return models.MissionAltitudePolicy{
+		MinimumRelativeAltitudeM: MinimumMissionAltitudeM,
+		MaximumRelativeAltitudeM: MaximumMissionAltitudeM,
 	}
 }
 

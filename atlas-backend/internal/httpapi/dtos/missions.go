@@ -17,6 +17,7 @@ type MissionWaypointRequest struct {
 type MissionResponse struct {
 	ID               string                    `json:"id"`
 	DroneID          string                    `json:"droneId"`
+	CurrentVersionID string                    `json:"currentVersionId,omitempty"`
 	Name             string                    `json:"name"`
 	CreatedBy        string                    `json:"createdBy"`
 	CreatedAt        string                    `json:"createdAt"`
@@ -44,6 +45,7 @@ type MissionValidationError struct {
 type MissionExecutionResponse struct {
 	ID                 string `json:"id"`
 	MissionID          string `json:"missionId"`
+	MissionVersionID   string `json:"missionVersionId"`
 	DroneID            string `json:"droneId"`
 	VehicleAgentID     string `json:"vehicleAgentId"`
 	RequestedBy        string `json:"requestedBy"`
@@ -72,6 +74,7 @@ type MissionExecutionEventResponse struct {
 	ID                 string `json:"id"`
 	ExecutionID        string `json:"executionId"`
 	MissionID          string `json:"missionId"`
+	MissionVersionID   string `json:"missionVersionId,omitempty"`
 	DroneID            string `json:"droneId"`
 	VehicleAgentID     string `json:"vehicleAgentId"`
 	Type               string `json:"type"`

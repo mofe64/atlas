@@ -13,10 +13,11 @@ type FleetService struct {
 	repos repository.Repositories
 }
 
-// FleetDrone combines a drone snapshot with recent commands for the operator fleet overview.
+// FleetDrone combines a drone snapshot with recent vehicle actions for the operator fleet overview.
 type FleetDrone struct {
-	Snapshot repository.DroneSnapshot
-	Commands []models.CommandRequest
+	Snapshot           repository.DroneSnapshot
+	VehicleActions     []models.VehicleAction
+	CommunicationLinks []models.CommunicationLink
 }
 
 // MissionDetail combines a mission definition with its execution history for detail screens.
@@ -30,18 +31,36 @@ func NewFleetService(repos repository.Repositories) *FleetService {
 	return &FleetService{repos: repos}
 }
 
-// ListDrones returns the fleet overview with recent command context for each drone.
-func (s *FleetService) ListDrones(ctx context.Context, now time.Time, commandLimit int) []FleetDrone {
+// ListDrones returns the fleet overview with recent vehicle action context for each drone.
+func (s *FleetService) ListDrones(ctx context.Context, now time.Time, actionLimit int) []FleetDrone {
 	snapshots := s.repos.Drones.ListDrones(ctx, now)
 	drones := make([]FleetDrone, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		commands, err := s.repos.Commands.ListCommandsForDrone(ctx, snapshot.ID, commandLimit)
+		actions, err := s.repos.VehicleActions.ListVehicleActionsForDrone(ctx, snapshot.ID, actionLimit)
 		if err != nil {
-			commands = nil
+			actions = nil
 		}
-		drones = append(drones, FleetDrone{Snapshot: snapshot, Commands: commands})
+		links, err := s.repos.CommunicationLinks.ListCommunicationLinksForDrone(ctx, snapshot.ID)
+		if err != nil {
+			links = nil
+		}
+		drones = append(drones, FleetDrone{
+			Snapshot:           snapshot,
+			VehicleActions:     actions,
+			CommunicationLinks: links,
+		})
 	}
 	return drones
+}
+
+// ListCommunicationLinksForDrone returns all observed communication paths for one drone.
+func (s *FleetService) ListCommunicationLinksForDrone(ctx context.Context, droneID string) ([]models.CommunicationLink, error) {
+	return s.repos.CommunicationLinks.ListCommunicationLinksForDrone(ctx, droneID)
+}
+
+// ListTelemetryFeedsForDrone returns the telemetry producers observed for one drone.
+func (s *FleetService) ListTelemetryFeedsForDrone(ctx context.Context, droneID string) ([]models.TelemetryFeed, error) {
+	return s.repos.TelemetryFeeds.ListTelemetryFeedsForDrone(ctx, droneID)
 }
 
 // MissionDetail returns the mission and execution history shown on mission detail pages.

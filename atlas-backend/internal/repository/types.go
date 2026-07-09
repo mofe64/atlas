@@ -11,16 +11,20 @@ import (
 var (
 	ErrVehicleAgentNotFound                      = errors.New("vehicle agent not found")
 	ErrDroneNotFound                             = errors.New("drone not found")
-	ErrCommandNotFound                           = errors.New("command not found")
-	ErrCommandNotAssignedToVehicleAgent          = errors.New("command not assigned to vehicle agent")
-	ErrInvalidCommandState                       = errors.New("invalid command state")
-	ErrInvalidCommandTransition                  = errors.New("invalid command transition")
+	ErrVehicleActionNotFound                     = errors.New("vehicle action not found")
+	ErrVehicleActionNotAssignedToVehicleAgent    = errors.New("vehicle action not assigned to vehicle agent")
+	ErrInvalidVehicleActionState                 = errors.New("invalid vehicle action state")
+	ErrInvalidVehicleActionTransition            = errors.New("invalid vehicle action transition")
+	ErrVehicleActionAckCorrelationMismatch       = errors.New("vehicle action ack correlation mismatch")
 	ErrMissionNotFound                           = errors.New("mission not found")
+	ErrMissionVersionNotFound                    = errors.New("mission version not found")
 	ErrMissionNotValidated                       = errors.New("mission is not validated")
 	ErrMissionExecutionNotFound                  = errors.New("mission execution not found")
 	ErrMissionExecutionNotAssignedToVehicleAgent = errors.New("mission execution not assigned to vehicle agent")
 	ErrInvalidMissionExecutionState              = errors.New("invalid mission execution state")
 	ErrDroneMissionActive                        = errors.New("drone has an active mission execution")
+	ErrDroneVehicleAgentConnectionNotFound       = errors.New("drone vehicle agent connection not found")
+	ErrCommunicationLinkNotFound                 = errors.New("communication link not found")
 )
 
 const (
@@ -38,35 +42,70 @@ type RegisterVehicleAgentInput struct {
 }
 
 type VehicleAgentHeartbeatInput struct {
+	VehicleAgentID             string
+	VehicleAgentVersion        string
+	MAVLinkObserverDiagnostics map[string]any
+	BackendChannelHealth       map[string]any
+}
+
+type RecordLocalTelemetryInput struct {
+	DroneID             string
+	SourceID            string
+	Source              string
+	Transport           string
+	EndpointDescription string
+	Roles               []models.CommunicationLinkRole
+	Snapshot            models.TelemetrySnapshot
+}
+
+// OpenDroneVehicleAgentConnectionInput describes the stream metadata known
+// when a vehicle agent opens its backend gRPC channel. LinkType is optional;
+// when omitted, the service records the link as the standard Atlas
+// VEHICLE_AGENT_GRPC network path.
+type OpenDroneVehicleAgentConnectionInput struct {
 	VehicleAgentID      string
+	DroneID             string
 	VehicleAgentVersion string
+	RemoteAddress       string
+	LinkType            models.CommunicationLinkType
 }
 
-type RequestCommandInput struct {
-	DroneID     string
-	Type        models.CommandType
-	RequestedBy string
+// CloseDroneVehicleAgentConnectionInput lets the hub close every historical
+// stream record while only marking the agent disconnected when the closing
+// stream is still the active stream for that agent.
+type CloseDroneVehicleAgentConnectionInput struct {
+	EndedReason                  string
+	MarkVehicleAgentDisconnected bool
 }
 
-type CommandOrder string
+type RequestVehicleActionInput struct {
+	DroneID        string
+	Type           models.VehicleActionType
+	RequestedBy    string
+	IdempotencyKey string
+}
+
+type VehicleActionOrder string
 
 const (
-	CommandOrderRequestedAsc  CommandOrder = "requested_asc"
-	CommandOrderRequestedDesc CommandOrder = "requested_desc"
+	VehicleActionOrderRequestedAsc  VehicleActionOrder = "requested_asc"
+	VehicleActionOrderRequestedDesc VehicleActionOrder = "requested_desc"
 )
 
-// CommandFilter describes storage-level command predicates. Workflow concepts
+// VehicleActionFilter describes storage-level vehicle action predicates. Workflow concepts
 // such as "deliverable" or "superseded" belong in services/domain code.
-type CommandFilter struct {
+type VehicleActionFilter struct {
 	ID                   string
 	DroneID              string
 	VehicleAgentID       string
 	ExceptID             string
-	Type                 models.CommandType
-	States               []models.CommandState
+	Type                 models.VehicleActionType
+	States               []models.VehicleActionState
 	RequestedBefore      time.Time
+	UpdatedBefore        time.Time
+	VehicleAckedBefore   time.Time
 	LeaseUntilAtOrBefore time.Time
-	Order                CommandOrder
+	Order                VehicleActionOrder
 	Limit                int
 }
 
@@ -131,11 +170,14 @@ type UpdateMissionExecutionStatusInput struct {
 	TotalMissionItems  int
 }
 
-type UpdateCommandStatusInput struct {
-	VehicleAgentID string
-	CommandID      string
-	State          models.CommandState
-	ResultMessage  string
+type UpdateVehicleActionStatusInput struct {
+	VehicleAgentID   string
+	VehicleActionID  string
+	State            models.VehicleActionState
+	ResultMessage    string
+	AckCorrelationID string
+	RawAckCode       string
+	Evidence         map[string]any
 }
 
 type DroneSnapshot struct {
@@ -145,6 +187,8 @@ type DroneSnapshot struct {
 	Status                 models.VehicleAgentStatus
 	LastSeenAt             time.Time
 	LastHeartbeatAt        time.Time
+	MAVLinkObserver        map[string]any
+	BackendChannelHealth   map[string]any
 	Telemetry              models.TelemetrySnapshot
 	TelemetryState         models.TelemetryState
 	CommandChannel         CommandChannelSnapshot

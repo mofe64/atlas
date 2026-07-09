@@ -9,10 +9,26 @@ PX4_TARGET="${ATLAS_PX4_TARGET:-px4_sitl}"
 PX4_MODEL="${ATLAS_PX4_MODEL:-gz_x500}"
 PX4_BOOT_WAIT_SECONDS="${ATLAS_PX4_BOOT_WAIT_SECONDS:-20}"
 
+SITL_MAVLINK_ROUTER="${ATLAS_SITL_MAVLINK_ROUTER:-mavproxy}"
+MAVPROXY_BIN="${ATLAS_MAVPROXY_BIN:-"${PX4_DIR}/.venv/bin/mavproxy.py"}"
+MAVPROXY_MASTER="${ATLAS_MAVPROXY_MASTER:-udp:127.0.0.1:14550}"
+MAVPROXY_MAVSDK_OUT="${ATLAS_MAVPROXY_MAVSDK_OUT:-udp:127.0.0.1:14541}"
+MAVPROXY_OBSERVER_OUT="${ATLAS_MAVPROXY_OBSERVER_OUT:-udp:127.0.0.1:14552}"
+MAVPROXY_QGC_OUT="${ATLAS_MAVPROXY_QGC_OUT:-udp:127.0.0.1:14553}"
+
 MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-mavsdk_server}"
 MAVSDK_PORT="${ATLAS_MAVSDK_PORT:-50051}"
 ATLAS_MAVSDK_GRPC_ADDR="${ATLAS_MAVSDK_GRPC_ADDR:-127.0.0.1:${MAVSDK_PORT}}"
-ATLAS_PX4_SYSTEM_ADDRESS="${ATLAS_PX4_SYSTEM_ADDRESS:-udpin://0.0.0.0:14540}"
+PX4_SYSTEM_ADDRESS_EXPLICIT=0
+MAVLINK_OBSERVER_ENDPOINT_EXPLICIT=0
+if [[ -n "${ATLAS_PX4_SYSTEM_ADDRESS:-}" ]]; then
+  PX4_SYSTEM_ADDRESS_EXPLICIT=1
+fi
+if [[ -n "${ATLAS_MAVLINK_OBSERVER_ENDPOINT:-}" ]]; then
+  MAVLINK_OBSERVER_ENDPOINT_EXPLICIT=1
+fi
+ATLAS_PX4_SYSTEM_ADDRESS="${ATLAS_PX4_SYSTEM_ADDRESS:-}"
+ATLAS_MAVLINK_OBSERVER_ENDPOINT="${ATLAS_MAVLINK_OBSERVER_ENDPOINT:-}"
 
 ATLAS_BACKEND_ADDR="${ATLAS_BACKEND_ADDR:-:8080}"
 ATLAS_BACKEND_URL="${ATLAS_BACKEND_URL:-http://127.0.0.1:8080}"
@@ -58,6 +74,10 @@ Starts the Atlas local SITL stack:
 Options:
   --px4-dir PATH       PX4-Autopilot checkout. Default: ${PX4_DIR}
   --px4-model MODEL    PX4 Gazebo model. Default: ${PX4_MODEL}
+  --mavlink-router MODE
+                       MAVLink fanout mode: mavproxy or none. Default: ${SITL_MAVLINK_ROUTER}
+  --qgc-out ENDPOINT   MAVProxy QGC output endpoint. Use "none" to disable.
+                       Default: ${MAVPROXY_QGC_OUT}
   --skip-px4           Do not start PX4 SITL.
   --skip-mavsdk        Do not start mavsdk_server.
   --skip-backend       Do not start atlas-backend.
@@ -70,9 +90,16 @@ Useful environment overrides:
   ATLAS_PX4_DIR
   ATLAS_PX4_VENV
   ATLAS_PX4_MODEL
+  ATLAS_SITL_MAVLINK_ROUTER
+  ATLAS_MAVPROXY_BIN
+  ATLAS_MAVPROXY_MASTER
+  ATLAS_MAVPROXY_MAVSDK_OUT
+  ATLAS_MAVPROXY_OBSERVER_OUT
+  ATLAS_MAVPROXY_QGC_OUT
   ATLAS_MAVSDK_SERVER_BIN
   ATLAS_MAVSDK_GRPC_ADDR
   ATLAS_PX4_SYSTEM_ADDRESS
+  ATLAS_MAVLINK_OBSERVER_ENDPOINT
   ATLAS_BACKEND_ADDR
   ATLAS_BACKEND_URL
   ATLAS_VEHICLE_AGENT_GRPC_ADDR
@@ -97,6 +124,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --px4-model)
       PX4_MODEL="$2"
+      shift 2
+      ;;
+    --mavlink-router)
+      SITL_MAVLINK_ROUTER="$2"
+      shift 2
+      ;;
+    --qgc-out)
+      MAVPROXY_QGC_OUT="$2"
       shift 2
       ;;
     --skip-px4)
@@ -142,6 +177,24 @@ log() {
 fail() {
   printf '[atlas-sitl] error: %s\n' "$*" >&2
   exit 1
+}
+
+apply_mavlink_defaults() {
+  if [[ "$PX4_SYSTEM_ADDRESS_EXPLICIT" -eq 0 ]]; then
+    if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
+      ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14541"
+    else
+      ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14540"
+    fi
+  fi
+
+  if [[ "$MAVLINK_OBSERVER_ENDPOINT_EXPLICIT" -eq 0 ]]; then
+    if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
+      ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14552"
+    else
+      ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14550"
+    fi
+  fi
 }
 
 require_command() {
@@ -290,6 +343,25 @@ wait_for_http() {
   done
 }
 
+wait_for_postgres_ready() {
+  local compose="$1"
+  local timeout_seconds="$2"
+  local elapsed=0
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    return
+  fi
+
+  log "waiting for postgres readiness"
+  until (cd "$ROOT_DIR" && $compose exec -T "$ATLAS_DB_COMPOSE_SERVICE" pg_isready -h 127.0.0.1 -p 5432 -U "$ATLAS_DB_USER" -d "$ATLAS_DB_NAME" >/dev/null 2>&1); do
+    if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
+      fail "timed out waiting for postgres readiness"
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
+}
+
 compose_command() {
   if docker compose version >/dev/null 2>&1; then
     printf 'docker compose'
@@ -313,7 +385,13 @@ start_postgres() {
   log "starting postgres via docker compose"
   if [[ "$DRY_RUN" -eq 1 ]]; then
     printf '  (cd %q && %s up -d %q)\n' "$ROOT_DIR" "$compose" "$ATLAS_DB_COMPOSE_SERVICE"
-    printf '  (cd %q && %s exec -T -e %q %q psql -U %q -d %q -v ON_ERROR_STOP=1 < atlas-backend/migrations/001_initial_atlas_store.sql)\n' \
+    printf '  (cd %q && %s exec -T %q pg_isready -h 127.0.0.1 -p 5432 -U %q -d %q)\n' \
+      "$ROOT_DIR" \
+      "$compose" \
+      "$ATLAS_DB_COMPOSE_SERVICE" \
+      "$ATLAS_DB_USER" \
+      "$ATLAS_DB_NAME"
+    printf '  (cd %q && %s exec -T -e %q %q psql -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 < atlas-backend/migrations/001_initial_atlas_store.sql)\n' \
       "$ROOT_DIR" \
       "$compose" \
       "PGPASSWORD=${ATLAS_DB_PASSWORD}" \
@@ -326,6 +404,7 @@ start_postgres() {
   (cd "$ROOT_DIR" && $compose up -d "$ATLAS_DB_COMPOSE_SERVICE")
   POSTGRES_STARTED=1
   wait_for_tcp "postgres" "$ATLAS_DB_HOST" "$ATLAS_DB_PORT" 60
+  wait_for_postgres_ready "$compose" 60
   run_migrations
 }
 
@@ -359,7 +438,7 @@ run_migrations() {
       fail "no backend migrations found"
     fi
     log "  migration: ${migration##*/}"
-    (cd "$ROOT_DIR" && $compose exec -T -e "PGPASSWORD=${ATLAS_DB_PASSWORD}" "$ATLAS_DB_COMPOSE_SERVICE" psql -U "$ATLAS_DB_USER" -d "$ATLAS_DB_NAME" -v ON_ERROR_STOP=1 < "$migration" >/dev/null)
+    (cd "$ROOT_DIR" && $compose exec -T -e "PGPASSWORD=${ATLAS_DB_PASSWORD}" "$ATLAS_DB_COMPOSE_SERVICE" psql -h 127.0.0.1 -p 5432 -U "$ATLAS_DB_USER" -d "$ATLAS_DB_NAME" -v ON_ERROR_STOP=1 < "$migration" >/dev/null)
   done
 }
 
@@ -381,6 +460,18 @@ ui_command() {
     "$(ui_runtime_prefix)" \
     "$ATLAS_UI_HOST" \
     "$ATLAS_UI_PORT"
+}
+
+mavproxy_command() {
+  local command
+
+  command="env MPLCONFIGDIR=\"${LOG_DIR}/matplotlib\" \"${MAVPROXY_BIN}\" --master=\"${MAVPROXY_MASTER}\" --out=\"${MAVPROXY_MAVSDK_OUT}\" --out=\"${MAVPROXY_OBSERVER_OUT}\""
+  if [[ -n "$MAVPROXY_QGC_OUT" && "$MAVPROXY_QGC_OUT" != "none" ]]; then
+    command="${command} --out=\"${MAVPROXY_QGC_OUT}\""
+  fi
+  command="${command} --non-interactive --no-state"
+
+  printf '%s' "$command"
 }
 
 validate_ui_runtime() {
@@ -427,6 +518,17 @@ assert_prerequisites() {
     require_tcp_port_free "mavsdk_server" "$MAVSDK_PORT"
   fi
 
+  case "$SITL_MAVLINK_ROUTER" in
+    none)
+      ;;
+    mavproxy)
+      require_command "$MAVPROXY_BIN"
+      ;;
+    *)
+      fail "unsupported MAVLink router mode: ${SITL_MAVLINK_ROUTER}"
+      ;;
+  esac
+
   if [[ "$SKIP_BACKEND" -eq 0 ]]; then
     require_tcp_port_free "atlas-backend HTTP" "$(tcp_port_from_addr "$ATLAS_BACKEND_ADDR")"
     require_tcp_port_free "atlas-backend vehicle-agent gRPC" "$(tcp_port_from_addr "$ATLAS_VEHICLE_AGENT_GRPC_ADDR")"
@@ -466,9 +568,23 @@ monitor_processes() {
   done
 }
 
+apply_mavlink_defaults
 assert_prerequisites
 
 log "using PX4_DIR=${PX4_DIR}"
+log "using MAVLink router=${SITL_MAVLINK_ROUTER}"
+if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
+  log "using MAVProxy master=${MAVPROXY_MASTER}"
+  log "using MAVProxy MAVSDK output=${MAVPROXY_MAVSDK_OUT}"
+  log "using MAVProxy observer output=${MAVPROXY_OBSERVER_OUT}"
+  if [[ -n "$MAVPROXY_QGC_OUT" && "$MAVPROXY_QGC_OUT" != "none" ]]; then
+    log "using MAVProxy QGC output=${MAVPROXY_QGC_OUT}"
+  else
+    log "using MAVProxy QGC output=disabled"
+  fi
+fi
+log "using PX4 system address=${ATLAS_PX4_SYSTEM_ADDRESS}"
+log "using MAVLink observer endpoint=${ATLAS_MAVLINK_OBSERVER_ENDPOINT}"
 log "using logs=${LOG_DIR}"
 
 if [[ "$SKIP_BACKEND" -eq 0 ]]; then
@@ -485,6 +601,13 @@ if [[ "$SKIP_PX4" -eq 0 ]]; then
     log "giving PX4 ${PX4_BOOT_WAIT_SECONDS}s to publish MAVLink"
     sleep "$PX4_BOOT_WAIT_SECONDS"
   fi
+fi
+
+if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
+  start_process \
+    "mavproxy" \
+    "$ROOT_DIR" \
+    "$(mavproxy_command)"
 fi
 
 if [[ "$SKIP_MAVSDK" -eq 0 ]]; then
@@ -507,7 +630,7 @@ if [[ "$SKIP_AGENT" -eq 0 ]]; then
   start_process \
     "atlas-agent" \
     "${ROOT_DIR}/atlas-agent" \
-    "env ATLAS_BACKEND_URL=\"${ATLAS_BACKEND_URL}\" ATLAS_VEHICLE_AGENT_ID=\"${ATLAS_VEHICLE_AGENT_ID}\" ATLAS_DRONE_ID=\"${ATLAS_DRONE_ID}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_VEHICLE_AGENT_VERSION=\"${ATLAS_VEHICLE_AGENT_VERSION}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_PX4_SYSTEM_ADDRESS=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" go run ./cmd/atlas-agent"
+    "env ATLAS_BACKEND_URL=\"${ATLAS_BACKEND_URL}\" ATLAS_VEHICLE_AGENT_ID=\"${ATLAS_VEHICLE_AGENT_ID}\" ATLAS_DRONE_ID=\"${ATLAS_DRONE_ID}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_VEHICLE_AGENT_VERSION=\"${ATLAS_VEHICLE_AGENT_VERSION}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_PX4_SYSTEM_ADDRESS=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" ATLAS_MAVLINK_OBSERVER_ENDPOINT=\"${ATLAS_MAVLINK_OBSERVER_ENDPOINT}\" go run ./cmd/atlas-agent"
 fi
 
 if [[ "$SKIP_UI" -eq 0 ]]; then

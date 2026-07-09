@@ -16,20 +16,24 @@ type Dependencies struct {
 
 // Services collects the application workflows exposed to HTTP and agent-channel adapters.
 type Services struct {
-	VehicleAgents *VehicleAgentService
-	Telemetry     *TelemetryService
-	Commands      *CommandService
-	Missions      *MissionService
-	Fleet         *FleetService
+	VehicleAgents           *VehicleAgentService
+	VehicleAgentConnections *VehicleAgentConnectionService
+	Telemetry               *TelemetryService
+	VehicleActions          *VehicleActionService
+	Missions                *MissionService
+	Fleet                   *FleetService
+	Perception              *PerceptionService
 }
 
 // New wires Atlas service instances around the same repository and transaction dependencies.
 func New(deps Dependencies) Services {
 	return Services{
-		VehicleAgents: NewVehicleAgentService(deps.TxManager),
-		Telemetry:     NewTelemetryService(deps.TxManager),
-		Commands:      NewCommandService(deps.TxManager, deps.Repositories),
-		Missions:      NewMissionService(deps.TxManager, deps.Repositories),
-		Fleet:         NewFleetService(deps.Repositories),
+		VehicleAgents:           NewVehicleAgentService(deps.TxManager),
+		VehicleAgentConnections: NewVehicleAgentConnectionService(deps.TxManager),
+		Telemetry:               NewTelemetryService(deps.TxManager),
+		VehicleActions:          NewVehicleActionService(deps.TxManager, deps.Repositories),
+		Missions:                NewMissionService(deps.TxManager, deps.Repositories),
+		Fleet:                   NewFleetService(deps.Repositories),
+		Perception:              NewPerceptionService(deps.TxManager, deps.Repositories),
 	}
 }

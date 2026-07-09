@@ -81,35 +81,35 @@ type MissionVersion struct {
 }
 
 type MissionWaypoint struct {
-	Sequence          int
-	Latitude          float64
-	Longitude         float64
-	RelativeAltitudeM float64
-	SpeedMPS          *float64
-	LoiterTimeS       *float64
+	Sequence          int      `json:"sequence"`
+	Latitude          float64  `json:"latitude"`
+	Longitude         float64  `json:"longitude"`
+	RelativeAltitudeM float64  `json:"relativeAltitudeM"`
+	SpeedMPS          *float64 `json:"speedMPS,omitempty"`
+	LoiterTimeS       *float64 `json:"loiterTimeS,omitempty"`
 }
 
 type MissionValidationError struct {
-	Field   string
-	Message string
+	Field   string `json:"field"`
+	Message string `json:"message"`
 }
 
 type MissionAltitudePolicy struct {
-	MinimumRelativeAltitudeM float64
-	MaximumRelativeAltitudeM float64
+	MinimumRelativeAltitudeM float64 `json:"minimumRelativeAltitudeM"`
+	MaximumRelativeAltitudeM float64 `json:"maximumRelativeAltitudeM"`
 }
 
 type MissionSpeedPolicy struct {
-	DefaultSpeedMPS float64
-	MaximumSpeedMPS float64
+	DefaultSpeedMPS float64 `json:"defaultSpeedMPS"`
+	MaximumSpeedMPS float64 `json:"maximumSpeedMPS"`
 }
 
 type MissionGeofencePolicy struct {
-	Enabled bool
+	Enabled bool `json:"enabled"`
 }
 
 type MissionRTLPolicy struct {
-	CompletionAction MissionCompletionAction
+	CompletionAction MissionCompletionAction `json:"completionAction"`
 }
 
 type MissionExecution struct {

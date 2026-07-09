@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   GeoJSONSource,
   GeoJSONSourceSpecification,
@@ -19,6 +19,10 @@ import {
 } from "react-router-dom";
 import {
   Activity,
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
   CircleArrowDown,
   History,
   ListChecks,
@@ -40,7 +44,11 @@ import {
 } from "lucide-react";
 import {
   type CommandAction,
+  type CommandEvent,
   type CommandState,
+  type CommunicationLink,
+  type CommunicationLinkStatus,
+  type CommunicationSummary,
   type CreateMissionInput,
   type CreateMissionWaypointInput,
   type Drone,
@@ -49,15 +57,28 @@ import {
   type MissionDetail,
   type MissionExecution,
   type MissionExecutionState,
+  type LocalVideoStatus,
+  type PerceptionEvent,
+  type PerceptionStatus,
+  type TelemetryFeed,
+  type TelemetryFeedStatus,
   type CommandRequest,
+  createLocalVideoAnswer,
   createDroneMission,
+  fetchDroneCommunicationLinks,
+  fetchCommandEvents,
   fetchDroneMissions,
+  fetchDroneTelemetryFeeds,
   fetchDrones,
+  fetchLocalVideoStatus,
   fetchMission,
+  fetchPerceptionEvents,
+  fetchPerceptionStatus,
   requestMissionAbort,
   requestDroneCommand,
   requestMissionStart,
   requestMissionUpload,
+  sendGimbalControl,
   subscribeDrones,
   subscribeMission,
 } from "./api/atlasApi";
@@ -88,11 +109,34 @@ const telemetryStyles = {
   fresh: "bg-atlas-field/25 text-atlas-ink",
   stale: "bg-atlas-signal/20 text-atlas-ink",
   lost: "bg-atlas-ink/10 text-atlas-ink/70",
+  conflicted: "bg-atlas-signal/20 text-atlas-ink",
 };
 
 const commandChannelStyles = {
   connected: "bg-atlas-field/25 text-atlas-ink",
   disconnected: "bg-atlas-ink/10 text-atlas-ink/70",
+};
+
+const gimbalRateDegS = 25;
+
+const communicationLinkStatusStyles: Record<CommunicationLinkStatus, string> = {
+  UNKNOWN: "bg-atlas-ink/10 text-atlas-ink/70",
+  CONNECTED: "bg-atlas-field/25 text-atlas-ink",
+  DEGRADED: "bg-atlas-signal/20 text-atlas-ink",
+  STALE: "bg-atlas-signal/20 text-atlas-ink",
+  LOST: "bg-atlas-ink/10 text-atlas-ink/70",
+  DISABLED: "bg-atlas-ink/10 text-atlas-ink/70",
+  CONFLICTED: "bg-atlas-signal/20 text-atlas-ink",
+};
+
+const telemetryFeedStatusStyles: Record<TelemetryFeedStatus, string> = {
+  UNKNOWN: "bg-atlas-ink/10 text-atlas-ink/70",
+  ACTIVE: "bg-atlas-field/25 text-atlas-ink",
+  DEGRADED: "bg-atlas-signal/20 text-atlas-ink",
+  STALE: "bg-atlas-signal/20 text-atlas-ink",
+  LOST: "bg-atlas-ink/10 text-atlas-ink/70",
+  ENDED: "bg-atlas-ink/10 text-atlas-ink/70",
+  CONFLICTED: "bg-atlas-signal/20 text-atlas-ink",
 };
 
 const commandStateStyles: Record<CommandState, string> = {
@@ -105,6 +149,7 @@ const commandStateStyles: Record<CommandState, string> = {
   vehicle_acked: "bg-atlas-field/25 text-atlas-ink",
   vehicle_rejected: "bg-atlas-signal/20 text-atlas-ink",
   telemetry_confirmed: "bg-atlas-field/25 text-atlas-ink",
+  acked_but_not_observed: "bg-atlas-signal/20 text-atlas-ink",
   timed_out: "bg-atlas-signal/20 text-atlas-ink",
   failed: "bg-atlas-signal/20 text-atlas-ink",
 };
@@ -220,9 +265,35 @@ export function App() {
   const [commandsByDrone, setCommandsByDrone] = useState<Record<string, CommandRequest[]>>({});
   const [commandErrors, setCommandErrors] = useState<Record<string, string | null>>({});
   const [pendingCommands, setPendingCommands] = useState<Record<string, boolean>>({});
+  const [communicationLinksByDrone, setCommunicationLinksByDrone] = useState<
+    Record<string, CommunicationLink[]>
+  >({});
+  const [communicationLinkErrors, setCommunicationLinkErrors] = useState<
+    Record<string, string | null>
+  >({});
+  const [pendingCommunicationLinks, setPendingCommunicationLinks] = useState<Record<string, boolean>>({});
+  const [telemetryFeedsByDrone, setTelemetryFeedsByDrone] = useState<
+    Record<string, TelemetryFeed[]>
+  >({});
+  const [telemetryFeedErrors, setTelemetryFeedErrors] = useState<Record<string, string | null>>({});
+  const [pendingTelemetryFeeds, setPendingTelemetryFeeds] = useState<Record<string, boolean>>({});
+  const [perceptionStatusByDrone, setPerceptionStatusByDrone] = useState<
+    Record<string, PerceptionStatus>
+  >({});
+  const [perceptionEventsByDrone, setPerceptionEventsByDrone] = useState<
+    Record<string, PerceptionEvent[]>
+  >({});
+  const [perceptionErrors, setPerceptionErrors] = useState<Record<string, string | null>>({});
+  const [pendingPerception, setPendingPerception] = useState<Record<string, boolean>>({});
+  const [localVideoStatus, setLocalVideoStatus] = useState<LocalVideoStatus | null>(null);
+  const [localVideoError, setLocalVideoError] = useState<string | null>(null);
+  const [localVideoConnecting, setLocalVideoConnecting] = useState(false);
+  const [localVideoConnected, setLocalVideoConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [streamConnected, setStreamConnected] = useState(false);
+  const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoPeerRef = useRef<RTCPeerConnection | null>(null);
   const location = useLocation();
 
   const applyDroneSnapshot = useCallback((nextDrones: Drone[]) => {
@@ -230,7 +301,10 @@ export function App() {
     setCommandsByDrone((current) => {
       const next = { ...current };
       for (const drone of nextDrones) {
-        next[drone.id] = mergeCommands(drone.commands ?? [], current[drone.id] ?? []);
+        next[drone.id] = mergeCommands(
+          drone.vehicleActions ?? drone.commands ?? [],
+          current[drone.id] ?? [],
+        );
       }
       return next;
     });
@@ -321,6 +395,122 @@ export function App() {
     };
   }, [applyDroneSnapshot]);
 
+  const refreshLocalVideoStatus = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const status = await fetchLocalVideoStatus(signal);
+      setLocalVideoStatus(status);
+      setLocalVideoError(null);
+    } catch (err) {
+      if (signal?.aborted) {
+        return;
+      }
+      setLocalVideoError(err instanceof Error ? err.message : "Local video status load failed");
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void refreshLocalVideoStatus(controller.signal);
+
+    const interval = window.setInterval(() => {
+      void refreshLocalVideoStatus();
+    }, 3000);
+
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [refreshLocalVideoStatus]);
+
+  const stopLocalVideo = useCallback(() => {
+    const peerConnection = localVideoPeerRef.current;
+    localVideoPeerRef.current = null;
+    if (peerConnection) {
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.ontrack = null;
+      peerConnection.close();
+    }
+
+    const videoElement = localVideoElementRef.current;
+    const stream = videoElement?.srcObject;
+    if (stream instanceof MediaStream) {
+      for (const track of stream.getTracks()) {
+        track.stop();
+      }
+    }
+    if (videoElement) {
+      videoElement.srcObject = null;
+    }
+
+    setLocalVideoConnected(false);
+    setLocalVideoConnecting(false);
+  }, []);
+
+  const startLocalVideo = useCallback(async () => {
+    stopLocalVideo();
+    setLocalVideoConnecting(true);
+    setLocalVideoError(null);
+
+    const peerConnection = new RTCPeerConnection();
+    localVideoPeerRef.current = peerConnection;
+
+    try {
+      peerConnection.addTransceiver("video", { direction: "recvonly" });
+      peerConnection.ontrack = (event) => {
+        const [stream] = event.streams;
+        if (stream && localVideoElementRef.current) {
+          localVideoElementRef.current.srcObject = stream;
+        }
+      };
+      peerConnection.onconnectionstatechange = () => {
+        if (localVideoPeerRef.current !== peerConnection) {
+          return;
+        }
+        if (peerConnection.connectionState === "connected") {
+          setLocalVideoConnected(true);
+          setLocalVideoError(null);
+        }
+        if (
+          peerConnection.connectionState === "failed" ||
+          peerConnection.connectionState === "disconnected" ||
+          peerConnection.connectionState === "closed"
+        ) {
+          setLocalVideoConnected(false);
+          if (peerConnection.connectionState !== "closed") {
+            setLocalVideoError("Local video connection dropped");
+          }
+        }
+      };
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      await waitForIceGatheringComplete(peerConnection);
+
+      const localDescription = peerConnection.localDescription;
+      if (!localDescription?.sdp) {
+        throw new Error("Browser did not create a valid WebRTC offer");
+      }
+
+      const answer = await createLocalVideoAnswer({
+        type: localDescription.type,
+        sdp: localDescription.sdp,
+      });
+      await peerConnection.setRemoteDescription(answer);
+    } catch (err) {
+      if (localVideoPeerRef.current === peerConnection) {
+        stopLocalVideo();
+      } else {
+        peerConnection.close();
+      }
+      setLocalVideoError(err instanceof Error ? err.message : "Local video connection failed");
+    } finally {
+      setLocalVideoConnecting(false);
+      void refreshLocalVideoStatus();
+    }
+  }, [refreshLocalVideoStatus, stopLocalVideo]);
+
+  useEffect(() => stopLocalVideo, [stopLocalVideo]);
+
   async function handleCommand(drone: Drone, action: CommandAction) {
     const pendingKey = `${drone.id}:${action}`;
     setPendingCommands((current) => ({ ...current, [pendingKey]: true }));
@@ -341,6 +531,89 @@ export function App() {
       setPendingCommands((current) => ({ ...current, [pendingKey]: false }));
     }
   }
+
+  const handleLoadCommunicationLinks = useCallback(async (droneId: string) => {
+    setPendingCommunicationLinks((current) => ({ ...current, [droneId]: true }));
+    setCommunicationLinkErrors((current) => ({ ...current, [droneId]: null }));
+
+    try {
+      const links = await fetchDroneCommunicationLinks(droneId);
+      setCommunicationLinksByDrone((current) => ({ ...current, [droneId]: links }));
+    } catch (err) {
+      setCommunicationLinkErrors((current) => ({
+        ...current,
+        [droneId]: err instanceof Error ? err.message : "Communication link load failed",
+      }));
+    } finally {
+      setPendingCommunicationLinks((current) => ({ ...current, [droneId]: false }));
+    }
+  }, []);
+
+  const handleLoadTelemetryFeeds = useCallback(async (droneId: string) => {
+    setPendingTelemetryFeeds((current) => ({ ...current, [droneId]: true }));
+    setTelemetryFeedErrors((current) => ({ ...current, [droneId]: null }));
+
+    try {
+      const feeds = await fetchDroneTelemetryFeeds(droneId);
+      setTelemetryFeedsByDrone((current) => ({ ...current, [droneId]: feeds }));
+    } catch (err) {
+      setTelemetryFeedErrors((current) => ({
+        ...current,
+        [droneId]: err instanceof Error ? err.message : "Telemetry feed load failed",
+      }));
+    } finally {
+      setPendingTelemetryFeeds((current) => ({ ...current, [droneId]: false }));
+    }
+  }, []);
+
+  const handleLoadPerception = useCallback(async (droneId: string, signal?: AbortSignal) => {
+    setPendingPerception((current) => ({ ...current, [droneId]: true }));
+    setPerceptionErrors((current) => ({ ...current, [droneId]: null }));
+
+    try {
+      const [status, events] = await Promise.all([
+        fetchPerceptionStatus(droneId, signal),
+        fetchPerceptionEvents(droneId, 10, signal),
+      ]);
+      setPerceptionStatusByDrone((current) => ({ ...current, [droneId]: status }));
+      setPerceptionEventsByDrone((current) => ({ ...current, [droneId]: events }));
+    } catch (err) {
+      if (signal?.aborted) {
+        return;
+      }
+      setPerceptionErrors((current) => ({
+        ...current,
+        [droneId]: err instanceof Error ? err.message : "Perception load failed",
+      }));
+    } finally {
+      if (!signal?.aborted) {
+        setPendingPerception((current) => ({ ...current, [droneId]: false }));
+      }
+    }
+  }, []);
+
+  const droneIDs = useMemo(() => drones.map((drone) => drone.id).join("|"), [drones]);
+  const droneIDList = useMemo(() => (droneIDs ? droneIDs.split("|") : []), [droneIDs]);
+
+  useEffect(() => {
+    if (droneIDList.length === 0) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadAll = () => {
+      for (const droneId of droneIDList) {
+        void handleLoadPerception(droneId, controller.signal);
+      }
+    };
+
+    loadAll();
+    const interval = window.setInterval(loadAll, 3000);
+    return () => {
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [droneIDList, handleLoadPerception]);
 
   const onlineCount = useMemo(
     () => drones.filter((drone) => drone.status === "online").length,
@@ -406,10 +679,31 @@ export function App() {
                 commandsByDrone={commandsByDrone}
                 commandErrors={commandErrors}
                 pendingCommands={pendingCommands}
+                communicationLinksByDrone={communicationLinksByDrone}
+                communicationLinkErrors={communicationLinkErrors}
+                pendingCommunicationLinks={pendingCommunicationLinks}
+                telemetryFeedsByDrone={telemetryFeedsByDrone}
+                telemetryFeedErrors={telemetryFeedErrors}
+                pendingTelemetryFeeds={pendingTelemetryFeeds}
+                perceptionStatusByDrone={perceptionStatusByDrone}
+                perceptionEventsByDrone={perceptionEventsByDrone}
+                perceptionErrors={perceptionErrors}
+                pendingPerception={pendingPerception}
+                localVideoStatus={localVideoStatus}
+                localVideoError={localVideoError}
+                localVideoConnecting={localVideoConnecting}
+                localVideoConnected={localVideoConnected}
+                localVideoElementRef={localVideoElementRef}
                 loading={loading}
                 error={error}
                 streamLabel={streamLabel}
+                onStartLocalVideo={() => void startLocalVideo()}
+                onStopLocalVideo={stopLocalVideo}
+                onRefreshLocalVideoStatus={() => void refreshLocalVideoStatus()}
                 onCommand={(drone, action) => void handleCommand(drone, action)}
+                onLoadCommunicationLinks={(droneId) => void handleLoadCommunicationLinks(droneId)}
+                onLoadTelemetryFeeds={(droneId) => void handleLoadTelemetryFeeds(droneId)}
+                onLoadPerception={(droneId) => void handleLoadPerception(droneId)}
               />
             }
           />
@@ -436,19 +730,61 @@ function FleetWorkspace({
   commandsByDrone,
   commandErrors,
   pendingCommands,
+  communicationLinksByDrone,
+  communicationLinkErrors,
+  pendingCommunicationLinks,
+  telemetryFeedsByDrone,
+  telemetryFeedErrors,
+  pendingTelemetryFeeds,
+  perceptionStatusByDrone,
+  perceptionEventsByDrone,
+  perceptionErrors,
+  pendingPerception,
+  localVideoStatus,
+  localVideoError,
+  localVideoConnecting,
+  localVideoConnected,
+  localVideoElementRef,
   loading,
   error,
   streamLabel,
+  onStartLocalVideo,
+  onStopLocalVideo,
+  onRefreshLocalVideoStatus,
   onCommand,
+  onLoadCommunicationLinks,
+  onLoadTelemetryFeeds,
+  onLoadPerception,
 }: {
   drones: Drone[];
   commandsByDrone: Record<string, CommandRequest[]>;
   commandErrors: Record<string, string | null>;
   pendingCommands: Record<string, boolean>;
+  communicationLinksByDrone: Record<string, CommunicationLink[]>;
+  communicationLinkErrors: Record<string, string | null>;
+  pendingCommunicationLinks: Record<string, boolean>;
+  telemetryFeedsByDrone: Record<string, TelemetryFeed[]>;
+  telemetryFeedErrors: Record<string, string | null>;
+  pendingTelemetryFeeds: Record<string, boolean>;
+  perceptionStatusByDrone: Record<string, PerceptionStatus>;
+  perceptionEventsByDrone: Record<string, PerceptionEvent[]>;
+  perceptionErrors: Record<string, string | null>;
+  pendingPerception: Record<string, boolean>;
+  localVideoStatus: LocalVideoStatus | null;
+  localVideoError: string | null;
+  localVideoConnecting: boolean;
+  localVideoConnected: boolean;
+  localVideoElementRef: { current: HTMLVideoElement | null };
   loading: boolean;
   error: string | null;
   streamLabel: string;
+  onStartLocalVideo: () => void;
+  onStopLocalVideo: () => void;
+  onRefreshLocalVideoStatus: () => void;
   onCommand: (drone: Drone, action: CommandAction) => void;
+  onLoadCommunicationLinks: (droneId: string) => void;
+  onLoadTelemetryFeeds: (droneId: string) => void;
+  onLoadPerception: (droneId: string) => void;
 }) {
   return (
     <div className="grid flex-1 gap-8 py-10 lg:grid-cols-[1fr_0.9fr]">
@@ -512,6 +848,20 @@ function FleetWorkspace({
                         >
                           commands {drone.commandChannel.state}
                         </span>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${
+                            backendChannelStateClass(drone.backendChannel?.state)
+                          }`}
+                        >
+                          backend {formatBackendChannelState(drone.backendChannel?.state)}
+                        </span>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${
+                            communicationLinkStatusStyles[communicationSummary(drone).commandLinkStatus]
+                          }`}
+                        >
+                          link {formatCommunicationStatus(communicationSummary(drone).commandLinkStatus)}
+                        </span>
                       </div>
                       <p className="mt-2 text-sm text-atlas-ink/65">
                         {drone.id} through {drone.vehicleAgentId}
@@ -545,6 +895,31 @@ function FleetWorkspace({
                   </div>
 
                   <TelemetryGrid drone={drone} />
+                  <TelemetryFeedPanel
+                    drone={drone}
+                    feeds={telemetryFeedsByDrone[drone.id]}
+                    error={telemetryFeedErrors[drone.id]}
+                    loading={pendingTelemetryFeeds[drone.id] ?? false}
+                    onRefresh={() => onLoadTelemetryFeeds(drone.id)}
+                  />
+                  <PerceptionPanel
+                    drone={drone}
+                    status={perceptionStatusByDrone[drone.id]}
+                    events={perceptionEventsByDrone[drone.id]}
+                    error={perceptionErrors[drone.id]}
+                    loading={pendingPerception[drone.id] ?? false}
+                    onRefresh={() => onLoadPerception(drone.id)}
+                  />
+                  <CommunicationPanel
+                    drone={drone}
+                    links={communicationLinksByDrone[drone.id]}
+                    error={communicationLinkErrors[drone.id]}
+                    loading={pendingCommunicationLinks[drone.id] ?? false}
+                    onRefresh={() => onLoadCommunicationLinks(drone.id)}
+                  />
+                  <BackendChannelPanel drone={drone} />
+                  <GimbalControlPanel drone={drone} />
+                  <MAVLinkObserverPanel drone={drone} />
                   <MissionPanel drone={drone} />
                   <CommandPanel
                     drone={drone}
@@ -560,37 +935,151 @@ function FleetWorkspace({
         </section>
       </section>
 
-      <section className="bg-atlas-panel p-5 shadow-sm shadow-atlas-ink/5">
-        <div className="flex items-center justify-between border-b border-atlas-ink/10 pb-4">
-          <h2 className="text-xl font-semibold">System boundary</h2>
-          <span className="rounded-full bg-atlas-mist px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-atlas-ink/60">
-            Phase 2
-          </span>
-        </div>
+      <aside className="space-y-6">
+        <LocalVideoPanel
+          status={localVideoStatus}
+          error={localVideoError}
+          connecting={localVideoConnecting}
+          connected={localVideoConnected}
+          videoRef={localVideoElementRef}
+          onStart={onStartLocalVideo}
+          onStop={onStopLocalVideo}
+          onRefresh={onRefreshLocalVideoStatus}
+        />
 
-        <div className="mt-5 space-y-3">
-          {flowItems.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="flex items-center gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center bg-atlas-ink text-atlas-panel">
-                  <Icon aria-hidden="true" size={22} strokeWidth={1.8} />
+        <section className="bg-atlas-panel p-5 shadow-sm shadow-atlas-ink/5">
+          <div className="flex items-center justify-between border-b border-atlas-ink/10 pb-4">
+            <h2 className="text-xl font-semibold">System boundary</h2>
+            <span className="rounded-full bg-atlas-mist px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-atlas-ink/60">
+              Phase 2
+            </span>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {flowItems.map((item, index) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center bg-atlas-ink text-atlas-panel">
+                    <Icon aria-hidden="true" size={22} strokeWidth={1.8} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{item.label}</p>
+                    <p className="text-sm text-atlas-ink/65">{item.detail}</p>
+                  </div>
+                  {index < flowItems.length - 1 && (
+                    <span className="hidden text-sm font-semibold text-atlas-signal sm:inline">
+                      connects to
+                    </span>
+                  )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{item.label}</p>
-                  <p className="text-sm text-atlas-ink/65">{item.detail}</p>
-                </div>
-                {index < flowItems.length - 1 && (
-                  <span className="hidden text-sm font-semibold text-atlas-signal sm:inline">
-                    connects to
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </section>
+              );
+            })}
+          </div>
+        </section>
+      </aside>
     </div>
+  );
+}
+
+function LocalVideoPanel({
+  status,
+  error,
+  connecting,
+  connected,
+  videoRef,
+  onStart,
+  onStop,
+  onRefresh,
+}: {
+  status: LocalVideoStatus | null;
+  error: string | null;
+  connecting: boolean;
+  connected: boolean;
+  videoRef: { current: HTMLVideoElement | null };
+  onStart: () => void;
+  onStop: () => void;
+  onRefresh: () => void;
+}) {
+  const ready = Boolean(status?.enabled && status.webrtcReady);
+  const state = status?.state ?? "unknown";
+  const stateStyle = localVideoStateStyle(status);
+  const displayedError = error ?? status?.lastError;
+  const connectDisabled = connecting || (!ready && !connected);
+
+  return (
+    <section className="bg-atlas-panel p-5 shadow-sm shadow-atlas-ink/5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-atlas-ink/10 pb-4">
+        <div>
+          <h2 className="text-xl font-semibold">Local video</h2>
+          <p className="mt-1 text-sm text-atlas-ink/60">
+            {formatLocalVideoEndpoint(status?.rtspUrl)}
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${stateStyle}`}
+        >
+          {formatLocalVideoState(state)}
+        </span>
+      </div>
+
+      <div className="mt-5 border border-atlas-ink/10 bg-atlas-ink">
+        <div className="relative aspect-video">
+          <video
+            ref={videoRef}
+            className="h-full w-full bg-atlas-ink object-contain"
+            autoPlay
+            playsInline
+            muted
+          />
+          {!connected && (
+            <div className="absolute inset-0 flex items-center justify-center bg-atlas-ink/90 px-4 text-center text-sm font-semibold text-atlas-panel/80">
+              {ready ? "Video idle" : "Video unavailable"}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+        <CommunicationMetric label="Source" value={shortLinkID(status?.sourceId)} />
+        <CommunicationMetric label="Codec" value={status?.codec ?? "pending"} />
+        <CommunicationMetric label="Peers" value={String(status?.activePeers ?? 0)} />
+        <CommunicationMetric label="Last frame" value={formatTime(status?.lastFrameAt)} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={connected ? onStop : onStart}
+          disabled={connectDisabled}
+          className="inline-flex min-h-9 items-center gap-2 bg-atlas-ink px-3 text-sm font-semibold text-atlas-panel transition hover:bg-atlas-ink/85 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          {connecting ? (
+            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
+          ) : connected ? (
+            <Power aria-hidden="true" size={15} />
+          ) : (
+            <Play aria-hidden="true" size={15} />
+          )}
+          {connecting ? "Connecting" : connected ? "Stop" : "Connect"}
+        </button>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist"
+          title="Refresh local video status"
+        >
+          <RefreshCw aria-hidden="true" size={15} />
+          Refresh
+        </button>
+      </div>
+
+      {displayedError && (
+        <p className="mt-3 border-l-4 border-atlas-signal bg-atlas-signal/10 px-3 py-2 text-sm text-atlas-ink">
+          {displayedError}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -2530,6 +3019,681 @@ function optionalNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function TelemetryFeedPanel({
+  drone,
+  feeds,
+  error,
+  loading,
+  onRefresh,
+}: {
+  drone: Drone;
+  feeds?: TelemetryFeed[];
+  error?: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const hasLoadedFeeds = Array.isArray(feeds);
+  const visibleFeeds = feeds ?? [];
+  const selectedFeedID = drone.telemetry?.activeTelemetryFeedId;
+  const selectedFeed = visibleFeeds.find((feed) => feed.id === selectedFeedID);
+  const selectedFreshness = selectedFeed?.freshness ?? drone.telemetry?.state ?? "unknown";
+  const activeCount = visibleFeeds.filter((feed) => feed.status === "ACTIVE").length;
+  const weakCount = visibleFeeds.filter((feed) =>
+    ["DEGRADED", "STALE", "LOST", "CONFLICTED"].includes(feed.status),
+  ).length;
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">
+            Telemetry feeds
+          </h4>
+          <span
+            className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${
+              telemetryStyles[selectedFreshness]
+            }`}
+          >
+            {selectedFreshness}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <CommunicationMetric label="Loaded" value={String(visibleFeeds.length)} />
+          <CommunicationMetric label="Active" value={String(activeCount)} />
+          <CommunicationMetric label="Weak" value={String(weakCount)} />
+        </div>
+
+        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
+          <p className="truncate">Selected {shortLinkID(selectedFeedID)}</p>
+          <p className="truncate">
+            Link {shortLinkID(selectedFeed?.communicationLinkId ?? drone.telemetry?.sourceCommunicationLinkId)}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="mt-3 inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist disabled:cursor-not-allowed disabled:opacity-45"
+          title="Refresh telemetry feeds"
+        >
+          {loading ? (
+            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
+          ) : (
+            <RefreshCw aria-hidden="true" size={15} />
+          )}
+          Refresh
+        </button>
+        {error && <p className="mt-3 text-sm text-atlas-signal">{error}</p>}
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Sources</h4>
+          <span className="text-xs font-semibold text-atlas-ink/50">
+            {hasLoadedFeeds ? `${visibleFeeds.length} rows` : "not loaded"}
+          </span>
+        </div>
+
+        {hasLoadedFeeds ? (
+          visibleFeeds.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {visibleFeeds.map((feed) => {
+                const selected = feed.id === selectedFeedID;
+                return (
+                  <div
+                    key={feed.id}
+                    className={`grid gap-2 border-l-2 pl-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] ${
+                      selected ? "border-atlas-field" : "border-atlas-ink/10"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="min-w-0 truncate font-semibold">
+                          {formatTelemetryFeedSource(feed.sourceType)} · {shortLinkID(feed.id)}
+                        </p>
+                        <span
+                          className={`shrink-0 px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                            telemetryFeedStatusStyles[feed.status]
+                          }`}
+                        >
+                          {formatTelemetryFeedStatus(feed.status)}
+                        </span>
+                        <span
+                          className={`shrink-0 px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                            telemetryStyles[feed.freshness]
+                          }`}
+                        >
+                          {feed.freshness}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-atlas-ink/60">
+                        Source {shortLinkID(feed.sourceId)} · link {shortLinkID(feed.communicationLinkId)}
+                      </p>
+                      <p className="mt-1 truncate text-xs text-atlas-ink/50">
+                        {formatTelemetryFields(feed)}
+                      </p>
+                    </div>
+                    <div className="text-atlas-ink/55 sm:text-right">
+                      <p>{formatTime(feed.lastTelemetryAt ?? feed.startedAt)}</p>
+                      <p>
+                        p{feed.priority} · {formatTelemetryFeedRate(feed)}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-atlas-ink/60">No telemetry feeds recorded.</p>
+          )
+        ) : (
+          <p className="mt-3 text-sm text-atlas-ink/60">Feed rows not loaded.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PerceptionPanel({
+  drone,
+  status,
+  events,
+  error,
+  loading,
+  onRefresh,
+}: {
+  drone: Drone;
+  status?: PerceptionStatus;
+  events?: PerceptionEvent[];
+  error?: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const latestEvent = events?.[0] ?? status?.latestEvent;
+  const latestDetections = latestEvent?.detections ?? status?.latestDetections ?? [];
+  const activeCounts = status?.activeCounts ?? classCounts(latestDetections);
+  const activeClassText = formatClassCounts(activeCounts);
+  const stateStyle = perceptionStatusStyle(status);
+  const stateLabel = perceptionStatusLabel(status);
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Perception</h4>
+          <span className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${stateStyle}`}>
+            {stateLabel}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <CommunicationMetric label="Accel" value={status?.accelerator ?? "hailo"} />
+          <CommunicationMetric label="FPS" value={formatFPS(status?.fps)} />
+          <CommunicationMetric label="Dropped" value={String(status?.droppedFrames ?? 0)} />
+        </div>
+
+        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
+          <p className="truncate">Model {formatModelLabel(status, latestEvent)}</p>
+          <p className="truncate">Source {shortLinkID(status?.sourceId ?? latestEvent?.sourceId)}</p>
+          <p className="truncate">Classes {activeClassText}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="mt-3 inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist disabled:cursor-not-allowed disabled:opacity-45"
+          title="Refresh perception"
+        >
+          {loading ? (
+            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
+          ) : (
+            <RefreshCw aria-hidden="true" size={15} />
+          )}
+          Refresh
+        </button>
+        {(error || status?.lastError) && (
+          <p className="mt-3 text-sm text-atlas-signal">{error ?? status?.lastError}</p>
+        )}
+      </div>
+
+      <div className="min-w-0">
+        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
+          <CommunicationMetric label="Last frame" value={formatTime(status?.lastFrameAt)} />
+          <CommunicationMetric label="Last detect" value={formatTime(status?.lastDetectionAt ?? latestEvent?.observedAt)} />
+          <CommunicationMetric label="Detections" value={String(latestDetections.length)} />
+          <CommunicationMetric
+            label="Latency"
+            value={typeof latestEvent?.inferenceLatencyMs === "number" ? `${latestEvent.inferenceLatencyMs.toFixed(1)} ms` : "pending"}
+          />
+        </div>
+
+        <div className="mt-3">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Latest detections</h4>
+            <span className="text-xs font-semibold text-atlas-ink/50">
+              {latestEvent?.frameId ? shortLinkID(latestEvent.frameId) : "no frame"}
+            </span>
+          </div>
+
+          {latestDetections.length > 0 ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {latestDetections.slice(0, 6).map((detection, index) => (
+                <div key={`${detection.class}-${index}`} className="min-w-0 border-l-2 border-atlas-field pl-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="truncate font-semibold">{detection.class}</p>
+                    <span className="shrink-0 text-xs font-semibold text-atlas-ink/55">
+                      {formatConfidence(detection.confidence)}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-xs text-atlas-ink/50">
+                    bbox {detection.bbox.map((value) => value.toFixed(2)).join(", ")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-atlas-ink/60">
+              No detections reported. Processed video may still show burned-in overlays when objects are present.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CommunicationPanel({
+  drone,
+  links,
+  error,
+  loading,
+  onRefresh,
+}: {
+  drone: Drone;
+  links?: CommunicationLink[];
+  error?: string | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const summary = communicationSummary(drone);
+  const hasLoadedLinks = Array.isArray(links);
+  const visibleLinks = links ?? [];
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Communication</h4>
+          <span
+            className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${
+              communicationLinkStatusStyles[summary.commandLinkStatus]
+            }`}
+          >
+            {formatCommunicationStatus(summary.commandLinkStatus)}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <CommunicationMetric label="Active" value={String(summary.activeLinkCount)} />
+          <CommunicationMetric label="Degraded" value={String(summary.degradedLinkCount)} />
+          <CommunicationMetric label="Lost" value={String(summary.lostLinkCount)} />
+        </div>
+
+        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
+          <p className="truncate">Command {shortLinkID(summary.activeCommandLinkId)}</p>
+          <p className="truncate">Telemetry {shortLinkID(summary.activeTelemetryLinkId)}</p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={loading}
+          className="mt-3 inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist disabled:cursor-not-allowed disabled:opacity-45"
+          title="Refresh communication links"
+        >
+          {loading ? (
+            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
+          ) : (
+            <RefreshCw aria-hidden="true" size={15} />
+          )}
+          Refresh
+        </button>
+        {error && <p className="mt-3 text-sm text-atlas-signal">{error}</p>}
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Links</h4>
+          <span className="text-xs font-semibold text-atlas-ink/50">
+            {hasLoadedLinks ? `${visibleLinks.length} rows` : "not loaded"}
+          </span>
+        </div>
+
+        {hasLoadedLinks ? (
+          visibleLinks.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {visibleLinks.map((link) => (
+                <div
+                  key={link.id}
+                  className="grid gap-2 border-l-2 border-atlas-ink/10 pl-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="min-w-0 truncate font-semibold">
+                        {formatCommunicationLinkType(link.linkType)} · {shortLinkID(link.id)}
+                      </p>
+                      <span
+                        className={`shrink-0 px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                          communicationLinkStatusStyles[link.status]
+                        }`}
+                      >
+                        {formatCommunicationStatus(link.status)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-atlas-ink/60">
+                      {link.endpointDescription || link.transport || "No endpoint"}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-atlas-ink/50">
+                      {formatCommunicationRoles(link.roles)}
+                      {link.commandEligible ? " · command eligible" : ""}
+                    </p>
+                  </div>
+                  <div className="text-atlas-ink/55 sm:text-right">
+                    <p>{formatTime(link.lastSeenAt ?? link.createdAt)}</p>
+                    <p>{formatLinkRate(link)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-atlas-ink/60">No communication links recorded.</p>
+          )
+        ) : (
+          <p className="mt-3 text-sm text-atlas-ink/60">Refresh to load link rows.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BackendChannelPanel({ drone }: { drone: Drone }) {
+  const health = drone.backendChannel;
+  const state = health?.state ?? drone.commandChannel.state;
+  const weakLink = health?.weakLink ?? state !== "connected";
+  const weakLinkReason =
+    health?.weakLinkReason || health?.lastError || (weakLink ? "backend channel is not connected" : "none");
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Backend channel</h4>
+          <span
+            className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${
+              backendChannelStateClass(state)
+            }`}
+          >
+            {formatBackendChannelState(state)}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <CommunicationMetric label="State" value={formatBackendChannelState(state)} />
+          <CommunicationMetric label="Reconnects" value={String(health?.reconnectCount ?? 0)} />
+          <CommunicationMetric label="Weak link" value={weakLink ? "yes" : "no"} />
+        </div>
+
+        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
+          <p className="truncate">Backend {health?.backendAddress || "not reported"}</p>
+          <p className="truncate">Reason {weakLinkReason}</p>
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Channel timing</h4>
+          <span className="text-xs font-semibold text-atlas-ink/50">
+            {health ? "reported by agent" : "not reported"}
+          </span>
+        </div>
+
+        <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2 xl:grid-cols-4">
+          <CommunicationMetric label="Last send" value={formatTime(health?.lastSuccessfulSendAt)} />
+          <CommunicationMetric label="Heartbeat" value={formatTime(health?.lastHeartbeatSentAt)} />
+          <CommunicationMetric label="Connected" value={formatTime(health?.connectedAt)} />
+          <CommunicationMetric label="Disconnected" value={formatTime(health?.lastDisconnectedAt)} />
+        </div>
+
+        {health?.lastError && (
+          <p className="mt-3 truncate text-sm text-atlas-signal">Last error {health.lastError}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GimbalControlPanel({ drone }: { drone: Drone }) {
+  const [activeControl, setActiveControl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const transmit = useCallback(
+    async (pitchRateDegS: number, yawRateDegS: number, active: string | null) => {
+      setActiveControl(active);
+      try {
+        await sendGimbalControl(drone.id, { pitchRateDegS, yawRateDegS });
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Gimbal control failed");
+        setActiveControl(null);
+      }
+    },
+    [drone.id],
+  );
+
+  const stop = useCallback(() => {
+    void transmit(0, 0, null);
+  }, [transmit]);
+
+  const nudge = useCallback(
+    (direction: "up" | "down" | "left" | "right") => {
+      switch (direction) {
+        case "up":
+          void transmit(gimbalRateDegS, 0, direction);
+          break;
+        case "down":
+          void transmit(-gimbalRateDegS, 0, direction);
+          break;
+        case "left":
+          void transmit(0, -gimbalRateDegS, direction);
+          break;
+        case "right":
+          void transmit(0, gimbalRateDegS, direction);
+          break;
+      }
+    },
+    [transmit],
+  );
+
+  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.repeat) {
+      return;
+    }
+    switch (event.key) {
+      case "ArrowUp":
+        event.preventDefault();
+        nudge("up");
+        break;
+      case "ArrowDown":
+        event.preventDefault();
+        nudge("down");
+        break;
+      case "ArrowLeft":
+        event.preventDefault();
+        nudge("left");
+        break;
+      case "ArrowRight":
+        event.preventDefault();
+        nudge("right");
+        break;
+    }
+  }
+
+  function handleKeyUp(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key.startsWith("Arrow")) {
+      event.preventDefault();
+      stop();
+    }
+  }
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Gimbal</h4>
+          <span className="max-w-full truncate whitespace-nowrap bg-atlas-sky/20 px-2.5 py-1 text-[11px] font-semibold uppercase text-atlas-ink">
+            MAVLink
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <CommunicationMetric label="Mode" value="direct" />
+          <CommunicationMetric label="Rate" value={`${gimbalRateDegS} deg/s`} />
+        </div>
+
+        {error && <p className="mt-3 text-sm text-atlas-signal">{error}</p>}
+      </div>
+
+      <div
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        onKeyUp={handleKeyUp}
+        onBlur={stop}
+        title="Gimbal arrow-key control"
+        className="grid min-h-36 place-items-center border border-atlas-ink/10 bg-atlas-mist/45 p-4 outline-none transition focus:border-atlas-ink/35"
+      >
+        <div className="grid grid-cols-3 gap-2">
+          <span />
+          <GimbalDirectionButton
+            label="Tilt up"
+            active={activeControl === "up"}
+            onPress={() => nudge("up")}
+            onRelease={stop}
+          >
+            <ArrowUp aria-hidden="true" size={18} />
+          </GimbalDirectionButton>
+          <span />
+          <GimbalDirectionButton
+            label="Pan left"
+            active={activeControl === "left"}
+            onPress={() => nudge("left")}
+            onRelease={stop}
+          >
+            <ArrowLeft aria-hidden="true" size={18} />
+          </GimbalDirectionButton>
+          <div className="grid h-11 w-11 place-items-center border border-atlas-ink/10 bg-atlas-panel text-[11px] font-semibold uppercase text-atlas-ink/45">
+            A8
+          </div>
+          <GimbalDirectionButton
+            label="Pan right"
+            active={activeControl === "right"}
+            onPress={() => nudge("right")}
+            onRelease={stop}
+          >
+            <ArrowRight aria-hidden="true" size={18} />
+          </GimbalDirectionButton>
+          <span />
+          <GimbalDirectionButton
+            label="Tilt down"
+            active={activeControl === "down"}
+            onPress={() => nudge("down")}
+            onRelease={stop}
+          >
+            <ArrowDown aria-hidden="true" size={18} />
+          </GimbalDirectionButton>
+          <span />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GimbalDirectionButton({
+  label,
+  active,
+  onPress,
+  onRelease,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+  onRelease: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onMouseDown={onPress}
+      onMouseUp={onRelease}
+      onMouseLeave={onRelease}
+      onTouchStart={onPress}
+      onTouchEnd={onRelease}
+      className={`grid h-11 w-11 place-items-center border text-atlas-ink transition ${
+        active
+          ? "border-atlas-field bg-atlas-field/25"
+          : "border-atlas-ink/15 bg-atlas-panel hover:border-atlas-ink/35 hover:bg-atlas-mist"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MAVLinkObserverPanel({ drone }: { drone: Drone }) {
+  const diagnostics = drone.mavlinkObserver;
+  const components = diagnostics?.components ?? [];
+  const connected = diagnostics?.connected ?? false;
+  const lastAck = diagnostics?.lastCommandAckAt
+    ? `${diagnostics.lastCommandAckCommand ?? "unknown"} / ${formatMAVResult(diagnostics.lastCommandAckResult)}`
+    : "none";
+
+  return (
+    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">MAVLink observer</h4>
+          <span
+            className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${
+              connected ? "bg-atlas-field/20 text-atlas-ink" : "bg-atlas-signal/15 text-atlas-ink"
+            }`}
+          >
+            {connected ? "connected" : "not connected"}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+          <CommunicationMetric label="Packets" value={String(diagnostics?.packetsSeen ?? 0)} />
+          <CommunicationMetric label="Components" value={String(diagnostics?.componentCount ?? components.length)} />
+          <CommunicationMetric label="Last ACK" value={lastAck} />
+        </div>
+
+        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
+          <p className="truncate">Heartbeat {formatTime(diagnostics?.lastHeartbeatAt)}</p>
+          <p className="truncate">Packet {formatTime(diagnostics?.lastPacketAt)}</p>
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Components</h4>
+          <span className="text-xs font-semibold text-atlas-ink/50">
+            {components.length} discovered
+          </span>
+        </div>
+
+        {components.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {components.slice(0, 6).map((component) => (
+              <div
+                key={`${component.systemId}:${component.componentId}`}
+                className="grid gap-2 border-l-2 border-atlas-ink/10 pl-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto]"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">
+                    system {component.systemId} · component {component.componentId}
+                  </p>
+                  <p className="mt-1 truncate text-atlas-ink/60">
+                    {component.packetCount} packets
+                  </p>
+                </div>
+                <p className="text-atlas-ink/55 sm:text-right">
+                  {formatTime(component.lastSeenAt)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-atlas-ink/60">No MAVLink components observed.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CommunicationMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 border border-atlas-ink/10 px-2.5 py-2">
+      <p className="text-[11px] font-semibold uppercase text-atlas-ink/45">{label}</p>
+      <p className="mt-1 truncate text-sm font-semibold text-atlas-ink">{value}</p>
+    </div>
+  );
+}
+
 function MissionPanel({ drone }: { drone: Drone }) {
   const execution = drone.missionExecution;
   const guide = missionStartGuide(drone);
@@ -2630,8 +3794,46 @@ function CommandPanel({
   pendingCommands: Record<string, boolean>;
   onCommand: (action: CommandAction) => void;
 }) {
-  const canCommand = drone.status === "online" && drone.telemetry?.state === "fresh";
+  const summary = communicationSummary(drone);
+  const canCommand =
+    drone.status === "online" &&
+    drone.telemetry?.state === "fresh" &&
+    Boolean(summary.activeCommandLinkId);
   const latest = commands[0];
+  const [events, setEvents] = useState<CommandEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventsError, setEventsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!latest) {
+      setEvents([]);
+      setEventsError(null);
+      setEventsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setEventsLoading(true);
+    setEventsError(null);
+
+    fetchCommandEvents(drone.id, latest.id, controller.signal)
+      .then((nextEvents) => {
+        setEvents(nextEvents);
+      })
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setEventsError(err instanceof Error ? err.message : "Failed to load command events");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setEventsLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [drone.id, latest?.id]);
 
   return (
     <div className="grid gap-5 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
@@ -2647,7 +3849,7 @@ function CommandPanel({
                 disabled={!canCommand || pending}
                 onClick={() => onCommand(action)}
                 className="inline-flex min-h-11 items-center justify-start gap-2 border border-atlas-ink/15 bg-atlas-mist px-4 text-sm font-semibold text-atlas-ink transition hover:border-atlas-ink/35 hover:bg-atlas-panel disabled:cursor-not-allowed disabled:opacity-45"
-                title={!canCommand ? "Requires online agent and fresh telemetry" : label}
+                title={!canCommand ? "Requires online agent, fresh telemetry, and command link" : label}
               >
                 {pending ? (
                   <Loader2 aria-hidden="true" className="animate-spin" size={16} />
@@ -2699,6 +3901,11 @@ function CommandPanel({
               })}
             </div>
             <div className="mt-3 space-y-2">
+              <CommandEventTimeline
+                events={events}
+                loading={eventsLoading}
+                error={eventsError}
+              />
               {commands.slice(0, 4).map((command) => (
                 <div
                   key={command.id}
@@ -2723,6 +3930,78 @@ function CommandPanel({
           <p className="mt-3 text-sm text-atlas-ink/60">No commands requested.</p>
         )}
       </div>
+    </div>
+  );
+}
+
+function CommandEventTimeline({
+  events,
+  loading,
+  error,
+}: {
+  events: CommandEvent[];
+  loading: boolean;
+  error: string | null;
+}) {
+  if (loading) {
+    return (
+      <div className="flex min-h-10 items-center gap-2 border-l-2 border-atlas-ink/10 pl-3 text-sm text-atlas-ink/60">
+        <Loader2 aria-hidden="true" className="animate-spin" size={15} />
+        Loading command events
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="border-l-2 border-atlas-signal pl-3 text-sm text-atlas-signal">{error}</p>;
+  }
+
+  if (events.length === 0) {
+    return <p className="border-l-2 border-atlas-ink/10 pl-3 text-sm text-atlas-ink/60">No command events recorded.</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {events.slice(-6).map((event) => {
+        const rawAck = event.evidence?.rawMavlinkCommandAck;
+        return (
+          <div
+            key={event.id}
+            className={`grid gap-2 border-l-2 pl-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] ${
+              rawAck ? "border-atlas-field" : "border-atlas-ink/10"
+            }`}
+          >
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="min-w-0 truncate font-semibold">{commandEventLabel(event)}</p>
+                {rawAck && (
+                  <span
+                    className={`shrink-0 px-2.5 py-1 text-[11px] font-semibold uppercase ${
+                      rawAck.result === 0
+                        ? "bg-atlas-field/20 text-atlas-ink"
+                        : "bg-atlas-signal/15 text-atlas-ink"
+                    }`}
+                  >
+                    {rawAck.resultLabel ?? formatMAVResult(rawAck.result)}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 truncate text-atlas-ink/60">
+                {commandEventDetail(event)}
+              </p>
+              {rawAck && (
+                <p className="mt-1 truncate text-xs text-atlas-ink/50">
+                  cmd {rawAck.command ?? "unknown"} · src {rawAck.sourceSystemId ?? "?"}:{rawAck.sourceComponentId ?? "?"}
+                  {typeof rawAck.targetSystem === "number"
+                    ? ` · target ${rawAck.targetSystem}:${rawAck.targetComponent ?? "?"}`
+                    : ""}
+                </p>
+              )}
+            </div>
+            <p className="text-atlas-ink/55 sm:text-right">{formatTime(event.createdAt)}</p>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -2817,12 +4096,324 @@ function formatTime(value?: string) {
   }).format(new Date(value));
 }
 
+function waitForIceGatheringComplete(peerConnection: RTCPeerConnection) {
+  if (peerConnection.iceGatheringState === "complete") {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out gathering browser ICE candidates"));
+    }, 5000);
+
+    function cleanup() {
+      window.clearTimeout(timeout);
+      peerConnection.removeEventListener("icegatheringstatechange", handleStateChange);
+    }
+
+    function handleStateChange() {
+      if (peerConnection.iceGatheringState === "complete") {
+        cleanup();
+        resolve();
+      }
+    }
+
+    peerConnection.addEventListener("icegatheringstatechange", handleStateChange);
+  });
+}
+
 function formatCommandChannelTime(drone: Drone) {
   if (drone.commandChannel.state === "connected") {
     return formatTime(drone.commandChannel.connectedAt);
   }
 
   return formatTime(drone.commandChannel.lastDisconnectedAt);
+}
+
+function formatBackendChannelState(value?: string) {
+  if (!value) {
+    return "unknown";
+  }
+
+  return value.toLowerCase().replace(/_/g, " ");
+}
+
+function backendChannelStateClass(value?: string) {
+  switch ((value ?? "unknown").toLowerCase()) {
+    case "connected":
+      return "bg-atlas-field/25 text-atlas-ink";
+    case "connecting":
+      return "bg-atlas-sky/20 text-atlas-ink";
+    case "disconnected":
+      return "bg-atlas-ink/10 text-atlas-ink/70";
+    default:
+      return "bg-atlas-ink/10 text-atlas-ink/70";
+  }
+}
+
+function communicationSummary(drone: Drone): CommunicationSummary {
+  return (
+    drone.communication ?? {
+      commandLinkStatus: "UNKNOWN",
+      activeLinkCount: 0,
+      degradedLinkCount: 0,
+      lostLinkCount: 0,
+    }
+  );
+}
+
+function formatCommunicationStatus(status: CommunicationLinkStatus) {
+  return status.toLowerCase().replace(/_/g, " ");
+}
+
+function formatCommunicationLinkType(type: CommunicationLink["linkType"]) {
+  switch (type) {
+    case "VEHICLE_AGENT_GRPC":
+      return "Agent gRPC";
+    case "GROUND_UNIT_DATA_LINK":
+      return "Ground unit";
+    case "UNKNOWN":
+      return "Unknown link";
+  }
+}
+
+function shortLinkID(value?: string) {
+  if (!value) {
+    return "none";
+  }
+
+  return value.length > 12 ? value.slice(-12) : value;
+}
+
+function formatCommunicationRoles(roles: CommunicationLink["roles"]) {
+  if (roles.length === 0) {
+    return "no roles";
+  }
+
+  return roles.map((role) => role.toLowerCase().replace(/_/g, " ")).join(", ");
+}
+
+function commandEventLabel(event: CommandEvent) {
+  return event.type.toLowerCase().replace(/_/g, " ");
+}
+
+function commandEventDetail(event: CommandEvent) {
+  const rawAck = event.evidence?.rawMavlinkCommandAck;
+  if (rawAck) {
+    return rawAck.matchStatus
+      ? `raw COMMAND_ACK · ${rawAck.matchStatus.replace(/_/g, " ")}`
+      : "raw COMMAND_ACK";
+  }
+  return event.message || event.source || commandStateLabel(event.state);
+}
+
+function formatMAVResult(result?: number) {
+  switch (result) {
+    case 0:
+      return "MAV_RESULT_ACCEPTED";
+    case 1:
+      return "MAV_RESULT_TEMPORARILY_REJECTED";
+    case 2:
+      return "MAV_RESULT_DENIED";
+    case 3:
+      return "MAV_RESULT_UNSUPPORTED";
+    case 4:
+      return "MAV_RESULT_FAILED";
+    case 5:
+      return "MAV_RESULT_IN_PROGRESS";
+    case 6:
+      return "MAV_RESULT_CANCELLED";
+    case 7:
+      return "MAV_RESULT_COMMAND_LONG_ONLY";
+    case 8:
+      return "MAV_RESULT_COMMAND_INT_ONLY";
+    case 9:
+      return "MAV_RESULT_COMMAND_UNSUPPORTED_MAV_FRAME";
+    default:
+      return "unknown";
+  }
+}
+
+function formatTelemetryFeedStatus(status: TelemetryFeedStatus) {
+  return status.toLowerCase().replace(/_/g, " ");
+}
+
+function formatTelemetryFeedSource(sourceType: TelemetryFeed["sourceType"]) {
+  switch (sourceType) {
+    case "AGENT_DIRECT":
+      return "Agent direct";
+    case "LOCAL_GROUND":
+      return "Local ground";
+    case "EXTERNAL_OBSERVER":
+      return "Observer";
+    case "SIMULATOR":
+      return "Simulator";
+    case "UNKNOWN":
+      return "Unknown source";
+  }
+}
+
+function perceptionStatusStyle(status?: PerceptionStatus) {
+  if (!status) {
+    return "bg-atlas-ink/10 text-atlas-ink/70";
+  }
+  if (status.lastError) {
+    return "bg-atlas-signal/20 text-atlas-ink";
+  }
+  if (status.inputConnected && status.outputPublishing && status.modelLoaded) {
+    return "bg-atlas-field/25 text-atlas-ink";
+  }
+  if (status.inputConnected || status.outputPublishing || status.modelLoaded) {
+    return "bg-atlas-sky/20 text-atlas-ink";
+  }
+  return "bg-atlas-ink/10 text-atlas-ink/70";
+}
+
+function perceptionStatusLabel(status?: PerceptionStatus) {
+  if (!status) {
+    return "pending";
+  }
+  if (status.lastError) {
+    return "error";
+  }
+  if (status.inputConnected && status.outputPublishing && status.modelLoaded) {
+    return "running";
+  }
+  if (status.inputConnected || status.outputPublishing || status.modelLoaded) {
+    return "starting";
+  }
+  return "idle";
+}
+
+function formatFPS(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return "pending";
+  }
+  return value.toFixed(1);
+}
+
+function formatConfidence(value: number) {
+  return `${Math.round(value * 100)}%`;
+}
+
+function classCounts(detections: PerceptionEvent["detections"]) {
+  return detections.reduce<Record<string, number>>((counts, detection) => {
+    counts[detection.class] = (counts[detection.class] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
+function formatClassCounts(counts: Record<string, number>) {
+  const entries = Object.entries(counts)
+    .filter(([, count]) => count > 0)
+    .sort(([left], [right]) => left.localeCompare(right));
+  if (entries.length === 0) {
+    return "none";
+  }
+  return entries.map(([className, count]) => `${className} ${count}`).join(", ");
+}
+
+function formatModelLabel(status?: PerceptionStatus, event?: PerceptionEvent) {
+  const name = status?.modelName ?? event?.modelName;
+  const version = status?.modelVersion ?? event?.modelVersion;
+  if (!name) {
+    return "pending";
+  }
+  return version ? `${name} ${version}` : name;
+}
+
+function localVideoStateStyle(status?: LocalVideoStatus | null) {
+  if (!status?.enabled) {
+    return "bg-atlas-ink/10 text-atlas-ink/70";
+  }
+
+  switch (status.state) {
+    case "configured":
+      return "bg-atlas-sky/20 text-atlas-ink";
+    case "starting":
+    case "connected":
+      return "bg-atlas-sky/20 text-atlas-ink";
+    case "streaming":
+      return "bg-atlas-field/25 text-atlas-ink";
+    case "failed":
+      return "bg-atlas-signal/20 text-atlas-ink";
+    default:
+      return "bg-atlas-ink/10 text-atlas-ink/70";
+  }
+}
+
+function formatLocalVideoState(state: string) {
+  return state.replace(/_/g, " ");
+}
+
+function formatLocalVideoEndpoint(value?: string) {
+  if (!value) {
+    return "not configured";
+  }
+
+  try {
+    const url = new URL(value);
+    url.username = "";
+    url.password = "";
+    return url.toString();
+  } catch {
+    return value.replace(/\/\/[^@/]+@/, "//");
+  }
+}
+
+function formatTelemetryFeedRate(feed: TelemetryFeed) {
+  const rate = typeof feed.messageRateHz === "number" ? feed.messageRateHz : 0;
+  if (rate <= 0) {
+    return "no rate";
+  }
+
+  return `${rate < 10 ? rate.toFixed(1) : rate.toFixed(0)} Hz`;
+}
+
+function formatTelemetryFields(feed: TelemetryFeed) {
+  const fields = [
+    { label: "position", available: feed.fieldsAvailable.position },
+    { label: "altitude", available: feed.fieldsAvailable.altitude },
+    { label: "heading", available: feed.fieldsAvailable.heading },
+    { label: "attitude", available: feed.fieldsAvailable.attitude },
+    { label: "velocity", available: feed.fieldsAvailable.velocity },
+    { label: "battery", available: feed.fieldsAvailable.battery },
+    { label: "armed", available: feed.fieldsAvailable.armed },
+    { label: "flight mode", available: feed.fieldsAvailable.flightMode },
+    { label: "GPS", available: feed.fieldsAvailable.gpsHealth },
+    { label: "home", available: feed.fieldsAvailable.homePosition },
+    { label: "mission", available: feed.fieldsAvailable.missionProgress },
+    { label: "health", available: feed.fieldsAvailable.systemHealth },
+  ].filter((field) => field.available);
+
+  if (fields.length === 0) {
+    return "no fields reported";
+  }
+
+  const visible = fields.slice(0, 5).map((field) => field.label);
+  const remaining = fields.length - visible.length;
+  return remaining > 0 ? `${visible.join(", ")} +${remaining}` : visible.join(", ");
+}
+
+function formatLinkRate(link: CommunicationLink) {
+  const rx = typeof link.rxBytesPerSec === "number" ? link.rxBytesPerSec : 0;
+  const tx = typeof link.txBytesPerSec === "number" ? link.txBytesPerSec : 0;
+  if (rx === 0 && tx === 0) {
+    return "no rate";
+  }
+
+  return `rx ${formatByteRate(rx)} / tx ${formatByteRate(tx)}`;
+}
+
+function formatByteRate(bytesPerSecond: number) {
+  if (bytesPerSecond >= 1_000_000) {
+    return `${(bytesPerSecond / 1_000_000).toFixed(1)} MB/s`;
+  }
+  if (bytesPerSecond >= 1_000) {
+    return `${(bytesPerSecond / 1_000).toFixed(1)} KB/s`;
+  }
+  return `${bytesPerSecond.toFixed(0)} B/s`;
 }
 
 function mergeCommand(commands: CommandRequest[], command: CommandRequest) {
@@ -2964,6 +4555,7 @@ function normalizedLifecycleState(state: CommandState) {
     case "authorized":
       return "authorized";
     case "vehicle_rejected":
+    case "acked_but_not_observed":
     case "timed_out":
     case "failed":
       return "sent_to_vehicle";

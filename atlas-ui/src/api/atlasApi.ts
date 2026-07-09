@@ -1,9 +1,35 @@
 export type DroneStatus = "registered" | "online" | "stale" | "offline";
-export type TelemetryState = "unknown" | "fresh" | "stale" | "lost";
+export type TelemetryState = "unknown" | "fresh" | "stale" | "lost" | "conflicted";
 export type CommandChannelState = "connected" | "disconnected";
+export type CommunicationLinkStatus =
+  | "UNKNOWN"
+  | "CONNECTED"
+  | "DEGRADED"
+  | "STALE"
+  | "LOST"
+  | "DISABLED"
+  | "CONFLICTED";
+export type CommunicationLinkType = "VEHICLE_AGENT_GRPC" | "GROUND_UNIT_DATA_LINK" | "UNKNOWN";
+export type CommunicationLinkRole = "TELEMETRY" | "COMMAND" | "VIDEO" | "GIMBAL_CONTROL";
+export type TelemetryFeedSourceType =
+  | "AGENT_DIRECT"
+  | "LOCAL_GROUND"
+  | "EXTERNAL_OBSERVER"
+  | "SIMULATOR"
+  | "UNKNOWN";
+export type TelemetryFeedStatus =
+  | "UNKNOWN"
+  | "ACTIVE"
+  | "DEGRADED"
+  | "STALE"
+  | "LOST"
+  | "ENDED"
+  | "CONFLICTED";
 
 export type Telemetry = {
   state: TelemetryState;
+  activeTelemetryFeedId?: string;
+  sourceCommunicationLinkId?: string;
   observedAt: string;
   receivedAt: string;
   batteryPercent: number;
@@ -27,6 +53,69 @@ export type CommandChannel = {
   lastDisconnectedAt?: string;
 };
 
+export type CommunicationSummary = {
+  commandLinkStatus: CommunicationLinkStatus;
+  activeCommandLinkId?: string;
+  activeTelemetryLinkId?: string;
+  activeLinkCount: number;
+  degradedLinkCount: number;
+  lostLinkCount: number;
+};
+
+export type CommunicationLink = {
+  id: string;
+  droneId: string;
+  vehicleAgentId?: string;
+  droneVehicleAgentConnectionId?: string;
+  linkType: CommunicationLinkType;
+  roles: CommunicationLinkRole[];
+  status: CommunicationLinkStatus;
+  transport: string;
+  endpointDescription: string;
+  commandEligible: boolean;
+  latencyMs?: number;
+  packetLossEstimate?: number;
+  rxBytesPerSec?: number;
+  txBytesPerSec?: number;
+  lastSeenAt?: string;
+  createdAt: string;
+  endedAt?: string;
+  endedReason?: string;
+};
+
+export type TelemetryFieldsAvailable = {
+  position: boolean;
+  altitude: boolean;
+  heading: boolean;
+  attitude: boolean;
+  velocity: boolean;
+  battery: boolean;
+  armed: boolean;
+  flightMode: boolean;
+  gpsHealth: boolean;
+  homePosition: boolean;
+  missionProgress: boolean;
+  systemHealth: boolean;
+};
+
+export type TelemetryFeed = {
+  id: string;
+  droneId: string;
+  sourceType: TelemetryFeedSourceType;
+  sourceId: string;
+  communicationLinkId?: string;
+  status: TelemetryFeedStatus;
+  priority: number;
+  freshness: TelemetryState;
+  lastTelemetryAt?: string;
+  lastSequence?: number;
+  messageRateHz?: number;
+  fieldsAvailable: TelemetryFieldsAvailable;
+  startedAt: string;
+  endedAt?: string;
+  lastError?: string;
+};
+
 export type CommandType = "arm" | "takeoff" | "return_to_launch" | "land";
 export type CommandAction = "arm" | "takeoff" | "return-to-launch" | "land";
 export type CommandState =
@@ -39,6 +128,7 @@ export type CommandState =
   | "vehicle_acked"
   | "vehicle_rejected"
   | "telemetry_confirmed"
+  | "acked_but_not_observed"
   | "timed_out"
   | "failed";
 
@@ -71,15 +161,87 @@ export type CommandRequest = {
   leaseUntil?: string;
   vehicleAckedAt?: string;
   deliveryAttempt: number;
+  idempotencyKey?: string;
+  ackCorrelationId?: string;
+  rawAckCode?: string;
   policyReason?: string;
   resultMessage?: string;
   telemetryState: TelemetryState;
   vehicleAgentStatus: DroneStatus;
 };
 
+export type RawMavlinkCommandAck = {
+  type?: string;
+  observedAt?: string;
+  sourceSystemId?: number;
+  sourceComponentId?: number;
+  command?: number;
+  result?: number;
+  progress?: number;
+  resultParam2?: number;
+  targetSystem?: number;
+  targetComponent?: number;
+  resultLabel?: string;
+  matchStatus?: string;
+};
+
+export type CommandEventEvidence = {
+  rawMavlinkCommandAck?: RawMavlinkCommandAck;
+  [key: string]: unknown;
+};
+
+export type CommandEvent = {
+  id: string;
+  vehicleActionId: string;
+  droneId: string;
+  vehicleAgentId: string;
+  type: string;
+  state: CommandState;
+  message: string;
+  source: string;
+  rawAckCode?: string;
+  evidence?: CommandEventEvidence;
+  telemetrySnapshotId?: string;
+  createdAt: string;
+};
+
+export type MavlinkObserverComponent = {
+  systemId: number;
+  componentId: number;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  packetCount: number;
+};
+
+export type MavlinkObserverDiagnostics = {
+  connected?: boolean;
+  packetsSeen?: number;
+  lastPacketAt?: string;
+  lastHeartbeatAt?: string;
+  lastCommandAckAt?: string;
+  lastCommandAckCommand?: number;
+  lastCommandAckResult?: number;
+  componentCount?: number;
+  components?: MavlinkObserverComponent[];
+};
+
+export type BackendChannelHealth = {
+  state?: "connecting" | "connected" | "disconnected" | string;
+  reconnectCount?: number;
+  connectedAt?: string;
+  lastDisconnectedAt?: string;
+  lastSuccessfulSendAt?: string;
+  lastHeartbeatSentAt?: string;
+  lastError?: string;
+  backendAddress?: string;
+  weakLink?: boolean;
+  weakLinkReason?: string;
+};
+
 export type MissionExecution = {
   id: string;
   missionId: string;
+  missionVersionId: string;
   droneId: string;
   vehicleAgentId: string;
   requestedBy: string;
@@ -108,6 +270,7 @@ export type MissionExecutionEvent = {
   id: string;
   executionId: string;
   missionId: string;
+  missionVersionId?: string;
   droneId: string;
   vehicleAgentId: string;
   type: string;
@@ -139,6 +302,7 @@ export type MissionValidationError = {
 export type Mission = {
   id: string;
   droneId: string;
+  currentVersionId?: string;
   name: string;
   createdBy: string;
   createdAt: string;
@@ -184,8 +348,74 @@ export type Drone = {
   lastHeartbeatAt?: string;
   telemetry?: Telemetry;
   commandChannel: CommandChannel;
-  commands: CommandRequest[];
+  communication: CommunicationSummary;
+  mavlinkObserver?: MavlinkObserverDiagnostics;
+  backendChannel?: BackendChannelHealth;
+  vehicleActions?: CommandRequest[];
+  commands?: CommandRequest[];
   missionExecution?: MissionExecution;
+};
+
+export type LocalVideoStatus = {
+  enabled: boolean;
+  sourceId?: string;
+  rtspUrl?: string;
+  state: string;
+  webrtcReady: boolean;
+  codec?: string;
+  activePeers: number;
+  lastFrameAt?: string;
+  lastError?: string;
+  updatedAt?: string;
+};
+
+export type PerceptionDetection = {
+  class: string;
+  confidence: number;
+  bbox: [number, number, number, number];
+};
+
+export type PerceptionEvent = {
+  id: string;
+  droneId: string;
+  sourceId: string;
+  observedAt: string;
+  frameId?: string;
+  modelName: string;
+  modelVersion?: string;
+  inferenceLatencyMs: number;
+  detections: PerceptionDetection[];
+  createdAt: string;
+};
+
+export type PerceptionStatus = {
+  droneId: string;
+  sourceId?: string;
+  inputConnected: boolean;
+  outputPublishing: boolean;
+  modelLoaded: boolean;
+  accelerator: string;
+  fps: number;
+  droppedFrames: number;
+  lastFrameAt?: string;
+  lastDetectionAt?: string;
+  lastError?: string;
+  modelName?: string;
+  modelVersion?: string;
+  updatedAt?: string;
+  activeCounts: Record<string, number>;
+  latestDetections: PerceptionDetection[];
+  latestEvent?: PerceptionEvent;
+};
+
+export type LocalVideoSessionDescription = {
+  type: RTCSdpType;
+  sdp: string;
+};
+
+export type GimbalControlInput = {
+  pitchRateDegS: number;
+  yawRateDegS: number;
 };
 
 export async function fetchDrones(signal?: AbortSignal): Promise<Drone[]> {
@@ -198,16 +428,95 @@ export async function fetchDrones(signal?: AbortSignal): Promise<Drone[]> {
   return response.json() as Promise<Drone[]>;
 }
 
+export async function fetchLocalVideoStatus(
+  signal?: AbortSignal,
+): Promise<LocalVideoStatus> {
+  const response = await fetch("/api/local-video/status", { signal });
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<LocalVideoStatus>;
+}
+
+export async function fetchPerceptionStatus(
+  droneId: string,
+  signal?: AbortSignal,
+): Promise<PerceptionStatus> {
+  const response = await fetch(
+    `/api/drones/${encodeURIComponent(droneId)}/perception/status`,
+    { signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<PerceptionStatus>;
+}
+
+export async function fetchPerceptionEvents(
+  droneId: string,
+  limit = 10,
+  signal?: AbortSignal,
+): Promise<PerceptionEvent[]> {
+  const response = await fetch(
+    `/api/drones/${encodeURIComponent(droneId)}/perception/events?limit=${limit}`,
+    { signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<PerceptionEvent[]>;
+}
+
+export async function createLocalVideoAnswer(
+  offer: LocalVideoSessionDescription,
+): Promise<LocalVideoSessionDescription> {
+  const response = await fetch("/api/local-video/webrtc/offer", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(offer),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<LocalVideoSessionDescription>;
+}
+
+export async function sendGimbalControl(
+  droneId: string,
+  input: GimbalControlInput,
+): Promise<void> {
+  const response = await fetch(`/api/drones/${encodeURIComponent(droneId)}/gimbal/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+}
+
 export async function requestDroneCommand(
   droneId: string,
   action: CommandAction,
 ): Promise<CommandRequest> {
   const response = await fetch(
-    `/api/drones/${encodeURIComponent(droneId)}/commands/${action}`,
+    `/api/drones/${encodeURIComponent(droneId)}/actions/${action}`,
     {
       method: "POST",
       headers: {
         "X-Atlas-Operator-ID": "atlas-ui-development",
+        "Idempotency-Key": createIdempotencyKey(droneId, action),
       },
     },
   );
@@ -223,6 +532,50 @@ export async function requestDroneCommand(
   }
 
   return body as CommandRequest;
+}
+
+function createIdempotencyKey(droneId: string, action: CommandAction) {
+  const random =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `atlas-ui:${droneId}:${action}:${random}`;
+}
+
+export async function fetchDroneCommunicationLinks(droneId: string): Promise<CommunicationLink[]> {
+  const response = await fetch(`/api/drones/${encodeURIComponent(droneId)}/communication-links`);
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<CommunicationLink[]>;
+}
+
+export async function fetchDroneTelemetryFeeds(droneId: string): Promise<TelemetryFeed[]> {
+  const response = await fetch(`/api/drones/${encodeURIComponent(droneId)}/telemetry-feeds`);
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<TelemetryFeed[]>;
+}
+
+export async function fetchCommandEvents(
+  droneId: string,
+  commandId: string,
+  signal?: AbortSignal,
+): Promise<CommandEvent[]> {
+  const response = await fetch(
+    `/api/drones/${encodeURIComponent(droneId)}/actions/${encodeURIComponent(commandId)}/events`,
+    { signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(await errorMessage(response));
+  }
+
+  return response.json() as Promise<CommandEvent[]>;
 }
 
 export async function fetchDroneMissions(droneId: string): Promise<Mission[]> {

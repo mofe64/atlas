@@ -70,10 +70,9 @@ type TelemetrySourceType string
 
 const (
 	TelemetrySourceAgentDirect      TelemetrySourceType = "AGENT_DIRECT"
-	TelemetrySourceGroundBridgeSiK  TelemetrySourceType = "GROUND_BRIDGE_SIK"
-	TelemetrySourceGroundBridgeHM30 TelemetrySourceType = "GROUND_BRIDGE_HM30"
-	TelemetrySourceQGCObserver      TelemetrySourceType = "QGC_OBSERVER"
-	TelemetrySourceSITL             TelemetrySourceType = "SITL"
+	TelemetrySourceLocalGround      TelemetrySourceType = "LOCAL_GROUND"
+	TelemetrySourceExternalObserver TelemetrySourceType = "EXTERNAL_OBSERVER"
+	TelemetrySourceSimulator        TelemetrySourceType = "SIMULATOR"
 	TelemetrySourceUnknown          TelemetrySourceType = "UNKNOWN"
 )
 
