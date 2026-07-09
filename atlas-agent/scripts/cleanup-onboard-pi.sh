@@ -16,6 +16,8 @@ ENV_FILE="${ATLAS_ONBOARD_ENV_FILE:-${ENV_DIR}/onboard.env}"
 STATE_DIR="${ATLAS_ONBOARD_STATE_DIR:-${HOME}/.local/state/atlas-agent}"
 LOG_DIR="${ATLAS_ONBOARD_LOG_DIR:-${STATE_DIR}/logs}"
 MEDIAMTX_DIR="${ATLAS_MEDIAMTX_DIR:-${INSTALL_PREFIX}/mediamtx}"
+MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
+MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
 ETH0_NETPLAN_FILE="${ATLAS_ONBOARD_ETH0_NETPLAN_FILE:-/etc/netplan/99-siyi-eth0-local.yaml}"
 
 CORE_SERVICES=(
@@ -190,6 +192,23 @@ remove_agent_binaries() {
   fi
 }
 
+remove_mavlink_router_source_install() {
+  if [[ -f "$MAVLINK_ROUTER_SOURCE_MARKER" ]]; then
+    log "removing Atlas source-built mavlink-routerd"
+    run sudo rm -f /usr/bin/mavlink-routerd
+    run sudo rm -f /usr/lib/systemd/system/mavlink-router.service /lib/systemd/system/mavlink-router.service
+  else
+    log "no Atlas mavlink-router source marker found; preserving mavlink-routerd binary"
+  fi
+
+  if [[ -d "$MAVLINK_ROUTER_SOURCE_DIR" ]]; then
+    assert_safe_dir "$MAVLINK_ROUTER_SOURCE_DIR" "MAVLink Router source dir"
+    log "removing MAVLink Router source checkout"
+    run sudo rm -rf "$MAVLINK_ROUTER_SOURCE_DIR"
+    sudo_remove_empty_dir "$(dirname "$MAVLINK_ROUTER_SOURCE_DIR")"
+  fi
+}
+
 remove_config() {
   local mavlink_config_dir="${ENV_DIR}/mavlink-router"
 
@@ -262,6 +281,7 @@ print_plan() {
   fi
   log "  remove env file: ${ENV_FILE}"
   log "  remove config dir: ${ENV_DIR}/mavlink-router"
+  log "  remove source-built mavlink-router only when marker exists: ${MAVLINK_ROUTER_SOURCE_MARKER}"
   log "  remove agent binaries: ${INSTALL_PREFIX}/bin/atlas-agent, ${INSTALL_PREFIX}/bin/atlas-video-agent.py"
   log "  remove agent logs/state under: ${STATE_DIR}"
   if [[ "$REMOVE_ETH0_CONFIG" -eq 1 ]]; then
@@ -299,6 +319,8 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       INSTALL_PREFIX="$2"
       MEDIAMTX_DIR="${INSTALL_PREFIX}/mediamtx"
+      MAVLINK_ROUTER_SOURCE_DIR="${INSTALL_PREFIX}/src/mavlink-router"
+      MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
       shift 2
       ;;
     --env-file)
@@ -340,6 +362,7 @@ fi
 cleanup_services
 remove_systemd_units
 remove_agent_binaries
+remove_mavlink_router_source_install
 remove_config
 remove_state
 remove_eth0_config

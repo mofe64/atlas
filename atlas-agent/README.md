@@ -103,6 +103,10 @@ scripts/start-onboard-stack.sh
 scripts/status-onboard-stack.sh
 ```
 
+On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
+repositories. The installer handles that by building `mavlink-routerd` from the
+upstream source with Meson/Ninja and installing it under `/usr`.
+
 Cleanup the Atlas agent setup while preserving FFmpeg/media dependencies and
 MediaMTX:
 

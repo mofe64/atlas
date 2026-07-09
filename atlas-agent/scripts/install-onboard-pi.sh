@@ -17,6 +17,10 @@ LOG_DIR="${ATLAS_ONBOARD_LOG_DIR:-${HOME}/.local/state/atlas-agent/logs}"
 MEDIAMTX_VERSION="${ATLAS_MEDIAMTX_VERSION:-v1.14.0}"
 MEDIAMTX_DIR="${ATLAS_MEDIAMTX_DIR:-${INSTALL_PREFIX}/mediamtx}"
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
+MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
+MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
+MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
+MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
 
 APT_PACKAGES=(
   curl
@@ -35,9 +39,18 @@ APT_PACKAGES=(
   gstreamer1.0-libav
   libgstreamer1.0-0
   libgstreamer-plugins-base1.0-0
-  mavlink-router
   netcat-openbsd
   golang-go
+)
+
+MAVLINK_ROUTER_BUILD_PACKAGES=(
+  git
+  meson
+  ninja-build
+  pkg-config
+  gcc
+  g++
+  systemd
 )
 
 usage() {
@@ -55,6 +68,7 @@ Options:
   --vehicle-agent-id ID     Vehicle agent id. Default: ${VEHICLE_AGENT_ID}
   --install-prefix PATH     Install prefix. Default: ${INSTALL_PREFIX}
   --env-file PATH           Env file path. Default: ${ENV_FILE}
+  --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
   -h, --help                Show this help.
 EOF
 }
@@ -156,6 +170,40 @@ install_hailo_packages() {
   fi
 
   run sudo apt-get install -y "${hailo_packages[@]}"
+}
+
+install_mavlink_router_from_source() {
+  log "building mavlink-routerd from source"
+  log "source: ${MAVLINK_ROUTER_REPO}@${MAVLINK_ROUTER_REF}"
+
+  run sudo apt-get install -y "${MAVLINK_ROUTER_BUILD_PACKAGES[@]}"
+  run sudo mkdir -p "$(dirname "$MAVLINK_ROUTER_SOURCE_DIR")"
+  run sudo chown "$USER":"$USER" "$(dirname "$MAVLINK_ROUTER_SOURCE_DIR")"
+
+  if [[ -d "${MAVLINK_ROUTER_SOURCE_DIR}/.git" ]]; then
+    run_shell "cd '${MAVLINK_ROUTER_SOURCE_DIR}' && git fetch --depth 1 origin '${MAVLINK_ROUTER_REF}' && git checkout FETCH_HEAD && git submodule update --init --recursive"
+  else
+    run_shell "git clone --recursive --depth 1 --branch '${MAVLINK_ROUTER_REF}' '${MAVLINK_ROUTER_REPO}' '${MAVLINK_ROUTER_SOURCE_DIR}'"
+  fi
+
+  run_shell "cd '${MAVLINK_ROUTER_SOURCE_DIR}' && rm -rf build && meson setup build . --prefix=/usr --buildtype=release && ninja -C build && sudo ninja -C build install"
+  run_shell "printf 'repo=%s\nref=%s\ninstalled_at=%s\n' '${MAVLINK_ROUTER_REPO}' '${MAVLINK_ROUTER_REF}' \"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\" > '${MAVLINK_ROUTER_SOURCE_MARKER}'"
+}
+
+install_mavlink_router() {
+  if command -v mavlink-routerd >/dev/null 2>&1; then
+    log "mavlink-routerd already available"
+    return
+  fi
+
+  log "checking mavlink-router apt package"
+  if apt-cache show mavlink-router >/dev/null 2>&1; then
+    run sudo apt-get install -y mavlink-router
+    return
+  fi
+
+  log "mavlink-router apt package unavailable; falling back to source build"
+  install_mavlink_router_from_source
 }
 
 verify_hailo() {
@@ -284,7 +332,7 @@ Type=simple
 User=${user_name}
 Group=${group_name}
 EnvironmentFile=${ENV_FILE}
-ExecStart=/usr/bin/mavlink-routerd -c \${ATLAS_MAVLINK_ROUTER_CONFIG_FILE}
+ExecStart=/usr/bin/env bash -lc 'exec mavlink-routerd -c "\${ATLAS_MAVLINK_ROUTER_CONFIG_FILE}"'
 Restart=always
 RestartSec=3
 StandardOutput=append:${LOG_DIR}/atlas-mavlink-router.log
@@ -410,12 +458,19 @@ while [[ $# -gt 0 ]]; do
       INSTALL_PREFIX="$2"
       MEDIAMTX_DIR="${INSTALL_PREFIX}/mediamtx"
       MODEL_PATH="${INSTALL_PREFIX}/models/yolov6n.hef"
+      MAVLINK_ROUTER_SOURCE_DIR="${INSTALL_PREFIX}/src/mavlink-router"
+      MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
       shift 2
       ;;
     --env-file)
       require_value "$1" "${2:-}"
       ENV_FILE="$2"
       ENV_DIR="$(dirname "$ENV_FILE")"
+      shift 2
+      ;;
+    --mavlink-router-ref)
+      require_value "$1" "${2:-}"
+      MAVLINK_ROUTER_REF="$2"
       shift 2
       ;;
     -h|--help)
@@ -430,6 +485,7 @@ done
 
 detect_platform
 install_apt_packages
+install_mavlink_router
 install_hailo_packages
 verify_hailo
 install_mediamtx

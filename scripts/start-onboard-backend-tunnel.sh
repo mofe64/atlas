@@ -4,7 +4,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/docker-compose.onboard-tunnel.yml"
-NGROK_WEB_PORT="${NGROK_WEB_PORT:-4040}"
 WAIT_SECONDS="${ATLAS_TUNNEL_WAIT_SECONDS:-60}"
 
 usage() {
@@ -18,7 +17,6 @@ Required:
 
 Optional:
   NGROK_TCP_URL          reserved ngrok TCP URL, for example tcp://1.tcp.ngrok.io:12345.
-  NGROK_WEB_PORT         local ngrok inspection/API port. Default: ${NGROK_WEB_PORT}
   ATLAS_TUNNEL_WAIT_SECONDS
                          seconds to wait for ngrok to publish the TCP URL. Default: ${WAIT_SECONDS}
 EOF
@@ -48,7 +46,13 @@ compose_command() {
 }
 
 extract_tcp_addr() {
-  sed -nE 's/.*"public_url"[[:space:]]*:[[:space:]]*"tcp:\/\/([^"]+)".*/\1/p'
+  sed -nE 's/.*tcp:\/\/([^[:space:]"'"'"']+).*/\1/p'
+}
+
+read_tunnel_addr_from_logs() {
+  local logs
+  logs="$(cd "$ROOT_DIR" && $compose -f "$COMPOSE_FILE" logs --no-log-prefix --tail=120 atlas-ngrok-tcp 2>/dev/null || true)"
+  printf '%s\n' "$logs" | extract_tcp_addr | tail -n 1
 }
 
 case "${1:-}" in
@@ -71,14 +75,12 @@ compose="$(compose_command)"
 log "starting Postgres, migrations, backend, and ngrok TCP tunnel"
 (cd "$ROOT_DIR" && $compose -f "$COMPOSE_FILE" up -d postgres migrate atlas-backend atlas-ngrok-tcp)
 
-api_url="http://127.0.0.1:${NGROK_WEB_PORT}/api/tunnels"
-log "waiting for ngrok TCP endpoint from ${api_url}"
+log "waiting for ngrok TCP endpoint"
 
 deadline=$((SECONDS + WAIT_SECONDS))
 public_addr=""
 while [[ "$SECONDS" -lt "$deadline" ]]; do
-  body="$(curl -fsS "$api_url" 2>/dev/null | tr -d '\n' || true)"
-  public_addr="$(printf '%s\n' "$body" | extract_tcp_addr | head -n 1)"
+  public_addr="$(read_tunnel_addr_from_logs)"
   if [[ -n "$public_addr" ]]; then
     break
   fi
@@ -86,7 +88,8 @@ while [[ "$SECONDS" -lt "$deadline" ]]; do
 done
 
 if [[ -z "$public_addr" ]]; then
-  fail "ngrok did not publish a TCP endpoint within ${WAIT_SECONDS}s; check: ${compose} -f ${COMPOSE_FILE} logs atlas-ngrok-tcp"
+  (cd "$ROOT_DIR" && $compose -f "$COMPOSE_FILE" logs --tail=80 atlas-ngrok-tcp || true)
+  fail "ngrok did not publish a TCP endpoint within ${WAIT_SECONDS}s; see atlas-ngrok-tcp logs above"
 fi
 
 log "backend HTTP: http://127.0.0.1:${ATLAS_BACKEND_HTTP_PORT:-8080}"
