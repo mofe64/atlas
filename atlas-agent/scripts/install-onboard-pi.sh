@@ -17,6 +17,9 @@ LOG_DIR="${ATLAS_ONBOARD_LOG_DIR:-${HOME}/.local/state/atlas-agent/logs}"
 MEDIAMTX_VERSION="${ATLAS_MEDIAMTX_VERSION:-v1.14.0}"
 MEDIAMTX_ASSET_ARCH="${ATLAS_MEDIAMTX_ASSET_ARCH:-linux_arm64}"
 MEDIAMTX_DIR="${ATLAS_MEDIAMTX_DIR:-${INSTALL_PREFIX}/mediamtx}"
+MAVSDK_SERVER_VERSION="${ATLAS_MAVSDK_SERVER_VERSION:-v3.17.1}"
+MAVSDK_SERVER_ASSET="${ATLAS_MAVSDK_SERVER_ASSET:-mavsdk_server_linux-arm64-musl}"
+MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_server}"
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
@@ -69,6 +72,7 @@ Options:
   --vehicle-agent-id ID     Vehicle agent id. Default: ${VEHICLE_AGENT_ID}
   --install-prefix PATH     Install prefix. Default: ${INSTALL_PREFIX}
   --env-file PATH           Env file path. Default: ${ENV_FILE}
+  --mavsdk-version VERSION  MAVSDK server release tag. Default: ${MAVSDK_SERVER_VERSION}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
   -h, --help                Show this help.
 EOF
@@ -243,13 +247,28 @@ build_atlas_agent() {
   run install -m 0755 "${SCRIPT_DIR}/atlas-video-agent.py" "${INSTALL_PREFIX}/bin/atlas-video-agent.py"
 }
 
-ensure_mavsdk_server() {
-  if command -v mavsdk_server >/dev/null 2>&1; then
-    log "mavsdk_server already available"
+install_mavsdk_server() {
+  if [[ -x "$MAVSDK_SERVER_BIN" ]]; then
+    log "mavsdk_server already installed at ${MAVSDK_SERVER_BIN}"
     return
   fi
-  log "warning: mavsdk_server not found"
-  log "         install mavsdk_server and set ATLAS_MAVSDK_SERVER_BIN if it is not on PATH"
+  if command -v mavsdk_server >/dev/null 2>&1; then
+    MAVSDK_SERVER_BIN="$(command -v mavsdk_server)"
+    log "mavsdk_server already available at ${MAVSDK_SERVER_BIN}"
+    return
+  fi
+
+  local download_url="https://github.com/mavlink/MAVSDK/releases/download/${MAVSDK_SERVER_VERSION}/${MAVSDK_SERVER_ASSET}"
+  local tmp_bin="/tmp/${MAVSDK_SERVER_ASSET}_${MAVSDK_SERVER_VERSION}"
+  log "installing mavsdk_server from ${download_url}"
+  run sudo mkdir -p "$(dirname "$MAVSDK_SERVER_BIN")"
+  run sudo chown "$USER":"$USER" "$(dirname "$MAVSDK_SERVER_BIN")"
+  run rm -f "$tmp_bin"
+  run curl -fL "$download_url" -o "$tmp_bin"
+  run install -m 0755 "$tmp_bin" "$MAVSDK_SERVER_BIN"
+  if [[ "$DRY_RUN" -eq 0 ]]; then
+    [[ -x "$MAVSDK_SERVER_BIN" ]] || fail "downloaded mavsdk_server is not executable"
+  fi
 }
 
 write_env_file() {
@@ -262,6 +281,7 @@ ATLAS_VEHICLE_AGENT_GRPC_ADDR="${GROUND_GRPC_ADDR}"
 ATLAS_MAVSDK_GRPC_ADDR="127.0.0.1:50051"
 ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14540"
 ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14550"
+ATLAS_MAVSDK_SERVER_BIN="${MAVSDK_SERVER_BIN}"
 ATLAS_A8_RTSP_URL="rtsp://192.168.144.25:8554/main.264"
 ATLAS_PROCESSED_RTSP_URL="rtsp://127.0.0.1:8554/atlas"
 ATLAS_PERCEPTION_MODEL_PATH="${MODEL_PATH}"
@@ -359,7 +379,7 @@ Type=simple
 User=${user_name}
 Group=${group_name}
 EnvironmentFile=${ENV_FILE}
-ExecStart=/usr/bin/env bash -lc 'exec mavsdk_server -p "\${ATLAS_MAVSDK_GRPC_ADDR##*:}" "\${ATLAS_PX4_SYSTEM_ADDRESS}"'
+ExecStart=/usr/bin/env bash -lc 'exec "\${ATLAS_MAVSDK_SERVER_BIN}" -p "\${ATLAS_MAVSDK_GRPC_ADDR##*:}" "\${ATLAS_PX4_SYSTEM_ADDRESS}"'
 Restart=always
 RestartSec=3
 StandardOutput=append:${LOG_DIR}/atlas-mavsdk.log
@@ -462,6 +482,7 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       INSTALL_PREFIX="$2"
       MEDIAMTX_DIR="${INSTALL_PREFIX}/mediamtx"
+      MAVSDK_SERVER_BIN="${INSTALL_PREFIX}/bin/mavsdk_server"
       MODEL_PATH="${INSTALL_PREFIX}/models/yolov6n.hef"
       MAVLINK_ROUTER_SOURCE_DIR="${INSTALL_PREFIX}/src/mavlink-router"
       MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
@@ -471,6 +492,11 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       ENV_FILE="$2"
       ENV_DIR="$(dirname "$ENV_FILE")"
+      shift 2
+      ;;
+    --mavsdk-version)
+      require_value "$1" "${2:-}"
+      MAVSDK_SERVER_VERSION="$2"
       shift 2
       ;;
     --mavlink-router-ref)
@@ -495,7 +521,7 @@ install_hailo_packages
 verify_hailo
 install_mediamtx
 build_atlas_agent
-ensure_mavsdk_server
+install_mavsdk_server
 write_env_file
 configure_eth0
 generate_mavlink_router_config

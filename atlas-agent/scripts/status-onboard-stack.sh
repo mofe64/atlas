@@ -22,6 +22,26 @@ printf '\n[atlas-onboard-status] network\n'
 ip -br addr || true
 ip route || true
 
+printf '\n[atlas-onboard-status] mavlink router config\n'
+if [[ -f "${HOME}/.config/atlas-agent/mavlink-router/main.conf" ]]; then
+  sed -n '1,120p' "${HOME}/.config/atlas-agent/mavlink-router/main.conf" || true
+else
+  printf 'missing: %s\n' "${HOME}/.config/atlas-agent/mavlink-router/main.conf"
+fi
+
+printf '\n[atlas-onboard-status] serial devices\n'
+ls -l /dev/serial0 /dev/serial1 /dev/ttyAMA0 /dev/ttyAMA1 /dev/ttyS0 2>/dev/null || true
+
+printf '\n[atlas-onboard-status] mavsdk_server\n'
+if [[ -f "${HOME}/.config/atlas-agent/onboard.env" ]]; then
+  # shellcheck disable=SC1090
+  source "${HOME}/.config/atlas-agent/onboard.env"
+fi
+if [[ -n "${ATLAS_MAVSDK_SERVER_BIN:-}" ]]; then
+  ls -l "$ATLAS_MAVSDK_SERVER_BIN" || true
+fi
+command -v mavsdk_server || true
+
 printf '\n[atlas-onboard-status] rtsp port\n'
 ss -lntp | grep ':8554' || true
 

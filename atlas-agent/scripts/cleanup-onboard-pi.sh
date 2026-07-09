@@ -16,6 +16,7 @@ ENV_FILE="${ATLAS_ONBOARD_ENV_FILE:-${ENV_DIR}/onboard.env}"
 STATE_DIR="${ATLAS_ONBOARD_STATE_DIR:-${HOME}/.local/state/atlas-agent}"
 LOG_DIR="${ATLAS_ONBOARD_LOG_DIR:-${STATE_DIR}/logs}"
 MEDIAMTX_DIR="${ATLAS_MEDIAMTX_DIR:-${INSTALL_PREFIX}/mediamtx}"
+MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_server}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
 MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
 ETH0_NETPLAN_FILE="${ATLAS_ONBOARD_ETH0_NETPLAN_FILE:-/etc/netplan/99-siyi-eth0-local.yaml}"
@@ -180,7 +181,7 @@ remove_systemd_units() {
 
 remove_agent_binaries() {
   log "removing Atlas agent binaries"
-  run sudo rm -f "${INSTALL_PREFIX}/bin/atlas-agent" "${INSTALL_PREFIX}/bin/atlas-video-agent.py"
+  run sudo rm -f "${INSTALL_PREFIX}/bin/atlas-agent" "${INSTALL_PREFIX}/bin/atlas-video-agent.py" "$MAVSDK_SERVER_BIN"
   sudo_remove_empty_dir "${INSTALL_PREFIX}/bin"
 
   if [[ "$REMOVE_MEDIA" -eq 1 ]]; then
@@ -282,7 +283,7 @@ print_plan() {
   log "  remove env file: ${ENV_FILE}"
   log "  remove config dir: ${ENV_DIR}/mavlink-router"
   log "  remove source-built mavlink-router only when marker exists: ${MAVLINK_ROUTER_SOURCE_MARKER}"
-  log "  remove agent binaries: ${INSTALL_PREFIX}/bin/atlas-agent, ${INSTALL_PREFIX}/bin/atlas-video-agent.py"
+  log "  remove agent binaries: ${INSTALL_PREFIX}/bin/atlas-agent, ${INSTALL_PREFIX}/bin/atlas-video-agent.py, ${MAVSDK_SERVER_BIN}"
   log "  remove agent logs/state under: ${STATE_DIR}"
   if [[ "$REMOVE_ETH0_CONFIG" -eq 1 ]]; then
     log "  remove eth0 netplan file: ${ETH0_NETPLAN_FILE}"
@@ -319,6 +320,7 @@ while [[ $# -gt 0 ]]; do
       require_value "$1" "${2:-}"
       INSTALL_PREFIX="$2"
       MEDIAMTX_DIR="${INSTALL_PREFIX}/mediamtx"
+      MAVSDK_SERVER_BIN="${INSTALL_PREFIX}/bin/mavsdk_server"
       MAVLINK_ROUTER_SOURCE_DIR="${INSTALL_PREFIX}/src/mavlink-router"
       MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
       shift 2
