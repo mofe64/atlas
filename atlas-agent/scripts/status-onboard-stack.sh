@@ -30,7 +30,11 @@ else
 fi
 
 printf '\n[atlas-onboard-status] serial devices\n'
-ls -l /dev/serial0 /dev/serial1 /dev/ttyAMA0 /dev/ttyAMA1 /dev/ttyS0 2>/dev/null || true
+for dev in /dev/serial/by-id/* /dev/serial/by-path/* /dev/ttyUSB* /dev/ttyACM* /dev/serial0 /dev/serial1 /dev/ttyAMA0 /dev/ttyAMA1 /dev/ttyS0; do
+  if [[ -e "$dev" ]]; then
+    printf '%s -> %s\n' "$dev" "$(readlink -f "$dev")"
+  fi
+done
 
 printf '\n[atlas-onboard-status] mavsdk_server\n'
 if [[ -f "${HOME}/.config/atlas-agent/onboard.env" ]]; then

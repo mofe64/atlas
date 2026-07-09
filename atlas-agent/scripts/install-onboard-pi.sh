@@ -25,6 +25,8 @@ MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-rou
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
 MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
+MAVLINK_ROUTER_UART_DEVICE="${ATLAS_MAVLINK_ROUTER_UART_DEVICE:-/dev/serial0}"
+MAVLINK_ROUTER_UART_BAUD="${ATLAS_MAVLINK_ROUTER_UART_BAUD:-921600}"
 
 APT_PACKAGES=(
   curl
@@ -73,6 +75,8 @@ Options:
   --install-prefix PATH     Install prefix. Default: ${INSTALL_PREFIX}
   --env-file PATH           Env file path. Default: ${ENV_FILE}
   --mavsdk-version VERSION  MAVSDK server release tag. Default: ${MAVSDK_SERVER_VERSION}
+  --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
+  --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
   -h, --help                Show this help.
 EOF
@@ -282,6 +286,8 @@ ATLAS_MAVSDK_GRPC_ADDR="127.0.0.1:50051"
 ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14540"
 ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14550"
 ATLAS_MAVSDK_SERVER_BIN="${MAVSDK_SERVER_BIN}"
+ATLAS_MAVLINK_ROUTER_UART_DEVICE="${MAVLINK_ROUTER_UART_DEVICE}"
+ATLAS_MAVLINK_ROUTER_UART_BAUD="${MAVLINK_ROUTER_UART_BAUD}"
 ATLAS_A8_RTSP_URL="rtsp://192.168.144.25:8554/main.264"
 ATLAS_PROCESSED_RTSP_URL="rtsp://127.0.0.1:8554/atlas"
 ATLAS_PERCEPTION_MODEL_PATH="${MODEL_PATH}"
@@ -442,9 +448,15 @@ EOF
 }
 
 generate_mavlink_router_config() {
-  run "${SCRIPT_DIR}/setup-mavlink-router.sh" --env "${HOME}/.config/atlas-agent/mavlink-router/atlas-mavlink.env" --dry-run
+  local setup_args=(
+    --device "${MAVLINK_ROUTER_UART_DEVICE}"
+    --baud "${MAVLINK_ROUTER_UART_BAUD}"
+    --env "${HOME}/.config/atlas-agent/mavlink-router/atlas-mavlink.env"
+  )
+
+  run "${SCRIPT_DIR}/setup-mavlink-router.sh" "${setup_args[@]}" --dry-run
   if [[ "$DRY_RUN" -eq 0 ]]; then
-    "${SCRIPT_DIR}/setup-mavlink-router.sh"
+    "${SCRIPT_DIR}/setup-mavlink-router.sh" "${setup_args[@]}"
   fi
 }
 
@@ -497,6 +509,16 @@ while [[ $# -gt 0 ]]; do
     --mavsdk-version)
       require_value "$1" "${2:-}"
       MAVSDK_SERVER_VERSION="$2"
+      shift 2
+      ;;
+    --mavlink-device)
+      require_value "$1" "${2:-}"
+      MAVLINK_ROUTER_UART_DEVICE="$2"
+      shift 2
+      ;;
+    --mavlink-baud)
+      require_value "$1" "${2:-}"
+      MAVLINK_ROUTER_UART_BAUD="$2"
       shift 2
       ;;
     --mavlink-router-ref)
