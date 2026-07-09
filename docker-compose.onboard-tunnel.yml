@@ -68,15 +68,14 @@ services:
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?Set NGROK_AUTHTOKEN before starting the tunnel}
       NGROK_TCP_URL: ${NGROK_TCP_URL:-}
-    ports:
-      - "${NGROK_WEB_PORT:-4040}:4040"
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
         if [ -n "$${NGROK_TCP_URL}" ]; then
-          exec ngrok tcp --log=stdout --web-addr=0.0.0.0:4040 --url "$${NGROK_TCP_URL}" atlas-backend:9090
+          remote_addr="$${NGROK_TCP_URL#tcp://}"
+          exec ngrok tcp --log=stdout --log-format=logfmt --url "$${remote_addr}" atlas-backend:9090
         fi
-        exec ngrok tcp --log=stdout --web-addr=0.0.0.0:4040 atlas-backend:9090
+        exec ngrok tcp --log=stdout --log-format=logfmt atlas-backend:9090
     restart: unless-stopped
 
 volumes:
