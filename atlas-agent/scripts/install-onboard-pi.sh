@@ -15,6 +15,7 @@ ENV_DIR="${ATLAS_ONBOARD_ENV_DIR:-${HOME}/.config/atlas-agent}"
 ENV_FILE="${ATLAS_ONBOARD_ENV_FILE:-${ENV_DIR}/onboard.env}"
 LOG_DIR="${ATLAS_ONBOARD_LOG_DIR:-${HOME}/.local/state/atlas-agent/logs}"
 MEDIAMTX_VERSION="${ATLAS_MEDIAMTX_VERSION:-v1.14.0}"
+MEDIAMTX_ASSET_ARCH="${ATLAS_MEDIAMTX_ASSET_ARCH:-linux_arm64}"
 MEDIAMTX_DIR="${ATLAS_MEDIAMTX_DIR:-${INSTALL_PREFIX}/mediamtx}"
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
@@ -223,10 +224,14 @@ install_mediamtx() {
     return
   fi
 
-  local archive="/tmp/mediamtx_${MEDIAMTX_VERSION}_linux_arm64v8.tar.gz"
+  local asset="mediamtx_${MEDIAMTX_VERSION}_${MEDIAMTX_ASSET_ARCH}.tar.gz"
+  local archive="/tmp/${asset}"
+  local download_url="https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/${asset}"
   run sudo mkdir -p "$MEDIAMTX_DIR"
   run sudo chown "$USER":"$USER" "$MEDIAMTX_DIR"
-  run curl -L "https://github.com/bluenviron/mediamtx/releases/download/${MEDIAMTX_VERSION}/mediamtx_${MEDIAMTX_VERSION#v}_linux_arm64v8.tar.gz" -o "$archive"
+  run rm -f "$archive"
+  run curl -fL "$download_url" -o "$archive"
+  run_shell "tar -tzf '${archive}' >/dev/null"
   run tar -xzf "$archive" -C "$MEDIAMTX_DIR"
 }
 
