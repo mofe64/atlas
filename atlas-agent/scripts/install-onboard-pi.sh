@@ -45,6 +45,7 @@ APT_PACKAGES=(
   gstreamer1.0-plugins-bad
   gstreamer1.0-plugins-ugly
   gstreamer1.0-libav
+  gstreamer1.0-rtsp
   libgstreamer1.0-0
   libgstreamer-plugins-base1.0-0
   netcat-openbsd
@@ -184,6 +185,59 @@ install_apt_packages() {
   log "installing apt packages"
   run sudo apt-get update
   run sudo apt-get install -y "${APT_PACKAGES[@]}"
+}
+
+verify_gstreamer_elements() {
+  log "verifying GStreamer video elements"
+  local required_elements=(
+    rtspsrc
+    rtspclientsink
+    rtph264depay
+    h264parse
+    avdec_h264
+    videoconvert
+    videoscale
+    x264enc
+  )
+
+  if [[ "$A8_RTP_CODEC" == "h265" ]]; then
+    required_elements+=(
+      rtph265depay
+      h265parse
+      avdec_h265
+    )
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    for element in "${required_elements[@]}"; do
+      printf '+ gst-inspect-1.0 %s\n' "$element"
+    done
+    return
+  fi
+
+  local missing_elements=()
+  for element in "${required_elements[@]}"; do
+    if ! gst-inspect-1.0 "$element" >/dev/null 2>&1; then
+      missing_elements+=("$element")
+    fi
+  done
+
+  if [[ "${#missing_elements[@]}" -gt 0 ]]; then
+    fail "missing required GStreamer elements: ${missing_elements[*]}"
+  fi
+
+  if [[ "$VIDEO_PIPELINE_MODE" == "hailo" ]]; then
+    local missing_hailo_elements=()
+    for element in hailonet hailooverlay; do
+      if ! gst-inspect-1.0 "$element" >/dev/null 2>&1; then
+        missing_hailo_elements+=("$element")
+      fi
+    done
+    if [[ "${#missing_hailo_elements[@]}" -gt 0 ]]; then
+      log "warning: missing Hailo GStreamer elements: ${missing_hailo_elements[*]}"
+      log "         use --video-pipeline-mode passthrough until Hailo runtime packages are installed"
+    fi
+  fi
 }
 
 install_hailo_packages() {
@@ -574,6 +628,7 @@ done
 validate_video_config
 detect_platform
 install_apt_packages
+verify_gstreamer_elements
 install_mavlink_router
 install_hailo_packages
 verify_hailo

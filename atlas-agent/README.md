@@ -89,6 +89,8 @@ Onboard perception MVP:
 - Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
   UI video before Hailo runtime/model setup is complete. Use `hailo` for the
   inference pipeline.
+- The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
+  by Ubuntu's `gstreamer1.0-rtsp` package.
 - Runtime health and compact detections are written as JSONL to `ATLAS_PERCEPTION_METADATA_PATH`.
 - `atlas-agent` tails that JSONL file and forwards `PerceptionEvent` and `PerceptionHealth` on the existing vehicle-agent gRPC stream.
 
