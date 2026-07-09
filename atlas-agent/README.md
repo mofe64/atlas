@@ -84,6 +84,11 @@ Onboard perception MVP:
 - The raw A8 input defaults to `rtsp://192.168.144.25:8554/main.264`.
 - The processed MediaMTX output defaults to `rtsp://127.0.0.1:8554/atlas`.
 - The ground machine should read `rtsp://192.168.144.168:8554/atlas`.
+- The video agent infers H.264/H.265 from `ATLAS_A8_RTP_CODEC=auto`; override
+  with `ATLAS_A8_RTP_CODEC=h264` or `h265` if the camera URL is ambiguous.
+- Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
+  UI video before Hailo runtime/model setup is complete. Use `hailo` for the
+  inference pipeline.
 - Runtime health and compact detections are written as JSONL to `ATLAS_PERCEPTION_METADATA_PATH`.
 - `atlas-agent` tails that JSONL file and forwards `PerceptionEvent` and `PerceptionHealth` on the existing vehicle-agent gRPC stream.
 
@@ -99,6 +104,7 @@ Raspberry Pi one-run setup:
 ```sh
 scripts/install-onboard-pi.sh --dry-run --ground-grpc 192.168.144.50:9090
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --configure-eth0
+scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode passthrough
 scripts/start-onboard-stack.sh
 scripts/status-onboard-stack.sh
 ```

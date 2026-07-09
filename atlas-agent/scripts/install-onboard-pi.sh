@@ -21,6 +21,8 @@ MAVSDK_SERVER_VERSION="${ATLAS_MAVSDK_SERVER_VERSION:-v3.17.1}"
 MAVSDK_SERVER_ASSET="${ATLAS_MAVSDK_SERVER_ASSET:-mavsdk_server_linux-arm64-musl}"
 MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_server}"
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
+VIDEO_PIPELINE_MODE="${ATLAS_VIDEO_PIPELINE_MODE:-hailo}"
+A8_RTP_CODEC="${ATLAS_A8_RTP_CODEC:-auto}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
@@ -75,6 +77,9 @@ Options:
   --install-prefix PATH     Install prefix. Default: ${INSTALL_PREFIX}
   --env-file PATH           Env file path. Default: ${ENV_FILE}
   --mavsdk-version VERSION  MAVSDK server release tag. Default: ${MAVSDK_SERVER_VERSION}
+  --video-pipeline-mode MODE
+                            Video pipeline mode: hailo or passthrough. Default: ${VIDEO_PIPELINE_MODE}
+  --a8-rtp-codec CODEC      A8 RTSP RTP codec: auto, h264, or h265. Default: ${A8_RTP_CODEC}
   --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
   --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
@@ -97,6 +102,24 @@ require_value() {
   if [[ -z "$value" || "$value" == --* ]]; then
     fail "${option} requires a value"
   fi
+}
+
+validate_video_config() {
+  case "$VIDEO_PIPELINE_MODE" in
+    hailo|passthrough)
+      ;;
+    *)
+      fail "--video-pipeline-mode must be one of: hailo, passthrough"
+      ;;
+  esac
+
+  case "$A8_RTP_CODEC" in
+    auto|h264|h265)
+      ;;
+    *)
+      fail "--a8-rtp-codec must be one of: auto, h264, h265"
+      ;;
+  esac
 }
 
 run() {
@@ -292,6 +315,8 @@ ATLAS_A8_RTSP_URL="rtsp://192.168.144.25:8554/main.264"
 ATLAS_PROCESSED_RTSP_URL="rtsp://127.0.0.1:8554/atlas"
 ATLAS_PERCEPTION_MODEL_PATH="${MODEL_PATH}"
 ATLAS_PERCEPTION_ACCELERATOR="hailo"
+ATLAS_VIDEO_PIPELINE_MODE="${VIDEO_PIPELINE_MODE}"
+ATLAS_A8_RTP_CODEC="${A8_RTP_CODEC}"
 ATLAS_PERCEPTION_SOURCE_ID="a8-main"
 ATLAS_PERCEPTION_METADATA_PATH="${HOME}/.local/state/atlas-agent/perception/metadata.jsonl"
 ATLAS_COMPANION_LOG_DIR="${LOG_DIR}"
@@ -511,6 +536,16 @@ while [[ $# -gt 0 ]]; do
       MAVSDK_SERVER_VERSION="$2"
       shift 2
       ;;
+    --video-pipeline-mode)
+      require_value "$1" "${2:-}"
+      VIDEO_PIPELINE_MODE="$2"
+      shift 2
+      ;;
+    --a8-rtp-codec)
+      require_value "$1" "${2:-}"
+      A8_RTP_CODEC="$2"
+      shift 2
+      ;;
     --mavlink-device)
       require_value "$1" "${2:-}"
       MAVLINK_ROUTER_UART_DEVICE="$2"
@@ -536,6 +571,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+validate_video_config
 detect_platform
 install_apt_packages
 install_mavlink_router

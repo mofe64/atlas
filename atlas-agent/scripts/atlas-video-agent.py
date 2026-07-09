@@ -97,6 +97,38 @@ def normalize_detection_event(raw: dict[str, Any]) -> dict[str, Any]:
     return payload
 
 
+def input_codec_for_url(input_url: str) -> str:
+    configured = env("ATLAS_A8_RTP_CODEC", "auto").lower()
+    if configured in {"h264", "h265"}:
+        return configured
+    if configured not in {"", "auto"}:
+        raise SystemExit("ATLAS_A8_RTP_CODEC must be one of: auto, h264, h265")
+
+    lower_url = input_url.split("?", 1)[0].lower()
+    if lower_url.endswith(".265") or "h265" in lower_url or "hevc" in lower_url:
+        return "h265"
+    return "h264"
+
+
+def input_decode_stages(codec: str) -> list[str]:
+    if codec == "h265":
+        return [
+            "rtph265depay",
+            "!",
+            "h265parse",
+            "!",
+            "avdec_h265",
+        ]
+
+    return [
+        "rtph264depay",
+        "!",
+        "h264parse",
+        "!",
+        "avdec_h264",
+    ]
+
+
 def detection_copy_loop(input_path: Path, output_path: Path, state: HealthState, stop: threading.Event) -> None:
     while not stop.is_set() and not input_path.exists():
         stop.wait(1)
@@ -127,13 +159,17 @@ def build_default_pipeline() -> list[str]:
     model_path = env("ATLAS_PERCEPTION_MODEL_PATH")
     postprocess_so = env("ATLAS_PERCEPTION_POSTPROCESS_SO")
     postprocess_function = env("ATLAS_PERCEPTION_POSTPROCESS_FUNCTION", "yolov6n")
+    pipeline_mode = env("ATLAS_VIDEO_PIPELINE_MODE", "hailo").lower()
     bitrate = env("ATLAS_VIDEO_BITRATE_KBPS", "2500")
     width = env("ATLAS_PERCEPTION_WIDTH", "640")
     height = env("ATLAS_PERCEPTION_HEIGHT", "640")
 
-    if not model_path:
+    if pipeline_mode not in {"hailo", "passthrough"}:
+        raise SystemExit("ATLAS_VIDEO_PIPELINE_MODE must be one of: hailo, passthrough")
+    if pipeline_mode == "hailo" and not model_path:
         raise SystemExit("ATLAS_PERCEPTION_MODEL_PATH is required for the Hailo pipeline")
 
+    codec = input_codec_for_url(input_url)
     pipeline = [
         "gst-launch-1.0",
         "-e",
@@ -142,34 +178,37 @@ def build_default_pipeline() -> list[str]:
         "protocols=tcp",
         "latency=100",
         "!",
-        "rtph265depay",
-        "!",
-        "h265parse",
-        "!",
-        "avdec_h265",
+        *input_decode_stages(codec),
         "!",
         "videoconvert",
         "!",
         "videoscale",
         "!",
         f"video/x-raw,format=RGB,width={width},height={height}",
-        "!",
-        "hailonet",
-        f"hef-path={model_path}",
     ]
 
-    if postprocess_so:
+    if pipeline_mode == "hailo":
         pipeline += [
             "!",
-            "hailofilter",
-            f"so-path={postprocess_so}",
-            f"function-name={postprocess_function}",
-            "qos=false",
+            "hailonet",
+            f"hef-path={model_path}",
+        ]
+
+        if postprocess_so:
+            pipeline += [
+                "!",
+                "hailofilter",
+                f"so-path={postprocess_so}",
+                f"function-name={postprocess_function}",
+                "qos=false",
+            ]
+
+        pipeline += [
+            "!",
+            "hailooverlay",
         ]
 
     pipeline += [
-        "!",
-        "hailooverlay",
         "!",
         "videoconvert",
         "!",

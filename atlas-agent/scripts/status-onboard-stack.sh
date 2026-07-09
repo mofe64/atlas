@@ -49,6 +49,21 @@ command -v mavsdk_server || true
 printf '\n[atlas-onboard-status] rtsp port\n'
 ss -lntp | grep ':8554' || true
 
+printf '\n[atlas-onboard-status] local atlas rtsp stream\n'
+if command -v ffprobe >/dev/null 2>&1; then
+  timeout 8s ffprobe -rtsp_transport tcp \
+    -v error \
+    -select_streams v:0 \
+    -show_entries stream=codec_name,width,height \
+    -of default=noprint_wrappers=1 \
+    rtsp://127.0.0.1:8554/atlas || true
+else
+  printf 'ffprobe not found\n'
+fi
+
+printf '\n[atlas-onboard-status] video agent log tail\n'
+tail -n 80 "${HOME}/.local/state/atlas-agent/logs/atlas-video-agent.log" 2>/dev/null || true
+
 printf '\n[atlas-onboard-status] hailo\n'
 if command -v hailortcli >/dev/null 2>&1; then
   hailortcli fw-control identify || true
