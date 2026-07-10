@@ -96,9 +96,12 @@ Onboard perception MVP:
   AI HAT+ 2 (`hailo-h10-all`).
 - On Ubuntu, the installer does not add Raspberry Pi OS repositories. If
   `--hailo-apt-packages` is provided, it installs those Ubuntu/Hailo apt package
-  names. Otherwise, Ubuntu defaults to local `.deb` installation from
-  `~/hailo-debs`; the installer creates that directory automatically. Use
-  `--hailo-deb-dir /path/to/hailo-debs` only to override the default directory.
+  names. Otherwise, Ubuntu defaults to downloading the public Raspberry Pi Hailo
+  `.deb` package set into `~/hailo-debs`, then installing those local files. Use
+  `--hailo-rpi-suite bookworm` if the default `trixie` packages do not install
+  cleanly on the Ubuntu image. Use `--hailo-deb-source none` and
+  `--hailo-deb-dir /path/to/hailo-debs` only when using an internal mirror or
+  predownloaded package set.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival
@@ -163,8 +166,8 @@ scripts/install-onboard-pi.sh \
 
 Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
 by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
-contain a complete matching Hailo package set for the driver, runtime, Python
-bindings, and TAPPAS/GStreamer plugins. Verify with:
+be writable; the installer downloads a matching Hailo package set there. Verify
+with:
 
 ```sh
 hailortcli fw-control identify

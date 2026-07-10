@@ -28,6 +28,10 @@ HAILO_INSTALL_MODE="${ATLAS_HAILO_INSTALL_MODE:-auto}"
 HAILO_APT_PACKAGES="${ATLAS_HAILO_APT_PACKAGES:-}"
 HAILO_DEB_DIR="${ATLAS_HAILO_DEB_DIR:-}"
 DEFAULT_HAILO_DEB_DIR="${ATLAS_DEFAULT_HAILO_DEB_DIR:-${HOME}/hailo-debs}"
+HAILO_DEB_SOURCE="${ATLAS_HAILO_DEB_SOURCE:-raspberrypi}"
+HAILO_RPI_ARCHIVE_BASE_URL="${ATLAS_HAILO_RPI_ARCHIVE_BASE_URL:-https://archive.raspberrypi.com/debian}"
+HAILO_RPI_SUITE="${ATLAS_HAILO_RPI_SUITE:-trixie}"
+HAILO_RPI_ARCH="${ATLAS_HAILO_RPI_ARCH:-arm64}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
@@ -98,6 +102,9 @@ Options:
                             Default: auto-detect package names from the OS.
   --hailo-deb-dir PATH     Override local Ubuntu-compatible Hailo .deb package directory.
                             Ubuntu default when --hailo-apt-packages is not set: ${DEFAULT_HAILO_DEB_DIR}
+  --hailo-deb-source SRC   Source used to populate --hailo-deb-dir on Ubuntu: raspberrypi or none.
+                            Default: ${HAILO_DEB_SOURCE}
+  --hailo-rpi-suite SUITE  Raspberry Pi archive suite for Hailo deb downloads. Default: ${HAILO_RPI_SUITE}
   --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
   --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
@@ -152,6 +159,14 @@ validate_video_config() {
       ;;
     *)
       fail "--hailo-install must be one of: auto, always, never"
+      ;;
+  esac
+
+  case "$HAILO_DEB_SOURCE" in
+    raspberrypi|none)
+      ;;
+    *)
+      fail "--hailo-deb-source must be one of: raspberrypi, none"
       ;;
   esac
 
@@ -397,6 +412,10 @@ install_hailo_deb_packages() {
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     printf '+ mkdir -p %q\n' "$HAILO_DEB_DIR"
+    if [[ "$HAILO_DEB_SOURCE" == "raspberrypi" ]]; then
+      printf '+ curl -fsSL %q/dists/%q/main/binary-%q/Packages.gz | gzip -dc > /tmp/atlas-hailo-packages\n' "$HAILO_RPI_ARCHIVE_BASE_URL" "$HAILO_RPI_SUITE" "$HAILO_RPI_ARCH"
+      printf '+ curl -fL %q/... -o %q/...\n' "$HAILO_RPI_ARCHIVE_BASE_URL" "$HAILO_DEB_DIR"
+    fi
     printf '+ sudo apt-get install -y dkms\n'
     printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
     printf '+ sudo ldconfig\n'
@@ -406,17 +425,107 @@ install_hailo_deb_packages() {
   run mkdir -p "$HAILO_DEB_DIR"
 
   local deb_packages=()
-  while IFS= read -r -d '' deb_package; do
-    deb_packages+=("$deb_package")
-  done < <(find "$HAILO_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
+  if [[ "$HAILO_DEB_SOURCE" == "raspberrypi" ]]; then
+    download_hailo_raspberrypi_debs deb_packages
+  fi
 
   if [[ "${#deb_packages[@]}" -eq 0 ]]; then
-    fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Copy the matching Ubuntu arm64 Hailo package set there, then rerun. Required package family: Hailo driver, HailoRT, python3-hailort, and Hailo TAPPAS/GStreamer plugins"
+    while IFS= read -r -d '' deb_package; do
+      deb_packages+=("$deb_package")
+    done < <(find "$HAILO_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
+  fi
+
+  if [[ "${#deb_packages[@]}" -eq 0 ]]; then
+    fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Required package family: Hailo driver, HailoRT, python3-hailort, and Hailo TAPPAS/GStreamer plugins"
   fi
 
   run sudo apt-get install -y dkms
   run sudo apt-get install -y "${deb_packages[@]}"
   run sudo ldconfig
+}
+
+download_hailo_raspberrypi_debs() {
+  local -n output_packages="$1"
+  local packages_index="/tmp/atlas-hailo-${HAILO_RPI_SUITE}-${HAILO_RPI_ARCH}-Packages"
+  local packages_url="${HAILO_RPI_ARCHIVE_BASE_URL}/dists/${HAILO_RPI_SUITE}/main/binary-${HAILO_RPI_ARCH}/Packages.gz"
+  local package_names=()
+
+  case "$HAILO_RPI_SUITE" in
+    trixie|forky)
+      case "$HAILO_HARDWARE" in
+        ai-kit|ai-hat-plus)
+          package_names=(hailo-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
+          ;;
+        ai-hat-plus-2)
+          package_names=(hailo-h10-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
+          ;;
+      esac
+      ;;
+    bookworm|bullseye)
+      case "$HAILO_HARDWARE" in
+        ai-kit|ai-hat-plus)
+          package_names=(hailo-all hailo-dkms hailofw hailort python3-hailort hailo-tappas-core)
+          ;;
+        ai-hat-plus-2)
+          package_names=(hailo-h10-all hailo-dkms hailofw hailort python3-hailort hailo-tappas-core)
+          ;;
+      esac
+      ;;
+    *)
+      fail "unsupported Raspberry Pi Hailo package suite: ${HAILO_RPI_SUITE}"
+      ;;
+  esac
+
+  log "downloading Hailo package index from ${packages_url}"
+  run_shell "curl -fsSL '${packages_url}' | gzip -dc > '${packages_index}'"
+
+  local package_name
+  for package_name in "${package_names[@]}"; do
+    local package_record
+    package_record="$(latest_deb_record_from_index "$packages_index" "$package_name")"
+    if [[ -z "$package_record" ]]; then
+      fail "package ${package_name} was not found in ${packages_url}"
+    fi
+
+    local version="${package_record%%	*}"
+    local filename="${package_record#*	}"
+    local deb_url="${HAILO_RPI_ARCHIVE_BASE_URL}/${filename}"
+    local deb_path="${HAILO_DEB_DIR}/$(basename "$filename")"
+
+    if [[ -f "$deb_path" ]]; then
+      log "Hailo package already downloaded: $(basename "$deb_path")"
+    else
+      log "downloading ${package_name} ${version}"
+      run curl -fL "$deb_url" -o "$deb_path"
+    fi
+    output_packages+=("$deb_path")
+  done
+}
+
+latest_deb_record_from_index() {
+  local packages_index="$1"
+  local package_name="$2"
+  local best_version=""
+  local best_filename=""
+  local version
+  local filename
+
+  while IFS=$'\t' read -r version filename; do
+    if [[ -z "$best_version" ]] || dpkg --compare-versions "$version" gt "$best_version"; then
+      best_version="$version"
+      best_filename="$filename"
+    fi
+  done < <(
+    awk -v target="$package_name" '
+      /^Package: / { pkg=$2; version=""; filename="" }
+      /^Version: / && pkg == target { version=$2 }
+      /^Filename: / && pkg == target { print version "\t" $2 }
+    ' "$packages_index"
+  )
+
+  if [[ -n "$best_version" && -n "$best_filename" ]]; then
+    printf '%s\t%s\n' "$best_version" "$best_filename"
+  fi
 }
 
 install_mavlink_router_from_source() {
@@ -796,6 +905,16 @@ while [[ $# -gt 0 ]]; do
     --hailo-deb-dir)
       require_value "$1" "${2:-}"
       HAILO_DEB_DIR="$2"
+      shift 2
+      ;;
+    --hailo-deb-source)
+      require_value "$1" "${2:-}"
+      HAILO_DEB_SOURCE="$2"
+      shift 2
+      ;;
+    --hailo-rpi-suite)
+      require_value "$1" "${2:-}"
+      HAILO_RPI_SUITE="$2"
       shift 2
       ;;
     --mavlink-device)

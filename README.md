@@ -49,10 +49,8 @@ Onboard Pi:
 - Pixhawk TELEM2 baud configured to match the installer baud, currently
   `921600` for `SER_TEL2_BAUD`.
 - A8/HM30 camera available at `rtsp://192.168.144.25:8554/main.264`.
-- Hailo AI HAT+ Ubuntu-compatible runtime packages available either from a
-  configured apt source or as local `.deb` files. The AI pipeline requires a
-  matching version set for the driver/runtime/plugins, typically
-  `hailo-dkms`, `hailort`, `python3-hailort`, and `hailo-tappas-core`.
+- Network access from the Pi to `https://archive.raspberrypi.com` so the
+  installer can download the public Hailo `.deb` packages into `~/hailo-debs`.
 
 ### Ports And Endpoints
 
@@ -114,20 +112,20 @@ Prolific adapter path from the current setup is:
 ### 3. Prepare Hailo Packages On Ubuntu
 
 Ubuntu's default apt repositories do not ship the Raspberry Pi AI HAT+ Hailo
-stack. For Ubuntu, download the matching arm64 Ubuntu `.deb` package set from
-Hailo/Raspberry Pi sources or an internal mirror, then place them in one
-directory on the Pi. The installer creates `~/hailo-debs` automatically and
-uses it as the default Ubuntu Hailo package drop directory. Raspberry Pi's AI
-software docs list the Hailo package families and version-matching requirement:
+stack. On Ubuntu, the installer automatically creates `~/hailo-debs`, downloads
+the matching Hailo package set from the public Raspberry Pi archive, then
+installs those local `.deb` files. Raspberry Pi's AI software docs list the
+Hailo package families and version-matching requirement:
 https://www.raspberrypi.com/documentation/computers/ai.html
 
 ```sh
-ls -1 ~/hailo-debs/*.deb
+mkdir -p ~/hailo-debs
 ```
 
-The directory should contain a matching set for the Hailo driver, HailoRT,
-Python bindings, and TAPPAS/GStreamer plugins. Do not mix versions. Use
-`--hailo-deb-dir /path/to/debs` only when overriding the default directory.
+The default public package suite is `trixie`. Use `--hailo-rpi-suite bookworm`
+only if the trixie packages do not install cleanly on the Ubuntu image. Use
+`--hailo-deb-source none` and `--hailo-deb-dir /path/to/debs` only when using an
+internal mirror or predownloaded package set.
 
 ### 4. Install The Onboard AI Stack On The Pi
 
@@ -214,8 +212,9 @@ connecting.
 Hailo pipeline fails with `no element "hailonet"`:
 
 - The Hailo GStreamer plugin is not installed or not visible to GStreamer.
-- Confirm `~/hailo-debs` contains a complete, matching Ubuntu arm64 Hailo
-  package set, or use `--hailo-deb-dir` to point at another package directory.
+- Confirm the installer downloaded Hailo packages into `~/hailo-debs`.
+- If trixie packages fail to install on Ubuntu, rerun with
+  `--hailo-rpi-suite bookworm`.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 
