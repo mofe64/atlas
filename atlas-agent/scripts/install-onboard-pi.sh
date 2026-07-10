@@ -428,6 +428,8 @@ install_hailo_deb_packages() {
     else
       printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
     fi
+    printf '+ chmod 0755 %q\n' "$HAILO_DEB_DIR"
+    printf '+ chmod 0644 <selected Hailo .deb files>\n'
     printf '+ sudo ldconfig\n'
     return
   fi
@@ -449,8 +451,10 @@ install_hailo_deb_packages() {
     fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Required package family: Hailo driver, firmware, HailoRT, and Hailo TAPPAS/GStreamer plugins"
   fi
 
+  run chmod 0755 "$HAILO_DEB_DIR"
+  run chmod 0644 "${deb_packages[@]}"
   install_dkms_support_packages
-  run sudo apt-get install -y "${deb_packages[@]}"
+  install_hailo_selected_debs "${deb_packages[@]}"
   run sudo ldconfig
 }
 
@@ -508,6 +512,19 @@ install_dkms_support_packages() {
   fi
 }
 
+install_hailo_selected_debs() {
+  if sudo apt-get install -y "$@"; then
+    return
+  fi
+
+  log "Hailo package install failed; collecting DKMS diagnostics"
+  run_shell "uname -a"
+  run_shell "dpkg -l 'linux-headers-*' | grep '^ii' || true"
+  run_shell "dkms status || true"
+  run_shell "find /var/lib/dkms -path '*/hailo*/build/make.log' -print -exec tail -n 160 {} \\; || true"
+  fail "Hailo package install failed. Read the DKMS make.log above; the usual causes are missing matching kernel headers or Hailo DKMS driver incompatibility with the running Ubuntu Raspberry Pi kernel."
+}
+
 download_hailo_raspberrypi_debs() {
   local -n output_packages="$1"
   local packages_index="/tmp/atlas-hailo-${HAILO_RPI_SUITE}-${HAILO_RPI_ARCH}-Packages"
@@ -546,6 +563,7 @@ download_hailo_raspberrypi_debs() {
       log "downloading ${package_name} ${version}"
       run curl -fL "$deb_url" -o "$deb_path"
     fi
+    run chmod 0644 "$deb_path"
     output_packages+=("$deb_path")
   done
 }
