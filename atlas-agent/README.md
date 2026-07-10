@@ -101,7 +101,9 @@ Onboard perception MVP:
   the default `bookworm` package suite on Ubuntu 24.04; `trixie` requires newer
   Python/OpenCV/libc packages than Ubuntu 24.04 provides. Use
   `--hailo-deb-source none` and `--hailo-deb-dir /path/to/hailo-debs` only when
-  using an internal mirror or predownloaded package set.
+  using an internal mirror or predownloaded package set. The Ubuntu package set
+  pins HailoRT below `4.19`, because `hailort` `4.19+` conflicts with the
+  Ubuntu-compatible `hailo-tappas-core` `3.29.1` package.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival

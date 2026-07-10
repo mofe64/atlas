@@ -123,6 +123,11 @@ require newer Python/OpenCV/libc packages than Ubuntu 24.04 provides. Use
 `--hailo-deb-source none` and `--hailo-deb-dir /path/to/debs` only when using an
 internal mirror or predownloaded package set.
 
+The Ubuntu path intentionally uses a pinned package subset instead of the latest
+`bookworm` HailoRT package. `hailort` `4.19+` conflicts with
+`hailo-tappas-core` `3.29.1`, while newer TAPPAS packages depend on Raspberry Pi
+OS Python/OpenCV packages that Ubuntu 24.04 does not provide.
+
 ### 4. Install The Onboard AI Stack On The Pi
 
 Run the installer in Hailo mode:
@@ -211,6 +216,9 @@ Hailo pipeline fails with `no element "hailonet"`:
 - Confirm the installer downloaded Hailo packages into `~/hailo-debs`.
 - Confirm the installer is using the default `bookworm` Hailo package suite on
   Ubuntu 24.04.
+- If apt reports `hailort : Breaks: hailo-tappas-core (< 3.30.0)`, update this
+  repo and rerun the installer so it selects the pinned Ubuntu-compatible
+  HailoRT/TAPPAS pair.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 

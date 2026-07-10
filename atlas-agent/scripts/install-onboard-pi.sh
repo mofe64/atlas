@@ -475,8 +475,8 @@ select_hailo_raspberrypi_package_specs() {
         ai-kit|ai-hat-plus)
           HAILO_RPI_PACKAGE_SPECS=(
             hailofw=4.19.0-2
-            hailo-dkms=4.19.0-1
-            hailort=4.19.0-3
+            hailo-dkms=4.18.0-2
+            hailort=4.18.0
             hailo-tappas-core=3.29.1
           )
           ;;
