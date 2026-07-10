@@ -49,9 +49,10 @@ Onboard Pi:
 - Pixhawk TELEM2 baud configured to match the installer baud, currently
   `921600` for `SER_TEL2_BAUD`.
 - A8/HM30 camera available at `rtsp://192.168.144.25:8554/main.264`.
-- Hailo AI HAT+ runtime packages available from configured Ubuntu/Hailo apt
-  sources if running `--video-pipeline-mode hailo`. Use `passthrough` until the
-  Hailo runtime provides `hailonet` and `hailooverlay`.
+- Hailo AI HAT+ Ubuntu-compatible runtime packages available either from a
+  configured apt source or as local `.deb` files. The AI pipeline requires a
+  matching version set for the driver/runtime/plugins, typically
+  `hailo-dkms`, `hailort`, `python3-hailort`, and `hailo-tappas-core`.
 
 ### Ports And Endpoints
 
@@ -110,20 +111,27 @@ Prolific adapter path from the current setup is:
 /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0
 ```
 
-### 3. Install The Onboard Stack On The Pi
+### 3. Prepare Hailo Packages On Ubuntu
 
-Use passthrough first when validating camera, MediaMTX, telemetry, and backend
-connectivity without requiring Hailo:
+Ubuntu's default apt repositories do not ship the Raspberry Pi AI HAT+ Hailo
+stack. For Ubuntu, download the matching arm64 Ubuntu `.deb` package set from
+Hailo/Raspberry Pi sources or an internal mirror, then place them in one
+directory on the Pi. The installer creates `~/hailo-debs` automatically and
+uses it as the default Ubuntu Hailo package drop directory. Raspberry Pi's AI
+software docs list the Hailo package families and version-matching requirement:
+https://www.raspberrypi.com/documentation/computers/ai.html
 
 ```sh
-atlas-agent/scripts/install-onboard-pi.sh \
-  --ground-grpc <ngrok-host:port> \
-  --video-pipeline-mode passthrough \
-  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
-  --mavlink-baud 921600
+ls -1 ~/hailo-debs/*.deb
 ```
 
-Use Hailo only after the Ubuntu Hailo runtime packages are configured:
+The directory should contain a matching set for the Hailo driver, HailoRT,
+Python bindings, and TAPPAS/GStreamer plugins. Do not mix versions. Use
+`--hailo-deb-dir /path/to/debs` only when overriding the default directory.
+
+### 4. Install The Onboard AI Stack On The Pi
+
+Run the installer in Hailo mode:
 
 ```sh
 atlas-agent/scripts/install-onboard-pi.sh \
@@ -142,7 +150,14 @@ That writes `/etc/netplan/99-siyi-eth0-local.yaml` with
 sudo netplan try
 ```
 
-### 4. Start And Verify The Pi Services
+Verify Hailo before starting the stack:
+
+```sh
+hailortcli fw-control identify
+gst-inspect-1.0 hailonet hailooverlay
+```
+
+### 5. Start And Verify The Pi Services
 
 ```sh
 atlas-agent/scripts/start-onboard-stack.sh
@@ -172,7 +187,7 @@ width=640
 height=640
 ```
 
-### 5. Verify The Ground Backend And UI
+### 6. Verify The Ground Backend And UI
 
 On the ground machine:
 
@@ -199,7 +214,8 @@ connecting.
 Hailo pipeline fails with `no element "hailonet"`:
 
 - The Hailo GStreamer plugin is not installed or not visible to GStreamer.
-- Use `--video-pipeline-mode passthrough` to validate the rest of the system.
+- Confirm `~/hailo-debs` contains a complete, matching Ubuntu arm64 Hailo
+  package set, or use `--hailo-deb-dir` to point at another package directory.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 

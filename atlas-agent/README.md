@@ -94,11 +94,11 @@ Onboard perception MVP:
 - On Raspberry Pi OS, the Hailo install defaults to the AI Kit / AI HAT+
   package family (`hailo-all`). Use `--hailo-hardware ai-hat-plus-2` for
   AI HAT+ 2 (`hailo-h10-all`).
-- On Ubuntu, the installer only installs Hailo packages already available from
-  configured Ubuntu/Hailo apt sources. It does not add Raspberry Pi OS
-  repositories to Ubuntu. Use `--hailo-apt-packages "pkg1 pkg2 ..."` when the
-  Hailo Ubuntu package names differ from Atlas' known package sets, or
-  `--hailo-install never` when the runtime is already managed outside Atlas.
+- On Ubuntu, the installer does not add Raspberry Pi OS repositories. If
+  `--hailo-apt-packages` is provided, it installs those Ubuntu/Hailo apt package
+  names. Otherwise, Ubuntu defaults to local `.deb` installation from
+  `~/hailo-debs`; the installer creates that directory automatically. Use
+  `--hailo-deb-dir /path/to/hailo-debs` only to override the default directory.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival
@@ -128,6 +128,7 @@ scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --configure-eth0
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode passthrough
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-hardware ai-kit
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-apt-packages "dkms hailo-dkms hailort hailo-tappas-core"
+scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-hardware ai-hat-plus
 scripts/start-onboard-stack.sh
 scripts/status-onboard-stack.sh
 ```
@@ -161,10 +162,14 @@ scripts/install-onboard-pi.sh \
 ```
 
 Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
-by the ground-machine backend tunnel script. On Ubuntu, the Hailo runtime
-packages must already be available from configured Ubuntu/Hailo apt sources;
-otherwise use `--video-pipeline-mode passthrough` until the Hailo runtime is
-installed.
+by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
+contain a complete matching Hailo package set for the driver, runtime, Python
+bindings, and TAPPAS/GStreamer plugins. Verify with:
+
+```sh
+hailortcli fw-control identify
+gst-inspect-1.0 hailonet hailooverlay
+```
 
 On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
 repositories. The installer handles that by building `mavlink-routerd` from the

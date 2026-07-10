@@ -26,6 +26,8 @@ A8_RTP_CODEC="${ATLAS_A8_RTP_CODEC:-auto}"
 HAILO_HARDWARE="${ATLAS_HAILO_HARDWARE:-ai-kit}"
 HAILO_INSTALL_MODE="${ATLAS_HAILO_INSTALL_MODE:-auto}"
 HAILO_APT_PACKAGES="${ATLAS_HAILO_APT_PACKAGES:-}"
+HAILO_DEB_DIR="${ATLAS_HAILO_DEB_DIR:-}"
+DEFAULT_HAILO_DEB_DIR="${ATLAS_DEFAULT_HAILO_DEB_DIR:-${HOME}/hailo-debs}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
@@ -94,6 +96,8 @@ Options:
                             auto installs only when --video-pipeline-mode=hailo. Default: ${HAILO_INSTALL_MODE}
   --hailo-apt-packages LIST Exact Hailo apt packages to install, overriding OS defaults.
                             Default: auto-detect package names from the OS.
+  --hailo-deb-dir PATH     Override local Ubuntu-compatible Hailo .deb package directory.
+                            Ubuntu default when --hailo-apt-packages is not set: ${DEFAULT_HAILO_DEB_DIR}
   --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
   --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
@@ -154,6 +158,7 @@ validate_video_config() {
   if [[ "$VIDEO_PIPELINE_MODE" == "hailo" && "$HAILO_HARDWARE" == "none" ]]; then
     fail "--video-pipeline-mode=hailo requires --hailo-hardware to be ai-kit, ai-hat-plus, or ai-hat-plus-2"
   fi
+
 }
 
 run() {
@@ -316,25 +321,18 @@ install_hailo_packages() {
     return
   fi
 
+  if [[ -n "$HAILO_DEB_DIR" ]]; then
+    install_hailo_deb_packages
+    return
+  fi
+
   local candidate_sets=()
   if [[ -n "$HAILO_APT_PACKAGES" ]]; then
     candidate_sets=("$HAILO_APT_PACKAGES")
   elif is_ubuntu; then
-    case "$HAILO_HARDWARE" in
-      ai-kit|ai-hat-plus)
-        candidate_sets=(
-          "dkms hailo-dkms hailort hailo-tappas-core"
-          "dkms hailort-pcie-driver-dkms hailort hailo-tappas-core"
-          "dkms hailort-pcie-driver hailort hailo-tappas-core"
-        )
-        ;;
-      ai-hat-plus-2)
-        candidate_sets=(
-          "dkms hailo-h10-dkms hailort hailo-tappas-core"
-          "dkms hailort-pcie-driver-dkms hailort hailo-tappas-core"
-        )
-        ;;
-    esac
+    HAILO_DEB_DIR="$DEFAULT_HAILO_DEB_DIR"
+    install_hailo_deb_packages
+    return
   elif is_raspberry_pi_os; then
     case "$HAILO_HARDWARE" in
       ai-kit|ai-hat-plus)
@@ -389,9 +387,36 @@ install_hailo_packages() {
 
   local message="no complete Hailo apt package set is available in configured apt sources"
   if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
-    fail "${message}. OS: ${OS_RELEASE_PRETTY_NAME}. Checked: ${checked_sets[*]}. Configure Hailo's Ubuntu-compatible apt source or set ATLAS_HAILO_APT_PACKAGES, then rerun; otherwise use --video-pipeline-mode passthrough"
+    fail "${message}. OS: ${OS_RELEASE_PRETTY_NAME}. Checked: ${checked_sets[*]}. Configure Hailo's Ubuntu-compatible apt source, set ATLAS_HAILO_APT_PACKAGES, or pass --hailo-deb-dir with matching Ubuntu arm64 Hailo .deb packages"
   fi
   log "warning: ${message}"
+}
+
+install_hailo_deb_packages() {
+  log "installing Hailo local .deb packages from ${HAILO_DEB_DIR}"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ mkdir -p %q\n' "$HAILO_DEB_DIR"
+    printf '+ sudo apt-get install -y dkms\n'
+    printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
+    printf '+ sudo ldconfig\n'
+    return
+  fi
+
+  run mkdir -p "$HAILO_DEB_DIR"
+
+  local deb_packages=()
+  while IFS= read -r -d '' deb_package; do
+    deb_packages+=("$deb_package")
+  done < <(find "$HAILO_DEB_DIR" -maxdepth 1 -type f -name '*.deb' -print0 | sort -z)
+
+  if [[ "${#deb_packages[@]}" -eq 0 ]]; then
+    fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Copy the matching Ubuntu arm64 Hailo package set there, then rerun. Required package family: Hailo driver, HailoRT, python3-hailort, and Hailo TAPPAS/GStreamer plugins"
+  fi
+
+  run sudo apt-get install -y dkms
+  run sudo apt-get install -y "${deb_packages[@]}"
+  run sudo ldconfig
 }
 
 install_mavlink_router_from_source() {
@@ -766,6 +791,11 @@ while [[ $# -gt 0 ]]; do
     --hailo-apt-packages)
       require_value "$1" "${2:-}"
       HAILO_APT_PACKAGES="$2"
+      shift 2
+      ;;
+    --hailo-deb-dir)
+      require_value "$1" "${2:-}"
+      HAILO_DEB_DIR="$2"
       shift 2
       ;;
     --mavlink-device)
