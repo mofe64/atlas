@@ -90,7 +90,8 @@ Onboard perception MVP:
 - Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
   UI video without requiring the Hailo runtime. Use `hailo` for the inference
   pipeline; the installer then attempts to install the matching Hailo apt
-  packages and fails if `hailonet` or `hailooverlay` are still unavailable.
+  packages and fails if `hailonet`, `hailofilter`, or `hailooverlay` are still
+  unavailable.
 - On Raspberry Pi OS, the Hailo install defaults to the AI Kit / AI HAT+
   package family (`hailo-all`). Use `--hailo-hardware ai-hat-plus-2` for
   AI HAT+ 2 (`hailo-h10-all`).
@@ -118,6 +119,10 @@ Onboard perception MVP:
   because that leg is usually a direct local camera link. If the camera/link
   accumulates latency, try `ATLAS_A8_RTSP_TRANSPORT=udp` and restart
   `atlas-video-agent`.
+- In Hailo mode the video agent requires the full detection chain:
+  `hailonet -> hailofilter -> hailooverlay`. `hailofilter` loads
+  `ATLAS_PERCEPTION_POSTPROCESS_SO` and converts YOLO tensors into boxes that
+  `hailooverlay` can draw into the RTSP stream.
 - Runtime health and compact detections are written as JSONL to `ATLAS_PERCEPTION_METADATA_PATH`.
 - `atlas-agent` tails that JSONL file and forwards `PerceptionEvent` and `PerceptionHealth` on the existing vehicle-agent gRPC stream.
 
@@ -187,7 +192,7 @@ After reconnecting, verify with:
 
 ```sh
 hailortcli fw-control identify
-gst-inspect-1.0 hailonet hailooverlay
+gst-inspect-1.0 hailonet hailofilter hailooverlay
 ```
 
 If the installer reports that Hailo verification was deferred, this is expected

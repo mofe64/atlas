@@ -27,6 +27,10 @@ from pathlib import Path
 from typing import Any
 
 
+DEFAULT_YOLO_POSTPROCESS_SO = "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"
+DEFAULT_YOLO_POSTPROCESS_FUNCTION = "filter"
+
+
 def env(key: str, default: str = "") -> str:
     return os.environ.get(key, default).strip()
 
@@ -173,8 +177,9 @@ def build_default_pipeline() -> list[str]:
     input_url = env("ATLAS_A8_RTSP_URL", "rtsp://192.168.144.25:8554/main.264")
     output_url = env("ATLAS_PROCESSED_RTSP_URL", "rtsp://127.0.0.1:8554/atlas")
     model_path = env("ATLAS_PERCEPTION_MODEL_PATH")
-    postprocess_so = env("ATLAS_PERCEPTION_POSTPROCESS_SO")
-    postprocess_function = env("ATLAS_PERCEPTION_POSTPROCESS_FUNCTION", "yolov6n")
+    postprocess_so = env("ATLAS_PERCEPTION_POSTPROCESS_SO", DEFAULT_YOLO_POSTPROCESS_SO)
+    postprocess_function = env("ATLAS_PERCEPTION_POSTPROCESS_FUNCTION", DEFAULT_YOLO_POSTPROCESS_FUNCTION)
+    postprocess_config = env("ATLAS_PERCEPTION_POSTPROCESS_CONFIG")
     pipeline_mode = env("ATLAS_VIDEO_PIPELINE_MODE", "hailo").lower()
     bitrate = env("ATLAS_VIDEO_BITRATE_KBPS", "2500")
     width = env("ATLAS_PERCEPTION_WIDTH", "640")
@@ -189,6 +194,13 @@ def build_default_pipeline() -> list[str]:
         raise SystemExit("ATLAS_PERCEPTION_MODEL_PATH is required for the Hailo pipeline")
     if pipeline_mode == "hailo" and not Path(model_path).is_file():
         raise SystemExit(f"ATLAS_PERCEPTION_MODEL_PATH does not exist: {model_path}")
+    if pipeline_mode == "hailo" and not Path(postprocess_so).is_file():
+        raise SystemExit(
+            "ATLAS_PERCEPTION_POSTPROCESS_SO does not exist: "
+            f"{postprocess_so}; Hailo YOLO boxes require the TAPPAS postprocess library"
+        )
+    if pipeline_mode == "hailo" and postprocess_config and not Path(postprocess_config).is_file():
+        raise SystemExit(f"ATLAS_PERCEPTION_POSTPROCESS_CONFIG does not exist: {postprocess_config}")
     if input_transport not in {"tcp", "udp"}:
         raise SystemExit("ATLAS_A8_RTSP_TRANSPORT must be one of: tcp, udp")
 
@@ -223,15 +235,16 @@ def build_default_pipeline() -> list[str]:
             "!",
             "hailonet",
             f"hef-path={model_path}",
+            "!",
+            "hailofilter",
+            f"so-path={postprocess_so}",
+            f"function-name={postprocess_function}",
+            "qos=false",
         ]
 
-        if postprocess_so:
+        if postprocess_config:
             pipeline += [
-                "!",
-                "hailofilter",
-                f"so-path={postprocess_so}",
-                f"function-name={postprocess_function}",
-                "qos=false",
+                f"config-path={postprocess_config}",
             ]
 
         pipeline += [

@@ -89,8 +89,9 @@ export ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp
 export ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256
 ```
 
-Use `ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only if UDP is blocked or unstable
-between the ground machine and the Pi.
+UDP is the preferred low-latency path. If RTSP control connects but no UDP RTP
+packets arrive, the backend automatically retries the Pi RTSP stream over TCP so
+the browser does not stay stuck waiting for its first decoded frame.
 
 ### 2. Identify The Pixhawk USB Serial Device
 
@@ -144,8 +145,11 @@ atlas-agent/scripts/install-onboard-pi.sh \
 In Hailo mode the installer downloads Raspberry Pi's Hailo postprocess package,
 extracts the `yolov6n_h8l.hef` model for Hailo-8L hardware, installs it at
 `/opt/atlas/models/yolov6n.hef`, and writes that path to
-`ATLAS_PERCEPTION_MODEL_PATH`. Use `--model-source /path/to/custom.hef` only when
-overriding the default model.
+`ATLAS_PERCEPTION_MODEL_PATH`. It also configures the TAPPAS YOLO postprocess
+library at `ATLAS_PERCEPTION_POSTPROCESS_SO`, so the GStreamer pipeline runs
+`hailonet -> hailofilter -> hailooverlay` and burns bounding boxes into the
+published `/atlas` RTSP stream. Use `--model-source /path/to/custom.hef` only
+when overriding the default model.
 
 If the Pi needs the local HM30/SIYI Ethernet address, add `--configure-eth0`.
 That writes `/etc/netplan/99-siyi-eth0-local.yaml` with
@@ -165,7 +169,7 @@ After reconnecting, verify Hailo before starting the stack:
 
 ```sh
 hailortcli fw-control identify
-gst-inspect-1.0 hailonet hailooverlay
+gst-inspect-1.0 hailonet hailofilter hailooverlay
 ```
 
 The reboot is required after a fresh Hailo DKMS install or recovery because the
@@ -227,7 +231,7 @@ connecting.
 
 ### Troubleshooting
 
-Hailo pipeline fails with `no element "hailonet"`:
+Hailo pipeline fails with `no element "hailonet"` or `no element "hailofilter"`:
 
 - The Hailo GStreamer plugin is not installed or not visible to GStreamer.
 - Confirm the installer downloaded Hailo packages into `~/hailo-debs`.
@@ -248,8 +252,12 @@ Hailo pipeline fails with `no element "hailonet"`:
 - If `atlas-video-agent` reports that `ATLAS_PERCEPTION_MODEL_PATH` does not
   exist, update this repo and rerun the installer. It should download and extract
   the default `yolov6n_h8l.hef` model automatically.
+- If VLC shows video but no bounding boxes, confirm
+  `ATLAS_PERCEPTION_POSTPROCESS_SO` points to a real
+  `libyolo_hailortpp_post.so` file and that the dry-run pipeline contains
+  `hailofilter ... function-name=filter` before `hailooverlay`.
 - Check `hailortcli fw-control identify` and
-  `gst-inspect-1.0 hailonet hailooverlay`.
+  `gst-inspect-1.0 hailonet hailofilter hailooverlay`.
 
 RTSP returns `404 Not Found` for `/atlas`:
 
@@ -417,8 +425,10 @@ ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp
 ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256
 ```
 
-Set `ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only if UDP is blocked or unstable
-between the ground machine and the Pi.
+If RTSP control connects but no UDP RTP packets arrive, the backend
+automatically retries the Pi RTSP stream over TCP. Set
+`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when you want to force the fallback
+path from the start.
 
 The script starts:
 

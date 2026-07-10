@@ -52,6 +52,24 @@ if [[ -n "${ATLAS_PERCEPTION_MODEL_PATH:-}" ]]; then
 else
   printf 'ATLAS_PERCEPTION_MODEL_PATH is not set\n'
 fi
+if [[ -n "${ATLAS_PERCEPTION_POSTPROCESS_SO:-}" ]]; then
+  ls -lh "$ATLAS_PERCEPTION_POSTPROCESS_SO" || true
+  printf 'ATLAS_PERCEPTION_POSTPROCESS_FUNCTION=%s\n' "${ATLAS_PERCEPTION_POSTPROCESS_FUNCTION:-}"
+  if [[ -n "${ATLAS_PERCEPTION_POSTPROCESS_CONFIG:-}" ]]; then
+    ls -lh "$ATLAS_PERCEPTION_POSTPROCESS_CONFIG" || true
+  fi
+else
+  printf 'ATLAS_PERCEPTION_POSTPROCESS_SO is not set\n'
+fi
+
+printf '\n[atlas-onboard-status] gstreamer hailo elements\n'
+for element in hailonet hailofilter hailooverlay; do
+  if gst-inspect-1.0 "$element" >/dev/null 2>&1; then
+    printf '%s: available\n' "$element"
+  else
+    printf '%s: missing\n' "$element"
+  fi
+done
 
 printf '\n[atlas-onboard-status] rtsp port\n'
 ss -lntp | grep ':8554' || true

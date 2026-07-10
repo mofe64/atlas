@@ -69,10 +69,11 @@ go run ./cmd/atlas-backend
 
 The local video relay is optimized for live operator preview. The backend pulls
 the Pi RTSP stream over UDP by default and uses a bounded RTP queue before
-writing to WebRTC. If the browser cannot keep up, old RTP packets are dropped
-instead of allowing minutes of stale video to accumulate. Use
-`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when UDP is blocked or unstable on
-the ground-machine to Pi network.
+writing to WebRTC. If RTSP control connects but no UDP RTP packets arrive, the
+backend automatically retries the Pi RTSP stream over TCP so the browser does
+not stay stuck waiting for its first decoded frame. Set
+`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when you want to force TCP from the
+start.
 
 Register a local development agent:
 

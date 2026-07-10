@@ -19,6 +19,7 @@ import (
 var (
 	ErrLocalVideoDisabled     = errors.New("local video input is disabled")
 	ErrLocalVideoInvalidOffer = errors.New("local video WebRTC offer is invalid")
+	errLocalVideoNoRTPPackets = errors.New("RTSP source produced no RTP packets")
 )
 
 const (
@@ -26,6 +27,7 @@ const (
 	defaultVideoRTSPTransport      = "udp"
 	defaultVideoRTPBufferSize      = 256
 	defaultVideoUDPReadBufferBytes = 1 << 20
+	defaultVideoFirstPacketTimeout = 5 * time.Second
 )
 
 type VideoOffer struct {
@@ -247,13 +249,28 @@ func (s *VideoService) newPeerConnection() (*webrtc.PeerConnection, error) {
 }
 
 func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.TrackLocalStaticRTP) error {
+	if s.rtspTransport == "udp" {
+		if err := s.relayRTSPToTrackWithTransport(ctx, track, "udp"); err != nil {
+			if errors.Is(err, errLocalVideoNoRTPPackets) && ctx.Err() == nil {
+				s.setState("starting", "no UDP RTP packets received; retrying RTSP over TCP")
+				return s.relayRTSPToTrackWithTransport(ctx, track, "tcp")
+			}
+			return err
+		}
+		return nil
+	}
+
+	return s.relayRTSPToTrackWithTransport(ctx, track, s.rtspTransport)
+}
+
+func (s *VideoService) relayRTSPToTrackWithTransport(ctx context.Context, track *webrtc.TrackLocalStaticRTP, transport string) error {
 	u, err := base.ParseURL(s.rtspURL)
 	if err != nil {
 		return fmt.Errorf("parse RTSP URL: %w", err)
 	}
 
 	protocol := gortsplib.ProtocolUDP
-	if s.rtspTransport == "tcp" {
+	if transport == "tcp" {
 		protocol = gortsplib.ProtocolTCP
 	}
 	client := &gortsplib.Client{
@@ -299,6 +316,8 @@ func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.Track
 
 	rtpPackets := make(chan *rtp.Packet, s.rtpBufferSize)
 	writerDone := make(chan error, 1)
+	firstPacket := make(chan struct{})
+	var firstPacketOnce sync.Once
 	go func() {
 		for pkt := range rtpPackets {
 			if err := track.WriteRTP(pkt); err != nil {
@@ -318,6 +337,10 @@ func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.Track
 		if ctx.Err() != nil {
 			return
 		}
+
+		firstPacketOnce.Do(func() {
+			close(firstPacket)
+		})
 
 		packet := cloneRTPPacket(pkt)
 		select {
@@ -347,6 +370,22 @@ func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.Track
 	writerFinished := false
 	waitFinished := false
 	select {
+	case <-firstPacket:
+		select {
+		case err := <-writerDone:
+			writerFinished = true
+			if err != nil {
+				relayErr = err
+			}
+		case err := <-waitDone:
+			waitFinished = true
+			if err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
+				relayErr = fmt.Errorf("RTSP playback stopped: %w", err)
+			}
+		case <-ctx.Done():
+		}
+	case <-time.After(defaultVideoFirstPacketTimeout):
+		relayErr = fmt.Errorf("%w using %s", errLocalVideoNoRTPPackets, transport)
 	case err := <-writerDone:
 		writerFinished = true
 		if err != nil {
@@ -354,8 +393,12 @@ func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.Track
 		}
 	case err := <-waitDone:
 		waitFinished = true
-		if err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
-			relayErr = fmt.Errorf("RTSP playback stopped: %w", err)
+		if ctx.Err() == nil {
+			if err != nil && !errors.Is(err, io.ErrClosedPipe) {
+				relayErr = fmt.Errorf("%w using %s: RTSP playback stopped before first packet: %v", errLocalVideoNoRTPPackets, transport, err)
+			} else {
+				relayErr = fmt.Errorf("%w using %s: RTSP playback stopped before first packet", errLocalVideoNoRTPPackets, transport)
+			}
 		}
 	case <-ctx.Done():
 	}

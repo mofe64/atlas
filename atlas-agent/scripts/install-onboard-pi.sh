@@ -30,6 +30,9 @@ HAILO_MODEL_CACHE_DIR="${ATLAS_HAILO_MODEL_CACHE_DIR:-${HOME}/hailo-models}"
 HAILO_MODEL_DEB_URL="${ATLAS_HAILO_MODEL_DEB_URL:-${ATLAS_HAILO_RPI_ARCHIVE_BASE_URL:-https://archive.raspberrypi.com/debian}/pool/main/r/rpicam-apps/rpicam-apps-hailo-postprocess_1.9.0-1~bpo12+1_arm64.deb}"
 HAILO_MODEL_DEB_SHA256="${ATLAS_HAILO_MODEL_DEB_SHA256:-a255a8fd7cb7237fcc9c3e067bda892b45db57c066456edd75f332ebe783711a}"
 HAILO_MODEL_DEB_MEMBER="${ATLAS_HAILO_MODEL_DEB_MEMBER:-./usr/share/hailo-models/yolov6n_h8l.hef}"
+HAILO_POSTPROCESS_SO="${ATLAS_PERCEPTION_POSTPROCESS_SO:-/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so}"
+HAILO_POSTPROCESS_FUNCTION="${ATLAS_PERCEPTION_POSTPROCESS_FUNCTION:-filter}"
+HAILO_POSTPROCESS_CONFIG="${ATLAS_PERCEPTION_POSTPROCESS_CONFIG:-}"
 VIDEO_PIPELINE_MODE="${ATLAS_VIDEO_PIPELINE_MODE:-hailo}"
 A8_RTP_CODEC="${ATLAS_A8_RTP_CODEC:-auto}"
 HAILO_HARDWARE="${ATLAS_HAILO_HARDWARE:-ai-kit}"
@@ -337,6 +340,7 @@ verify_gstreamer_elements() {
     done
     if [[ "$VIDEO_PIPELINE_MODE" == "hailo" ]]; then
       printf '+ gst-inspect-1.0 hailonet\n'
+      printf '+ gst-inspect-1.0 hailofilter\n'
       printf '+ gst-inspect-1.0 hailooverlay\n'
     fi
     return
@@ -355,7 +359,7 @@ verify_gstreamer_elements() {
 
   if [[ "$VIDEO_PIPELINE_MODE" == "hailo" ]]; then
     local missing_hailo_elements=()
-    for element in hailonet hailooverlay; do
+    for element in hailonet hailofilter hailooverlay; do
       if ! gst-inspect-1.0 "$element" >/dev/null 2>&1; then
         missing_hailo_elements+=("$element")
       fi
@@ -477,6 +481,32 @@ install_hailo_model() {
 
   verify_hailo_model_file
   log "Hailo model available: ${MODEL_PATH}"
+}
+
+verify_hailo_postprocess() {
+  if [[ "$VIDEO_PIPELINE_MODE" != "hailo" ]]; then
+    log "skipping Hailo postprocess verification because video pipeline mode is ${VIDEO_PIPELINE_MODE}"
+    return
+  fi
+
+  log "verifying Hailo YOLO postprocess"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ test -s %q\n' "$HAILO_POSTPROCESS_SO"
+    printf '+ verify %q uses function %q\n' "$HAILO_POSTPROCESS_SO" "$HAILO_POSTPROCESS_FUNCTION"
+    if [[ -n "$HAILO_POSTPROCESS_CONFIG" ]]; then
+      printf '+ test -s %q\n' "$HAILO_POSTPROCESS_CONFIG"
+    fi
+    return
+  fi
+
+  [[ -f "$HAILO_POSTPROCESS_SO" ]] || fail "Hailo YOLO postprocess library is missing: ${HAILO_POSTPROCESS_SO}"
+  [[ -s "$HAILO_POSTPROCESS_SO" ]] || fail "Hailo YOLO postprocess library is empty: ${HAILO_POSTPROCESS_SO}"
+  if [[ -n "$HAILO_POSTPROCESS_CONFIG" ]]; then
+    [[ -f "$HAILO_POSTPROCESS_CONFIG" ]] || fail "Hailo YOLO postprocess config is missing: ${HAILO_POSTPROCESS_CONFIG}"
+    [[ -s "$HAILO_POSTPROCESS_CONFIG" ]] || fail "Hailo YOLO postprocess config is empty: ${HAILO_POSTPROCESS_CONFIG}"
+  fi
+  log "Hailo YOLO postprocess available: ${HAILO_POSTPROCESS_SO} (${HAILO_POSTPROCESS_FUNCTION})"
 }
 
 install_hailo_packages() {
@@ -1077,6 +1107,9 @@ ATLAS_MAVLINK_ROUTER_UART_BAUD="${MAVLINK_ROUTER_UART_BAUD}"
 ATLAS_A8_RTSP_URL="rtsp://192.168.144.25:8554/main.264"
 ATLAS_PROCESSED_RTSP_URL="rtsp://127.0.0.1:8554/atlas"
 ATLAS_PERCEPTION_MODEL_PATH="${MODEL_PATH}"
+ATLAS_PERCEPTION_POSTPROCESS_SO="${HAILO_POSTPROCESS_SO}"
+ATLAS_PERCEPTION_POSTPROCESS_FUNCTION="${HAILO_POSTPROCESS_FUNCTION}"
+ATLAS_PERCEPTION_POSTPROCESS_CONFIG="${HAILO_POSTPROCESS_CONFIG}"
 ATLAS_PERCEPTION_ACCELERATOR="hailo"
 ATLAS_VIDEO_PIPELINE_MODE="${VIDEO_PIPELINE_MODE}"
 ATLAS_A8_RTP_CODEC="${A8_RTP_CODEC}"
@@ -1219,6 +1252,7 @@ Requires=atlas-mediamtx.service
 Type=simple
 User=${user_name}
 Group=${group_name}
+WorkingDirectory=${LOG_DIR}
 EnvironmentFile=${ENV_FILE}
 ExecStart=${INSTALL_PREFIX}/bin/atlas-video-agent.py
 Restart=always
@@ -1388,6 +1422,7 @@ install_hailo_packages
 verify_hailo
 verify_gstreamer_elements
 install_hailo_model
+verify_hailo_postprocess
 install_mavlink_router
 install_mediamtx
 build_atlas_agent
@@ -1401,7 +1436,7 @@ log "onboard install complete"
 log "env file: ${ENV_FILE}"
 if [[ "$HAILO_VERIFY_DEFERRED" -eq 1 ]]; then
   log "reboot required before Hailo runtime verification: ${HAILO_REBOOT_REASON}"
-  log "after reboot: hailortcli fw-control identify && gst-inspect-1.0 hailonet hailooverlay"
+  log "after reboot: hailortcli fw-control identify && gst-inspect-1.0 hailonet hailofilter hailooverlay"
 fi
 log "start stack: ${SCRIPT_DIR}/start-onboard-stack.sh"
 log "status: ${SCRIPT_DIR}/status-onboard-stack.sh"
