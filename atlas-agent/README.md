@@ -112,9 +112,9 @@ Onboard perception MVP:
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival
   completeness. `ATLAS_A8_RTSP_LATENCY_MS` defaults to `50`, the pipeline uses
-  leaky one-buffer queues between receive/decode/inference/encode stages, and
-  `ATLAS_VIDEO_KEY_INT_MAX` defaults to `15` so a dropped H.264 frame recovers
-  quickly at the next keyframe.
+  leaky one-buffer queues after decode so only raw frames are dropped under
+  load. Compressed RTP/H.264 packets are not intentionally dropped before the
+  decoder because that can corrupt the picture until the next keyframe.
 - `ATLAS_A8_RTSP_TRANSPORT` defaults to `tcp` between the A8 camera and the Pi
   because that leg is usually a direct local camera link. If the camera/link
   accumulates latency, try `ATLAS_A8_RTSP_TRANSPORT=udp` and restart

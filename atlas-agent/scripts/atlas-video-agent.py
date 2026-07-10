@@ -215,8 +215,6 @@ def build_default_pipeline() -> list[str]:
         "drop-on-latency=true",
         "do-retransmission=false",
         "!",
-        *leaky_queue("atlas_src_drop"),
-        "!",
         *input_decode_stages(codec),
         "!",
         *leaky_queue("atlas_decode_drop"),
