@@ -171,13 +171,25 @@ scripts/install-onboard-pi.sh \
 
 Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
 by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
-be writable; the installer downloads a matching Hailo package set there. Verify
-with:
+be writable; the installer downloads a matching Hailo package set there.
+
+After a fresh Hailo install or recovery, reboot once:
+
+```sh
+sudo reboot
+```
+
+After reconnecting, verify with:
 
 ```sh
 hailortcli fw-control identify
 gst-inspect-1.0 hailonet hailooverlay
 ```
+
+If the installer reports that Hailo verification was deferred, this is expected
+after it has just recovered or installed `hailo-dkms`. Let the installer finish,
+reboot the Pi, then run `scripts/status-onboard-stack.sh` to confirm that the
+Hailo PCIe module is loaded and HailoRT can identify the device.
 
 On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
 repositories. The installer handles that by building `mavlink-routerd` from the

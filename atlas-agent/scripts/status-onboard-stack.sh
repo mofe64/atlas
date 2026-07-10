@@ -65,8 +65,15 @@ printf '\n[atlas-onboard-status] video agent log tail\n'
 tail -n 80 "${HOME}/.local/state/atlas-agent/logs/atlas-video-agent.log" 2>/dev/null || true
 
 printf '\n[atlas-onboard-status] hailo\n'
+if command -v modprobe >/dev/null 2>&1; then
+  sudo modprobe hailo_pci || true
+fi
+lsmod | grep -E '(^hailo|hailo_pci)' || true
+modinfo hailo_pci 2>/dev/null | sed -n '1,80p' || true
+find /sys/class -maxdepth 2 -iname '*hailo*' -print || true
+if command -v lspci >/dev/null 2>&1; then
+  lspci -nn | grep -i -E 'hailo|1e60' || true
+fi
 if command -v hailortcli >/dev/null 2>&1; then
   hailortcli fw-control identify || true
-else
-  lspci | grep -i hailo || true
 fi

@@ -33,6 +33,9 @@ HAILO_RPI_ARCHIVE_BASE_URL="${ATLAS_HAILO_RPI_ARCHIVE_BASE_URL:-https://archive.
 HAILO_RPI_SUITE="${ATLAS_HAILO_RPI_SUITE:-bookworm}"
 HAILO_RPI_ARCH="${ATLAS_HAILO_RPI_ARCH:-arm64}"
 HAILO_RPI_PACKAGE_SPECS=()
+HAILO_REBOOT_REQUIRED=0
+HAILO_VERIFY_DEFERRED=0
+HAILO_REBOOT_REASON=""
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
@@ -63,6 +66,7 @@ APT_PACKAGES=(
   libgstreamer1.0-0
   libgstreamer-plugins-base1.0-0
   netcat-openbsd
+  pciutils
   golang-go
 )
 
@@ -290,6 +294,7 @@ recover_hailo_dpkg_state() {
       collect_hailo_dkms_diagnostics
       fail "hailo-dkms is still not configured after applying the Ubuntu kernel build patch"
     fi
+    mark_hailo_reboot_required "hailo-dkms was configured during this installer run"
   fi
 }
 
@@ -426,6 +431,9 @@ install_hailo_packages() {
       if apt-cache show python3-hailort >/dev/null 2>&1; then
         run sudo apt-get install -y python3-hailort
       fi
+      if hailo_driver_module_newer_than_boot; then
+        mark_hailo_reboot_required "the Hailo PCIe kernel module was installed during this boot"
+      fi
       return
     fi
   done
@@ -545,12 +553,20 @@ install_dkms_support_packages() {
 
 install_hailo_selected_debs() {
   if sudo apt-get install -y "$@"; then
+    if hailo_driver_module_newer_than_boot; then
+      mark_hailo_reboot_required "the Hailo PCIe kernel module was installed during this boot"
+    fi
     return
   fi
 
   log "Hailo package install failed; patching any unpacked DKMS source and retrying package configuration"
   patch_installed_hailo_dkms_sources
   if sudo dpkg --configure -a && sudo apt-get install -y "$@"; then
+    if hailo_driver_module_newer_than_boot; then
+      mark_hailo_reboot_required "the Hailo PCIe kernel module was installed during this boot"
+    else
+      mark_hailo_reboot_required "Hailo packages were configured during this installer run"
+    fi
     return
   fi
 
@@ -564,6 +580,65 @@ collect_hailo_dkms_diagnostics() {
   run_shell "dpkg -l 'linux-headers-*' | grep '^ii' || true"
   run_shell "dkms status || true"
   run_shell "find /var/lib/dkms -path '*/hailo*/build/make.log' -print -exec tail -n 160 {} \\; || true"
+}
+
+hailo_runtime_required() {
+  [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]
+}
+
+mark_hailo_reboot_required() {
+  HAILO_REBOOT_REQUIRED=1
+  if [[ -n "${1:-}" ]]; then
+    HAILO_REBOOT_REASON="$1"
+  fi
+}
+
+hailo_driver_module_path() {
+  local module_path=""
+  module_path="$(modinfo -n hailo_pci 2>/dev/null || true)"
+  if [[ -n "$module_path" && "$module_path" != "(builtin)" ]]; then
+    printf '%s\n' "$module_path"
+    return
+  fi
+
+  find "/lib/modules/$(uname -r)" -type f \( -name 'hailo_pci.ko' -o -name 'hailo_pci.ko.*' \) -print -quit 2>/dev/null || true
+}
+
+hailo_driver_module_newer_than_boot() {
+  [[ -e /proc/1 ]] || return 1
+
+  local module_path
+  module_path="$(hailo_driver_module_path)"
+  [[ -n "$module_path" && -e "$module_path" ]] || return 1
+  [[ "$module_path" -nt /proc/1 ]]
+}
+
+load_hailo_driver_module() {
+  if lsmod | awk '{print $1}' | grep -qx 'hailo_pci'; then
+    return 0
+  fi
+
+  if ! command -v modprobe >/dev/null 2>&1; then
+    log "warning: modprobe not found; cannot load hailo_pci before verification"
+    return 1
+  fi
+
+  log "loading Hailo PCIe kernel module"
+  if sudo modprobe hailo_pci; then
+    return 0
+  fi
+
+  log "warning: sudo modprobe hailo_pci failed; continuing to HailoRT diagnostics"
+  return 1
+}
+
+collect_hailo_runtime_diagnostics() {
+  log "collecting Hailo runtime diagnostics"
+  run_shell "lsmod | grep -E '(^hailo|hailo_pci)' || true"
+  run_shell "modinfo hailo_pci 2>/dev/null | sed -n '1,80p' || true"
+  run_shell "find /sys/class -maxdepth 2 -iname '*hailo*' -print || true"
+  run_shell "command -v lspci >/dev/null 2>&1 && lspci -nn | grep -i -E 'hailo|1e60' || true"
+  run_shell "dmesg | grep -i -E 'hailo|pcie|pci' | tail -n 120 || true"
 }
 
 prepare_hailo_dkms_deb_packages() {
@@ -769,24 +844,47 @@ verify_hailo() {
 
   log "verifying Hailo device visibility"
   if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ sudo modprobe hailo_pci || true\n'
     printf '+ hailortcli fw-control identify\n'
+    printf '+ lsmod | grep -E %q || true\n' '(^hailo|hailo_pci)'
+    printf '+ modinfo hailo_pci || true\n'
+    printf '+ find /sys/class -maxdepth 2 -iname %q -print || true\n' '*hailo*'
+    printf '+ lspci -nn | grep -i -E %q || true\n' 'hailo|1e60'
     printf '+ dmesg | grep -i hailo || true\n'
     return
   fi
 
-  if command -v hailortcli >/dev/null 2>&1; then
-    if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
-      run hailortcli fw-control identify
-    else
-      run_shell "hailortcli fw-control identify || true"
+  if ! command -v hailortcli >/dev/null 2>&1; then
+    run_shell "command -v lspci >/dev/null 2>&1 && lspci -nn | grep -i -E 'hailo|1e60' || true"
+    if hailo_runtime_required; then
+      fail "hailortcli not found; Hailo runtime is required for --video-pipeline-mode=hailo"
     fi
+    log "warning: hailortcli not found; Hailo runtime may still need setup"
     return
   fi
-  run_shell "lspci | grep -i hailo || true"
-  if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
-    fail "hailortcli not found; Hailo runtime is required for --video-pipeline-mode=hailo"
+
+  load_hailo_driver_module || true
+
+  if hailortcli fw-control identify; then
+    return
   fi
-  log "warning: hailortcli not found; Hailo runtime may still need setup"
+
+  collect_hailo_runtime_diagnostics
+
+  if ! hailo_runtime_required; then
+    log "warning: HailoRT could not identify the device; continuing because Hailo is not required for this install mode"
+    return
+  fi
+
+  if [[ "$HAILO_REBOOT_REQUIRED" -eq 1 ]] || hailo_driver_module_newer_than_boot; then
+    mark_hailo_reboot_required "${HAILO_REBOOT_REASON:-the Hailo PCIe kernel module was installed during this boot}"
+    HAILO_VERIFY_DEFERRED=1
+    log "Hailo runtime verification is deferred until after reboot: ${HAILO_REBOOT_REASON}"
+    log "continuing Atlas install; reboot the Pi before starting the Hailo video stack"
+    return
+  fi
+
+  fail "HailoRT could not identify the Hailo PCIe device. Confirm the AI HAT+ is seated and powered, reboot the Pi, then rerun this installer or ${SCRIPT_DIR}/status-onboard-stack.sh."
 }
 
 install_mediamtx() {
@@ -1163,5 +1261,9 @@ write_systemd_units
 
 log "onboard install complete"
 log "env file: ${ENV_FILE}"
+if [[ "$HAILO_VERIFY_DEFERRED" -eq 1 ]]; then
+  log "reboot required before Hailo runtime verification: ${HAILO_REBOOT_REASON}"
+  log "after reboot: hailortcli fw-control identify && gst-inspect-1.0 hailonet hailooverlay"
+fi
 log "start stack: ${SCRIPT_DIR}/start-onboard-stack.sh"
 log "status: ${SCRIPT_DIR}/status-onboard-stack.sh"

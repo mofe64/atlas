@@ -149,12 +149,23 @@ That writes `/etc/netplan/99-siyi-eth0-local.yaml` with
 sudo netplan try
 ```
 
-Verify Hailo before starting the stack:
+After a fresh Hailo install or recovery, reboot once:
+
+```sh
+sudo reboot
+```
+
+After reconnecting, verify Hailo before starting the stack:
 
 ```sh
 hailortcli fw-control identify
 gst-inspect-1.0 hailonet hailooverlay
 ```
+
+The reboot is required after a fresh Hailo DKMS install or recovery because the
+kernel driver must be loaded and bound before HailoRT can see the PCIe device.
+If the installer reports that Hailo verification was deferred, let the installer
+finish, reboot the Pi, then run the status script before starting the stack.
 
 ### 5. Start And Verify The Pi Services
 
@@ -223,6 +234,11 @@ Hailo pipeline fails with `no element "hailonet"`:
   `no previous prototype for 'hailo_pcie_is_device_ready_for_boot'`, update this
   repo and rerun the installer. The Ubuntu path patches the Hailo DKMS source
   before rebuilding it against the Raspberry Pi `6.8.*-raspi` kernel.
+- If `hailortcli fw-control identify` fails with
+  `HAILO_PCIE_DRIVER_NOT_INSTALLED` immediately after the installer configured
+  `hailo-dkms`, reboot the Pi and rerun `atlas-agent/scripts/status-onboard-stack.sh`.
+  A just-built DKMS module can exist on disk before it is loaded and bound to the
+  PCIe device.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 
