@@ -135,6 +135,19 @@ scripts/atlas-video-agent.py --dry-run
 
 Raspberry Pi one-run setup:
 
+From the repo root, run the current hardware quick start:
+
+```sh
+atlas-agent/scripts/install-onboard-pi.sh \
+  --ground-grpc 0.tcp.eu.ngrok.io:24863 \
+  --video-pipeline-mode hailo \
+  --hailo-hardware ai-hat-plus \
+  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
+  --mavlink-baud 921600
+```
+
+Additional installer examples from the `atlas-agent/` directory:
+
 ```sh
 scripts/install-onboard-pi.sh --dry-run --ground-grpc 192.168.144.50:9090
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --configure-eth0
@@ -167,14 +180,14 @@ adapter:
 
 ```sh
 scripts/install-onboard-pi.sh \
-  --ground-grpc 0.tcp.eu.ngrok.io:14289 \
+  --ground-grpc 0.tcp.eu.ngrok.io:24863 \
   --video-pipeline-mode hailo \
   --hailo-hardware ai-hat-plus \
   --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
   --mavlink-baud 921600
 ```
 
-Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
+Replace `0.tcp.eu.ngrok.io:24863` with the current ngrok TCP endpoint printed
 by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
 be writable; the installer downloads a matching Hailo package set there.
 The installer also downloads Raspberry Pi's Hailo postprocess package, extracts

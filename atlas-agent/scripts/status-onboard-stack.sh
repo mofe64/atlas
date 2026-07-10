@@ -46,6 +46,13 @@ if [[ -n "${ATLAS_MAVSDK_SERVER_BIN:-}" ]]; then
 fi
 command -v mavsdk_server || true
 
+printf '\n[atlas-onboard-status] video config\n'
+printf 'ATLAS_A8_RTSP_URL=%s\n' "${ATLAS_A8_RTSP_URL:-not set}"
+printf 'ATLAS_A8_RTSP_TRANSPORT=%s\n' "${ATLAS_A8_RTSP_TRANSPORT:-not set}"
+printf 'ATLAS_PROCESSED_RTSP_URL=%s\n' "${ATLAS_PROCESSED_RTSP_URL:-not set}"
+printf 'ATLAS_VIDEO_PIPELINE_MODE=%s\n' "${ATLAS_VIDEO_PIPELINE_MODE:-not set}"
+printf 'ATLAS_A8_RTP_CODEC=%s\n' "${ATLAS_A8_RTP_CODEC:-not set}"
+
 printf '\n[atlas-onboard-status] perception model\n'
 if [[ -n "${ATLAS_PERCEPTION_MODEL_PATH:-}" ]]; then
   ls -lh "$ATLAS_PERCEPTION_MODEL_PATH" || true
@@ -84,6 +91,18 @@ if command -v ffprobe >/dev/null 2>&1; then
     rtsp://127.0.0.1:8554/atlas || true
 else
   printf 'ffprobe not found\n'
+fi
+
+printf '\n[atlas-onboard-status] raw A8 rtsp input\n'
+if command -v ffprobe >/dev/null 2>&1 && [[ -n "${ATLAS_A8_RTSP_URL:-}" ]]; then
+  timeout 8s ffprobe -rtsp_transport "${ATLAS_A8_RTSP_TRANSPORT:-tcp}" \
+    -v error \
+    -select_streams v:0 \
+    -show_entries stream=codec_name,width,height \
+    -of default=noprint_wrappers=1 \
+    "$ATLAS_A8_RTSP_URL" || true
+else
+  printf 'ffprobe not found or ATLAS_A8_RTSP_URL is not set\n'
 fi
 
 printf '\n[atlas-onboard-status] video agent log tail\n'

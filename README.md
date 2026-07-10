@@ -31,6 +31,23 @@ Ground machine Atlas Backend -> browser UI over localhost HTTP/WebRTC
 Docker Postgres -> native Atlas Backend
 ```
 
+### Quick Start
+
+Run this from the repo root on the onboard Raspberry Pi:
+
+```sh
+atlas-agent/scripts/install-onboard-pi.sh \
+  --ground-grpc 0.tcp.eu.ngrok.io:24863 \
+  --video-pipeline-mode hailo \
+  --hailo-hardware ai-hat-plus \
+  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
+  --mavlink-baud 921600
+```
+
+If the ground-machine tunnel is restarted, replace
+`0.tcp.eu.ngrok.io:24863` with the current ngrok TCP endpoint printed by
+`scripts/start-native-onboard-backend-tunnel.sh`.
+
 ### Prerequisites
 
 Ground machine:
