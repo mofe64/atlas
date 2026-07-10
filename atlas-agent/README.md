@@ -84,8 +84,9 @@ Onboard perception MVP:
 - The raw A8 input defaults to `rtsp://192.168.144.25:8554/main.264`.
 - The processed MediaMTX output defaults to `rtsp://127.0.0.1:8554/atlas`.
 - The ground machine should read `rtsp://192.168.144.168:8554/atlas`.
-- The video agent infers H.264/H.265 from `ATLAS_A8_RTP_CODEC=auto`; override
-  with `ATLAS_A8_RTP_CODEC=h264` or `h265` if the camera URL is ambiguous.
+- The video agent uses GStreamer's dynamic decoder path with
+  `ATLAS_A8_RTP_CODEC=auto`; override with `ATLAS_A8_RTP_CODEC=h264` or `h265`
+  only when you want to force a specific RTP depayloader.
 - Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
   UI video before Hailo runtime/model setup is complete. Use `hailo` for the
   inference pipeline.

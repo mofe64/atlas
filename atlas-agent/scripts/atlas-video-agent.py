@@ -99,18 +99,23 @@ def normalize_detection_event(raw: dict[str, Any]) -> dict[str, Any]:
 
 def input_codec_for_url(input_url: str) -> str:
     configured = env("ATLAS_A8_RTP_CODEC", "auto").lower()
-    if configured in {"h264", "h265"}:
+    if configured in {"auto", "h264", "h265"}:
         return configured
-    if configured not in {"", "auto"}:
+    if configured == "":
+        return "auto"
+    if configured not in {"auto", "h264", "h265"}:
         raise SystemExit("ATLAS_A8_RTP_CODEC must be one of: auto, h264, h265")
-
-    lower_url = input_url.split("?", 1)[0].lower()
-    if lower_url.endswith(".265") or "h265" in lower_url or "hevc" in lower_url:
-        return "h265"
-    return "h264"
+    return "auto"
 
 
 def input_decode_stages(codec: str) -> list[str]:
+    if codec == "auto":
+        return [
+            "application/x-rtp,media=video",
+            "!",
+            "decodebin",
+        ]
+
     if codec == "h265":
         return [
             "rtph265depay",

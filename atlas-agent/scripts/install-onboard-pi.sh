@@ -192,6 +192,7 @@ verify_gstreamer_elements() {
   local required_elements=(
     rtspsrc
     rtspclientsink
+    decodebin
     rtph264depay
     h264parse
     avdec_h264
@@ -200,7 +201,7 @@ verify_gstreamer_elements() {
     x264enc
   )
 
-  if [[ "$A8_RTP_CODEC" == "h265" ]]; then
+  if [[ "$A8_RTP_CODEC" == "auto" || "$A8_RTP_CODEC" == "h265" ]]; then
     required_elements+=(
       rtph265depay
       h265parse
