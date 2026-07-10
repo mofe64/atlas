@@ -118,12 +118,8 @@ installs those local `.deb` files. Raspberry Pi's AI software docs list the
 Hailo package families and version-matching requirement:
 https://www.raspberrypi.com/documentation/computers/ai.html
 
-```sh
-mkdir -p ~/hailo-debs
-```
-
-The default public package suite is `trixie`. Use `--hailo-rpi-suite bookworm`
-only if the trixie packages do not install cleanly on the Ubuntu image. Use
+The default public package suite is `bookworm`, because `trixie` Hailo packages
+require newer Python/OpenCV/libc packages than Ubuntu 24.04 provides. Use
 `--hailo-deb-source none` and `--hailo-deb-dir /path/to/debs` only when using an
 internal mirror or predownloaded package set.
 
@@ -213,8 +209,8 @@ Hailo pipeline fails with `no element "hailonet"`:
 
 - The Hailo GStreamer plugin is not installed or not visible to GStreamer.
 - Confirm the installer downloaded Hailo packages into `~/hailo-debs`.
-- If trixie packages fail to install on Ubuntu, rerun with
-  `--hailo-rpi-suite bookworm`.
+- Confirm the installer is using the default `bookworm` Hailo package suite on
+  Ubuntu 24.04.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 

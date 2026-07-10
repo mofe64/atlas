@@ -30,8 +30,9 @@ HAILO_DEB_DIR="${ATLAS_HAILO_DEB_DIR:-}"
 DEFAULT_HAILO_DEB_DIR="${ATLAS_DEFAULT_HAILO_DEB_DIR:-${HOME}/hailo-debs}"
 HAILO_DEB_SOURCE="${ATLAS_HAILO_DEB_SOURCE:-raspberrypi}"
 HAILO_RPI_ARCHIVE_BASE_URL="${ATLAS_HAILO_RPI_ARCHIVE_BASE_URL:-https://archive.raspberrypi.com/debian}"
-HAILO_RPI_SUITE="${ATLAS_HAILO_RPI_SUITE:-trixie}"
+HAILO_RPI_SUITE="${ATLAS_HAILO_RPI_SUITE:-bookworm}"
 HAILO_RPI_ARCH="${ATLAS_HAILO_RPI_ARCH:-arm64}"
+HAILO_RPI_PACKAGE_SPECS=()
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
@@ -105,6 +106,7 @@ Options:
   --hailo-deb-source SRC   Source used to populate --hailo-deb-dir on Ubuntu: raspberrypi or none.
                             Default: ${HAILO_DEB_SOURCE}
   --hailo-rpi-suite SUITE  Raspberry Pi archive suite for Hailo deb downloads. Default: ${HAILO_RPI_SUITE}
+                            Ubuntu 24.04 should use bookworm; trixie requires newer Python/OpenCV/libc.
   --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
   --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
@@ -315,7 +317,7 @@ verify_gstreamer_elements() {
       fi
     done
     if [[ "${#missing_hailo_elements[@]}" -gt 0 ]]; then
-      fail "missing Hailo GStreamer elements: ${missing_hailo_elements[*]}; install Hailo runtime packages or rerun with --video-pipeline-mode passthrough"
+      fail "missing Hailo GStreamer elements: ${missing_hailo_elements[*]}; install Hailo runtime packages, then rerun the installer"
     fi
   fi
 }
@@ -365,7 +367,7 @@ install_hailo_packages() {
     printf '+ apt-cache policy hailo-all hailo-h10-all hailo-dkms hailort hailo-tappas-core hailort-pcie-driver-dkms\n'
     return
   else
-    fail "unsupported OS for automatic Hailo package selection: ${OS_RELEASE_PRETTY_NAME}. Set ATLAS_HAILO_APT_PACKAGES with Ubuntu-compatible Hailo package names or rerun with --video-pipeline-mode passthrough"
+    fail "unsupported OS for automatic Hailo package selection: ${OS_RELEASE_PRETTY_NAME}. Set ATLAS_HAILO_APT_PACKAGES with compatible Hailo package names or pass --hailo-deb-dir with matching arm64 Hailo .deb packages"
   fi
 
   log "checking Hailo apt packages for ${HAILO_HARDWARE} on ${OS_RELEASE_PRETTY_NAME}"
@@ -413,11 +415,19 @@ install_hailo_deb_packages() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     printf '+ mkdir -p %q\n' "$HAILO_DEB_DIR"
     if [[ "$HAILO_DEB_SOURCE" == "raspberrypi" ]]; then
+      select_hailo_raspberrypi_package_specs
       printf '+ curl -fsSL %q/dists/%q/main/binary-%q/Packages.gz | gzip -dc > /tmp/atlas-hailo-packages\n' "$HAILO_RPI_ARCHIVE_BASE_URL" "$HAILO_RPI_SUITE" "$HAILO_RPI_ARCH"
-      printf '+ curl -fL %q/... -o %q/...\n' "$HAILO_RPI_ARCHIVE_BASE_URL" "$HAILO_DEB_DIR"
+      local dry_run_package_spec
+      for dry_run_package_spec in "${HAILO_RPI_PACKAGE_SPECS[@]}"; do
+        printf '+ download Hailo package %q from %q into %q\n' "$dry_run_package_spec" "$HAILO_RPI_SUITE" "$HAILO_DEB_DIR"
+      done
     fi
-    printf '+ sudo apt-get install -y dkms\n'
-    printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
+    install_dkms_support_packages
+    if [[ "$HAILO_DEB_SOURCE" == "raspberrypi" ]]; then
+      printf '+ sudo apt-get install -y <downloaded Hailo .deb files>\n'
+    else
+      printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
+    fi
     printf '+ sudo ldconfig\n'
     return
   fi
@@ -436,38 +446,42 @@ install_hailo_deb_packages() {
   fi
 
   if [[ "${#deb_packages[@]}" -eq 0 ]]; then
-    fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Required package family: Hailo driver, HailoRT, python3-hailort, and Hailo TAPPAS/GStreamer plugins"
+    fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Required package family: Hailo driver, firmware, HailoRT, and Hailo TAPPAS/GStreamer plugins"
   fi
 
-  run sudo apt-get install -y dkms
+  install_dkms_support_packages
   run sudo apt-get install -y "${deb_packages[@]}"
   run sudo ldconfig
 }
 
-download_hailo_raspberrypi_debs() {
-  local -n output_packages="$1"
-  local packages_index="/tmp/atlas-hailo-${HAILO_RPI_SUITE}-${HAILO_RPI_ARCH}-Packages"
-  local packages_url="${HAILO_RPI_ARCHIVE_BASE_URL}/dists/${HAILO_RPI_SUITE}/main/binary-${HAILO_RPI_ARCH}/Packages.gz"
-  local package_names=()
-
+select_hailo_raspberrypi_package_specs() {
+  HAILO_RPI_PACKAGE_SPECS=()
   case "$HAILO_RPI_SUITE" in
     trixie|forky)
+      if is_ubuntu; then
+        fail "Raspberry Pi ${HAILO_RPI_SUITE} Hailo packages require newer Python/OpenCV/libc than Ubuntu 24.04 provides. Use --hailo-rpi-suite bookworm for this Ubuntu Pi."
+      fi
       case "$HAILO_HARDWARE" in
         ai-kit|ai-hat-plus)
-          package_names=(hailo-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
+          HAILO_RPI_PACKAGE_SPECS=(hailo-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
           ;;
         ai-hat-plus-2)
-          package_names=(hailo-h10-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
+          HAILO_RPI_PACKAGE_SPECS=(hailo-h10-all hailort-pcie-driver hailort python3-hailort hailo-tappas-core hailo-models)
           ;;
       esac
       ;;
     bookworm|bullseye)
       case "$HAILO_HARDWARE" in
         ai-kit|ai-hat-plus)
-          package_names=(hailo-all hailo-dkms hailofw hailort python3-hailort hailo-tappas-core)
+          HAILO_RPI_PACKAGE_SPECS=(
+            hailofw=4.19.0-2
+            hailo-dkms=4.19.0-1
+            hailort=4.19.0-3
+            hailo-tappas-core=3.29.1
+          )
           ;;
         ai-hat-plus-2)
-          package_names=(hailo-h10-all hailo-dkms hailofw hailort python3-hailort hailo-tappas-core)
+          fail "AI HAT+ 2 uses the Hailo-10 package family, which is not available in the Ubuntu-compatible bookworm package set. Use AI HAT+ Hailo-8 hardware or provide a matching package set with --hailo-deb-source none --hailo-deb-dir."
           ;;
       esac
       ;;
@@ -475,15 +489,49 @@ download_hailo_raspberrypi_debs() {
       fail "unsupported Raspberry Pi Hailo package suite: ${HAILO_RPI_SUITE}"
       ;;
   esac
+}
+
+install_dkms_support_packages() {
+  local headers_package="linux-headers-$(uname -r)"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ sudo apt-get install -y dkms\n'
+    printf '+ apt-cache show %q >/dev/null 2>&1 && sudo apt-get install -y %q || true\n' "$headers_package" "$headers_package"
+    return
+  fi
+
+  run sudo apt-get install -y dkms
+  if apt-cache show "$headers_package" >/dev/null 2>&1; then
+    run sudo apt-get install -y "$headers_package"
+  else
+    log "warning: ${headers_package} is not available; Hailo DKMS driver build may fail without matching kernel headers"
+  fi
+}
+
+download_hailo_raspberrypi_debs() {
+  local -n output_packages="$1"
+  local packages_index="/tmp/atlas-hailo-${HAILO_RPI_SUITE}-${HAILO_RPI_ARCH}-Packages"
+  local packages_url="${HAILO_RPI_ARCHIVE_BASE_URL}/dists/${HAILO_RPI_SUITE}/main/binary-${HAILO_RPI_ARCH}/Packages.gz"
+  select_hailo_raspberrypi_package_specs
 
   log "downloading Hailo package index from ${packages_url}"
   run_shell "curl -fsSL '${packages_url}' | gzip -dc > '${packages_index}'"
 
-  local package_name
-  for package_name in "${package_names[@]}"; do
+  local package_spec
+  for package_spec in "${HAILO_RPI_PACKAGE_SPECS[@]}"; do
+    local package_name="$package_spec"
+    local package_version=""
+    if [[ "$package_spec" == *=* ]]; then
+      package_name="${package_spec%%=*}"
+      package_version="${package_spec#*=}"
+    fi
+
     local package_record
-    package_record="$(latest_deb_record_from_index "$packages_index" "$package_name")"
+    package_record="$(deb_record_from_index "$packages_index" "$package_name" "$package_version")"
     if [[ -z "$package_record" ]]; then
+      if [[ -n "$package_version" ]]; then
+        fail "package ${package_name}=${package_version} was not found in ${packages_url}"
+      fi
       fail "package ${package_name} was not found in ${packages_url}"
     fi
 
@@ -502,15 +550,19 @@ download_hailo_raspberrypi_debs() {
   done
 }
 
-latest_deb_record_from_index() {
+deb_record_from_index() {
   local packages_index="$1"
   local package_name="$2"
+  local requested_version="${3:-}"
   local best_version=""
   local best_filename=""
   local version
   local filename
 
   while IFS=$'\t' read -r version filename; do
+    if [[ -n "$requested_version" && "$version" != "$requested_version" ]]; then
+      continue
+    fi
     if [[ -z "$best_version" ]] || dpkg --compare-versions "$version" gt "$best_version"; then
       best_version="$version"
       best_filename="$filename"
@@ -576,7 +628,11 @@ verify_hailo() {
   fi
 
   if command -v hailortcli >/dev/null 2>&1; then
-    run_shell "hailortcli fw-control identify || true"
+    if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
+      run hailortcli fw-control identify
+    else
+      run_shell "hailortcli fw-control identify || true"
+    fi
     return
   fi
   run_shell "lspci | grep -i hailo || true"

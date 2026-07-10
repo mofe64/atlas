@@ -98,10 +98,10 @@ Onboard perception MVP:
   `--hailo-apt-packages` is provided, it installs those Ubuntu/Hailo apt package
   names. Otherwise, Ubuntu defaults to downloading the public Raspberry Pi Hailo
   `.deb` package set into `~/hailo-debs`, then installing those local files. Use
-  `--hailo-rpi-suite bookworm` if the default `trixie` packages do not install
-  cleanly on the Ubuntu image. Use `--hailo-deb-source none` and
-  `--hailo-deb-dir /path/to/hailo-debs` only when using an internal mirror or
-  predownloaded package set.
+  the default `bookworm` package suite on Ubuntu 24.04; `trixie` requires newer
+  Python/OpenCV/libc packages than Ubuntu 24.04 provides. Use
+  `--hailo-deb-source none` and `--hailo-deb-dir /path/to/hailo-debs` only when
+  using an internal mirror or predownloaded package set.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival
