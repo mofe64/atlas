@@ -265,6 +265,34 @@ install_apt_packages() {
   run sudo apt-get install -y "${APT_PACKAGES[@]}"
 }
 
+recover_hailo_dpkg_state() {
+  if [[ "$HAILO_INSTALL_MODE" == "auto" && "$VIDEO_PIPELINE_MODE" != "hailo" ]]; then
+    return
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ patch any already-unpacked /usr/src/hailo_pci-* DKMS source\n'
+    printf '+ if hailo-dkms is half-configured, sudo dpkg --configure -a\n'
+    return
+  fi
+
+  local hailo_dkms_status=""
+  hailo_dkms_status="$(dpkg-query -W -f='${db:Status-Abbrev}' hailo-dkms 2>/dev/null || true)"
+  if [[ -z "$hailo_dkms_status" ]]; then
+    return
+  fi
+
+  patch_installed_hailo_dkms_sources
+  if [[ "$hailo_dkms_status" == *F* || "$hailo_dkms_status" == *H* || "$hailo_dkms_status" == *U* ]]; then
+    log "detected incomplete hailo-dkms package state (${hailo_dkms_status}); retrying dpkg configuration after DKMS source patch"
+    if ! sudo dpkg --configure -a; then
+      log "hailo-dkms recovery failed; collecting DKMS diagnostics"
+      collect_hailo_dkms_diagnostics
+      fail "hailo-dkms is still not configured after applying the Ubuntu kernel build patch"
+    fi
+  fi
+}
+
 verify_gstreamer_elements() {
   log "verifying GStreamer video elements"
   local required_elements=(
@@ -428,6 +456,7 @@ install_hailo_deb_packages() {
     else
       printf '+ sudo apt-get install -y %q/*.deb\n' "$HAILO_DEB_DIR"
     fi
+    printf '+ patch Hailo DKMS source for Ubuntu Raspberry Pi kernel warning handling\n'
     printf '+ chmod 0755 %q\n' "$HAILO_DEB_DIR"
     printf '+ chmod 0644 <selected Hailo .deb files>\n'
     printf '+ sudo ldconfig\n'
@@ -451,6 +480,8 @@ install_hailo_deb_packages() {
     fail "no Hailo .deb packages found in ${HAILO_DEB_DIR}. Required package family: Hailo driver, firmware, HailoRT, and Hailo TAPPAS/GStreamer plugins"
   fi
 
+  prepare_hailo_dkms_deb_packages deb_packages
+  patch_installed_hailo_dkms_sources
   run chmod 0755 "$HAILO_DEB_DIR"
   run chmod 0644 "${deb_packages[@]}"
   install_dkms_support_packages
@@ -517,12 +548,110 @@ install_hailo_selected_debs() {
     return
   fi
 
+  log "Hailo package install failed; patching any unpacked DKMS source and retrying package configuration"
+  patch_installed_hailo_dkms_sources
+  if sudo dpkg --configure -a && sudo apt-get install -y "$@"; then
+    return
+  fi
+
   log "Hailo package install failed; collecting DKMS diagnostics"
+  collect_hailo_dkms_diagnostics
+  fail "Hailo package install failed. Read the DKMS make.log above; the usual causes are missing matching kernel headers or Hailo DKMS driver incompatibility with the running Ubuntu Raspberry Pi kernel."
+}
+
+collect_hailo_dkms_diagnostics() {
   run_shell "uname -a"
   run_shell "dpkg -l 'linux-headers-*' | grep '^ii' || true"
   run_shell "dkms status || true"
   run_shell "find /var/lib/dkms -path '*/hailo*/build/make.log' -print -exec tail -n 160 {} \\; || true"
-  fail "Hailo package install failed. Read the DKMS make.log above; the usual causes are missing matching kernel headers or Hailo DKMS driver incompatibility with the running Ubuntu Raspberry Pi kernel."
+}
+
+prepare_hailo_dkms_deb_packages() {
+  local -n packages_ref="$1"
+  local index
+
+  for index in "${!packages_ref[@]}"; do
+    case "$(basename "${packages_ref[$index]}")" in
+      *.atlas-patched.deb)
+        ;;
+      hailo-dkms_*.deb)
+        local patched_deb
+        patch_hailo_dkms_deb_package "${packages_ref[$index]}" patched_deb
+        packages_ref[$index]="$patched_deb"
+        ;;
+    esac
+  done
+}
+
+patch_hailo_dkms_deb_package() {
+  local deb_path="$1"
+  local -n patched_deb_ref="$2"
+  patched_deb_ref="$deb_path"
+
+  if ! command -v dpkg-deb >/dev/null 2>&1; then
+    log "warning: dpkg-deb not found; will patch Hailo DKMS source after package unpack if needed"
+    return
+  fi
+
+  local deb_name
+  deb_name="$(basename "$deb_path")"
+  local package_version="${deb_name#hailo-dkms_}"
+  package_version="${package_version%_all.deb}"
+  local driver_version="${package_version%%-*}"
+  local patched_deb="${deb_path%.deb}.atlas-patched.deb"
+
+  if [[ -f "$patched_deb" && "$patched_deb" -nt "$deb_path" ]]; then
+    patched_deb_ref="$patched_deb"
+    return
+  fi
+
+  local workdir
+  workdir="$(mktemp -d /tmp/atlas-hailo-dkms-deb.XXXXXX)"
+  log "patching Hailo DKMS package for Ubuntu kernel build: ${deb_name}"
+  dpkg-deb -R "$deb_path" "$workdir"
+  patch_hailo_dkms_source_tree "${workdir}/usr/src/hailo_pci-${driver_version}" user
+  dpkg-deb -b "$workdir" "$patched_deb" >/dev/null
+  chmod 0644 "$patched_deb"
+  patched_deb_ref="$patched_deb"
+}
+
+patch_installed_hailo_dkms_sources() {
+  local source_dir
+  for source_dir in /usr/src/hailo_pci-*; do
+    [[ -d "$source_dir" ]] || continue
+    patch_hailo_dkms_source_tree "$source_dir" sudo || true
+  done
+}
+
+patch_hailo_dkms_source_tree() {
+  local source_dir="$1"
+  local mode="${2:-user}"
+  local header="${source_dir}/common/pcie_common.h"
+  local kbuild="${source_dir}/linux/pcie/Kbuild"
+  local prototype='bool hailo_pcie_is_device_ready_for_boot(struct hailo_pcie_resources *resources);'
+
+  if [[ ! -f "$header" ]]; then
+    log "warning: Hailo DKMS header not found: ${header}"
+    return 1
+  fi
+
+  if ! grep -q 'hailo_pcie_is_device_ready_for_boot' "$header"; then
+    log "patching Hailo DKMS missing prototype in ${header}"
+    if [[ "$mode" == "sudo" ]]; then
+      sudo sed -i "/^bool hailo_pcie_is_firmware_loaded/i ${prototype}" "$header"
+    else
+      sed -i "/^bool hailo_pcie_is_firmware_loaded/i ${prototype}" "$header"
+    fi
+  fi
+
+  if [[ -f "$kbuild" ]] && ! grep -q 'Wno-error=missing-prototypes' "$kbuild"; then
+    log "patching Hailo DKMS Kbuild missing-prototypes warning policy in ${kbuild}"
+    if [[ "$mode" == "sudo" ]]; then
+      sudo sed -i '/ccflags-y[[:space:]]*+= -Werror/a ccflags-y      += -Wno-error=missing-prototypes' "$kbuild"
+    else
+      sed -i '/ccflags-y[[:space:]]*+= -Werror/a ccflags-y      += -Wno-error=missing-prototypes' "$kbuild"
+    fi
+  fi
 }
 
 download_hailo_raspberrypi_debs() {
@@ -1018,6 +1147,7 @@ done
 
 validate_video_config
 detect_platform
+recover_hailo_dpkg_state
 install_apt_packages
 install_hailo_packages
 verify_hailo

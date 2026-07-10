@@ -219,6 +219,10 @@ Hailo pipeline fails with `no element "hailonet"`:
 - If apt reports `hailort : Breaks: hailo-tappas-core (< 3.30.0)`, update this
   repo and rerun the installer so it selects the pinned Ubuntu-compatible
   HailoRT/TAPPAS pair.
+- If `hailo-dkms` fails with
+  `no previous prototype for 'hailo_pcie_is_device_ready_for_boot'`, update this
+  repo and rerun the installer. The Ubuntu path patches the Hailo DKMS source
+  before rebuilding it against the Raspberry Pi `6.8.*-raspi` kernel.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 

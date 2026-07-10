@@ -103,7 +103,10 @@ Onboard perception MVP:
   `--hailo-deb-source none` and `--hailo-deb-dir /path/to/hailo-debs` only when
   using an internal mirror or predownloaded package set. The Ubuntu package set
   pins HailoRT below `4.19`, because `hailort` `4.19+` conflicts with the
-  Ubuntu-compatible `hailo-tappas-core` `3.29.1` package.
+  Ubuntu-compatible `hailo-tappas-core` `3.29.1` package. It also patches the
+  `hailo-dkms` source before build because the Raspberry Pi Ubuntu `6.8.*-raspi`
+  kernel treats Hailo's missing PCIe helper prototype warning as a DKMS build
+  error.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
 - The video pipeline is tuned for operator preview latency, not archival
