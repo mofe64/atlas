@@ -141,6 +141,12 @@ atlas-agent/scripts/install-onboard-pi.sh \
   --mavlink-baud 921600
 ```
 
+In Hailo mode the installer downloads Raspberry Pi's Hailo postprocess package,
+extracts the `yolov6n_h8l.hef` model for Hailo-8L hardware, installs it at
+`/opt/atlas/models/yolov6n.hef`, and writes that path to
+`ATLAS_PERCEPTION_MODEL_PATH`. Use `--model-source /path/to/custom.hef` only when
+overriding the default model.
+
 If the Pi needs the local HM30/SIYI Ethernet address, add `--configure-eth0`.
 That writes `/etc/netplan/99-siyi-eth0-local.yaml` with
 `192.168.144.168/24`; apply it manually with:
@@ -239,6 +245,9 @@ Hailo pipeline fails with `no element "hailonet"`:
   `hailo-dkms`, reboot the Pi and rerun `atlas-agent/scripts/status-onboard-stack.sh`.
   A just-built DKMS module can exist on disk before it is loaded and bound to the
   PCIe device.
+- If `atlas-video-agent` reports that `ATLAS_PERCEPTION_MODEL_PATH` does not
+  exist, update this repo and rerun the installer. It should download and extract
+  the default `yolov6n_h8l.hef` model automatically.
 - Check `hailortcli fw-control identify` and
   `gst-inspect-1.0 hailonet hailooverlay`.
 

@@ -187,6 +187,8 @@ def build_default_pipeline() -> list[str]:
         raise SystemExit("ATLAS_VIDEO_PIPELINE_MODE must be one of: hailo, passthrough")
     if pipeline_mode == "hailo" and not model_path:
         raise SystemExit("ATLAS_PERCEPTION_MODEL_PATH is required for the Hailo pipeline")
+    if pipeline_mode == "hailo" and not Path(model_path).is_file():
+        raise SystemExit(f"ATLAS_PERCEPTION_MODEL_PATH does not exist: {model_path}")
     if input_transport not in {"tcp", "udp"}:
         raise SystemExit("ATLAS_A8_RTSP_TRANSPORT must be one of: tcp, udp")
 

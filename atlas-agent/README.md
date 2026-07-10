@@ -172,6 +172,10 @@ scripts/install-onboard-pi.sh \
 Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
 by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
 be writable; the installer downloads a matching Hailo package set there.
+The installer also downloads Raspberry Pi's Hailo postprocess package, extracts
+the `yolov6n_h8l.hef` model for Hailo-8L hardware, and installs it at
+`/opt/atlas/models/yolov6n.hef`. Use `--model-source /path/to/custom.hef` only
+when overriding the default model.
 
 After a fresh Hailo install or recovery, reboot once:
 

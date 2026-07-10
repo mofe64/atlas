@@ -21,6 +21,15 @@ MAVSDK_SERVER_VERSION="${ATLAS_MAVSDK_SERVER_VERSION:-v3.17.1}"
 MAVSDK_SERVER_ASSET="${ATLAS_MAVSDK_SERVER_ASSET:-mavsdk_server_linux-arm64-musl}"
 MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_server}"
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
+MODEL_PATH_EXPLICIT=0
+if [[ -n "${ATLAS_PERCEPTION_MODEL_PATH:-}" ]]; then
+  MODEL_PATH_EXPLICIT=1
+fi
+MODEL_SOURCE="${ATLAS_PERCEPTION_MODEL_SOURCE:-}"
+HAILO_MODEL_CACHE_DIR="${ATLAS_HAILO_MODEL_CACHE_DIR:-${HOME}/hailo-models}"
+HAILO_MODEL_DEB_URL="${ATLAS_HAILO_MODEL_DEB_URL:-${ATLAS_HAILO_RPI_ARCHIVE_BASE_URL:-https://archive.raspberrypi.com/debian}/pool/main/r/rpicam-apps/rpicam-apps-hailo-postprocess_1.9.0-1~bpo12+1_arm64.deb}"
+HAILO_MODEL_DEB_SHA256="${ATLAS_HAILO_MODEL_DEB_SHA256:-a255a8fd7cb7237fcc9c3e067bda892b45db57c066456edd75f332ebe783711a}"
+HAILO_MODEL_DEB_MEMBER="${ATLAS_HAILO_MODEL_DEB_MEMBER:-./usr/share/hailo-models/yolov6n_h8l.hef}"
 VIDEO_PIPELINE_MODE="${ATLAS_VIDEO_PIPELINE_MODE:-hailo}"
 A8_RTP_CODEC="${ATLAS_A8_RTP_CODEC:-auto}"
 HAILO_HARDWARE="${ATLAS_HAILO_HARDWARE:-ai-kit}"
@@ -96,6 +105,8 @@ Options:
   --install-prefix PATH     Install prefix. Default: ${INSTALL_PREFIX}
   --env-file PATH           Env file path. Default: ${ENV_FILE}
   --mavsdk-version VERSION  MAVSDK server release tag. Default: ${MAVSDK_SERVER_VERSION}
+  --model-path PATH         Hailo HEF model path used by the video pipeline. Default: ${MODEL_PATH}
+  --model-source PATH       Copy a local Hailo HEF model into --model-path instead of auto-downloading.
   --video-pipeline-mode MODE
                             Video pipeline mode: hailo or passthrough. Default: ${VIDEO_PIPELINE_MODE}
   --a8-rtp-codec CODEC      A8 RTSP RTP codec: auto, h264, or h265. Default: ${A8_RTP_CODEC}
@@ -353,6 +364,119 @@ verify_gstreamer_elements() {
       fail "missing Hailo GStreamer elements: ${missing_hailo_elements[*]}; install Hailo runtime packages, then rerun the installer"
     fi
   fi
+}
+
+install_default_hailo_model() {
+  local deb_name
+  deb_name="$(basename "$HAILO_MODEL_DEB_URL")"
+  local deb_path="${HAILO_MODEL_CACHE_DIR}/${deb_name}"
+  local workdir=""
+  local extracted_model=""
+
+  command -v ar >/dev/null 2>&1 || fail "ar is required to extract the Hailo model package; install binutils/build-essential and rerun"
+  command -v tar >/dev/null 2>&1 || fail "tar is required to extract the Hailo model package"
+  if [[ -n "$HAILO_MODEL_DEB_SHA256" ]]; then
+    command -v sha256sum >/dev/null 2>&1 || fail "sha256sum is required to verify the Hailo model package"
+  fi
+
+  run mkdir -p "$HAILO_MODEL_CACHE_DIR"
+  if [[ -f "$deb_path" ]]; then
+    log "Hailo model package already downloaded: ${deb_path}"
+  else
+    log "downloading Hailo YOLOv6n model package"
+    run curl -fL "$HAILO_MODEL_DEB_URL" -o "$deb_path"
+  fi
+
+  if [[ -n "$HAILO_MODEL_DEB_SHA256" ]]; then
+    printf '%s  %s\n' "$HAILO_MODEL_DEB_SHA256" "$deb_path" | sha256sum -c - >/dev/null || fail "checksum verification failed for ${deb_path}"
+  fi
+
+  workdir="$(mktemp -d /tmp/atlas-hailo-model.XXXXXX)"
+  run_shell "cd '${workdir}' && ar -x '${deb_path}' data.tar.gz"
+  run tar -xzf "${workdir}/data.tar.gz" -C "$workdir" "$HAILO_MODEL_DEB_MEMBER"
+
+  extracted_model="${workdir}/${HAILO_MODEL_DEB_MEMBER#./}"
+  [[ -s "$extracted_model" ]] || fail "Hailo model package did not contain a non-empty model at ${HAILO_MODEL_DEB_MEMBER}"
+
+  run sudo mkdir -p "$(dirname "$MODEL_PATH")"
+  run sudo install -m 0644 "$extracted_model" "$MODEL_PATH"
+  run rm -rf "$workdir"
+}
+
+verify_hailo_model_file() {
+  [[ -f "$MODEL_PATH" ]] || fail "Hailo model is missing: ${MODEL_PATH}"
+  [[ -s "$MODEL_PATH" ]] || fail "Hailo model is empty: ${MODEL_PATH}"
+  case "$MODEL_PATH" in
+    *.hef)
+      ;;
+    *)
+      log "warning: Hailo model path does not use the .hef extension: ${MODEL_PATH}"
+      ;;
+  esac
+
+  if command -v hailortcli >/dev/null 2>&1 && hailortcli --help 2>/dev/null | grep -q 'parse-hef'; then
+    hailortcli parse-hef "$MODEL_PATH" >/dev/null || fail "HailoRT could not parse HEF model: ${MODEL_PATH}"
+  fi
+}
+
+install_hailo_model() {
+  if [[ "$VIDEO_PIPELINE_MODE" != "hailo" ]]; then
+    log "skipping Hailo model setup because video pipeline mode is ${VIDEO_PIPELINE_MODE}"
+    return
+  fi
+
+  log "verifying Hailo model"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    if [[ -n "$MODEL_SOURCE" ]]; then
+      printf '+ test -f %q\n' "$MODEL_SOURCE"
+      printf '+ sudo mkdir -p %q\n' "$(dirname "$MODEL_PATH")"
+      printf '+ sudo install -m 0644 %q %q\n' "$MODEL_SOURCE" "$MODEL_PATH"
+    else
+      printf '+ if %q is missing, mkdir -p %q\n' "$MODEL_PATH" "$HAILO_MODEL_CACHE_DIR"
+      printf '+ if %q is missing, curl -fL %q -o %q\n' "$MODEL_PATH" "$HAILO_MODEL_DEB_URL" "${HAILO_MODEL_CACHE_DIR}/$(basename "$HAILO_MODEL_DEB_URL")"
+      printf '+ verify SHA-256 for %q\n' "${HAILO_MODEL_CACHE_DIR}/$(basename "$HAILO_MODEL_DEB_URL")"
+      printf '+ extract %q from model package\n' "$HAILO_MODEL_DEB_MEMBER"
+      printf '+ sudo mkdir -p %q\n' "$(dirname "$MODEL_PATH")"
+      printf '+ sudo install -m 0644 <extracted HEF> %q\n' "$MODEL_PATH"
+    fi
+    printf '+ test -s %q\n' "$MODEL_PATH"
+    printf '+ hailortcli parse-hef %q || true\n' "$MODEL_PATH"
+    return
+  fi
+
+  if [[ -n "$MODEL_SOURCE" ]]; then
+    [[ -f "$MODEL_SOURCE" ]] || fail "Hailo model source not found: ${MODEL_SOURCE}"
+    [[ -s "$MODEL_SOURCE" ]] || fail "Hailo model source is empty: ${MODEL_SOURCE}"
+    case "$MODEL_SOURCE" in
+      *.hef)
+        ;;
+      *)
+        log "warning: Hailo model source does not use the .hef extension: ${MODEL_SOURCE}"
+        ;;
+    esac
+
+    local source_real=""
+    local target_real=""
+    source_real="$(readlink -f "$MODEL_SOURCE" 2>/dev/null || true)"
+    if [[ -e "$MODEL_PATH" ]]; then
+      target_real="$(readlink -f "$MODEL_PATH" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$source_real" && -n "$target_real" && "$source_real" == "$target_real" ]]; then
+      log "Hailo model source is already installed at ${MODEL_PATH}"
+    else
+      run sudo mkdir -p "$(dirname "$MODEL_PATH")"
+      run sudo install -m 0644 "$MODEL_SOURCE" "$MODEL_PATH"
+    fi
+  elif [[ -s "$MODEL_PATH" ]]; then
+    log "Hailo model already available: ${MODEL_PATH}"
+  else
+    install_default_hailo_model
+  fi
+
+  verify_hailo_model_file
+  log "Hailo model available: ${MODEL_PATH}"
 }
 
 install_hailo_packages() {
@@ -1162,7 +1286,9 @@ while [[ $# -gt 0 ]]; do
       INSTALL_PREFIX="$2"
       MEDIAMTX_DIR="${INSTALL_PREFIX}/mediamtx"
       MAVSDK_SERVER_BIN="${INSTALL_PREFIX}/bin/mavsdk_server"
-      MODEL_PATH="${INSTALL_PREFIX}/models/yolov6n.hef"
+      if [[ "$MODEL_PATH_EXPLICIT" -eq 0 ]]; then
+        MODEL_PATH="${INSTALL_PREFIX}/models/yolov6n.hef"
+      fi
       MAVLINK_ROUTER_SOURCE_DIR="${INSTALL_PREFIX}/src/mavlink-router"
       MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
       shift 2
@@ -1176,6 +1302,17 @@ while [[ $# -gt 0 ]]; do
     --mavsdk-version)
       require_value "$1" "${2:-}"
       MAVSDK_SERVER_VERSION="$2"
+      shift 2
+      ;;
+    --model-path)
+      require_value "$1" "${2:-}"
+      MODEL_PATH="$2"
+      MODEL_PATH_EXPLICIT=1
+      shift 2
+      ;;
+    --model-source)
+      require_value "$1" "${2:-}"
+      MODEL_SOURCE="$2"
       shift 2
       ;;
     --video-pipeline-mode)
@@ -1250,6 +1387,7 @@ install_apt_packages
 install_hailo_packages
 verify_hailo
 verify_gstreamer_elements
+install_hailo_model
 install_mavlink_router
 install_mediamtx
 build_atlas_agent

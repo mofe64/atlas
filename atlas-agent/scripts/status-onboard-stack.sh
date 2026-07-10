@@ -46,6 +46,13 @@ if [[ -n "${ATLAS_MAVSDK_SERVER_BIN:-}" ]]; then
 fi
 command -v mavsdk_server || true
 
+printf '\n[atlas-onboard-status] perception model\n'
+if [[ -n "${ATLAS_PERCEPTION_MODEL_PATH:-}" ]]; then
+  ls -lh "$ATLAS_PERCEPTION_MODEL_PATH" || true
+else
+  printf 'ATLAS_PERCEPTION_MODEL_PATH is not set\n'
+fi
+
 printf '\n[atlas-onboard-status] rtsp port\n'
 ss -lntp | grep ':8554' || true
 
