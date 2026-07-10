@@ -21,7 +21,12 @@ var (
 	ErrLocalVideoInvalidOffer = errors.New("local video WebRTC offer is invalid")
 )
 
-const localVideoCodecH264 = "H264"
+const (
+	localVideoCodecH264            = "H264"
+	defaultVideoRTSPTransport      = "udp"
+	defaultVideoRTPBufferSize      = 256
+	defaultVideoUDPReadBufferBytes = 1 << 20
+)
 
 type VideoOffer struct {
 	Type string
@@ -47,16 +52,26 @@ type VideoStatus struct {
 }
 
 type VideoService struct {
-	mu       sync.RWMutex
-	rtspURL  string
-	sourceID string
-	status   VideoStatus
-	sessions map[string]context.CancelFunc
+	mu               sync.RWMutex
+	rtspURL          string
+	sourceID         string
+	status           VideoStatus
+	sessions         map[string]context.CancelFunc
+	rtspTransport    string
+	rtpBufferSize    int
+	webrtcICENATIPs  []string
+	webrtcUDPPortMin uint16
+	webrtcUDPPortMax uint16
 }
 
 func NewVideoService(cfg Config) *VideoService {
 	rtspURL := strings.TrimSpace(cfg.VideoRTSPURL)
 	sourceID := strings.TrimSpace(cfg.SourceID)
+	rtpBufferSize := cfg.VideoRTPBufferSize
+	if rtpBufferSize <= 0 {
+		rtpBufferSize = defaultVideoRTPBufferSize
+	}
+
 	status := VideoStatus{
 		Enabled:     cfg.Enabled && rtspURL != "",
 		SourceID:    sourceID,
@@ -70,10 +85,15 @@ func NewVideoService(cfg Config) *VideoService {
 		status.WebRTCReady = true
 	}
 	return &VideoService{
-		rtspURL:  rtspURL,
-		sourceID: sourceID,
-		status:   status,
-		sessions: map[string]context.CancelFunc{},
+		rtspURL:          rtspURL,
+		sourceID:         sourceID,
+		status:           status,
+		sessions:         map[string]context.CancelFunc{},
+		rtspTransport:    normalizeVideoRTSPTransport(cfg.VideoRTSPTransport),
+		rtpBufferSize:    rtpBufferSize,
+		webrtcICENATIPs:  append([]string(nil), cfg.VideoWebRTCICENATIPs...),
+		webrtcUDPPortMin: cfg.VideoWebRTCUDPPortMin,
+		webrtcUDPPortMax: cfg.VideoWebRTCUDPPortMax,
 	}
 }
 
@@ -95,7 +115,7 @@ func (s *VideoService) HandleOffer(ctx context.Context, offer VideoOffer) (Video
 
 	s.setState("starting", "")
 
-	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
+	peerConnection, err := s.newPeerConnection()
 	if err != nil {
 		s.setError(fmt.Errorf("create WebRTC peer connection: %w", err))
 		return VideoAnswer{}, err
@@ -128,7 +148,7 @@ func (s *VideoService) HandleOffer(ctx context.Context, offer VideoOffer) (Video
 
 	if err := peerConnection.SetRemoteDescription(webrtc.SessionDescription{
 		Type: webrtc.SDPTypeOffer,
-		SDP:  strings.TrimSpace(offer.SDP),
+		SDP:  offer.SDP,
 	}); err != nil {
 		wrapped := fmt.Errorf("%w: %v", ErrLocalVideoInvalidOffer, err)
 		s.setError(wrapped)
@@ -210,19 +230,40 @@ func (s *VideoService) isEnabled() bool {
 	return s.status.Enabled
 }
 
+func (s *VideoService) newPeerConnection() (*webrtc.PeerConnection, error) {
+	var settingEngine webrtc.SettingEngine
+
+	if s.webrtcUDPPortMin != 0 || s.webrtcUDPPortMax != 0 {
+		if err := settingEngine.SetEphemeralUDPPortRange(s.webrtcUDPPortMin, s.webrtcUDPPortMax); err != nil {
+			return nil, fmt.Errorf("configure WebRTC UDP port range: %w", err)
+		}
+	}
+
+	if len(s.webrtcICENATIPs) > 0 {
+		settingEngine.SetNAT1To1IPs(s.webrtcICENATIPs, webrtc.ICECandidateTypeHost)
+	}
+
+	return webrtc.NewAPI(webrtc.WithSettingEngine(settingEngine)).NewPeerConnection(webrtc.Configuration{})
+}
+
 func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.TrackLocalStaticRTP) error {
 	u, err := base.ParseURL(s.rtspURL)
 	if err != nil {
 		return fmt.Errorf("parse RTSP URL: %w", err)
 	}
 
+	protocol := gortsplib.ProtocolUDP
+	if s.rtspTransport == "tcp" {
+		protocol = gortsplib.ProtocolTCP
+	}
 	client := &gortsplib.Client{
 		Scheme:                u.Scheme,
 		Host:                  u.Host,
+		Protocol:              &protocol,
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
 		InitialUDPReadTimeout: 3 * time.Second,
-		UDPReadBufferSize:     1 << 20,
+		UDPReadBufferSize:     defaultVideoUDPReadBufferBytes,
 		UserAgent:             "atlas-backend",
 	}
 
@@ -256,27 +297,105 @@ func (s *VideoService) relayRTSPToTrack(ctx context.Context, track *webrtc.Track
 		return fmt.Errorf("setup RTSP H.264 media: %w", err)
 	}
 
+	rtpPackets := make(chan *rtp.Packet, s.rtpBufferSize)
+	writerDone := make(chan error, 1)
+	go func() {
+		for pkt := range rtpPackets {
+			if err := track.WriteRTP(pkt); err != nil {
+				if errors.Is(err, io.ErrClosedPipe) {
+					writerDone <- nil
+				} else {
+					writerDone <- fmt.Errorf("write RTP packet to WebRTC track: %w", err)
+				}
+				return
+			}
+			s.recordFrame(localVideoCodecH264)
+		}
+		writerDone <- nil
+	}()
+
 	client.OnPacketRTP(media, h264Format, func(pkt *rtp.Packet) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err := track.WriteRTP(pkt); err != nil {
-			if !errors.Is(err, io.ErrClosedPipe) {
-				s.setError(fmt.Errorf("write RTP packet to WebRTC track: %w", err))
+
+		packet := cloneRTPPacket(pkt)
+		select {
+		case rtpPackets <- packet:
+		default:
+			select {
+			case <-rtpPackets:
+			default:
 			}
-			return
+			select {
+			case rtpPackets <- packet:
+			default:
+			}
 		}
-		s.recordFrame(localVideoCodecH264)
 	})
 
 	if _, err := client.Play(nil); err != nil {
 		return fmt.Errorf("start RTSP playback: %w", err)
 	}
 
-	if err := client.Wait(); err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
-		return fmt.Errorf("RTSP playback stopped: %w", err)
+	waitDone := make(chan error, 1)
+	go func() {
+		waitDone <- client.Wait()
+	}()
+
+	var relayErr error
+	writerFinished := false
+	waitFinished := false
+	select {
+	case err := <-writerDone:
+		writerFinished = true
+		if err != nil {
+			relayErr = err
+		}
+	case err := <-waitDone:
+		waitFinished = true
+		if err != nil && ctx.Err() == nil && !errors.Is(err, io.ErrClosedPipe) {
+			relayErr = fmt.Errorf("RTSP playback stopped: %w", err)
+		}
+	case <-ctx.Done():
 	}
-	return nil
+
+	client.Close()
+	if !waitFinished {
+		<-waitDone
+	}
+
+	close(rtpPackets)
+	if !writerFinished {
+		if err := <-writerDone; err != nil && relayErr == nil {
+			relayErr = err
+		}
+	}
+
+	return relayErr
+}
+
+func cloneRTPPacket(pkt *rtp.Packet) *rtp.Packet {
+	if len(pkt.Header.Extensions) > 0 {
+		raw, err := pkt.Marshal()
+		if err == nil {
+			var cloned rtp.Packet
+			if err := cloned.Unmarshal(raw); err == nil {
+				return &cloned
+			}
+		}
+	}
+
+	cloned := *pkt
+	if pkt.Payload != nil {
+		cloned.Payload = append([]byte(nil), pkt.Payload...)
+	}
+	if pkt.Raw != nil {
+		cloned.Raw = append([]byte(nil), pkt.Raw...)
+	}
+	cloned.Header.CSRC = append([]uint32(nil), pkt.Header.CSRC...)
+	cloned.Header.Extensions = append([]rtp.Extension(nil), pkt.Header.Extensions...)
+	return &cloned
 }
 
 func (s *VideoService) registerSession() (string, context.Context, context.CancelFunc) {

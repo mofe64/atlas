@@ -134,6 +134,17 @@ def input_decode_stages(codec: str) -> list[str]:
     ]
 
 
+def leaky_queue(name: str) -> list[str]:
+    return [
+        "queue",
+        f"name={name}",
+        "leaky=downstream",
+        "max-size-buffers=1",
+        "max-size-bytes=0",
+        "max-size-time=0",
+    ]
+
+
 def detection_copy_loop(input_path: Path, output_path: Path, state: HealthState, stop: threading.Event) -> None:
     while not stop.is_set() and not input_path.exists():
         stop.wait(1)
@@ -168,11 +179,16 @@ def build_default_pipeline() -> list[str]:
     bitrate = env("ATLAS_VIDEO_BITRATE_KBPS", "2500")
     width = env("ATLAS_PERCEPTION_WIDTH", "640")
     height = env("ATLAS_PERCEPTION_HEIGHT", "640")
+    input_transport = env("ATLAS_A8_RTSP_TRANSPORT", "tcp").lower()
+    input_latency_ms = env("ATLAS_A8_RTSP_LATENCY_MS", "50")
+    key_int_max = env("ATLAS_VIDEO_KEY_INT_MAX", "15")
 
     if pipeline_mode not in {"hailo", "passthrough"}:
         raise SystemExit("ATLAS_VIDEO_PIPELINE_MODE must be one of: hailo, passthrough")
     if pipeline_mode == "hailo" and not model_path:
         raise SystemExit("ATLAS_PERCEPTION_MODEL_PATH is required for the Hailo pipeline")
+    if input_transport not in {"tcp", "udp"}:
+        raise SystemExit("ATLAS_A8_RTSP_TRANSPORT must be one of: tcp, udp")
 
     codec = input_codec_for_url(input_url)
     pipeline = [
@@ -180,10 +196,16 @@ def build_default_pipeline() -> list[str]:
         "-e",
         "rtspsrc",
         f"location={input_url}",
-        "protocols=tcp",
-        "latency=100",
+        f"protocols={input_transport}",
+        f"latency={input_latency_ms}",
+        "drop-on-latency=true",
+        "do-retransmission=false",
+        "!",
+        *leaky_queue("atlas_src_drop"),
         "!",
         *input_decode_stages(codec),
+        "!",
+        *leaky_queue("atlas_decode_drop"),
         "!",
         "videoconvert",
         "!",
@@ -194,6 +216,8 @@ def build_default_pipeline() -> list[str]:
 
     if pipeline_mode == "hailo":
         pipeline += [
+            "!",
+            *leaky_queue("atlas_hailo_drop"),
             "!",
             "hailonet",
             f"hef-path={model_path}",
@@ -215,13 +239,16 @@ def build_default_pipeline() -> list[str]:
 
     pipeline += [
         "!",
+        *leaky_queue("atlas_encode_drop"),
+        "!",
         "videoconvert",
         "!",
         "x264enc",
         "tune=zerolatency",
         "speed-preset=ultrafast",
         f"bitrate={bitrate}",
-        "key-int-max=25",
+        f"key-int-max={key_int_max}",
+        "bframes=0",
         "!",
         "h264parse",
         "config-interval=1",

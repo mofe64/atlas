@@ -62,8 +62,17 @@ Ground-machine HM30 defaults:
 ATLAS_VEHICLE_AGENT_GRPC_ADDR=:9090 \
 ATLAS_LOCAL_INPUTS_ENABLED=true \
 ATLAS_LOCAL_VIDEO_RTSP_URL=rtsp://192.168.144.168:8554/atlas \
+ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp \
+ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256 \
 go run ./cmd/atlas-backend
 ```
+
+The local video relay is optimized for live operator preview. The backend pulls
+the Pi RTSP stream over UDP by default and uses a bounded RTP queue before
+writing to WebRTC. If the browser cannot keep up, old RTP packets are dropped
+instead of allowing minutes of stale video to accumulate. Use
+`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when UDP is blocked or unstable on
+the ground-machine to Pi network.
 
 Register a local development agent:
 

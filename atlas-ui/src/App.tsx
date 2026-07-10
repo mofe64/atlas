@@ -289,6 +289,7 @@ export function App() {
   const [localVideoError, setLocalVideoError] = useState<string | null>(null);
   const [localVideoConnecting, setLocalVideoConnecting] = useState(false);
   const [localVideoConnected, setLocalVideoConnected] = useState(false);
+  const [localVideoFrameReady, setLocalVideoFrameReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [streamConnected, setStreamConnected] = useState(false);
@@ -443,6 +444,7 @@ export function App() {
     }
 
     setLocalVideoConnected(false);
+    setLocalVideoFrameReady(false);
     setLocalVideoConnecting(false);
   }, []);
 
@@ -450,16 +452,28 @@ export function App() {
     stopLocalVideo();
     setLocalVideoConnecting(true);
     setLocalVideoError(null);
+    setLocalVideoFrameReady(false);
 
     const peerConnection = new RTCPeerConnection();
     localVideoPeerRef.current = peerConnection;
 
     try {
+      const markLocalVideoActive = () => {
+        if (localVideoPeerRef.current !== peerConnection) {
+          return;
+        }
+        setLocalVideoConnected(true);
+        setLocalVideoError(null);
+      };
+
       peerConnection.addTransceiver("video", { direction: "recvonly" });
       peerConnection.ontrack = (event) => {
         const [stream] = event.streams;
-        if (stream && localVideoElementRef.current) {
-          localVideoElementRef.current.srcObject = stream;
+        const videoElement = localVideoElementRef.current;
+        if (stream && videoElement) {
+          videoElement.srcObject = stream;
+          void videoElement.play().catch(() => undefined);
+          markLocalVideoActive();
         }
       };
       peerConnection.onconnectionstatechange = () => {
@@ -467,8 +481,7 @@ export function App() {
           return;
         }
         if (peerConnection.connectionState === "connected") {
-          setLocalVideoConnected(true);
-          setLocalVideoError(null);
+          markLocalVideoActive();
         }
         if (
           peerConnection.connectionState === "failed" ||
@@ -496,6 +509,7 @@ export function App() {
         sdp: localDescription.sdp,
       });
       await peerConnection.setRemoteDescription(answer);
+      markLocalVideoActive();
     } catch (err) {
       if (localVideoPeerRef.current === peerConnection) {
         stopLocalVideo();
@@ -693,12 +707,14 @@ export function App() {
                 localVideoError={localVideoError}
                 localVideoConnecting={localVideoConnecting}
                 localVideoConnected={localVideoConnected}
+                localVideoFrameReady={localVideoFrameReady}
                 localVideoElementRef={localVideoElementRef}
                 loading={loading}
                 error={error}
                 streamLabel={streamLabel}
                 onStartLocalVideo={() => void startLocalVideo()}
                 onStopLocalVideo={stopLocalVideo}
+                onLocalVideoFrameReady={() => setLocalVideoFrameReady(true)}
                 onRefreshLocalVideoStatus={() => void refreshLocalVideoStatus()}
                 onCommand={(drone, action) => void handleCommand(drone, action)}
                 onLoadCommunicationLinks={(droneId) => void handleLoadCommunicationLinks(droneId)}
@@ -744,12 +760,14 @@ function FleetWorkspace({
   localVideoError,
   localVideoConnecting,
   localVideoConnected,
+  localVideoFrameReady,
   localVideoElementRef,
   loading,
   error,
   streamLabel,
   onStartLocalVideo,
   onStopLocalVideo,
+  onLocalVideoFrameReady,
   onRefreshLocalVideoStatus,
   onCommand,
   onLoadCommunicationLinks,
@@ -774,12 +792,14 @@ function FleetWorkspace({
   localVideoError: string | null;
   localVideoConnecting: boolean;
   localVideoConnected: boolean;
+  localVideoFrameReady: boolean;
   localVideoElementRef: { current: HTMLVideoElement | null };
   loading: boolean;
   error: string | null;
   streamLabel: string;
   onStartLocalVideo: () => void;
   onStopLocalVideo: () => void;
+  onLocalVideoFrameReady: () => void;
   onRefreshLocalVideoStatus: () => void;
   onCommand: (drone: Drone, action: CommandAction) => void;
   onLoadCommunicationLinks: (droneId: string) => void;
@@ -941,9 +961,11 @@ function FleetWorkspace({
           error={localVideoError}
           connecting={localVideoConnecting}
           connected={localVideoConnected}
+          frameReady={localVideoFrameReady}
           videoRef={localVideoElementRef}
           onStart={onStartLocalVideo}
           onStop={onStopLocalVideo}
+          onFrameReady={onLocalVideoFrameReady}
           onRefresh={onRefreshLocalVideoStatus}
         />
 
@@ -987,18 +1009,22 @@ function LocalVideoPanel({
   error,
   connecting,
   connected,
+  frameReady,
   videoRef,
   onStart,
   onStop,
+  onFrameReady,
   onRefresh,
 }: {
   status: LocalVideoStatus | null;
   error: string | null;
   connecting: boolean;
   connected: boolean;
+  frameReady: boolean;
   videoRef: { current: HTMLVideoElement | null };
   onStart: () => void;
   onStop: () => void;
+  onFrameReady: () => void;
   onRefresh: () => void;
 }) {
   const ready = Boolean(status?.enabled && status.webrtcReady);
@@ -1031,10 +1057,13 @@ function LocalVideoPanel({
             autoPlay
             playsInline
             muted
+            onCanPlay={onFrameReady}
+            onLoadedData={onFrameReady}
+            onPlaying={onFrameReady}
           />
-          {!connected && (
+          {!frameReady && (
             <div className="absolute inset-0 flex items-center justify-center bg-atlas-ink/90 px-4 text-center text-sm font-semibold text-atlas-panel/80">
-              {ready ? "Video idle" : "Video unavailable"}
+              {!ready ? "Video unavailable" : connected ? "Waiting for decoded frame" : "Video idle"}
             </div>
           )}
         </div>

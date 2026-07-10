@@ -102,7 +102,7 @@ cd atlas-backend
 go run ./cmd/atlas-backend
 ```
 
-### Non-SITL Backend Tunnel For Onboard Pi
+### Native Non-SITL Backend Tunnel For Onboard Pi
 
 Use this when the backend runs on a different computer from the onboard Pi.
 The onboard agent connects to the backend over raw gRPC, so the tunnel must
@@ -110,16 +110,30 @@ expose TCP port `9090`; an HTTP-only tunnel URL is not enough.
 
 Atlas uses ngrok TCP for this development path because it gives the Pi a plain
 `host:port` endpoint that can be passed directly to `install-onboard-pi.sh`.
+Only Postgres runs in Docker; the backend and ngrok run natively on the ground
+machine so local RTSP/WebRTC/gRPC networking does not cross Docker's bridge.
 
 ```sh
 export NGROK_AUTHTOKEN=your_ngrok_token
-scripts/start-onboard-backend-tunnel.sh
+scripts/start-native-onboard-backend-tunnel.sh
 ```
+
+By default the native backend reads the Pi RTSP stream from
+`rtsp://192.168.144.168:8554/atlas` over UDP and uses a bounded WebRTC RTP
+queue:
+
+```sh
+ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp
+ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256
+```
+
+Set `ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only if UDP is blocked or unstable
+between the ground machine and the Pi.
 
 The script starts:
 
 ```text
-Postgres -> migrations -> atlas-backend -> ngrok TCP tunnel
+Docker Postgres -> Docker migrations -> native atlas-backend -> native ngrok TCP tunnel
 ```
 
 It then prints a command like:
@@ -132,8 +146,11 @@ For a stable TCP endpoint, reserve an ngrok TCP address and pass it as:
 
 ```sh
 export NGROK_TCP_URL=tcp://1.tcp.ngrok.io:12345
-scripts/start-onboard-backend-tunnel.sh
+scripts/start-native-onboard-backend-tunnel.sh
 ```
+
+The backend connects to Docker Postgres through `127.0.0.1:5432`, which avoids
+Docker bridge networking for the backend, RTSP, WebRTC, and ngrok.
 
 UI:
 

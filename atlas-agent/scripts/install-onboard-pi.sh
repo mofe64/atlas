@@ -23,12 +23,19 @@ MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_serve
 MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-${INSTALL_PREFIX}/models/yolov6n.hef}"
 VIDEO_PIPELINE_MODE="${ATLAS_VIDEO_PIPELINE_MODE:-hailo}"
 A8_RTP_CODEC="${ATLAS_A8_RTP_CODEC:-auto}"
+HAILO_HARDWARE="${ATLAS_HAILO_HARDWARE:-ai-kit}"
+HAILO_INSTALL_MODE="${ATLAS_HAILO_INSTALL_MODE:-auto}"
+HAILO_APT_PACKAGES="${ATLAS_HAILO_APT_PACKAGES:-}"
 MAVLINK_ROUTER_REPO="${ATLAS_MAVLINK_ROUTER_REPO:-https://github.com/mavlink-router/mavlink-router.git}"
 MAVLINK_ROUTER_REF="${ATLAS_MAVLINK_ROUTER_REF:-master}"
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
 MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
 MAVLINK_ROUTER_UART_DEVICE="${ATLAS_MAVLINK_ROUTER_UART_DEVICE:-/dev/serial0}"
 MAVLINK_ROUTER_UART_BAUD="${ATLAS_MAVLINK_ROUTER_UART_BAUD:-921600}"
+OS_RELEASE_ID="${ATLAS_ONBOARD_OS_ID:-unknown}"
+OS_RELEASE_ID_LIKE="${ATLAS_ONBOARD_OS_ID_LIKE:-}"
+OS_RELEASE_PRETTY_NAME="${ATLAS_ONBOARD_OS_PRETTY_NAME:-unknown}"
+OS_RELEASE_VERSION_CODENAME="${ATLAS_ONBOARD_OS_VERSION_CODENAME:-}"
 
 APT_PACKAGES=(
   curl
@@ -81,6 +88,12 @@ Options:
   --video-pipeline-mode MODE
                             Video pipeline mode: hailo or passthrough. Default: ${VIDEO_PIPELINE_MODE}
   --a8-rtp-codec CODEC      A8 RTSP RTP codec: auto, h264, or h265. Default: ${A8_RTP_CODEC}
+  --hailo-hardware TYPE     Hailo hardware package family: ai-kit, ai-hat-plus, ai-hat-plus-2, or none.
+                            Default: ${HAILO_HARDWARE}
+  --hailo-install MODE      Hailo package install mode: auto, always, or never.
+                            auto installs only when --video-pipeline-mode=hailo. Default: ${HAILO_INSTALL_MODE}
+  --hailo-apt-packages LIST Exact Hailo apt packages to install, overriding OS defaults.
+                            Default: auto-detect package names from the OS.
   --mavlink-device PATH     Pixhawk serial device. Default: ${MAVLINK_ROUTER_UART_DEVICE}
   --mavlink-baud RATE       Pixhawk serial baud. Default: ${MAVLINK_ROUTER_UART_BAUD}
   --mavlink-router-ref REF  Source ref used if mavlink-router apt package is unavailable. Default: ${MAVLINK_ROUTER_REF}
@@ -121,6 +134,26 @@ validate_video_config() {
       fail "--a8-rtp-codec must be one of: auto, h264, h265"
       ;;
   esac
+
+  case "$HAILO_HARDWARE" in
+    ai-kit|ai-hat-plus|ai-hat-plus-2|none)
+      ;;
+    *)
+      fail "--hailo-hardware must be one of: ai-kit, ai-hat-plus, ai-hat-plus-2, none"
+      ;;
+  esac
+
+  case "$HAILO_INSTALL_MODE" in
+    auto|always|never)
+      ;;
+    *)
+      fail "--hailo-install must be one of: auto, always, never"
+      ;;
+  esac
+
+  if [[ "$VIDEO_PIPELINE_MODE" == "hailo" && "$HAILO_HARDWARE" == "none" ]]; then
+    fail "--video-pipeline-mode=hailo requires --hailo-hardware to be ai-kit, ai-hat-plus, or ai-hat-plus-2"
+  fi
 }
 
 run() {
@@ -159,13 +192,36 @@ write_file() {
   fi
 }
 
-detect_platform() {
-  log "platform: $(uname -a)"
+load_os_release() {
   if [[ -r /etc/os-release ]]; then
     # shellcheck disable=SC1091
     source /etc/os-release
-    log "os: ${PRETTY_NAME:-unknown}"
+    OS_RELEASE_ID="${ATLAS_ONBOARD_OS_ID:-${ID:-unknown}}"
+    OS_RELEASE_ID_LIKE="${ATLAS_ONBOARD_OS_ID_LIKE:-${ID_LIKE:-}}"
+    OS_RELEASE_PRETTY_NAME="${ATLAS_ONBOARD_OS_PRETTY_NAME:-${PRETTY_NAME:-unknown}}"
+    OS_RELEASE_VERSION_CODENAME="${ATLAS_ONBOARD_OS_VERSION_CODENAME:-${VERSION_CODENAME:-}}"
   fi
+}
+
+is_raspberry_pi_os() {
+  [[ -r /etc/rpi-issue ]] && return 0
+  [[ "${OS_RELEASE_ID}" == "raspbian" ]] && return 0
+  case "$OS_RELEASE_PRETTY_NAME" in
+    *"Raspberry Pi OS"*|*"raspberry pi os"*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+is_ubuntu() {
+  [[ "${OS_RELEASE_ID}" == "ubuntu" ]]
+}
+
+detect_platform() {
+  load_os_release
+  log "platform: $(uname -a)"
+  log "os: ${OS_RELEASE_PRETTY_NAME}"
   if [[ "$(uname -m)" != "aarch64" && "$(uname -m)" != "arm64" ]]; then
     log "warning: expected arm64/aarch64 Raspberry Pi OS, got $(uname -m)"
   fi
@@ -213,6 +269,10 @@ verify_gstreamer_elements() {
     for element in "${required_elements[@]}"; do
       printf '+ gst-inspect-1.0 %s\n' "$element"
     done
+    if [[ "$VIDEO_PIPELINE_MODE" == "hailo" ]]; then
+      printf '+ gst-inspect-1.0 hailonet\n'
+      printf '+ gst-inspect-1.0 hailooverlay\n'
+    fi
     return
   fi
 
@@ -235,28 +295,103 @@ verify_gstreamer_elements() {
       fi
     done
     if [[ "${#missing_hailo_elements[@]}" -gt 0 ]]; then
-      log "warning: missing Hailo GStreamer elements: ${missing_hailo_elements[*]}"
-      log "         use --video-pipeline-mode passthrough until Hailo runtime packages are installed"
+      fail "missing Hailo GStreamer elements: ${missing_hailo_elements[*]}; install Hailo runtime packages or rerun with --video-pipeline-mode passthrough"
     fi
   fi
 }
 
 install_hailo_packages() {
-  log "checking Raspberry Pi/Hailo apt packages"
-  local hailo_packages=()
-  for package_name in hailo-all hailort hailo-tappas-core rpicam-apps-hailo-postprocess; do
-    if apt-cache show "$package_name" >/dev/null 2>&1; then
-      hailo_packages+=("$package_name")
-    fi
-  done
-
-  if [[ "${#hailo_packages[@]}" -eq 0 ]]; then
-    log "warning: no Hailo apt packages were found in configured repositories"
-    log "         install Raspberry Pi AI Kit/Hailo runtime packages from official Raspberry Pi docs"
+  if [[ "$HAILO_INSTALL_MODE" == "never" ]]; then
+    log "skipping Hailo package install (--hailo-install=never)"
     return
   fi
 
-  run sudo apt-get install -y "${hailo_packages[@]}"
+  if [[ "$HAILO_INSTALL_MODE" == "auto" && "$VIDEO_PIPELINE_MODE" != "hailo" ]]; then
+    log "skipping Hailo package install because video pipeline mode is ${VIDEO_PIPELINE_MODE}"
+    return
+  fi
+
+  if [[ "$HAILO_HARDWARE" == "none" ]]; then
+    log "skipping Hailo package install because Hailo hardware is none"
+    return
+  fi
+
+  local candidate_sets=()
+  if [[ -n "$HAILO_APT_PACKAGES" ]]; then
+    candidate_sets=("$HAILO_APT_PACKAGES")
+  elif is_ubuntu; then
+    case "$HAILO_HARDWARE" in
+      ai-kit|ai-hat-plus)
+        candidate_sets=(
+          "dkms hailo-dkms hailort hailo-tappas-core"
+          "dkms hailort-pcie-driver-dkms hailort hailo-tappas-core"
+          "dkms hailort-pcie-driver hailort hailo-tappas-core"
+        )
+        ;;
+      ai-hat-plus-2)
+        candidate_sets=(
+          "dkms hailo-h10-dkms hailort hailo-tappas-core"
+          "dkms hailort-pcie-driver-dkms hailort hailo-tappas-core"
+        )
+        ;;
+    esac
+  elif is_raspberry_pi_os; then
+    case "$HAILO_HARDWARE" in
+      ai-kit|ai-hat-plus)
+        candidate_sets=(
+          "dkms hailo-all"
+          "dkms hailo-dkms hailort hailo-tappas-core"
+        )
+        ;;
+      ai-hat-plus-2)
+        candidate_sets=("dkms hailo-h10-all")
+        ;;
+    esac
+  elif [[ "$DRY_RUN" -eq 1 ]]; then
+    log "dry-run: Hailo apt package selection depends on target /etc/os-release"
+    printf '+ apt-cache policy hailo-all hailo-h10-all hailo-dkms hailort hailo-tappas-core hailort-pcie-driver-dkms\n'
+    return
+  else
+    fail "unsupported OS for automatic Hailo package selection: ${OS_RELEASE_PRETTY_NAME}. Set ATLAS_HAILO_APT_PACKAGES with Ubuntu-compatible Hailo package names or rerun with --video-pipeline-mode passthrough"
+  fi
+
+  log "checking Hailo apt packages for ${HAILO_HARDWARE} on ${OS_RELEASE_PRETTY_NAME}"
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    local dry_run_packages=()
+    read -r -a dry_run_packages <<< "${candidate_sets[0]}"
+    printf '+ sudo apt-get install -y'
+    printf ' %q' "${dry_run_packages[@]}"
+    printf '\n'
+    return
+  fi
+
+  local package_set
+  local checked_sets=()
+  for package_set in "${candidate_sets[@]}"; do
+    local candidate_packages=()
+    local missing_packages=()
+    read -r -a candidate_packages <<< "$package_set"
+    checked_sets+=("$package_set")
+    for package_name in "${candidate_packages[@]}"; do
+      if ! apt-cache show "$package_name" >/dev/null 2>&1; then
+        missing_packages+=("$package_name")
+      fi
+    done
+    if [[ "${#missing_packages[@]}" -eq 0 ]]; then
+      run sudo apt-get install -y "${candidate_packages[@]}"
+      if apt-cache show python3-hailort >/dev/null 2>&1; then
+        run sudo apt-get install -y python3-hailort
+      fi
+      return
+    fi
+  done
+
+  local message="no complete Hailo apt package set is available in configured apt sources"
+  if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
+    fail "${message}. OS: ${OS_RELEASE_PRETTY_NAME}. Checked: ${checked_sets[*]}. Configure Hailo's Ubuntu-compatible apt source or set ATLAS_HAILO_APT_PACKAGES, then rerun; otherwise use --video-pipeline-mode passthrough"
+  fi
+  log "warning: ${message}"
 }
 
 install_mavlink_router_from_source() {
@@ -294,12 +429,26 @@ install_mavlink_router() {
 }
 
 verify_hailo() {
+  if [[ "$HAILO_INSTALL_MODE" == "auto" && "$VIDEO_PIPELINE_MODE" != "hailo" ]]; then
+    log "skipping Hailo runtime verification because video pipeline mode is ${VIDEO_PIPELINE_MODE}"
+    return
+  fi
+
   log "verifying Hailo device visibility"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '+ hailortcli fw-control identify\n'
+    printf '+ dmesg | grep -i hailo || true\n'
+    return
+  fi
+
   if command -v hailortcli >/dev/null 2>&1; then
     run_shell "hailortcli fw-control identify || true"
     return
   fi
   run_shell "lspci | grep -i hailo || true"
+  if [[ "$VIDEO_PIPELINE_MODE" == "hailo" || "$HAILO_INSTALL_MODE" == "always" ]]; then
+    fail "hailortcli not found; Hailo runtime is required for --video-pipeline-mode=hailo"
+  fi
   log "warning: hailortcli not found; Hailo runtime may still need setup"
 }
 
@@ -372,6 +521,9 @@ ATLAS_PERCEPTION_MODEL_PATH="${MODEL_PATH}"
 ATLAS_PERCEPTION_ACCELERATOR="hailo"
 ATLAS_VIDEO_PIPELINE_MODE="${VIDEO_PIPELINE_MODE}"
 ATLAS_A8_RTP_CODEC="${A8_RTP_CODEC}"
+ATLAS_A8_RTSP_TRANSPORT="${ATLAS_A8_RTSP_TRANSPORT:-tcp}"
+ATLAS_A8_RTSP_LATENCY_MS="${ATLAS_A8_RTSP_LATENCY_MS:-50}"
+ATLAS_VIDEO_KEY_INT_MAX="${ATLAS_VIDEO_KEY_INT_MAX:-15}"
 ATLAS_PERCEPTION_SOURCE_ID="a8-main"
 ATLAS_PERCEPTION_METADATA_PATH="${HOME}/.local/state/atlas-agent/perception/metadata.jsonl"
 ATLAS_COMPANION_LOG_DIR="${LOG_DIR}"
@@ -601,6 +753,21 @@ while [[ $# -gt 0 ]]; do
       A8_RTP_CODEC="$2"
       shift 2
       ;;
+    --hailo-hardware)
+      require_value "$1" "${2:-}"
+      HAILO_HARDWARE="$2"
+      shift 2
+      ;;
+    --hailo-install)
+      require_value "$1" "${2:-}"
+      HAILO_INSTALL_MODE="$2"
+      shift 2
+      ;;
+    --hailo-apt-packages)
+      require_value "$1" "${2:-}"
+      HAILO_APT_PACKAGES="$2"
+      shift 2
+      ;;
     --mavlink-device)
       require_value "$1" "${2:-}"
       MAVLINK_ROUTER_UART_DEVICE="$2"
@@ -629,10 +796,10 @@ done
 validate_video_config
 detect_platform
 install_apt_packages
-verify_gstreamer_elements
-install_mavlink_router
 install_hailo_packages
 verify_hailo
+verify_gstreamer_elements
+install_mavlink_router
 install_mediamtx
 build_atlas_agent
 install_mavsdk_server

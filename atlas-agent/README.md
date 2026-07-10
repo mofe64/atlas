@@ -88,10 +88,28 @@ Onboard perception MVP:
   `ATLAS_A8_RTP_CODEC=auto`; override with `ATLAS_A8_RTP_CODEC=h264` or `h265`
   only when you want to force a specific RTP depayloader.
 - Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
-  UI video before Hailo runtime/model setup is complete. Use `hailo` for the
-  inference pipeline.
+  UI video without requiring the Hailo runtime. Use `hailo` for the inference
+  pipeline; the installer then attempts to install the matching Hailo apt
+  packages and fails if `hailonet` or `hailooverlay` are still unavailable.
+- On Raspberry Pi OS, the Hailo install defaults to the AI Kit / AI HAT+
+  package family (`hailo-all`). Use `--hailo-hardware ai-hat-plus-2` for
+  AI HAT+ 2 (`hailo-h10-all`).
+- On Ubuntu, the installer only installs Hailo packages already available from
+  configured Ubuntu/Hailo apt sources. It does not add Raspberry Pi OS
+  repositories to Ubuntu. Use `--hailo-apt-packages "pkg1 pkg2 ..."` when the
+  Hailo Ubuntu package names differ from Atlas' known package sets, or
+  `--hailo-install never` when the runtime is already managed outside Atlas.
 - The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
   by Ubuntu's `gstreamer1.0-rtsp` package.
+- The video pipeline is tuned for operator preview latency, not archival
+  completeness. `ATLAS_A8_RTSP_LATENCY_MS` defaults to `50`, the pipeline uses
+  leaky one-buffer queues between receive/decode/inference/encode stages, and
+  `ATLAS_VIDEO_KEY_INT_MAX` defaults to `15` so a dropped H.264 frame recovers
+  quickly at the next keyframe.
+- `ATLAS_A8_RTSP_TRANSPORT` defaults to `tcp` between the A8 camera and the Pi
+  because that leg is usually a direct local camera link. If the camera/link
+  accumulates latency, try `ATLAS_A8_RTSP_TRANSPORT=udp` and restart
+  `atlas-video-agent`.
 - Runtime health and compact detections are written as JSONL to `ATLAS_PERCEPTION_METADATA_PATH`.
 - `atlas-agent` tails that JSONL file and forwards `PerceptionEvent` and `PerceptionHealth` on the existing vehicle-agent gRPC stream.
 
@@ -108,9 +126,45 @@ Raspberry Pi one-run setup:
 scripts/install-onboard-pi.sh --dry-run --ground-grpc 192.168.144.50:9090
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --configure-eth0
 scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode passthrough
+scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-hardware ai-kit
+scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-apt-packages "dkms hailo-dkms hailort hailo-tappas-core"
 scripts/start-onboard-stack.sh
 scripts/status-onboard-stack.sh
 ```
+
+Existing installs can tune preview latency by editing
+`~/.config/atlas-agent/onboard.env`:
+
+```sh
+ATLAS_A8_RTSP_LATENCY_MS=50
+ATLAS_A8_RTSP_TRANSPORT=tcp
+ATLAS_VIDEO_KEY_INT_MAX=15
+```
+
+Then restart the video service:
+
+```sh
+sudo systemctl restart atlas-video-agent
+```
+
+For the Raspberry Pi AI HAT+ hardware path on Ubuntu, run the installer with
+the AI HAT+ selector and the stable USB serial path for the Pixhawk TELEM2
+adapter:
+
+```sh
+scripts/install-onboard-pi.sh \
+  --ground-grpc 0.tcp.eu.ngrok.io:14289 \
+  --video-pipeline-mode hailo \
+  --hailo-hardware ai-hat-plus \
+  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
+  --mavlink-baud 921600
+```
+
+Replace `0.tcp.eu.ngrok.io:14289` with the current ngrok TCP endpoint printed
+by the ground-machine backend tunnel script. On Ubuntu, the Hailo runtime
+packages must already be available from configured Ubuntu/Hailo apt sources;
+otherwise use `--video-pipeline-mode passthrough` until the Hailo runtime is
+installed.
 
 On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
 repositories. The installer handles that by building `mavlink-routerd` from the
