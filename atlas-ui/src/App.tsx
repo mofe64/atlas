@@ -57,23 +57,16 @@ import {
   type MissionDetail,
   type MissionExecution,
   type MissionExecutionState,
-  type LocalVideoStatus,
-  type PerceptionEvent,
-  type PerceptionStatus,
   type TelemetryFeed,
   type TelemetryFeedStatus,
   type CommandRequest,
-  createLocalVideoAnswer,
   createDroneMission,
   fetchDroneCommunicationLinks,
   fetchCommandEvents,
   fetchDroneMissions,
   fetchDroneTelemetryFeeds,
   fetchDrones,
-  fetchLocalVideoStatus,
   fetchMission,
-  fetchPerceptionEvents,
-  fetchPerceptionStatus,
   requestMissionAbort,
   requestDroneCommand,
   requestMissionStart,
@@ -277,24 +270,9 @@ export function App() {
   >({});
   const [telemetryFeedErrors, setTelemetryFeedErrors] = useState<Record<string, string | null>>({});
   const [pendingTelemetryFeeds, setPendingTelemetryFeeds] = useState<Record<string, boolean>>({});
-  const [perceptionStatusByDrone, setPerceptionStatusByDrone] = useState<
-    Record<string, PerceptionStatus>
-  >({});
-  const [perceptionEventsByDrone, setPerceptionEventsByDrone] = useState<
-    Record<string, PerceptionEvent[]>
-  >({});
-  const [perceptionErrors, setPerceptionErrors] = useState<Record<string, string | null>>({});
-  const [pendingPerception, setPendingPerception] = useState<Record<string, boolean>>({});
-  const [localVideoStatus, setLocalVideoStatus] = useState<LocalVideoStatus | null>(null);
-  const [localVideoError, setLocalVideoError] = useState<string | null>(null);
-  const [localVideoConnecting, setLocalVideoConnecting] = useState(false);
-  const [localVideoConnected, setLocalVideoConnected] = useState(false);
-  const [localVideoFrameReady, setLocalVideoFrameReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [streamConnected, setStreamConnected] = useState(false);
-  const localVideoElementRef = useRef<HTMLVideoElement | null>(null);
-  const localVideoPeerRef = useRef<RTCPeerConnection | null>(null);
   const location = useLocation();
 
   const applyDroneSnapshot = useCallback((nextDrones: Drone[]) => {
@@ -396,135 +374,6 @@ export function App() {
     };
   }, [applyDroneSnapshot]);
 
-  const refreshLocalVideoStatus = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const status = await fetchLocalVideoStatus(signal);
-      setLocalVideoStatus(status);
-      setLocalVideoError(null);
-    } catch (err) {
-      if (signal?.aborted) {
-        return;
-      }
-      setLocalVideoError(err instanceof Error ? err.message : "Local video status load failed");
-    }
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void refreshLocalVideoStatus(controller.signal);
-
-    const interval = window.setInterval(() => {
-      void refreshLocalVideoStatus();
-    }, 3000);
-
-    return () => {
-      controller.abort();
-      window.clearInterval(interval);
-    };
-  }, [refreshLocalVideoStatus]);
-
-  const stopLocalVideo = useCallback(() => {
-    const peerConnection = localVideoPeerRef.current;
-    localVideoPeerRef.current = null;
-    if (peerConnection) {
-      peerConnection.onconnectionstatechange = null;
-      peerConnection.ontrack = null;
-      peerConnection.close();
-    }
-
-    const videoElement = localVideoElementRef.current;
-    const stream = videoElement?.srcObject;
-    if (stream instanceof MediaStream) {
-      for (const track of stream.getTracks()) {
-        track.stop();
-      }
-    }
-    if (videoElement) {
-      videoElement.srcObject = null;
-    }
-
-    setLocalVideoConnected(false);
-    setLocalVideoFrameReady(false);
-    setLocalVideoConnecting(false);
-  }, []);
-
-  const startLocalVideo = useCallback(async () => {
-    stopLocalVideo();
-    setLocalVideoConnecting(true);
-    setLocalVideoError(null);
-    setLocalVideoFrameReady(false);
-
-    const peerConnection = new RTCPeerConnection();
-    localVideoPeerRef.current = peerConnection;
-
-    try {
-      const markLocalVideoActive = () => {
-        if (localVideoPeerRef.current !== peerConnection) {
-          return;
-        }
-        setLocalVideoConnected(true);
-        setLocalVideoError(null);
-      };
-
-      peerConnection.addTransceiver("video", { direction: "recvonly" });
-      peerConnection.ontrack = (event) => {
-        const [stream] = event.streams;
-        const videoElement = localVideoElementRef.current;
-        if (stream && videoElement) {
-          videoElement.srcObject = stream;
-          void videoElement.play().catch(() => undefined);
-          markLocalVideoActive();
-        }
-      };
-      peerConnection.onconnectionstatechange = () => {
-        if (localVideoPeerRef.current !== peerConnection) {
-          return;
-        }
-        if (peerConnection.connectionState === "connected") {
-          markLocalVideoActive();
-        }
-        if (
-          peerConnection.connectionState === "failed" ||
-          peerConnection.connectionState === "disconnected" ||
-          peerConnection.connectionState === "closed"
-        ) {
-          setLocalVideoConnected(false);
-          if (peerConnection.connectionState !== "closed") {
-            setLocalVideoError("Local video connection dropped");
-          }
-        }
-      };
-
-      const offer = await peerConnection.createOffer();
-      await peerConnection.setLocalDescription(offer);
-      await waitForIceGatheringComplete(peerConnection);
-
-      const localDescription = peerConnection.localDescription;
-      if (!localDescription?.sdp) {
-        throw new Error("Browser did not create a valid WebRTC offer");
-      }
-
-      const answer = await createLocalVideoAnswer({
-        type: localDescription.type,
-        sdp: localDescription.sdp,
-      });
-      await peerConnection.setRemoteDescription(answer);
-      markLocalVideoActive();
-    } catch (err) {
-      if (localVideoPeerRef.current === peerConnection) {
-        stopLocalVideo();
-      } else {
-        peerConnection.close();
-      }
-      setLocalVideoError(err instanceof Error ? err.message : "Local video connection failed");
-    } finally {
-      setLocalVideoConnecting(false);
-      void refreshLocalVideoStatus();
-    }
-  }, [refreshLocalVideoStatus, stopLocalVideo]);
-
-  useEffect(() => stopLocalVideo, [stopLocalVideo]);
-
   async function handleCommand(drone: Drone, action: CommandAction) {
     const pendingKey = `${drone.id}:${action}`;
     setPendingCommands((current) => ({ ...current, [pendingKey]: true }));
@@ -579,55 +428,6 @@ export function App() {
       setPendingTelemetryFeeds((current) => ({ ...current, [droneId]: false }));
     }
   }, []);
-
-  const handleLoadPerception = useCallback(async (droneId: string, signal?: AbortSignal) => {
-    setPendingPerception((current) => ({ ...current, [droneId]: true }));
-    setPerceptionErrors((current) => ({ ...current, [droneId]: null }));
-
-    try {
-      const [status, events] = await Promise.all([
-        fetchPerceptionStatus(droneId, signal),
-        fetchPerceptionEvents(droneId, 10, signal),
-      ]);
-      setPerceptionStatusByDrone((current) => ({ ...current, [droneId]: status }));
-      setPerceptionEventsByDrone((current) => ({ ...current, [droneId]: events }));
-    } catch (err) {
-      if (signal?.aborted) {
-        return;
-      }
-      setPerceptionErrors((current) => ({
-        ...current,
-        [droneId]: err instanceof Error ? err.message : "Perception load failed",
-      }));
-    } finally {
-      if (!signal?.aborted) {
-        setPendingPerception((current) => ({ ...current, [droneId]: false }));
-      }
-    }
-  }, []);
-
-  const droneIDs = useMemo(() => drones.map((drone) => drone.id).join("|"), [drones]);
-  const droneIDList = useMemo(() => (droneIDs ? droneIDs.split("|") : []), [droneIDs]);
-
-  useEffect(() => {
-    if (droneIDList.length === 0) {
-      return;
-    }
-
-    const controller = new AbortController();
-    const loadAll = () => {
-      for (const droneId of droneIDList) {
-        void handleLoadPerception(droneId, controller.signal);
-      }
-    };
-
-    loadAll();
-    const interval = window.setInterval(loadAll, 3000);
-    return () => {
-      controller.abort();
-      window.clearInterval(interval);
-    };
-  }, [droneIDList, handleLoadPerception]);
 
   const onlineCount = useMemo(
     () => drones.filter((drone) => drone.status === "online").length,
@@ -699,27 +499,12 @@ export function App() {
                 telemetryFeedsByDrone={telemetryFeedsByDrone}
                 telemetryFeedErrors={telemetryFeedErrors}
                 pendingTelemetryFeeds={pendingTelemetryFeeds}
-                perceptionStatusByDrone={perceptionStatusByDrone}
-                perceptionEventsByDrone={perceptionEventsByDrone}
-                perceptionErrors={perceptionErrors}
-                pendingPerception={pendingPerception}
-                localVideoStatus={localVideoStatus}
-                localVideoError={localVideoError}
-                localVideoConnecting={localVideoConnecting}
-                localVideoConnected={localVideoConnected}
-                localVideoFrameReady={localVideoFrameReady}
-                localVideoElementRef={localVideoElementRef}
                 loading={loading}
                 error={error}
                 streamLabel={streamLabel}
-                onStartLocalVideo={() => void startLocalVideo()}
-                onStopLocalVideo={stopLocalVideo}
-                onLocalVideoFrameReady={() => setLocalVideoFrameReady(true)}
-                onRefreshLocalVideoStatus={() => void refreshLocalVideoStatus()}
                 onCommand={(drone, action) => void handleCommand(drone, action)}
                 onLoadCommunicationLinks={(droneId) => void handleLoadCommunicationLinks(droneId)}
                 onLoadTelemetryFeeds={(droneId) => void handleLoadTelemetryFeeds(droneId)}
-                onLoadPerception={(droneId) => void handleLoadPerception(droneId)}
               />
             }
           />
@@ -752,27 +537,12 @@ function FleetWorkspace({
   telemetryFeedsByDrone,
   telemetryFeedErrors,
   pendingTelemetryFeeds,
-  perceptionStatusByDrone,
-  perceptionEventsByDrone,
-  perceptionErrors,
-  pendingPerception,
-  localVideoStatus,
-  localVideoError,
-  localVideoConnecting,
-  localVideoConnected,
-  localVideoFrameReady,
-  localVideoElementRef,
   loading,
   error,
   streamLabel,
-  onStartLocalVideo,
-  onStopLocalVideo,
-  onLocalVideoFrameReady,
-  onRefreshLocalVideoStatus,
   onCommand,
   onLoadCommunicationLinks,
   onLoadTelemetryFeeds,
-  onLoadPerception,
 }: {
   drones: Drone[];
   commandsByDrone: Record<string, CommandRequest[]>;
@@ -784,27 +554,12 @@ function FleetWorkspace({
   telemetryFeedsByDrone: Record<string, TelemetryFeed[]>;
   telemetryFeedErrors: Record<string, string | null>;
   pendingTelemetryFeeds: Record<string, boolean>;
-  perceptionStatusByDrone: Record<string, PerceptionStatus>;
-  perceptionEventsByDrone: Record<string, PerceptionEvent[]>;
-  perceptionErrors: Record<string, string | null>;
-  pendingPerception: Record<string, boolean>;
-  localVideoStatus: LocalVideoStatus | null;
-  localVideoError: string | null;
-  localVideoConnecting: boolean;
-  localVideoConnected: boolean;
-  localVideoFrameReady: boolean;
-  localVideoElementRef: { current: HTMLVideoElement | null };
   loading: boolean;
   error: string | null;
   streamLabel: string;
-  onStartLocalVideo: () => void;
-  onStopLocalVideo: () => void;
-  onLocalVideoFrameReady: () => void;
-  onRefreshLocalVideoStatus: () => void;
   onCommand: (drone: Drone, action: CommandAction) => void;
   onLoadCommunicationLinks: (droneId: string) => void;
   onLoadTelemetryFeeds: (droneId: string) => void;
-  onLoadPerception: (droneId: string) => void;
 }) {
   return (
     <div className="grid flex-1 gap-8 py-10 lg:grid-cols-[1fr_0.9fr]">
@@ -922,14 +677,6 @@ function FleetWorkspace({
                     loading={pendingTelemetryFeeds[drone.id] ?? false}
                     onRefresh={() => onLoadTelemetryFeeds(drone.id)}
                   />
-                  <PerceptionPanel
-                    drone={drone}
-                    status={perceptionStatusByDrone[drone.id]}
-                    events={perceptionEventsByDrone[drone.id]}
-                    error={perceptionErrors[drone.id]}
-                    loading={pendingPerception[drone.id] ?? false}
-                    onRefresh={() => onLoadPerception(drone.id)}
-                  />
                   <CommunicationPanel
                     drone={drone}
                     links={communicationLinksByDrone[drone.id]}
@@ -956,19 +703,6 @@ function FleetWorkspace({
       </section>
 
       <aside className="space-y-6">
-        <LocalVideoPanel
-          status={localVideoStatus}
-          error={localVideoError}
-          connecting={localVideoConnecting}
-          connected={localVideoConnected}
-          frameReady={localVideoFrameReady}
-          videoRef={localVideoElementRef}
-          onStart={onStartLocalVideo}
-          onStop={onStopLocalVideo}
-          onFrameReady={onLocalVideoFrameReady}
-          onRefresh={onRefreshLocalVideoStatus}
-        />
-
         <section className="bg-atlas-panel p-5 shadow-sm shadow-atlas-ink/5">
           <div className="flex items-center justify-between border-b border-atlas-ink/10 pb-4">
             <h2 className="text-xl font-semibold">System boundary</h2>
@@ -1001,114 +735,6 @@ function FleetWorkspace({
         </section>
       </aside>
     </div>
-  );
-}
-
-function LocalVideoPanel({
-  status,
-  error,
-  connecting,
-  connected,
-  frameReady,
-  videoRef,
-  onStart,
-  onStop,
-  onFrameReady,
-  onRefresh,
-}: {
-  status: LocalVideoStatus | null;
-  error: string | null;
-  connecting: boolean;
-  connected: boolean;
-  frameReady: boolean;
-  videoRef: { current: HTMLVideoElement | null };
-  onStart: () => void;
-  onStop: () => void;
-  onFrameReady: () => void;
-  onRefresh: () => void;
-}) {
-  const ready = Boolean(status?.enabled && status.webrtcReady);
-  const state = status?.state ?? "unknown";
-  const stateStyle = localVideoStateStyle(status);
-  const displayedError = error ?? status?.lastError;
-  const connectDisabled = connecting || (!ready && !connected);
-
-  return (
-    <section className="bg-atlas-panel p-5 shadow-sm shadow-atlas-ink/5">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-atlas-ink/10 pb-4">
-        <div>
-          <h2 className="text-xl font-semibold">Local video</h2>
-          <p className="mt-1 text-sm text-atlas-ink/60">
-            {formatLocalVideoEndpoint(status?.rtspUrl)}
-          </p>
-        </div>
-        <span
-          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${stateStyle}`}
-        >
-          {formatLocalVideoState(state)}
-        </span>
-      </div>
-
-      <div className="mt-5 border border-atlas-ink/10 bg-atlas-ink">
-        <div className="relative aspect-video">
-          <video
-            ref={videoRef}
-            className="h-full w-full bg-atlas-ink object-contain"
-            autoPlay
-            playsInline
-            muted
-            onCanPlay={onFrameReady}
-            onLoadedData={onFrameReady}
-            onPlaying={onFrameReady}
-          />
-          {!frameReady && (
-            <div className="absolute inset-0 flex items-center justify-center bg-atlas-ink/90 px-4 text-center text-sm font-semibold text-atlas-panel/80">
-              {!ready ? "Video unavailable" : connected ? "Waiting for decoded frame" : "Video idle"}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-        <CommunicationMetric label="Source" value={shortLinkID(status?.sourceId)} />
-        <CommunicationMetric label="Codec" value={status?.codec ?? "pending"} />
-        <CommunicationMetric label="Peers" value={String(status?.activePeers ?? 0)} />
-        <CommunicationMetric label="Last frame" value={formatTime(status?.lastFrameAt)} />
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={connected ? onStop : onStart}
-          disabled={connectDisabled}
-          className="inline-flex min-h-9 items-center gap-2 bg-atlas-ink px-3 text-sm font-semibold text-atlas-panel transition hover:bg-atlas-ink/85 disabled:cursor-not-allowed disabled:opacity-45"
-        >
-          {connecting ? (
-            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
-          ) : connected ? (
-            <Power aria-hidden="true" size={15} />
-          ) : (
-            <Play aria-hidden="true" size={15} />
-          )}
-          {connecting ? "Connecting" : connected ? "Stop" : "Connect"}
-        </button>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist"
-          title="Refresh local video status"
-        >
-          <RefreshCw aria-hidden="true" size={15} />
-          Refresh
-        </button>
-      </div>
-
-      {displayedError && (
-        <p className="mt-3 border-l-4 border-atlas-signal bg-atlas-signal/10 px-3 py-2 text-sm text-atlas-ink">
-          {displayedError}
-        </p>
-      )}
-    </section>
   );
 }
 
@@ -3185,115 +2811,6 @@ function TelemetryFeedPanel({
   );
 }
 
-function PerceptionPanel({
-  drone,
-  status,
-  events,
-  error,
-  loading,
-  onRefresh,
-}: {
-  drone: Drone;
-  status?: PerceptionStatus;
-  events?: PerceptionEvent[];
-  error?: string | null;
-  loading: boolean;
-  onRefresh: () => void;
-}) {
-  const latestEvent = events?.[0] ?? status?.latestEvent;
-  const latestDetections = latestEvent?.detections ?? status?.latestDetections ?? [];
-  const activeCounts = status?.activeCounts ?? classCounts(latestDetections);
-  const activeClassText = formatClassCounts(activeCounts);
-  const stateStyle = perceptionStatusStyle(status);
-  const stateLabel = perceptionStatusLabel(status);
-
-  return (
-    <div className="grid gap-4 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Perception</h4>
-          <span className={`max-w-full truncate whitespace-nowrap px-2.5 py-1 text-[11px] font-semibold uppercase ${stateStyle}`}>
-            {stateLabel}
-          </span>
-        </div>
-
-        <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-          <CommunicationMetric label="Accel" value={status?.accelerator ?? "hailo"} />
-          <CommunicationMetric label="FPS" value={formatFPS(status?.fps)} />
-          <CommunicationMetric label="Dropped" value={String(status?.droppedFrames ?? 0)} />
-        </div>
-
-        <div className="mt-3 space-y-1 text-sm text-atlas-ink/60">
-          <p className="truncate">Model {formatModelLabel(status, latestEvent)}</p>
-          <p className="truncate">Source {shortLinkID(status?.sourceId ?? latestEvent?.sourceId)}</p>
-          <p className="truncate">Classes {activeClassText}</p>
-        </div>
-
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading}
-          className="mt-3 inline-flex min-h-9 items-center gap-2 border border-atlas-ink/15 bg-atlas-panel px-3 text-sm font-semibold transition hover:border-atlas-ink/35 hover:bg-atlas-mist disabled:cursor-not-allowed disabled:opacity-45"
-          title="Refresh perception"
-        >
-          {loading ? (
-            <Loader2 aria-hidden="true" className="animate-spin" size={15} />
-          ) : (
-            <RefreshCw aria-hidden="true" size={15} />
-          )}
-          Refresh
-        </button>
-        {(error || status?.lastError) && (
-          <p className="mt-3 text-sm text-atlas-signal">{error ?? status?.lastError}</p>
-        )}
-      </div>
-
-      <div className="min-w-0">
-        <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
-          <CommunicationMetric label="Last frame" value={formatTime(status?.lastFrameAt)} />
-          <CommunicationMetric label="Last detect" value={formatTime(status?.lastDetectionAt ?? latestEvent?.observedAt)} />
-          <CommunicationMetric label="Detections" value={String(latestDetections.length)} />
-          <CommunicationMetric
-            label="Latency"
-            value={typeof latestEvent?.inferenceLatencyMs === "number" ? `${latestEvent.inferenceLatencyMs.toFixed(1)} ms` : "pending"}
-          />
-        </div>
-
-        <div className="mt-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <h4 className="text-xs font-semibold uppercase text-atlas-ink/55">Latest detections</h4>
-            <span className="text-xs font-semibold text-atlas-ink/50">
-              {latestEvent?.frameId ? shortLinkID(latestEvent.frameId) : "no frame"}
-            </span>
-          </div>
-
-          {latestDetections.length > 0 ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {latestDetections.slice(0, 6).map((detection, index) => (
-                <div key={`${detection.class}-${index}`} className="min-w-0 border-l-2 border-atlas-field pl-3 text-sm">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate font-semibold">{detection.class}</p>
-                    <span className="shrink-0 text-xs font-semibold text-atlas-ink/55">
-                      {formatConfidence(detection.confidence)}
-                    </span>
-                  </div>
-                  <p className="mt-1 truncate text-xs text-atlas-ink/50">
-                    bbox {detection.bbox.map((value) => value.toFixed(2)).join(", ")}
-                  </p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-3 text-sm text-atlas-ink/60">
-              No detections reported. Processed video may still show burned-in overlays when objects are present.
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CommunicationPanel({
   drone,
   links,
@@ -3829,12 +3346,13 @@ function CommandPanel({
     drone.telemetry?.state === "fresh" &&
     Boolean(summary.activeCommandLinkId);
   const latest = commands[0];
+  const latestCommandId = latest?.id;
   const [events, setEvents] = useState<CommandEvent[]>([]);
   const [eventsLoading, setEventsLoading] = useState(false);
   const [eventsError, setEventsError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!latest) {
+    if (!latestCommandId) {
       setEvents([]);
       setEventsError(null);
       setEventsLoading(false);
@@ -3845,7 +3363,7 @@ function CommandPanel({
     setEventsLoading(true);
     setEventsError(null);
 
-    fetchCommandEvents(drone.id, latest.id, controller.signal)
+    fetchCommandEvents(drone.id, latestCommandId, controller.signal)
       .then((nextEvents) => {
         setEvents(nextEvents);
       })
@@ -3862,7 +3380,7 @@ function CommandPanel({
       });
 
     return () => controller.abort();
-  }, [drone.id, latest?.id]);
+  }, [drone.id, latestCommandId]);
 
   return (
     <div className="grid gap-5 border-t border-atlas-ink/10 pt-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[20rem_minmax(0,1fr)]">
@@ -4125,33 +3643,6 @@ function formatTime(value?: string) {
   }).format(new Date(value));
 }
 
-function waitForIceGatheringComplete(peerConnection: RTCPeerConnection) {
-  if (peerConnection.iceGatheringState === "complete") {
-    return Promise.resolve();
-  }
-
-  return new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      reject(new Error("Timed out gathering browser ICE candidates"));
-    }, 5000);
-
-    function cleanup() {
-      window.clearTimeout(timeout);
-      peerConnection.removeEventListener("icegatheringstatechange", handleStateChange);
-    }
-
-    function handleStateChange() {
-      if (peerConnection.iceGatheringState === "complete") {
-        cleanup();
-        resolve();
-      }
-    }
-
-    peerConnection.addEventListener("icegatheringstatechange", handleStateChange);
-  });
-}
-
 function formatCommandChannelTime(drone: Drone) {
   if (drone.commandChannel.state === "connected") {
     return formatTime(drone.commandChannel.connectedAt);
@@ -4280,114 +3771,6 @@ function formatTelemetryFeedSource(sourceType: TelemetryFeed["sourceType"]) {
       return "Simulator";
     case "UNKNOWN":
       return "Unknown source";
-  }
-}
-
-function perceptionStatusStyle(status?: PerceptionStatus) {
-  if (!status) {
-    return "bg-atlas-ink/10 text-atlas-ink/70";
-  }
-  if (status.lastError) {
-    return "bg-atlas-signal/20 text-atlas-ink";
-  }
-  if (status.inputConnected && status.outputPublishing && status.modelLoaded) {
-    return "bg-atlas-field/25 text-atlas-ink";
-  }
-  if (status.inputConnected || status.outputPublishing || status.modelLoaded) {
-    return "bg-atlas-sky/20 text-atlas-ink";
-  }
-  return "bg-atlas-ink/10 text-atlas-ink/70";
-}
-
-function perceptionStatusLabel(status?: PerceptionStatus) {
-  if (!status) {
-    return "pending";
-  }
-  if (status.lastError) {
-    return "error";
-  }
-  if (status.inputConnected && status.outputPublishing && status.modelLoaded) {
-    return "running";
-  }
-  if (status.inputConnected || status.outputPublishing || status.modelLoaded) {
-    return "starting";
-  }
-  return "idle";
-}
-
-function formatFPS(value?: number) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return "pending";
-  }
-  return value.toFixed(1);
-}
-
-function formatConfidence(value: number) {
-  return `${Math.round(value * 100)}%`;
-}
-
-function classCounts(detections: PerceptionEvent["detections"]) {
-  return detections.reduce<Record<string, number>>((counts, detection) => {
-    counts[detection.class] = (counts[detection.class] ?? 0) + 1;
-    return counts;
-  }, {});
-}
-
-function formatClassCounts(counts: Record<string, number>) {
-  const entries = Object.entries(counts)
-    .filter(([, count]) => count > 0)
-    .sort(([left], [right]) => left.localeCompare(right));
-  if (entries.length === 0) {
-    return "none";
-  }
-  return entries.map(([className, count]) => `${className} ${count}`).join(", ");
-}
-
-function formatModelLabel(status?: PerceptionStatus, event?: PerceptionEvent) {
-  const name = status?.modelName ?? event?.modelName;
-  const version = status?.modelVersion ?? event?.modelVersion;
-  if (!name) {
-    return "pending";
-  }
-  return version ? `${name} ${version}` : name;
-}
-
-function localVideoStateStyle(status?: LocalVideoStatus | null) {
-  if (!status?.enabled) {
-    return "bg-atlas-ink/10 text-atlas-ink/70";
-  }
-
-  switch (status.state) {
-    case "configured":
-      return "bg-atlas-sky/20 text-atlas-ink";
-    case "starting":
-    case "connected":
-      return "bg-atlas-sky/20 text-atlas-ink";
-    case "streaming":
-      return "bg-atlas-field/25 text-atlas-ink";
-    case "failed":
-      return "bg-atlas-signal/20 text-atlas-ink";
-    default:
-      return "bg-atlas-ink/10 text-atlas-ink/70";
-  }
-}
-
-function formatLocalVideoState(state: string) {
-  return state.replace(/_/g, " ");
-}
-
-function formatLocalVideoEndpoint(value?: string) {
-  if (!value) {
-    return "not configured";
-  }
-
-  try {
-    const url = new URL(value);
-    url.username = "";
-    url.password = "";
-    return url.toString();
-  } catch {
-    return value.replace(/\/\/[^@/]+@/, "//");
   }
 }
 

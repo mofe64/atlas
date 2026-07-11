@@ -356,63 +356,6 @@ export type Drone = {
   missionExecution?: MissionExecution;
 };
 
-export type LocalVideoStatus = {
-  enabled: boolean;
-  sourceId?: string;
-  rtspUrl?: string;
-  state: string;
-  webrtcReady: boolean;
-  codec?: string;
-  activePeers: number;
-  lastFrameAt?: string;
-  lastError?: string;
-  updatedAt?: string;
-};
-
-export type PerceptionDetection = {
-  class: string;
-  confidence: number;
-  bbox: [number, number, number, number];
-};
-
-export type PerceptionEvent = {
-  id: string;
-  droneId: string;
-  sourceId: string;
-  observedAt: string;
-  frameId?: string;
-  modelName: string;
-  modelVersion?: string;
-  inferenceLatencyMs: number;
-  detections: PerceptionDetection[];
-  createdAt: string;
-};
-
-export type PerceptionStatus = {
-  droneId: string;
-  sourceId?: string;
-  inputConnected: boolean;
-  outputPublishing: boolean;
-  modelLoaded: boolean;
-  accelerator: string;
-  fps: number;
-  droppedFrames: number;
-  lastFrameAt?: string;
-  lastDetectionAt?: string;
-  lastError?: string;
-  modelName?: string;
-  modelVersion?: string;
-  updatedAt?: string;
-  activeCounts: Record<string, number>;
-  latestDetections: PerceptionDetection[];
-  latestEvent?: PerceptionEvent;
-};
-
-export type LocalVideoSessionDescription = {
-  type: RTCSdpType;
-  sdp: string;
-};
-
 export type GimbalControlInput = {
   pitchRateDegS: number;
   yawRateDegS: number;
@@ -426,69 +369,6 @@ export async function fetchDrones(signal?: AbortSignal): Promise<Drone[]> {
   }
 
   return response.json() as Promise<Drone[]>;
-}
-
-export async function fetchLocalVideoStatus(
-  signal?: AbortSignal,
-): Promise<LocalVideoStatus> {
-  const response = await fetch("/api/local-video/status", { signal });
-
-  if (!response.ok) {
-    throw new Error(await errorMessage(response));
-  }
-
-  return response.json() as Promise<LocalVideoStatus>;
-}
-
-export async function fetchPerceptionStatus(
-  droneId: string,
-  signal?: AbortSignal,
-): Promise<PerceptionStatus> {
-  const response = await fetch(
-    `/api/drones/${encodeURIComponent(droneId)}/perception/status`,
-    { signal },
-  );
-
-  if (!response.ok) {
-    throw new Error(await errorMessage(response));
-  }
-
-  return response.json() as Promise<PerceptionStatus>;
-}
-
-export async function fetchPerceptionEvents(
-  droneId: string,
-  limit = 10,
-  signal?: AbortSignal,
-): Promise<PerceptionEvent[]> {
-  const response = await fetch(
-    `/api/drones/${encodeURIComponent(droneId)}/perception/events?limit=${limit}`,
-    { signal },
-  );
-
-  if (!response.ok) {
-    throw new Error(await errorMessage(response));
-  }
-
-  return response.json() as Promise<PerceptionEvent[]>;
-}
-
-export async function createLocalVideoAnswer(
-  offer: LocalVideoSessionDescription,
-): Promise<LocalVideoSessionDescription> {
-  const response = await fetch("/api/local-video/webrtc/offer", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(offer),
-  });
-
-  if (!response.ok) {
-    throw new Error(await errorMessage(response));
-  }
-
-  return response.json() as Promise<LocalVideoSessionDescription>;
 }
 
 export async function sendGimbalControl(

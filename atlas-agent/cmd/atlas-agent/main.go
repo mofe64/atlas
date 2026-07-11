@@ -9,7 +9,6 @@ import (
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/mavlinkobserver"
-	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	"github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannel"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -63,9 +62,6 @@ func main() {
 		"mavlink_observer_endpoint", cfg.MAVLinkObserverEndpoint,
 	)
 
-	perceptionSource := perception.NewFileSource(ctx, cfg.PerceptionMetadataPath)
-	logger.Info("perception metadata source configured", "source", perceptionSource.Name())
-
 	go vehicleagentchannel.Run(ctx, logger, vehicleagentchannel.Config{
 		Addr:                cfg.VehicleAgentGRPCAddr,
 		VehicleAgentID:      cfg.VehicleAgentID,
@@ -77,7 +73,7 @@ func main() {
 		CommandTimeout:      cfg.CommandTimeout,
 		RetryMin:            cfg.ChannelRetryMin,
 		RetryMax:            cfg.ChannelRetryMax,
-	}, gateway, telemetrySource, observerTracker, observer, perceptionSource)
+	}, gateway, telemetrySource, observerTracker, observer)
 
 	<-ctx.Done()
 	logger.Info("atlas vehicle agent stopped")

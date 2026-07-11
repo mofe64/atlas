@@ -231,9 +231,6 @@ remove_state() {
     "${LOG_DIR}/atlas-mavsdk.log" \
     "${LOG_DIR}/atlas-mavlink-router.log"
 
-  assert_safe_dir "${STATE_DIR}/perception" "perception state dir"
-  run rm -rf "${STATE_DIR}/perception"
-
   if [[ "$REMOVE_MEDIA" -eq 1 ]]; then
     run rm -f "${LOG_DIR}/atlas-mediamtx.log"
   else

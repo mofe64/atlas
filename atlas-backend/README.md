@@ -1,115 +1,96 @@
 # Atlas Backend
 
-Atlas Backend is the policy and product layer for Atlas.
+This is the new Atlas product backend: a Go 1.25 HTTP service built with Gin.
+It intentionally begins with process-level foundations rather than carrying old
+domain assumptions into the new architecture.
 
-In the first skeleton it exposes only basic process endpoints:
+The previous implementation is preserved in `../atlas-backend-deprecated`.
 
-- `GET /healthz`
-- `GET /version`
-- `POST /api/vehicle-agents/register`
-- `POST /api/vehicle-agents/{vehicleAgentId}/heartbeat`
-- `POST /api/vehicle-agents/{vehicleAgentId}/telemetry`
-- `GET /api/drones`
-- `GET /api/drones/stream`
-- `GET /api/drones/{droneId}/perception/events?limit=25`
-- `GET /api/drones/{droneId}/perception/status`
-- `POST /api/drones/{droneId}/actions/{action}`
+## Mental model
 
-It also exposes a gRPC backend-vehicle-agent channel on `ATLAS_VEHICLE_AGENT_GRPC_ADDR`.
-The vehicle agent opens this outbound stream, sends heartbeat and telemetry messages over
-it, and the backend pushes authorized vehicle actions over it when the vehicle agent is
-connected.
+```text
+cmd/atlas-backend/main.go
+        │ composition: config + router + process lifecycle
+        ├── internal/config       environment -> typed Config
+        ├── internal/httpapi      HTTP transport, middleware, routes
+        └── internal/server       listen + graceful shutdown
+```
 
-The same gRPC stream accepts onboard perception metadata:
+`main` is a composition root: the one place where concrete pieces are assembled.
+Keeping business rules out of `main` makes future packages independently testable.
 
-- `PerceptionEvent` stores compact detection metadata in `perception_events`.
-- `PerceptionHealth` updates live inference status for the drone.
-- Video frames stay on RTSP/WebRTC and are not stored by these APIs.
+`internal/` is enforced by the Go toolchain. Code outside this module cannot import
+these packages, so internal implementation remains free to evolve without becoming
+a public SDK accidentally.
 
-`GET /api/drones` and `GET /api/drones/stream` expose these as separate
-operator-facing health signals:
+## Run it
 
-- `status` is derived from heartbeat age.
-- `telemetry.state` is derived from latest telemetry freshness.
-- `commandChannel.state` shows whether the vehicle-agent gRPC stream is connected.
-
-Vehicle action delivery uses a short lease. When the backend sends an action to a
-vehicle agent, it records `sent_to_vehicle_agent`, increments the delivery attempt, and sets a
-lease deadline. The vehicle agent clears that lease by reporting `vehicle_agent_received`. If the
-lease expires first, the action becomes eligible for redelivery.
-
-Run locally:
+Gin requires Go 1.25 or newer. Verify your active toolchain first:
 
 ```sh
+go version
 go run ./cmd/atlas-backend
 ```
 
-Use `ATLAS_BACKEND_ADDR` to change the listen address:
+Then check the process from another terminal:
 
 ```sh
-ATLAS_BACKEND_ADDR=:8081 go run ./cmd/atlas-backend
+curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:8080/api/v1/version
 ```
 
-Use `ATLAS_VEHICLE_AGENT_GRPC_ADDR` to change the vehicle-agent gRPC listen address:
+The default listener is loopback-only. This is deliberate for a desktop-first
+foundation: other machines cannot reach the API until we explicitly design network
+exposure, authentication, and transport security.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ATLAS_HTTP_ADDR` | `127.0.0.1:8080` | HTTP listen address |
+| `ATLAS_SHUTDOWN_TIMEOUT` | `5s` | Time allowed for in-flight requests to finish |
+| `ATLAS_ALLOWED_ORIGINS` | Tauri and Vite local origins | Comma-separated browser origins allowed by CORS |
+
+Example:
 
 ```sh
-ATLAS_VEHICLE_AGENT_GRPC_ADDR=:9091 go run ./cmd/atlas-backend
-```
-
-Ground-machine HM30 defaults:
-
-```sh
-ATLAS_VEHICLE_AGENT_GRPC_ADDR=:9090 \
-ATLAS_LOCAL_INPUTS_ENABLED=true \
-ATLAS_LOCAL_VIDEO_RTSP_URL=rtsp://192.168.144.168:8554/atlas \
-ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp \
-ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256 \
+ATLAS_HTTP_ADDR=127.0.0.1:8081 \
+ATLAS_SHUTDOWN_TIMEOUT=10s \
 go run ./cmd/atlas-backend
 ```
 
-The local video relay is optimized for live operator preview. The backend pulls
-the Pi RTSP stream over UDP by default and uses a bounded RTP queue before
-writing to WebRTC. If RTSP control connects but no UDP RTP packets arrive, the
-backend automatically retries the Pi RTSP stream over TCP so the browser does
-not stay stuck waiting for its first decoded frame. Set
-`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when you want to force TCP from the
-start.
+Configuration is parsed before the listener starts. Invalid durations fail fast
+instead of leaving a partially configured service running.
 
-Register a local development agent:
+## Request flow
 
-```sh
-curl -X POST http://127.0.0.1:8080/api/vehicle-agents/register \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "vehicleAgentId": "agent-001",
-    "droneId": "drone-001",
-    "droneName": "Training Quad 1",
-    "vehicleAgentVersion": "0.1.0-dev"
-  }'
-```
+1. `net/http` accepts a connection.
+2. Gin runs logger, panic recovery, and CORS middleware in order.
+3. Gin matches the method and path to a handler.
+4. The handler writes a JSON response.
+5. On SIGINT/SIGTERM, `server.Run` stops accepting new requests and gives active
+   requests up to `ATLAS_SHUTDOWN_TIMEOUT` to finish.
 
-Send a heartbeat:
+Routes under `/api/v1` are versioned so later breaking API changes can coexist
+during migrations. `/healthz` stays outside the product API because process probes
+should not depend on a domain API version.
+
+## Test and debug
 
 ```sh
-curl -X POST http://127.0.0.1:8080/api/vehicle-agents/agent-001/heartbeat \
-  -H 'Content-Type: application/json' \
-  -d '{"vehicleAgentVersion": "0.1.0-dev"}'
+go test ./...
+go test ./internal/httpapi -run TestHealth -v
 ```
 
-Status is derived from heartbeat age:
+Debug from the outside inward:
 
-```text
-no heartbeat      registered
-<= 15 seconds     online
-<= 60 seconds     stale
-> 60 seconds      offline
-```
+1. `curl /healthz` checks listener, routing, and JSON without involving Tauri.
+2. If curl works but the app says offline, inspect the webview console, API URL,
+   and CORS origin.
+3. If the process exits immediately, its JSON log names configuration or bind errors.
+4. An `address already in use` error means another process owns port 8080; either
+   stop it or set `ATLAS_HTTP_ADDR` and matching `VITE_ATLAS_API_URL`.
 
-Telemetry freshness is derived separately:
-
-```text
-no telemetry      unknown
-<= 5 seconds      fresh
-<= 20 seconds     stale
-> 20 seconds      lost
-```
+CORS is a browser rule, not authentication. It prevents an unapproved web origin
+from reading responses, but it does not prove who sent a request. Authentication
+must be designed separately when protected domain endpoints arrive.

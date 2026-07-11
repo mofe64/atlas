@@ -14,7 +14,6 @@ type Config struct {
 	MAVSDKGRPCAddr          string
 	PX4SystemAddress        string
 	MAVLinkObserverEndpoint string
-	PerceptionMetadataPath  string
 	HeartbeatInterval       time.Duration
 	TelemetryInterval       time.Duration
 	CommandTimeout          time.Duration
@@ -32,7 +31,6 @@ func Load() Config {
 		MAVSDKGRPCAddr:          envOrDefault("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50051"),
 		PX4SystemAddress:        envOrDefault("ATLAS_PX4_SYSTEM_ADDRESS", "udpin://0.0.0.0:14540"),
 		MAVLinkObserverEndpoint: envOrDefault("ATLAS_MAVLINK_OBSERVER_ENDPOINT", "udp-server://0.0.0.0:14550"),
-		PerceptionMetadataPath:  envOrDefault("ATLAS_PERCEPTION_METADATA_PATH", "~/.local/state/atlas-agent/perception/metadata.jsonl"),
 		HeartbeatInterval:       5 * time.Second,
 		TelemetryInterval:       2 * time.Second,
 		CommandTimeout:          15 * time.Second,

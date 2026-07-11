@@ -14,10 +14,20 @@ PX4 remains the flight-control authority. Atlas provides the surrounding product
 ## Apps
 
 ```text
-atlas-backend  Go backend service
-atlas-agent    Go onboard agent prototype
-atlas-ui       React, TypeScript, Tailwind frontend
+atlas                      Tauri v2 native app (React, TypeScript, Rust)
+atlas-backend              New Go 1.25 + Gin backend foundation
+atlas-backend-deprecated   Previous backend, preserved during migration
+atlas-agent                Go onboard agent prototype
+atlas-ui                   Previous browser UI
 ```
+
+## Architecture transition
+
+The new desktop application and backend intentionally start as small foundations.
+The hardware and SITL runbooks below still exercise the previous API, database,
+and gRPC implementation, so their scripts explicitly use
+`atlas-backend-deprecated` until each workflow is migrated. See
+`atlas/README.md` and `atlas-backend/README.md` for the new applications.
 
 ## Hardware Onboard MVP Runbook
 
@@ -27,7 +37,8 @@ Use this runbook for the real, non-SITL Atlas setup:
 Pixhawk 6C TELEM2 -> USB serial -> Raspberry Pi 5 / Atlas Agent
 A8 camera RTSP -> Raspberry Pi 5 / GStreamer -> MediaMTX RTSP
 Raspberry Pi 5 / Atlas Agent -> ngrok TCP -> native Atlas Backend on ground machine
-Ground machine Atlas Backend -> browser UI over localhost HTTP/WebRTC
+Ground machine Atlas Backend -> browser UI over localhost HTTP
+Ground machine VLC -> Pi processed RTSP
 Docker Postgres -> native Atlas Backend
 ```
 
@@ -53,7 +64,7 @@ If the ground-machine tunnel is restarted, replace
 Ground machine:
 
 - Docker with Docker Compose.
-- Go 1.25.x for `atlas-backend` and `atlas-agent`.
+- Go 1.25.x for both backend generations and `atlas-agent`.
 - Node.js `22.13.1` through `nvm` for `atlas-ui`.
 - `ngrok` CLI plus an auth token that supports TCP tunnels.
 - Network reachability to the Pi RTSP endpoint, normally
@@ -93,22 +104,10 @@ export NGROK_AUTHTOKEN=your_ngrok_token
 scripts/start-native-onboard-backend-tunnel.sh
 ```
 
-The script starts Docker Postgres, applies migrations, runs `atlas-backend`
+The script starts Docker Postgres, applies migrations, runs `atlas-backend-deprecated`
 natively, then starts an ngrok TCP tunnel to backend gRPC port `9090`. Keep this
 terminal open. The script prints a Pi installer command containing the current
 ngrok `host:port`.
-
-Optional low-latency video defaults:
-
-```sh
-export ATLAS_LOCAL_VIDEO_RTSP_URL=rtsp://192.168.144.168:8554/atlas
-export ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp
-export ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256
-```
-
-UDP is the preferred low-latency path. If RTSP control connects but no UDP RTP
-packets arrive, the backend automatically retries the Pi RTSP stream over TCP so
-the browser does not stay stuck waiting for its first decoded frame.
 
 ### 2. Identify The Pixhawk USB Serial Device
 
@@ -230,7 +229,6 @@ On the ground machine:
 
 ```sh
 curl -s http://127.0.0.1:8080/healthz
-curl -s http://127.0.0.1:8080/api/local-video/status
 ```
 
 Start the UI:
@@ -243,8 +241,11 @@ npm run dev
 ```
 
 Open the Vite URL printed by `npm run dev`. The Fleet card should show the Pi
-agent online, and the Local video panel should transition to `streaming` after
-connecting.
+agent online. Open the processed video separately in VLC:
+
+```sh
+vlc rtsp://192.168.144.168:8554/atlas
+```
 
 ### Troubleshooting
 
@@ -283,11 +284,9 @@ RTSP returns `404 Not Found` for `/atlas`:
 - Run `atlas-agent/scripts/status-onboard-stack.sh`.
 - Check `atlas-video-agent` logs for GStreamer errors.
 
-Browser says streaming but video is black or very delayed:
+VLC video is black, delayed, or missing boxes:
 
-- Confirm the backend is running natively, not behind Docker bridge networking.
-- Keep `ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp` for the ground backend to Pi RTSP
-  leg unless UDP is blocked.
+- Confirm VLC can reach `rtsp://192.168.144.168:8554/atlas`.
 - Pi-side latency knobs live in `~/.config/atlas-agent/onboard.env`:
 
 ```sh
@@ -410,10 +409,10 @@ and Atlas components connect directly to PX4 endpoints. Do not use direct mode
 for normal SITL verification because it skips the routing layer used by the
 intended architecture.
 
-Backend:
+Legacy backend used by this runbook:
 
 ```sh
-cd atlas-backend
+cd atlas-backend-deprecated
 go run ./cmd/atlas-backend
 ```
 
@@ -426,31 +425,23 @@ expose TCP port `9090`; an HTTP-only tunnel URL is not enough.
 Atlas uses ngrok TCP for this development path because it gives the Pi a plain
 `host:port` endpoint that can be passed directly to `install-onboard-pi.sh`.
 Only Postgres runs in Docker; the backend and ngrok run natively on the ground
-machine so local RTSP/WebRTC/gRPC networking does not cross Docker's bridge.
+machine so backend gRPC networking does not cross Docker's bridge.
 
 ```sh
 export NGROK_AUTHTOKEN=your_ngrok_token
 scripts/start-native-onboard-backend-tunnel.sh
 ```
 
-By default the native backend reads the Pi RTSP stream from
-`rtsp://192.168.144.168:8554/atlas` over UDP and uses a bounded WebRTC RTP
-queue:
+Video is viewed directly in VLC from the Pi processed RTSP stream:
 
 ```sh
-ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=udp
-ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE=256
+vlc rtsp://192.168.144.168:8554/atlas
 ```
-
-If RTSP control connects but no UDP RTP packets arrive, the backend
-automatically retries the Pi RTSP stream over TCP. Set
-`ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT=tcp` only when you want to force the fallback
-path from the start.
 
 The script starts:
 
 ```text
-Docker Postgres -> Docker migrations -> native atlas-backend -> native ngrok TCP tunnel
+Docker Postgres -> Docker migrations -> native atlas-backend-deprecated -> native ngrok TCP tunnel
 ```
 
 It then prints a command like:
@@ -467,7 +458,7 @@ scripts/start-native-onboard-backend-tunnel.sh
 ```
 
 The backend connects to Docker Postgres through `127.0.0.1:5432`, which avoids
-Docker bridge networking for the backend, RTSP, WebRTC, and ngrok.
+Docker bridge networking for the backend and ngrok.
 
 UI:
 

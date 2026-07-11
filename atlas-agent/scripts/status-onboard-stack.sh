@@ -53,7 +53,7 @@ printf 'ATLAS_PROCESSED_RTSP_URL=%s\n' "${ATLAS_PROCESSED_RTSP_URL:-not set}"
 printf 'ATLAS_VIDEO_PIPELINE_MODE=%s\n' "${ATLAS_VIDEO_PIPELINE_MODE:-not set}"
 printf 'ATLAS_A8_RTP_CODEC=%s\n' "${ATLAS_A8_RTP_CODEC:-not set}"
 
-printf '\n[atlas-onboard-status] perception model\n'
+printf '\n[atlas-onboard-status] Hailo model\n'
 if [[ -n "${ATLAS_PERCEPTION_MODEL_PATH:-}" ]]; then
   ls -lh "$ATLAS_PERCEPTION_MODEL_PATH" || true
 else

@@ -36,9 +36,7 @@ The agent applies outbound backpressure by message importance:
 - heartbeat messages use a small separate queue and may be skipped if the stream
   is badly backed up;
 - telemetry keeps only the latest pending snapshot, so stale samples are dropped
-  before they can delay vehicle action acknowledgements;
-- perception metadata uses a bounded advisory queue, so detection bursts cannot
-  block vehicle action or mission status.
+  before they can delay vehicle action acknowledgements.
 
 If the backend is unavailable when the agent starts, the agent keeps retrying
 the gRPC channel connection with capped exponential backoff.
@@ -67,7 +65,6 @@ ATLAS_VEHICLE_AGENT_GRPC_ADDR=127.0.0.1:9090
 ATLAS_MAVSDK_GRPC_ADDR=127.0.0.1:50051
 ATLAS_PX4_SYSTEM_ADDRESS=udpin://0.0.0.0:14540
 ATLAS_MAVLINK_OBSERVER_ENDPOINT=udp-server://0.0.0.0:14550
-ATLAS_PERCEPTION_METADATA_PATH=~/.local/state/atlas-agent/perception/metadata.jsonl
 ```
 
 Default runtime intervals:
@@ -78,7 +75,7 @@ telemetry:      2s
 command timeout: 15s
 ```
 
-Onboard perception MVP:
+Onboard Hailo video MVP:
 
 - `scripts/atlas-video-agent.py` runs the Pi-side Hailo/GStreamer video pipeline.
 - The raw A8 input defaults to `rtsp://192.168.144.25:8554/main.264`.
@@ -123,8 +120,8 @@ Onboard perception MVP:
   `hailonet -> hailofilter -> hailooverlay`. `hailofilter` loads
   `ATLAS_PERCEPTION_POSTPROCESS_SO` and converts YOLO tensors into boxes that
   `hailooverlay` can draw into the RTSP stream.
-- Runtime health and compact detections are written as JSONL to `ATLAS_PERCEPTION_METADATA_PATH`.
-- `atlas-agent` tails that JSONL file and forwards `PerceptionEvent` and `PerceptionHealth` on the existing vehicle-agent gRPC stream.
+- Detection boxes are burned into the processed RTSP stream for VLC viewing.
+  The Go `atlas-agent` does not currently forward detection metadata over gRPC.
 
 Run the video service dry-run locally:
 

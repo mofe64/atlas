@@ -8,10 +8,8 @@ import (
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/comms"
 	"github.com/sunnyside/atlas/atlas-agent/internal/mavlinkobserver"
-	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
-	"google.golang.org/protobuf/proto"
 )
 
 func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
@@ -32,79 +30,6 @@ func TestEnqueueTelemetryKeepsLatestSnapshot(t *testing.T) {
 
 	if len(outbound.telemetry) != 0 {
 		t.Fatalf("expected one telemetry message to be retained, got %d queued", len(outbound.telemetry)+1)
-	}
-}
-
-func TestEnqueuePerceptionDropsOldestWhenFull(t *testing.T) {
-	outbound := newOutboundQueues()
-
-	for i := 0; i < cap(outbound.perception); i++ {
-		if !enqueuePerception(context.Background(), outbound, testPerceptionEventMessage("queued")) {
-			t.Fatalf("expected perception enqueue %d", i)
-		}
-	}
-
-	if !enqueuePerception(context.Background(), outbound, testPerceptionEventMessage("latest")) {
-		t.Fatal("expected latest perception enqueue")
-	}
-
-	drained := make([]string, 0, cap(outbound.perception))
-	for len(outbound.perception) > 0 {
-		msg := <-outbound.perception
-		drained = append(drained, msg.GetVehicleAgentId())
-	}
-	if drained[len(drained)-1] != "latest" {
-		t.Fatalf("expected latest perception message to be retained last, got %v", drained)
-	}
-}
-
-func TestSendPerceptionEventSerializesDetectionMetadata(t *testing.T) {
-	outbound := newOutboundQueues()
-	observedAt := time.Date(2026, 7, 9, 12, 0, 0, 0, time.UTC)
-
-	if !sendPerceptionEvent(context.Background(), outbound, "agent-001", perception.Event{
-		DroneID:            "drone-001",
-		SourceID:           "a8-main",
-		ObservedAt:         observedAt,
-		FrameID:            "frame-000001",
-		ModelName:          "yolov6n-hailo",
-		ModelVersion:       "hef-mvp",
-		InferenceLatencyMS: 16.75,
-		Detections: []perception.Detection{
-			{ClassName: "person", Confidence: 0.93, BBox: [4]float64{0.1, 0.2, 0.3, 0.4}},
-		},
-	}) {
-		t.Fatal("expected perception event enqueue")
-	}
-
-	msg, ok := nextOutboundMessage(context.Background(), outbound)
-	if !ok {
-		t.Fatal("expected outbound perception event")
-	}
-	event := msg.GetPerceptionEvent()
-	if event == nil {
-		t.Fatalf("expected perception event, got %#v", msg)
-	}
-	if event.GetObservedAt() != observedAt.Format(time.RFC3339Nano) {
-		t.Fatalf("expected observed_at %s, got %q", observedAt.Format(time.RFC3339Nano), event.GetObservedAt())
-	}
-	if event.GetInferenceLatencyMs() != 16.75 {
-		t.Fatalf("expected latency 16.75, got %f", event.GetInferenceLatencyMs())
-	}
-	if len(event.GetDetections()) != 1 || event.GetDetections()[0].GetClassName() != "person" {
-		t.Fatalf("expected person detection, got %#v", event.GetDetections())
-	}
-
-	raw, err := proto.Marshal(msg)
-	if err != nil {
-		t.Fatalf("marshal perception event proto: %v", err)
-	}
-	var decoded pb.VehicleAgentToBackend
-	if err := proto.Unmarshal(raw, &decoded); err != nil {
-		t.Fatalf("unmarshal perception event proto: %v", err)
-	}
-	if decoded.GetPerceptionEvent().GetDetections()[0].GetBbox().GetW() != 0.3 {
-		t.Fatalf("expected bbox width 0.3 after proto round trip, got %f", decoded.GetPerceptionEvent().GetDetections()[0].GetBbox().GetW())
 	}
 }
 
@@ -632,19 +557,6 @@ func testTelemetryMessage(agentID string) *pb.VehicleAgentToBackend {
 		VehicleAgentId: agentID,
 		Payload: &pb.VehicleAgentToBackend_Telemetry{
 			Telemetry: &pb.Telemetry{Source: "px4"},
-		},
-	}
-}
-
-func testPerceptionEventMessage(agentID string) *pb.VehicleAgentToBackend {
-	return &pb.VehicleAgentToBackend{
-		VehicleAgentId: agentID,
-		Payload: &pb.VehicleAgentToBackend_PerceptionEvent{
-			PerceptionEvent: &pb.PerceptionEvent{
-				SourceId:   "a8-main",
-				ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
-				ModelName:  "yolov6n-hailo",
-			},
 		},
 	}
 }

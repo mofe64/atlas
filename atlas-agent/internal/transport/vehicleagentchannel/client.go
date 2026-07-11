@@ -12,7 +12,6 @@ import (
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/comms"
 	"github.com/sunnyside/atlas/atlas-agent/internal/mavlinkobserver"
-	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/vehicleagentchannelpb/atlas"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -100,26 +99,24 @@ type missionExecutionOutcome struct {
 // critical, heartbeats are useful liveness signals, and telemetry is allowed to
 // drop old samples under backpressure.
 type outboundQueues struct {
-	critical   chan *pb.VehicleAgentToBackend
-	heartbeat  chan *pb.VehicleAgentToBackend
-	telemetry  chan *pb.VehicleAgentToBackend
-	perception chan *pb.VehicleAgentToBackend
+	critical  chan *pb.VehicleAgentToBackend
+	heartbeat chan *pb.VehicleAgentToBackend
+	telemetry chan *pb.VehicleAgentToBackend
 }
 
 // newOutboundQueues sizes each queue according to how much loss or delay Atlas
 // can tolerate for that message class.
 func newOutboundQueues() outboundQueues {
 	return outboundQueues{
-		critical:   make(chan *pb.VehicleAgentToBackend, 16),
-		heartbeat:  make(chan *pb.VehicleAgentToBackend, 2),
-		telemetry:  make(chan *pb.VehicleAgentToBackend, 1),
-		perception: make(chan *pb.VehicleAgentToBackend, 8),
+		critical:  make(chan *pb.VehicleAgentToBackend, 16),
+		heartbeat: make(chan *pb.VehicleAgentToBackend, 2),
+		telemetry: make(chan *pb.VehicleAgentToBackend, 1),
 	}
 }
 
 // Run keeps the gRPC channel alive until ctx is cancelled. Each disconnect
 // returns from connectOnce and is retried with bounded exponential backoff.
-func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source, observer MAVLinkObserver, gimbalController GimbalController, perceptionSource perception.Source) {
+func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source, observer MAVLinkObserver, gimbalController GimbalController) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -135,7 +132,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.G
 
 	for ctx.Err() == nil {
 		channelHealth.MarkConnecting(time.Now().UTC())
-		err := connectOnce(ctx, logger, cfg, gateway, telemetrySource, observer, gimbalController, perceptionSource, channelHealth)
+		err := connectOnce(ctx, logger, cfg, gateway, telemetrySource, observer, gimbalController, channelHealth)
 		if ctx.Err() != nil {
 			return
 		}
@@ -157,7 +154,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.G
 // connectOnce establishes one stream session, sends the required hello message,
 // starts sender/receiver goroutines, and processes backend instructions until
 // the stream fails or the context is cancelled.
-func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source, observer MAVLinkObserver, gimbalController GimbalController, perceptionSource perception.Source, channelHealth *comms.BackendChannelManager) error {
+func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway vehicle.Gateway, telemetrySource telemetry.Source, observer MAVLinkObserver, gimbalController GimbalController, channelHealth *comms.BackendChannelManager) error {
 	conn, err := grpc.NewClient(cfg.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("create vehicle-agent channel client: %w", err)
@@ -204,9 +201,6 @@ func connectOnce(ctx context.Context, logger *slog.Logger, cfg Config, gateway v
 	go sendHeartbeats(sendCtx, outbound, cfg, observer, channelHealth)
 	if telemetrySource != nil {
 		go sendTelemetrySnapshots(sendCtx, logger, outbound, cfg, telemetrySource)
-	}
-	if perceptionSource != nil {
-		go sendPerceptionMetadata(sendCtx, logger, outbound, cfg, perceptionSource)
 	}
 
 	// TODO: Persist completed vehicle action IDs locally. If the agent process crashes
@@ -783,12 +777,6 @@ func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.Vehi
 	}
 
 	select {
-	case msg := <-outbound.perception:
-		return msg, true
-	default:
-	}
-
-	select {
 	case <-ctx.Done():
 		return nil, false
 	case msg := <-outbound.critical:
@@ -796,8 +784,6 @@ func nextOutboundMessage(ctx context.Context, outbound outboundQueues) (*pb.Vehi
 	case msg := <-outbound.heartbeat:
 		return msg, true
 	case msg := <-outbound.telemetry:
-		return msg, true
-	case msg := <-outbound.perception:
 		return msg, true
 	}
 }
@@ -910,108 +896,6 @@ func sendTelemetrySnapshot(ctx context.Context, logger *slog.Logger, outbound ou
 	}
 }
 
-// sendPerceptionMetadata forwards local inference metadata over the existing
-// vehicle-agent stream. Keeping this on the same stream avoids a second process
-// competing for command-channel ownership on the backend.
-func sendPerceptionMetadata(ctx context.Context, logger *slog.Logger, outbound outboundQueues, cfg Config, source perception.Source) {
-	events, health, errs := source.Subscribe()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case err, ok := <-errs:
-			if !ok {
-				errs = nil
-				continue
-			}
-			if err != nil {
-				logger.Warn("perception metadata source error", "source", source.Name(), "error", err)
-			}
-		case event, ok := <-events:
-			if !ok {
-				events = nil
-				continue
-			}
-			if event.DroneID == "" {
-				event.DroneID = cfg.DroneID
-			}
-			if !sendPerceptionEvent(ctx, outbound, cfg.VehicleAgentID, event) {
-				logger.Debug("perception event dropped due to outbound backpressure", "source", source.Name())
-			}
-		case item, ok := <-health:
-			if !ok {
-				health = nil
-				continue
-			}
-			if item.DroneID == "" {
-				item.DroneID = cfg.DroneID
-			}
-			if !sendPerceptionHealth(ctx, outbound, cfg.VehicleAgentID, item) {
-				logger.Debug("perception health dropped due to outbound backpressure", "source", source.Name())
-			}
-		}
-
-		if events == nil && health == nil && errs == nil {
-			return
-		}
-	}
-}
-
-func sendPerceptionEvent(ctx context.Context, outbound outboundQueues, agentID string, event perception.Event) bool {
-	detections := make([]*pb.PerceptionDetection, 0, len(event.Detections))
-	for _, detection := range event.Detections {
-		detections = append(detections, &pb.PerceptionDetection{
-			ClassName:  detection.ClassName,
-			Confidence: detection.Confidence,
-			Bbox: &pb.NormalizedBBox{
-				X: detection.BBox[0],
-				Y: detection.BBox[1],
-				W: detection.BBox[2],
-				H: detection.BBox[3],
-			},
-		})
-	}
-
-	return enqueuePerception(ctx, outbound, &pb.VehicleAgentToBackend{
-		VehicleAgentId: agentID,
-		Payload: &pb.VehicleAgentToBackend_PerceptionEvent{
-			PerceptionEvent: &pb.PerceptionEvent{
-				DroneId:            event.DroneID,
-				SourceId:           event.SourceID,
-				ObservedAt:         formatOptionalTime(event.ObservedAt),
-				FrameId:            event.FrameID,
-				ModelName:          event.ModelName,
-				ModelVersion:       event.ModelVersion,
-				InferenceLatencyMs: event.InferenceLatencyMS,
-				Detections:         detections,
-			},
-		},
-	})
-}
-
-func sendPerceptionHealth(ctx context.Context, outbound outboundQueues, agentID string, health perception.Health) bool {
-	return enqueuePerception(ctx, outbound, &pb.VehicleAgentToBackend{
-		VehicleAgentId: agentID,
-		Payload: &pb.VehicleAgentToBackend_PerceptionHealth{
-			PerceptionHealth: &pb.PerceptionHealth{
-				DroneId:          health.DroneID,
-				SourceId:         health.SourceID,
-				InputConnected:   health.InputConnected,
-				OutputPublishing: health.OutputPublishing,
-				ModelLoaded:      health.ModelLoaded,
-				Accelerator:      health.Accelerator,
-				Fps:              health.FPS,
-				DroppedFrames:    health.DroppedFrames,
-				LastFrameAt:      formatOptionalTime(health.LastFrameAt),
-				LastDetectionAt:  formatOptionalTime(health.LastDetectionAt),
-				LastError:        health.LastError,
-				ModelName:        health.ModelName,
-				ModelVersion:     health.ModelVersion,
-			},
-		},
-	})
-}
-
 // sendVehicleActionStatus reports vehicle action lifecycle updates to the backend services.
 func sendVehicleActionStatus(ctx context.Context, outbound outboundQueues, agentID string, vehicleActionID string, state string, resultMessage string, ackCorrelationID string, rawAckCode string, rawAck *pb.RawMavlinkCommandAckEvidence) bool {
 	return enqueueCritical(ctx, outbound, &pb.VehicleAgentToBackend{
@@ -1097,32 +981,6 @@ func enqueueTelemetry(ctx context.Context, outbound outboundQueues, msg *pb.Vehi
 	case <-ctx.Done():
 		return false
 	case outbound.telemetry <- msg:
-		return true
-	default:
-		return false
-	}
-}
-
-// enqueuePerception keeps the most recent bounded batch of perception messages.
-// Detections are advisory and must not delay command status under weak links.
-func enqueuePerception(ctx context.Context, outbound outboundQueues, msg *pb.VehicleAgentToBackend) bool {
-	select {
-	case <-ctx.Done():
-		return false
-	case outbound.perception <- msg:
-		return true
-	default:
-	}
-
-	select {
-	case <-outbound.perception:
-	default:
-	}
-
-	select {
-	case <-ctx.Done():
-		return false
-	case outbound.perception <- msg:
 		return true
 	default:
 		return false

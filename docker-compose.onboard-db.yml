@@ -25,7 +25,7 @@ services:
       ATLAS_DB_USER: ${ATLAS_DB_USER:-atlas}
       PGPASSWORD: ${ATLAS_DB_PASSWORD:-atlas}
     volumes:
-      - ./atlas-backend/migrations:/migrations:ro
+      - ./atlas-backend-deprecated/migrations:/migrations:ro
     command:
       - sh
       - -ec

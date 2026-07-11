@@ -16,9 +16,6 @@ ATLAS_BACKEND_ADDR="${ATLAS_BACKEND_ADDR:-:8080}"
 ATLAS_VEHICLE_AGENT_GRPC_ADDR="${ATLAS_VEHICLE_AGENT_GRPC_ADDR:-:9090}"
 ATLAS_DATABASE_URL="${ATLAS_DATABASE_URL:-postgres://${ATLAS_DB_USER}:${ATLAS_DB_PASSWORD}@127.0.0.1:${ATLAS_POSTGRES_PORT}/${ATLAS_DB_NAME}?sslmode=disable}"
 ATLAS_LOCAL_INPUTS_ENABLED="${ATLAS_LOCAL_INPUTS_ENABLED:-true}"
-ATLAS_LOCAL_VIDEO_RTSP_URL="${ATLAS_LOCAL_VIDEO_RTSP_URL:-rtsp://192.168.144.168:8554/atlas}"
-ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT="${ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT:-udp}"
-ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE="${ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE:-256}"
 
 backend_pid=""
 ngrok_pid=""
@@ -42,10 +39,6 @@ Optional:
   ATLAS_BACKEND_ADDR               native backend HTTP listen addr. Default: ${ATLAS_BACKEND_ADDR}
   ATLAS_VEHICLE_AGENT_GRPC_ADDR    native backend gRPC listen addr. Default: ${ATLAS_VEHICLE_AGENT_GRPC_ADDR}
   ATLAS_DATABASE_URL               native backend Postgres URL. Default: ${ATLAS_DATABASE_URL}
-  ATLAS_LOCAL_VIDEO_RTSP_URL       local RTSP source for backend WebRTC relay. Default: ${ATLAS_LOCAL_VIDEO_RTSP_URL}
-  ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT RTSP transport from backend to Pi: udp or tcp. Default: ${ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT}
-  ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE
-                                    bounded RTP packet queue before WebRTC. Default: ${ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE}
   ATLAS_ONBOARD_DB_COMPOSE_FILE    DB-only Compose file. Default: ${COMPOSE_FILE}
   ATLAS_TUNNEL_WAIT_SECONDS        seconds to wait for ngrok to publish TCP URL. Default: ${WAIT_SECONDS}
 EOF
@@ -264,14 +257,11 @@ trap cleanup EXIT INT TERM
 
 log "starting native atlas-backend"
 (
-  cd "${ROOT_DIR}/atlas-backend"
+  cd "${ROOT_DIR}/atlas-backend-deprecated"
   export ATLAS_BACKEND_ADDR
   export ATLAS_VEHICLE_AGENT_GRPC_ADDR
   export ATLAS_DATABASE_URL
   export ATLAS_LOCAL_INPUTS_ENABLED
-  export ATLAS_LOCAL_VIDEO_RTSP_URL
-  export ATLAS_LOCAL_VIDEO_RTSP_TRANSPORT
-  export ATLAS_LOCAL_VIDEO_RTP_BUFFER_SIZE
   exec go run ./cmd/atlas-backend
 ) >"$BACKEND_LOG" 2>&1 &
 backend_pid=$!

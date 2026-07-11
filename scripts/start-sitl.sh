@@ -391,7 +391,7 @@ start_postgres() {
       "$ATLAS_DB_COMPOSE_SERVICE" \
       "$ATLAS_DB_USER" \
       "$ATLAS_DB_NAME"
-    printf '  (cd %q && %s exec -T -e %q %q psql -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 < atlas-backend/migrations/001_initial_atlas_store.sql)\n' \
+    printf '  (cd %q && %s exec -T -e %q %q psql -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 < atlas-backend-deprecated/migrations/001_initial_atlas_store.sql)\n' \
       "$ROOT_DIR" \
       "$compose" \
       "PGPASSWORD=${ATLAS_DB_PASSWORD}" \
@@ -433,7 +433,7 @@ run_migrations() {
 
   compose="$(compose_command)"
   log "applying atlas backend migrations"
-  for migration in "${ROOT_DIR}"/atlas-backend/migrations/*.sql; do
+  for migration in "${ROOT_DIR}"/atlas-backend-deprecated/migrations/*.sql; do
     if [[ ! -f "$migration" ]]; then
       fail "no backend migrations found"
     fi
@@ -621,7 +621,7 @@ fi
 if [[ "$SKIP_BACKEND" -eq 0 ]]; then
   start_process \
     "atlas-backend" \
-    "${ROOT_DIR}/atlas-backend" \
+    "${ROOT_DIR}/atlas-backend-deprecated" \
     "env ATLAS_BACKEND_ADDR=\"${ATLAS_BACKEND_ADDR}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_DATABASE_URL=\"${ATLAS_DATABASE_URL}\" go run ./cmd/atlas-backend"
   wait_for_http "atlas-backend" "${ATLAS_BACKEND_URL}/healthz" 30
 fi
