@@ -1,0 +1,63 @@
+name: atlas-backend
+
+services:
+  postgres:
+    image: postgres:18.4-alpine
+    environment:
+      POSTGRES_DB: ${ATLAS_DB_NAME:-atlas}
+      POSTGRES_USER: ${ATLAS_DB_USER:-atlas}
+      POSTGRES_PASSWORD: ${ATLAS_DB_PASSWORD:-atlas}
+    ports:
+      - "127.0.0.1:${ATLAS_DB_PORT:-5432}:5432"
+    volumes:
+      - atlas-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.19.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./migrations:/migrations:ro
+    command:
+      - -path=/migrations
+      - -database=postgres://${ATLAS_DB_USER:-atlas}:${ATLAS_DB_PASSWORD:-atlas}@postgres:5432/${ATLAS_DB_NAME:-atlas}?sslmode=disable
+      - up
+    restart: "no"
+
+  backend:
+    build:
+      context: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      ATLAS_HTTP_ADDR: 0.0.0.0:8080
+      ATLAS_DATABASE_URL: postgres://${ATLAS_DB_USER:-atlas}:${ATLAS_DB_PASSWORD:-atlas}@postgres:5432/${ATLAS_DB_NAME:-atlas}?sslmode=disable
+      ATLAS_ALLOWED_ORIGINS: http://localhost:1420,http://127.0.0.1:1420,tauri://localhost,http://tauri.localhost
+      ATLAS_SESSION_IDLE_TIMEOUT: ${ATLAS_SESSION_IDLE_TIMEOUT:-12h}
+      ATLAS_SESSION_ABSOLUTE_TIMEOUT: ${ATLAS_SESSION_ABSOLUTE_TIMEOUT:-168h}
+      ATLAS_SESSION_RETENTION: ${ATLAS_SESSION_RETENTION:-720h}
+      GIN_MODE: release
+    ports:
+      - "127.0.0.1:${ATLAS_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+
+volumes:
+  atlas-postgres-data:

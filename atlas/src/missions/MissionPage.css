@@ -1,0 +1,826 @@
+.mission-workspace {
+  width: min(100%, 94rem);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 3vw, 3rem) 0 4rem;
+}
+
+.mission-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 3rem;
+  padding: 0 0 1.6rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.mission-heading h1 {
+  margin: .2rem 0 .65rem;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 3.5vw, 3.5rem);
+  font-weight: 760;
+  letter-spacing: .015em;
+  line-height: .95;
+  text-transform: uppercase;
+}
+
+.mission-heading > div:first-child > p:last-child {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: .96rem;
+  line-height: 1.55;
+}
+
+.mission-safety-note {
+  min-width: 17rem;
+  max-width: 20rem;
+  padding: .9rem 1rem;
+  border: 1px solid color-mix(in oklch, var(--signal) 50%, var(--line));
+  background: var(--signal-soft);
+}
+
+.mission-safety-note strong,
+.mission-safety-note span { display: block; }
+.mission-safety-note strong { font-size: .78rem; }
+.mission-safety-note span { margin-top: .3rem; color: var(--ink-soft); font-size: .7rem; line-height: 1.4; }
+
+.mission-builder {
+  display: grid;
+  grid-template-columns: minmax(21rem, 25rem) minmax(0, 1fr);
+  margin-top: 1rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.mission-control-rail {
+  min-width: 0;
+  padding: 1.2rem;
+  border-right: 1px solid var(--line-strong);
+  background: color-mix(in oklch, var(--panel) 82%, var(--mist));
+}
+
+.control-rail-heading,
+.map-stage-heading,
+.coordinate-editor > header,
+.plan-console > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.control-rail-heading > div,
+.map-stage-heading > div:first-child,
+.coordinate-editor > header > div,
+.plan-console > header > div,
+.plan-console--empty > div {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.control-rail-heading span,
+.map-stage-heading span,
+.coordinate-editor > header span,
+.plan-console > header div span,
+.plan-console--empty > div span {
+  color: var(--field);
+  font-family: var(--font-display);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.control-rail-heading strong,
+.map-stage-heading strong,
+.coordinate-editor > header strong,
+.plan-console > header strong,
+.plan-console--empty strong {
+  font-size: .76rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.control-rail-heading small,
+.coordinate-editor > header small {
+  color: var(--muted);
+  font-size: .61rem;
+  text-transform: lowercase;
+}
+
+.template-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: .35rem;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.template-picker legend,
+.flight-settings h2,
+.view-settings h2 {
+  margin: 0 0 .55rem;
+  color: var(--muted);
+  font-size: .64rem;
+  font-weight: 780;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.template-option {
+  min-width: 0;
+  min-height: 4.4rem;
+  padding: .65rem;
+  border: 1px solid var(--line);
+  background: var(--mist);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+
+.template-option strong,
+.template-option span { display: block; }
+.template-option strong { font-size: .65rem; line-height: 1.2; text-transform: uppercase; }
+.template-option span { display: none; }
+.template-option:hover { border-color: var(--line-strong); }
+.template-option--active { border-color: var(--field); background: var(--field-soft); box-shadow: inset 0 -3px 0 var(--field); }
+
+.mission-identity-fields {
+  display: grid;
+  gap: .75rem;
+  margin-top: 1rem;
+}
+
+.editing-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-top: .7rem;
+  padding: .5rem .6rem;
+  border: 1px solid var(--field);
+  background: var(--field-soft);
+  color: var(--field);
+  font-size: .64rem;
+  font-weight: 750;
+}
+
+.editing-context button {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.mission-identity-fields label,
+.flight-settings label,
+.view-settings label,
+.mission-advanced-settings label,
+.coordinate-editor label,
+.waypoint-view-override label {
+  color: var(--ink-soft);
+  font-size: .64rem;
+  font-weight: 730;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.mission-identity-fields label > span { color: var(--muted); font-weight: 500; text-transform: lowercase; }
+.mission-identity-fields input,
+.flight-settings input,
+.flight-settings select,
+.view-settings input,
+.view-settings select,
+.mission-advanced-settings input,
+.coordinate-editor input,
+.waypoint-view-override input,
+.waypoint-view-override select {
+  width: 100%;
+  min-width: 0;
+  margin-top: .3rem;
+  padding: .62rem .7rem;
+  border: 1px solid var(--line);
+  border-radius: 0;
+  outline: 0;
+  background: var(--mist);
+  color: var(--ink);
+  font: inherit;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+}
+
+.mission-identity-fields input:focus,
+.flight-settings input:focus,
+.flight-settings select:focus,
+.view-settings input:focus,
+.view-settings select:focus,
+.mission-advanced-settings input:focus,
+.coordinate-editor input:focus,
+.waypoint-view-override input:focus,
+.waypoint-view-override select:focus { border-color: var(--field); box-shadow: inset 0 -2px 0 var(--field); }
+
+.flight-settings {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.altitude-reference {
+  display: grid;
+  grid-template-columns: 1fr minmax(9.5rem, 1fr);
+  align-items: center;
+  gap: .35rem .7rem;
+  margin-bottom: .7rem;
+  padding: .65rem;
+  border: 1px solid var(--line);
+  background: var(--mist);
+}
+
+.altitude-reference select {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: .55rem .65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: .7rem;
+  text-transform: none;
+}
+
+.altitude-reference small {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: .58rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+
+.terrain-profile-settings {
+  margin-top: .75rem;
+  padding: .7rem;
+  border: 1px solid color-mix(in oklch, var(--field) 45%, var(--line));
+  background: color-mix(in oklch, var(--field-soft) 35%, var(--panel));
+}
+
+.terrain-profile-settings__heading { display: flex; justify-content: space-between; gap: .7rem; margin-bottom: .6rem; }
+.terrain-profile-settings__heading strong { color: var(--field); font-size: .62rem; text-transform: uppercase; }
+.terrain-profile-settings__heading span { color: var(--muted); font-size: .55rem; }
+
+.view-settings {
+  margin-top: 1rem;
+  padding: .9rem;
+  border: 1px solid color-mix(in oklch, var(--field) 38%, var(--line));
+  background: color-mix(in oklch, var(--field-soft) 38%, var(--panel));
+}
+
+.view-settings__heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: .75rem;
+  margin-bottom: .65rem;
+}
+
+.view-settings__heading h2 { color: var(--field); }
+.view-settings__heading span { max-width: 8rem; color: var(--muted); font-size: .56rem; line-height: 1.3; text-align: right; }
+.view-target-fields { margin-top: .65rem; }
+.view-stabilization { margin-top: .7rem; }
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .7rem;
+}
+
+.settings-grid--single { grid-template-columns: 1fr; padding-top: .8rem; }
+.number-input { position: relative; display: block; }
+.number-input input { padding-right: 2.8rem; }
+.number-input small { position: absolute; right: .65rem; bottom: .68rem; color: var(--muted); font-size: .62rem; font-weight: 650; text-transform: none; }
+
+.mission-advanced-settings {
+  margin-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.mission-advanced-settings summary {
+  padding: .8rem 0 .15rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-size: .67rem;
+  font-weight: 760;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.toggle-field {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  cursor: pointer;
+}
+
+.toggle-field input { width: .9rem; margin: 0; accent-color: var(--field); }
+.toggle-field span { font-size: .68rem; text-transform: none; }
+
+.geometry-summary {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding-top: .85rem;
+  border-top: 1px solid var(--line);
+  font-size: .67rem;
+}
+
+.geometry-summary span { color: var(--muted); }
+.geometry-summary strong { color: var(--signal); }
+.geometry-summary .geometry-ready { color: var(--field); }
+
+.mission-location-context {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: .18rem .7rem;
+  margin-top: .7rem;
+  padding: .65rem .7rem;
+  border: 1px solid var(--line);
+  background: color-mix(in oklch, var(--panel) 86%, var(--mist));
+}
+
+.mission-location-context > span { color: var(--muted); font-size: .57rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
+.mission-location-context > strong { color: var(--muted); font-size: .64rem; }
+.mission-location-context > small { grid-column: 1 / -1; color: var(--muted); font-size: .59rem; line-height: 1.35; }
+.mission-location-context--live { border-color: color-mix(in oklch, var(--field) 45%, var(--line)); }
+.mission-location-context--live > strong { color: var(--field); }
+
+.mission-distance-warning {
+  display: grid;
+  gap: .22rem;
+  margin-top: .65rem;
+  padding: .7rem .75rem;
+  border: 1px solid color-mix(in oklch, var(--critical) 55%, var(--line));
+  background: color-mix(in oklch, var(--critical) 8%, var(--panel));
+}
+
+.mission-distance-warning strong { color: var(--critical); font-size: .63rem; text-transform: uppercase; }
+.mission-distance-warning span { color: var(--ink-soft); font-size: .64rem; line-height: 1.42; }
+.mission-distance-ready { margin: .55rem 0 0; color: var(--field); font-size: .6rem; font-weight: 720; }
+
+.mission-error,
+.plan-warning {
+  margin: .85rem 0 0;
+  padding: .7rem .8rem;
+  border-left: 3px solid var(--critical);
+  background: var(--critical-soft);
+  font-size: .7rem;
+  line-height: 1.45;
+}
+
+.plan-warning { border-color: var(--signal); background: var(--signal-soft); }
+
+.plan-button {
+  width: 100%;
+  margin-top: .9rem;
+  padding: .78rem 1rem;
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: var(--panel);
+  cursor: pointer;
+  font-weight: 780;
+}
+
+.plan-button:disabled { opacity: .38; cursor: not-allowed; }
+.native-boundary-note { margin: .6rem 0 0; color: var(--muted); font-size: .64rem; line-height: 1.4; }
+
+.mission-map-stage { min-width: 0; }
+.map-stage-heading { min-height: 3rem; padding: .65rem .9rem; border-bottom: 1px solid var(--line-strong); }
+.map-stage-actions { display: flex; gap: .35rem; }
+.map-stage-actions button,
+.operational-map__fit,
+.coordinate-actions button {
+  padding: .45rem .6rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: .63rem;
+  font-weight: 700;
+}
+.map-stage-actions button:disabled,
+.operational-map__fit:disabled,
+.coordinate-actions button:disabled { opacity: .35; cursor: not-allowed; }
+
+.operational-map {
+  position: relative;
+  min-height: clamp(28rem, 58vh, 44rem);
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--field-soft);
+}
+
+.operational-map__canvas { position: absolute; inset: 0; }
+.operational-map__canvas .maplibregl-canvas { cursor: crosshair; }
+.operational-map__canvas .maplibregl-ctrl-group { border-radius: 0; box-shadow: 0 0 0 1px color-mix(in oklch, var(--ink) 25%, transparent); }
+.operational-map__canvas .maplibregl-ctrl-group button { border-radius: 0; }
+.operational-map__canvas .maplibregl-ctrl-attrib { color: var(--ink-soft); font-size: 10px; }
+.operational-map__canvas .maplibregl-ctrl-attrib a { color: var(--field); }
+
+.operational-map__status,
+.operational-map__instruction,
+.operational-map__fit,
+.operational-map__coordinates {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid color-mix(in oklch, var(--ink) 35%, transparent);
+  background: color-mix(in oklch, var(--panel) 94%, transparent);
+  backdrop-filter: blur(4px);
+}
+
+.operational-map__status {
+  top: .75rem;
+  left: .75rem;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .4rem .55rem;
+  font-size: .62rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.map-status-dot { width: .45rem; aspect-ratio: 1; border-radius: 50%; background: var(--muted); }
+.map-status-dot--ready { background: var(--field); }
+.map-status-dot--degraded { background: var(--signal); }
+
+.operational-map__instruction {
+  top: .75rem;
+  left: 50%;
+  min-width: 16rem;
+  padding: .5rem .7rem;
+  transform: translateX(-50%);
+  text-align: center;
+}
+.operational-map__instruction strong,
+.operational-map__instruction span { display: block; }
+.operational-map__instruction strong { font-size: .68rem; }
+.operational-map__instruction span { margin-top: .18rem; color: var(--muted); font-size: .58rem; }
+
+.operational-map__fit { right: .75rem; bottom: 2.2rem; }
+.operational-map__coordinates { left: 50%; bottom: .55rem; padding: .28rem .45rem; transform: translateX(-50%); color: var(--ink-soft); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .6rem; }
+
+.mission-map-marker {
+  display: grid;
+  width: 1.75rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink), 0 2px 5px color-mix(in oklch, var(--ink) 35%, transparent);
+  color: var(--panel);
+  cursor: grab;
+  font-family: var(--font-display);
+  font-size: .68rem;
+  font-weight: 800;
+}
+.mission-map-marker:active { cursor: grabbing; transform: scale(1.08); }
+
+.mission-home-marker {
+  display: grid;
+  width: 2rem;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink), 0 3px 8px color-mix(in oklch, var(--ink) 30%, transparent);
+  color: var(--panel);
+}
+
+.mission-home-marker svg { width: 1rem; fill: currentColor; }
+
+.coordinate-editor { border-bottom: 1px solid var(--line-strong); }
+.coordinate-editor > header { padding: .75rem .9rem; border-bottom: 1px solid var(--line); }
+.coordinate-editor ol { max-height: 15rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.coordinate-editor li {
+  display: grid;
+  grid-template-columns: 2rem minmax(7rem, 1fr) minmax(7rem, 1fr) minmax(5rem, .6fr) minmax(4rem, .5fr) auto;
+  gap: .5rem;
+  align-items: end;
+  padding: .55rem .8rem;
+  border-bottom: 1px solid var(--line);
+}
+.coordinate-editor li:last-child { border-bottom: 0; }
+.coordinate-index { align-self: center; color: var(--field); font-family: var(--font-display); font-size: .78rem; font-weight: 800; }
+.coordinate-editor input { padding: .45rem .5rem; }
+.coordinate-actions { display: flex; align-items: center; gap: .25rem; padding-bottom: .05rem; }
+.coordinate-actions button:last-child { color: var(--critical); }
+.coordinate-empty { margin: 0; padding: 1.1rem .9rem; color: var(--muted); font-size: .72rem; }
+
+.waypoint-view-override {
+  grid-column: 2 / -1;
+  margin-top: .15rem;
+  padding-top: .45rem;
+  border-top: 1px dashed var(--line);
+}
+
+.waypoint-view-override summary {
+  color: var(--field);
+  cursor: pointer;
+  font-size: .62rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.waypoint-view-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(7rem, 1fr));
+  gap: .55rem;
+  padding-top: .55rem;
+}
+
+.waypoint-view-fields input,
+.waypoint-view-fields select { padding: .45rem .5rem; }
+
+.plan-console { padding: .85rem .9rem 1rem; background: color-mix(in oklch, var(--panel) 90%, var(--mist)); }
+.plan-console--empty { display: flex; align-items: center; justify-content: space-between; gap: 2rem; }
+.plan-console--empty p { margin: 0; color: var(--muted); font-size: .7rem; }
+.plan-status { padding: .28rem .45rem; border: 1px solid var(--field); color: var(--field); font-size: .58rem; font-weight: 800; letter-spacing: .08em; }
+.plan-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: .75rem; border-block: 1px solid var(--line); }
+.plan-metrics > div { padding: .6rem .7rem; border-right: 1px solid var(--line); }
+.plan-metrics > div:last-child { border-right: 0; }
+.plan-metrics span,
+.plan-metrics strong { display: block; }
+.plan-metrics span { color: var(--muted); font-size: .58rem; text-transform: uppercase; }
+.plan-metrics strong { margin-top: .22rem; overflow: hidden; font-size: .74rem; text-overflow: ellipsis; text-transform: lowercase; white-space: nowrap; }
+.terrain-plan-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem 1rem; margin-top: .65rem; padding: .65rem .7rem; border: 1px solid color-mix(in oklch, var(--field) 45%, var(--line)); background: var(--field-soft); }
+.terrain-plan-summary span,
+.terrain-plan-summary strong { display: block; }
+.terrain-plan-summary span { color: var(--muted); font-size: .56rem; text-transform: uppercase; }
+.terrain-plan-summary strong { margin-top: .2rem; color: var(--field); font-size: .66rem; }
+.terrain-plan-summary small { grid-column: 1 / -1; color: var(--muted); font-size: .57rem; line-height: 1.4; }
+.terrain-altitude-profile { margin: .65rem 0 0; padding: .65rem .7rem; border: 1px solid var(--line); background: var(--mist); }
+.terrain-altitude-profile figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.terrain-altitude-profile figcaption strong { color: var(--ink-soft); font-size: .62rem; text-transform: uppercase; }
+.terrain-altitude-profile figcaption span { color: var(--muted); font-size: .54rem; }
+.terrain-altitude-profile svg { display: block; width: 100%; height: 9rem; margin-top: .4rem; overflow: visible; }
+.terrain-altitude-profile polyline { fill: none; vector-effect: non-scaling-stroke; }
+.terrain-altitude-profile__home { stroke: var(--line-strong); stroke-dasharray: 4 4; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.terrain-altitude-profile__terrain { stroke: #6e7e68; stroke-width: 2; }
+.terrain-altitude-profile__flight { stroke: var(--signal); stroke-width: 2.5; }
+.terrain-altitude-profile > div { display: flex; align-items: center; gap: .8rem; color: var(--muted); font-size: .54rem; }
+.terrain-altitude-profile > div span { display: inline-flex; align-items: center; gap: .3rem; }
+.terrain-altitude-profile > div strong { margin-left: auto; color: var(--ink-soft); }
+.terrain-key { width: .8rem; height: 2px; background: #6e7e68; }
+.terrain-key--flight { height: 3px; background: var(--signal); }
+.plan-console details { margin-top: .7rem; }
+.plan-console summary { cursor: pointer; font-size: .66rem; font-weight: 750; }
+.plan-console ol { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .25rem .8rem; margin: .7rem 0 0; padding: 0; list-style: none; }
+.plan-console li { display: flex; gap: .45rem; padding: .35rem 0; border-bottom: 1px solid var(--line); font-size: .61rem; }
+.plan-console li span { color: var(--muted); }
+
+.mission-execution {
+  margin-top: 1rem;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+}
+
+.mission-execution__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.4rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.mission-execution__heading h2 {
+  margin: .15rem 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2.5rem);
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.run-state {
+  padding: .42rem .58rem;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: .61rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.run-state--ready,
+.run-state--completed { border-color: var(--field); color: var(--field); }
+.run-state--running { border-color: var(--signal); color: color-mix(in oklch, var(--signal) 68%, var(--ink)); background: var(--signal-soft); }
+.run-state--failed,
+.run-state--cancelled { border-color: var(--critical); color: var(--critical); }
+.run-state--paused,
+.run-state--uploading,
+.run-state--rtl { border-color: var(--sky); color: color-mix(in oklch, var(--sky) 58%, var(--ink)); }
+
+.mission-execution__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(19rem, .65fr);
+}
+
+.mission-deployment { min-width: 0; padding: 1.4rem; border-right: 1px solid var(--line-strong); }
+.mission-deployment__target { display: grid; grid-template-columns: minmax(12rem, 1fr) auto; gap: .75rem; align-items: end; }
+.mission-deployment__target label { color: var(--muted); font-size: .62rem; font-weight: 760; letter-spacing: .06em; text-transform: uppercase; }
+.mission-deployment__target select {
+  display: block;
+  width: 100%;
+  margin-top: .38rem;
+  padding: .68rem .75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--ink);
+  background: var(--panel);
+  font: inherit;
+}
+
+.mission-upload,
+.run-control {
+  min-height: 2.8rem;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: .66rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.mission-upload { padding: 0 1.1rem; border-color: var(--field); color: var(--panel); background: var(--field); }
+.mission-upload:disabled,
+.run-control:disabled { cursor: not-allowed; opacity: .45; }
+.mission-upload:focus-visible,
+.run-control:focus-visible,
+.mission-run-row:focus-visible { outline: 2px solid var(--field); outline-offset: 3px; }
+
+.execution-blocker { margin: .65rem 0 0; color: var(--muted); font-size: .68rem; line-height: 1.45; }
+.mission-live-run { margin-top: 1.3rem; padding-top: 1.1rem; border-top: 1px solid var(--line); }
+.mission-live-run__identity { display: grid; grid-template-columns: 1fr auto; gap: .15rem 1rem; }
+.mission-live-run__identity span { color: var(--field); font-size: .65rem; font-weight: 780; letter-spacing: .07em; text-transform: uppercase; }
+.mission-live-run__identity strong { grid-row: 2; font-family: var(--font-display); font-size: clamp(1.25rem, 2vw, 1.8rem); }
+.mission-live-run__identity small { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--muted); font-size: .62rem; }
+
+.mission-progress { margin-top: 1.2rem; }
+.mission-progress__track { height: .48rem; overflow: hidden; background: var(--mist); }
+.mission-progress__track span { display: block; width: var(--mission-progress); height: 100%; background: var(--signal); transition: width 320ms var(--ease-out-quart); }
+.mission-progress > div:last-child { display: flex; align-items: baseline; justify-content: space-between; margin-top: .45rem; }
+.mission-progress strong { font-family: var(--font-display); font-size: 1.7rem; }
+.mission-progress span { color: var(--muted); font-size: .63rem; text-transform: uppercase; }
+
+.mission-run-facts { display: grid; grid-template-columns: repeat(3, 1fr); margin: 1rem 0 0; border-block: 1px solid var(--line); }
+.mission-run-facts > div { padding: .75rem; border-right: 1px solid var(--line); }
+.mission-run-facts > div:first-child { padding-left: 0; }
+.mission-run-facts > div:last-child { border-right: 0; }
+.mission-run-facts dt { color: var(--muted); font-size: .58rem; font-weight: 740; letter-spacing: .06em; text-transform: uppercase; }
+.mission-run-facts dd { margin: .25rem 0 0; font-size: .76rem; font-weight: 720; }
+.mission-run-controls { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: 1rem; }
+.run-control { padding: 0 1rem; }
+.run-control--primary { border-color: var(--field); color: var(--panel); background: var(--field); }
+.run-control--critical { border-color: var(--critical); color: var(--critical); }
+.run-control__pending { color: var(--muted); font-size: .63rem; text-transform: uppercase; }
+.run-operational-note { margin: .8rem 0 0; padding: .65rem .75rem; background: var(--mist); color: var(--ink-soft); font-size: .68rem; line-height: 1.45; }
+.mission-live-empty { margin-top: 1.3rem; padding: 2rem 0 1rem; border-top: 1px solid var(--line); }
+.mission-live-empty strong { font-family: var(--font-display); font-size: 1.1rem; }
+.mission-live-empty p { max-width: 48ch; margin: .35rem 0 0; color: var(--muted); font-size: .72rem; line-height: 1.5; }
+.mission-run-error { margin-top: .85rem; padding: .75rem; border: 1px solid color-mix(in oklch, var(--critical) 55%, var(--line)); background: color-mix(in oklch, var(--critical) 8%, var(--panel)); }
+.mission-run-error strong { color: var(--critical); font-size: .62rem; letter-spacing: .06em; }
+.mission-run-error p { margin: .25rem 0 0; color: var(--ink-soft); font-size: .7rem; }
+.mission-run-warning { margin: .7rem 0 0; padding: .6rem .75rem; border-left: 2px solid var(--signal); background: var(--signal-soft); color: var(--ink-soft); font-size: .68rem; line-height: 1.45; }
+
+.mission-event-report { min-width: 0; background: color-mix(in oklch, var(--panel) 82%, var(--mist)); }
+.mission-event-report > header { display: flex; justify-content: space-between; padding: 1rem; border-bottom: 1px solid var(--line); font-size: .67rem; letter-spacing: .05em; text-transform: uppercase; }
+.mission-event-report > header span { color: var(--muted); }
+.mission-event-report ol { max-height: 28rem; margin: 0; padding: 0; overflow: auto; list-style: none; }
+.mission-event-report li { display: grid; grid-template-columns: .5rem 1fr auto; gap: .7rem; align-items: start; padding: .78rem 1rem; border-bottom: 1px solid var(--line); }
+.event-mark { width: .42rem; height: .42rem; margin-top: .22rem; border-radius: 50%; background: var(--muted); }
+.event-mark--ready,
+.event-mark--completed { background: var(--field); }
+.event-mark--running { background: var(--signal); }
+.event-mark--failed,
+.event-mark--cancelled { background: var(--critical); }
+.event-mark--paused,
+.event-mark--uploading,
+.event-mark--rtl { background: var(--sky); }
+.mission-event-report li strong { display: block; font-size: .64rem; text-transform: uppercase; }
+.mission-event-report li p { margin: .2rem 0 0; color: var(--muted); font-size: .63rem; line-height: 1.35; }
+.mission-event-report time { color: var(--muted); font-size: .58rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.event-report-empty { margin: 0; padding: 2rem 1rem; color: var(--muted); font-size: .7rem; line-height: 1.45; }
+
+.mission-run-history { border-top: 1px solid var(--ink); }
+.mission-run-history > header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.4rem; }
+.mission-run-history > header > div { display: flex; align-items: baseline; gap: .8rem; }
+.mission-run-history h3 { margin: 0; font-family: var(--font-display); font-size: 1rem; letter-spacing: .04em; text-transform: uppercase; }
+.mission-run-history > header span { color: var(--muted); font-size: .62rem; }
+.mission-run-history > header > strong { color: var(--field); font-family: var(--font-display); font-size: 1.5rem; }
+.mission-run-table { border-top: 1px solid var(--line); }
+.mission-run-table__head,
+.mission-run-row { display: grid; grid-template-columns: minmax(15rem, 1.5fr) minmax(7rem, .6fr) minmax(8rem, .65fr) minmax(9rem, .7fr); gap: 1rem; align-items: center; }
+.mission-run-table__head { padding: .55rem 1.4rem; color: var(--muted); font-size: .58rem; font-weight: 740; letter-spacing: .07em; text-transform: uppercase; }
+.mission-run-row { width: 100%; padding: .75rem 1.4rem; border: 0; border-top: 1px solid var(--line); color: var(--ink); background: transparent; cursor: pointer; font: inherit; text-align: left; }
+.mission-run-row:hover,
+.mission-run-row--selected { background: var(--mist); }
+.mission-run-row > span:first-child strong,
+.mission-run-row > span:first-child small { display: block; }
+.mission-run-row > span:first-child strong { font-size: .74rem; }
+.mission-run-row > span:first-child small { margin-top: .18rem; color: var(--muted); font-size: .61rem; }
+.mission-run-row > span:not(:first-child),
+.mission-run-row time { color: var(--ink-soft); font-size: .64rem; }
+.run-dot { display: inline-block; width: .4rem; height: .4rem; margin-right: .4rem; border-radius: 50%; background: var(--muted); }
+.run-dot--ready,
+.run-dot--completed { background: var(--field); }
+.run-dot--running { background: var(--signal); }
+.run-dot--failed,
+.run-dot--cancelled { background: var(--critical); }
+.run-dot--paused,
+.run-dot--uploading,
+.run-dot--rtl { background: var(--sky); }
+.mission-history-empty { margin: 0; padding: 1.4rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
+
+.mission-library { margin-top: 1rem; padding: 1.2rem; border: 1px solid var(--line-strong); background: var(--panel); }
+.mission-library > header { display: flex; justify-content: space-between; align-items: start; }
+.mission-library h2 { margin: .15rem 0 0; font-family: var(--font-display); font-size: 1.35rem; letter-spacing: .03em; text-transform: uppercase; }
+.mission-library > header > span { color: var(--muted); font-size: .67rem; }
+.mission-library-empty { margin: 1rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .74rem; }
+.mission-table { margin-top: 1rem; border-top: 1px solid var(--line); }
+.mission-table__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--line); }
+.mission-table button { border: 0; background: transparent; color: var(--ink); cursor: pointer; }
+.mission-table button:disabled { opacity: .55; cursor: default; }
+.mission-table__open { display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: .8rem .2rem; text-align: left; }
+.mission-table__edit { align-self: stretch; padding: .5rem .75rem; border-left: 1px solid var(--line) !important; color: var(--field) !important; font-size: .61rem; font-weight: 760; text-transform: uppercase; }
+.mission-table__row:hover { background: var(--mist); }
+.mission-table strong,
+.mission-table small { display: block; }
+.mission-table small { margin-top: .25rem; color: var(--muted); font-size: .63rem; }
+.mission-table__status { align-self: center; color: var(--field); font-size: .62rem; font-weight: 800; letter-spacing: .06em; }
+
+@media (max-width: 74rem) {
+  .mission-builder { grid-template-columns: 21rem minmax(0, 1fr); }
+  .coordinate-editor li { grid-template-columns: 2rem minmax(7rem, 1fr) minmax(7rem, 1fr) auto; }
+  .coordinate-editor li label:nth-of-type(n+3) { display: none; }
+  .waypoint-view-fields label { display: block !important; }
+  .waypoint-view-fields { grid-template-columns: repeat(2, minmax(7rem, 1fr)); }
+}
+
+@media (max-width: 58rem) {
+  .mission-builder { grid-template-columns: 1fr; }
+  .mission-control-rail { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+  .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-grid--single { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mission-heading { align-items: start; flex-direction: column; gap: 1rem; }
+  .mission-safety-note { min-width: 0; max-width: none; }
+  .mission-execution__grid { grid-template-columns: 1fr; }
+  .mission-deployment { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+  .mission-run-table { overflow-x: auto; }
+  .mission-run-table__head,
+  .mission-run-row { min-width: 46rem; }
+}
+
+@media (max-width: 42rem) {
+  .mission-workspace { padding-top: 1.2rem; }
+  .template-picker,
+  .settings-grid,
+  .settings-grid--single { grid-template-columns: 1fr; }
+  .template-option { min-height: 0; }
+  .operational-map { min-height: 26rem; }
+  .operational-map__instruction { top: auto; bottom: 2.2rem; width: calc(100% - 1.5rem); min-width: 0; }
+  .operational-map__fit { bottom: 5.8rem; }
+  .coordinate-editor li { grid-template-columns: 1.5rem 1fr 1fr; }
+  .coordinate-actions { grid-column: 2 / -1; }
+  .waypoint-view-fields { grid-template-columns: 1fr; }
+  .plan-console--empty { align-items: start; flex-direction: column; gap: .5rem; }
+  .plan-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plan-metrics > div:nth-child(2) { border-right: 0; }
+  .plan-metrics > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .plan-console ol { grid-template-columns: 1fr; }
+  .mission-execution__heading { align-items: start; flex-direction: column; gap: .75rem; }
+  .mission-deployment__target { grid-template-columns: 1fr; }
+  .mission-upload { width: 100%; }
+  .mission-live-run__identity { grid-template-columns: 1fr; }
+  .mission-live-run__identity small { grid-column: 1; grid-row: auto; }
+  .mission-run-facts { grid-template-columns: 1fr; }
+  .mission-run-facts > div { padding: .65rem 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .mission-run-facts > div:last-child { border-bottom: 0; }
+  .mission-run-history > header > div { align-items: start; flex-direction: column; gap: .25rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mission-map-marker:active { transform: none; }
+}

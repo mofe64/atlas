@@ -8,8 +8,12 @@ import (
 )
 
 const (
-	defaultHTTPAddr        = "127.0.0.1:8080"
-	defaultShutdownTimeout = 5 * time.Second
+	defaultHTTPAddr              = "127.0.0.1:8080"
+	defaultDatabaseURL           = "postgres://atlas:atlas@127.0.0.1:5432/atlas?sslmode=disable"
+	defaultShutdownTimeout       = 5 * time.Second
+	defaultSessionIdleTimeout    = 12 * time.Hour
+	defaultSessionAbsoluteExpiry = 7 * 24 * time.Hour
+	defaultSessionRetention      = 30 * 24 * time.Hour
 )
 
 var defaultAllowedOrigins = []string{
@@ -20,9 +24,14 @@ var defaultAllowedOrigins = []string{
 }
 
 type Config struct {
-	HTTPAddr        string
-	ShutdownTimeout time.Duration
-	AllowedOrigins  []string
+	HTTPAddr              string
+	DatabaseURL           string
+	ShutdownTimeout       time.Duration
+	SessionIdleTimeout    time.Duration
+	SessionAbsoluteExpiry time.Duration
+	SessionRetention      time.Duration
+	AllowedOrigins        []string
+	TrustedProxies        []string
 }
 
 func Load() (Config, error) {
@@ -30,11 +39,30 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-
+	idleTimeout, err := durationFromEnv("ATLAS_SESSION_IDLE_TIMEOUT", defaultSessionIdleTimeout)
+	if err != nil {
+		return Config{}, err
+	}
+	absoluteExpiry, err := durationFromEnv("ATLAS_SESSION_ABSOLUTE_TIMEOUT", defaultSessionAbsoluteExpiry)
+	if err != nil {
+		return Config{}, err
+	}
+	if idleTimeout >= absoluteExpiry {
+		return Config{}, fmt.Errorf("ATLAS_SESSION_IDLE_TIMEOUT must be shorter than ATLAS_SESSION_ABSOLUTE_TIMEOUT")
+	}
+	retention, err := durationFromEnv("ATLAS_SESSION_RETENTION", defaultSessionRetention)
+	if err != nil {
+		return Config{}, err
+	}
 	return Config{
-		HTTPAddr:        stringFromEnv("ATLAS_HTTP_ADDR", defaultHTTPAddr),
-		ShutdownTimeout: shutdownTimeout,
-		AllowedOrigins:  originsFromEnv("ATLAS_ALLOWED_ORIGINS", defaultAllowedOrigins),
+		HTTPAddr:              stringFromEnv("ATLAS_HTTP_ADDR", defaultHTTPAddr),
+		DatabaseURL:           stringFromEnv("ATLAS_DATABASE_URL", defaultDatabaseURL),
+		ShutdownTimeout:       shutdownTimeout,
+		SessionIdleTimeout:    idleTimeout,
+		SessionAbsoluteExpiry: absoluteExpiry,
+		SessionRetention:      retention,
+		AllowedOrigins:        listFromEnv("ATLAS_ALLOWED_ORIGINS", defaultAllowedOrigins),
+		TrustedProxies:        listFromEnv("ATLAS_TRUSTED_PROXIES", nil),
 	}, nil
 }
 
@@ -61,17 +89,17 @@ func durationFromEnv(name string, fallback time.Duration) (time.Duration, error)
 	return duration, nil
 }
 
-func originsFromEnv(name string, fallback []string) []string {
+func listFromEnv(name string, fallback []string) []string {
 	value := strings.TrimSpace(os.Getenv(name))
 	if value == "" {
 		return append([]string(nil), fallback...)
 	}
 
-	var origins []string
-	for _, origin := range strings.Split(value, ",") {
-		if origin = strings.TrimSpace(origin); origin != "" {
-			origins = append(origins, origin)
+	var values []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			values = append(values, item)
 		}
 	}
-	return origins
+	return values
 }

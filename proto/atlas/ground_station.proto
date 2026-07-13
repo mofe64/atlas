@@ -1,0 +1,375 @@
+syntax = "proto3";
+
+package atlas.groundstation.v1;
+
+option go_package = "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb;groundstationpb";
+
+// GroundStationService is hosted by the native Atlas application. The onboard
+// agent initiates this session and keeps reconnecting while the HM30 path is
+// available. Registration must be the first message on every new session.
+service GroundStationService {
+  rpc OpenSession(stream AgentToGroundStation) returns (stream GroundStationToAgent);
+
+  // Perception is isolated from the command/telemetry session so high-rate
+  // detection updates cannot delay safety-critical command acknowledgements.
+  // The first message must register the perception stream against an active
+  // agent session.
+  rpc OpenPerceptionStream(stream AgentPerception) returns (stream GroundStationPerception);
+}
+
+message AgentToGroundStation {
+  string session_id = 1;
+
+  oneof payload {
+    AgentRegistration registration = 2;
+    AgentHeartbeat heartbeat = 3;
+    AircraftTelemetry telemetry = 4;
+    AgentStatusText status_text = 5;
+    VehicleCommandUpdate command_update = 6;
+    MissionRunUpdate mission_run_update = 7;
+  }
+}
+
+message GroundStationToAgent {
+  oneof payload {
+    RegistrationAccepted registration_accepted = 1;
+    VehicleCommandRequest command_request = 2;
+    VehicleCommandCancellation command_cancellation = 3;
+    MissionOperationRequest mission_operation_request = 4;
+  }
+}
+
+// AgentPerception is deliberately accelerator-neutral. Hailo HEF/TAPPAS,
+// NVIDIA DeepStream/TensorRT, and software ONNX runtimes must translate their
+// native tensor metadata into this contract before crossing the agent boundary.
+message AgentPerception {
+  string session_id = 1;
+  string drone_id = 2;
+
+  oneof payload {
+    PerceptionStreamRegistration registration = 3;
+    PerceptionFrame frame = 4;
+    PerceptionHealth health = 5;
+  }
+}
+
+message GroundStationPerception {
+  oneof payload {
+    PerceptionStreamAccepted stream_accepted = 1;
+  }
+}
+
+message PerceptionStreamRegistration {
+  string stream_id = 1;
+  string installation_id = 2;
+  string protocol_version = 3;
+  string provider = 4;
+  repeated string capabilities = 5;
+  int64 observed_at_unix_ms = 6;
+}
+
+message PerceptionStreamAccepted {
+  string stream_id = 1;
+  int64 accepted_at_unix_ms = 2;
+}
+
+message PerceptionFrame {
+  string source_id = 1;
+  string stream_epoch = 2;
+  string frame_id = 3;
+  int64 observed_at_unix_ms = 4;
+  int64 source_pts_ns = 5;
+  uint32 image_width = 6;
+  uint32 image_height = 7;
+  PerceptionModelIdentity model = 8;
+  double inference_latency_ms = 9;
+  repeated PerceptionDetection detections = 10;
+}
+
+message PerceptionModelIdentity {
+  string name = 1;
+  string version = 2;
+  string artifact_hash = 3;
+}
+
+message PerceptionDetection {
+  string track_id = 1;
+  int32 class_id = 2;
+  string class_label = 3;
+  double confidence = 4;
+  NormalizedBoundingBox bounding_box = 5;
+  string attributes_json = 6;
+}
+
+message NormalizedBoundingBox {
+  double x = 1;
+  double y = 2;
+  double width = 3;
+  double height = 4;
+}
+
+message PerceptionHealth {
+  string source_id = 1;
+  string provider = 2;
+  string accelerator = 3;
+  bool input_connected = 4;
+  bool inference_ready = 5;
+  bool output_publishing = 6;
+  double input_fps = 7;
+  double inference_fps = 8;
+  uint64 dropped_frames = 9;
+  int64 last_frame_at_unix_ms = 10;
+  int64 last_detection_at_unix_ms = 11;
+  string last_error = 12;
+  PerceptionModelIdentity model = 13;
+  int64 observed_at_unix_ms = 14;
+}
+
+message AgentRegistration {
+  string registration_request_id = 1;
+  string installation_id = 2;
+  string agent_version = 3;
+  string protocol_version = 4;
+  DeviceProfile device = 5;
+  DroneProfile drone = 6;
+  FlightControllerAttachment flight_controller = 7;
+  repeated string capabilities = 8;
+  int64 observed_at_unix_ms = 9;
+}
+
+message DeviceProfile {
+  string device_name = 1;
+  string hostname = 2;
+  string operating_system = 3;
+  string architecture = 4;
+  string hardware_id = 5;
+  string hardware_id_source = 6;
+  uint64 total_memory_bytes = 7;
+}
+
+message DroneProfile {
+  string drone_id = 1;
+  string name = 2;
+  string flight_controller_uid = 3;
+  string serial_number = 4;
+  string vehicle_type = 5;
+}
+
+message FlightControllerAttachment {
+  string transport = 1;
+  string endpoint_description = 2;
+  uint32 baud_rate = 3;
+  uint32 mavlink_system_id = 4;
+  uint32 mavlink_component_id = 5;
+}
+
+message AgentHeartbeat {
+  int64 observed_at_unix_ms = 1;
+}
+
+// AircraftTelemetry is a latest-value operational snapshot produced from
+// MAVSDK. Optional fields preserve the difference between a legitimate zero
+// and a value that the flight controller has not reported yet.
+message AircraftTelemetry {
+  int64 observed_at_unix_ms = 1;
+  string source = 2;
+  optional double battery_percent = 3;
+  optional double relative_altitude_m = 4;
+  optional string flight_mode = 5;
+  optional bool armed = 6;
+  optional bool in_air = 7;
+  optional double latitude = 8;
+  optional double longitude = 9;
+  optional double heading_deg = 10;
+  optional double ground_speed_mps = 11;
+  optional string gps_fix = 12;
+  optional uint32 satellites_visible = 13;
+  optional bool home_position_set = 14;
+  repeated BatteryTelemetry batteries = 15;
+  VehicleHealth health = 16;
+  optional double absolute_altitude_m = 17;
+  optional double terrain_altitude_m = 18;
+  optional double bottom_clearance_m = 19;
+  optional double velocity_north_mps = 20;
+  optional double velocity_east_mps = 21;
+  optional double velocity_down_mps = 22;
+  optional double climb_rate_mps = 23;
+  optional string landed_state = 24;
+  RcStatus rc_status = 25;
+  HomePosition home_position = 26;
+  GpsQuality gps_quality = 27;
+}
+
+message BatteryTelemetry {
+  uint32 id = 1;
+  string function = 2;
+  optional double remaining_percent = 3;
+  optional double voltage_v = 4;
+  optional double current_a = 5;
+  optional double temperature_c = 6;
+  optional double consumed_ah = 7;
+  optional double time_remaining_s = 8;
+}
+
+message VehicleHealth {
+  bool gyrometer_calibration_ok = 1;
+  bool accelerometer_calibration_ok = 2;
+  bool magnetometer_calibration_ok = 3;
+  bool local_position_ok = 4;
+  bool global_position_ok = 5;
+  bool home_position_ok = 6;
+  bool armable = 7;
+}
+
+message RcStatus {
+  bool available = 1;
+  bool was_available_once = 2;
+  optional double signal_strength_percent = 3;
+}
+
+message HomePosition {
+  optional double latitude = 1;
+  optional double longitude = 2;
+  optional double absolute_altitude_m = 3;
+  optional double relative_altitude_m = 4;
+}
+
+message GpsQuality {
+  optional double hdop = 1;
+  optional double vdop = 2;
+  optional double horizontal_uncertainty_m = 3;
+  optional double vertical_uncertainty_m = 4;
+  optional double velocity_uncertainty_mps = 5;
+  optional double course_over_ground_deg = 6;
+}
+
+// Status text is event data rather than a latest-value telemetry field. Atlas
+// stores a bounded recent history so safety and failsafe messages are not lost.
+message AgentStatusText {
+  int64 observed_at_unix_ms = 1;
+  string source = 2;
+  string severity = 3;
+  string text = 4;
+}
+
+message RegistrationAccepted {
+  string agent_id = 1;
+  string drone_id = 2;
+  string binding_id = 3;
+  string communication_link_id = 4;
+  int64 registered_at_unix_ms = 5;
+}
+
+enum VehicleCommandType {
+  VEHICLE_COMMAND_TYPE_UNSPECIFIED = 0;
+  VEHICLE_COMMAND_TYPE_HOLD = 1;
+  VEHICLE_COMMAND_TYPE_RETURN_TO_LAUNCH = 2;
+  VEHICLE_COMMAND_TYPE_LAND = 3;
+  VEHICLE_COMMAND_TYPE_GIMBAL_SET_ANGLES = 4;
+  VEHICLE_COMMAND_TYPE_GIMBAL_SET_RATES = 5;
+  VEHICLE_COMMAND_TYPE_GIMBAL_CENTER = 6;
+  VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_BEGIN = 7;
+  VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_RENEW = 8;
+  VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END = 9;
+  VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI = 10;
+  VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM = 11;
+}
+
+enum VehicleCommandUpdateType {
+  VEHICLE_COMMAND_UPDATE_TYPE_UNSPECIFIED = 0;
+  VEHICLE_COMMAND_UPDATE_TYPE_ACCEPTED = 1;
+  VEHICLE_COMMAND_UPDATE_TYPE_REJECTED = 2;
+  VEHICLE_COMMAND_UPDATE_TYPE_EXECUTING = 3;
+  VEHICLE_COMMAND_UPDATE_TYPE_PROGRESS = 4;
+  VEHICLE_COMMAND_UPDATE_TYPE_SUCCEEDED = 5;
+  VEHICLE_COMMAND_UPDATE_TYPE_FAILED = 6;
+  VEHICLE_COMMAND_UPDATE_TYPE_TIMED_OUT = 7;
+  VEHICLE_COMMAND_UPDATE_TYPE_CANCELLED = 8;
+  VEHICLE_COMMAND_UPDATE_TYPE_CANCELLATION_REJECTED = 9;
+}
+
+message VehicleCommandRequest {
+  string command_id = 1;
+  string drone_id = 2;
+  VehicleCommandType command_type = 3;
+  string parameters_json = 4;
+  int64 created_at_unix_ms = 5;
+  int64 delivered_at_unix_ms = 6;
+  int64 deadline_at_unix_ms = 7;
+}
+
+message VehicleCommandCancellation {
+  string command_id = 1;
+  int64 requested_at_unix_ms = 2;
+}
+
+message VehicleCommandUpdate {
+  string event_id = 1;
+  string command_id = 2;
+  VehicleCommandUpdateType update_type = 3;
+  int64 observed_at_unix_ms = 4;
+  optional double progress_percent = 5;
+  string result_code = 6;
+  string message = 7;
+  string evidence_json = 8;
+}
+
+// Mission operations use the same durable request/update boundary as vehicle
+// commands, while retaining a mission-specific lifecycle and progress model.
+enum MissionOperationType {
+  MISSION_OPERATION_TYPE_UNSPECIFIED = 0;
+  MISSION_OPERATION_TYPE_UPLOAD = 1;
+  MISSION_OPERATION_TYPE_START = 2;
+  MISSION_OPERATION_TYPE_PAUSE = 3;
+  MISSION_OPERATION_TYPE_RESUME = 4;
+  MISSION_OPERATION_TYPE_CANCEL = 5;
+  MISSION_OPERATION_TYPE_RETURN_TO_LAUNCH = 6;
+}
+
+enum MissionRunUpdateType {
+  MISSION_RUN_UPDATE_TYPE_UNSPECIFIED = 0;
+  MISSION_RUN_UPDATE_TYPE_OPERATION_ACCEPTED = 1;
+  MISSION_RUN_UPDATE_TYPE_UPLOAD_PROGRESS = 2;
+  MISSION_RUN_UPDATE_TYPE_UPLOADED = 3;
+  MISSION_RUN_UPDATE_TYPE_STARTED = 4;
+  MISSION_RUN_UPDATE_TYPE_PROGRESS = 5;
+  MISSION_RUN_UPDATE_TYPE_PAUSED = 6;
+  MISSION_RUN_UPDATE_TYPE_RESUMED = 7;
+  MISSION_RUN_UPDATE_TYPE_COMPLETED = 8;
+  MISSION_RUN_UPDATE_TYPE_CANCELLED = 9;
+  MISSION_RUN_UPDATE_TYPE_RTL_STARTED = 10;
+  MISSION_RUN_UPDATE_TYPE_OPERATION_FAILED = 11;
+  MISSION_RUN_UPDATE_TYPE_ARMING = 12;
+  MISSION_RUN_UPDATE_TYPE_ARMED = 13;
+  MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED = 14;
+  MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED = 15;
+  MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED = 16;
+}
+
+message MissionOperationRequest {
+  string operation_id = 1;
+  string mission_run_id = 2;
+  string drone_id = 3;
+  MissionOperationType operation_type = 4;
+  // Present for upload only. This is the immutable native MissionPlan snapshot.
+  string mission_plan_json = 5;
+  int64 requested_at_unix_ms = 6;
+  int64 deadline_at_unix_ms = 7;
+}
+
+message MissionRunUpdate {
+  string event_id = 1;
+  string operation_id = 2;
+  string mission_run_id = 3;
+  MissionRunUpdateType update_type = 4;
+  // Agent-reported run state allows a failed control operation to preserve an
+  // otherwise healthy READY, RUNNING, or PAUSED run.
+  string run_state = 5;
+  int64 observed_at_unix_ms = 6;
+  optional double progress_percent = 7;
+  optional uint32 current_waypoint = 8;
+  optional uint32 total_waypoints = 9;
+  string error_code = 10;
+  string message = 11;
+  string evidence_json = 12;
+}

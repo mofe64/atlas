@@ -1,0 +1,23 @@
+[Unit]
+Description=Atlas MAVSDK Server
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/atlas-agent/atlas-agent.env
+
+[Service]
+Type=simple
+User=atlas-agent
+Group=atlas-agent
+SupplementaryGroups=dialout
+EnvironmentFile=/etc/atlas-agent/atlas-agent.env
+ExecStart=/usr/libexec/atlas-agent/mavsdk_server -p ${ATLAS_MAVSDK_GRPC_PORT} ${ATLAS_MAVSDK_SYSTEM_ADDRESS}
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
+

@@ -24,7 +24,7 @@ command -v protoc-gen-go-grpc >/dev/null || {
 }
 
 mkdir -p "${OUT_DIR}"
-rm -rf "${OUT_DIR}/action" "${OUT_DIR}/core" "${OUT_DIR}/mission" "${OUT_DIR}/telemetry" "${OUT_DIR}/mavsdk_options"
+rm -rf "${OUT_DIR}/action" "${OUT_DIR}/camera" "${OUT_DIR}/core" "${OUT_DIR}/gimbal" "${OUT_DIR}/mission" "${OUT_DIR}/telemetry" "${OUT_DIR}/mavsdk_options"
 rm -f "${OUT_DIR}/mavsdk_options.pb.go"
 
 protoc \
@@ -32,20 +32,26 @@ protoc \
   --go_out="${OUT_DIR}" \
   --go_opt=paths=source_relative \
   --go_opt=Mmavsdk_options.proto="${MODULE}/mavsdk_options" \
-  --go_opt=Maction/action.proto="${MODULE}/action" \
   --go_opt=Mcore/core.proto="${MODULE}/core" \
+  --go_opt=Maction/action.proto="${MODULE}/action" \
+  --go_opt=Mcamera/camera.proto="${MODULE}/camera" \
+  --go_opt=Mgimbal/gimbal.proto="${MODULE}/gimbal" \
   --go_opt=Mmission/mission.proto="${MODULE}/mission" \
   --go_opt=Mtelemetry/telemetry.proto="${MODULE}/telemetry" \
   --go-grpc_out="${OUT_DIR}" \
   --go-grpc_opt=paths=source_relative \
   --go-grpc_opt=Mmavsdk_options.proto="${MODULE}/mavsdk_options" \
-  --go-grpc_opt=Maction/action.proto="${MODULE}/action" \
   --go-grpc_opt=Mcore/core.proto="${MODULE}/core" \
+  --go-grpc_opt=Maction/action.proto="${MODULE}/action" \
+  --go-grpc_opt=Mcamera/camera.proto="${MODULE}/camera" \
+  --go-grpc_opt=Mgimbal/gimbal.proto="${MODULE}/gimbal" \
   --go-grpc_opt=Mmission/mission.proto="${MODULE}/mission" \
   --go-grpc_opt=Mtelemetry/telemetry.proto="${MODULE}/telemetry" \
   "${PROTO_DIR}/mavsdk_options.proto" \
-  "${PROTO_DIR}/action/action.proto" \
   "${PROTO_DIR}/core/core.proto" \
+  "${PROTO_DIR}/action/action.proto" \
+  "${PROTO_DIR}/camera/camera.proto" \
+  "${PROTO_DIR}/gimbal/gimbal.proto" \
   "${PROTO_DIR}/mission/mission.proto" \
   "${PROTO_DIR}/telemetry/telemetry.proto"
 

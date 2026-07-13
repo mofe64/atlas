@@ -297,7 +297,7 @@ cat <<EOF
 
 Pass this to the onboard Pi installer:
 
-  atlas-agent/scripts/install-onboard-pi.sh --ground-grpc ${public_addr}
+  atlas-agent-deprecated/scripts/install-onboard-pi.sh --ground-grpc ${public_addr}
 
 For an already-installed Pi, set this in the onboard env file and restart atlas-agent:
 

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+	if [ -f /etc/atlas-agent/atlas-agent.env ]; then
+		systemctl try-restart atlas-mavsdk.service atlas-agent.service || true
+	fi
+fi
+
+printf '%s\n' 'Atlas Agent package installed.'
+printf '%s\n' 'Run: sudo atlas-setup'

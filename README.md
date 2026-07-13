@@ -17,17 +17,31 @@ PX4 remains the flight-control authority. Atlas provides the surrounding product
 atlas                      Tauri v2 native app (React, TypeScript, Rust)
 atlas-backend              New Go 1.25 + Gin backend foundation
 atlas-backend-deprecated   Previous backend, preserved during migration
-atlas-agent                Go onboard agent prototype
+atlas-agent                New Go 1.25 onboard-agent foundation
+atlas-agent-deprecated     Previous PX4/MAVSDK/gRPC agent prototype
 atlas-ui                   Previous browser UI
 ```
 
 ## Architecture transition
 
-The new desktop application and backend intentionally start as small foundations.
-The hardware and SITL runbooks below still exercise the previous API, database,
-and gRPC implementation, so their scripts explicitly use
-`atlas-backend-deprecated` until each workflow is migrated. See
-`atlas/README.md` and `atlas-backend/README.md` for the new applications.
+The new desktop application and agent now own the local SITL workflow. The
+hardware deployment runbook below still describes the previous backend-linked
+prototype and explicitly uses `atlas-backend-deprecated` and
+`atlas-agent-deprecated` until that hardware workflow is migrated. See
+`atlas/README.md` and `atlas-agent/README.md` for the current local-first apps.
+
+## Reset the new local databases
+
+Quit the Atlas native app, then run this from the repository root:
+
+```sh
+./scripts/reset-databases.sh
+```
+
+The script asks for an explicit `RESET` confirmation, deletes the new backend's
+PostgreSQL Compose volume and the native app's SQLite files, rebuilds the backend,
+and reapplies PostgreSQL migrations. Pass `--yes` only in an intentional
+non-interactive development workflow.
 
 ## Hardware Onboard MVP Runbook
 
@@ -47,7 +61,7 @@ Docker Postgres -> native Atlas Backend
 Run this from the repo root on the onboard Raspberry Pi:
 
 ```sh
-atlas-agent/scripts/install-onboard-pi.sh \
+atlas-agent-deprecated/scripts/install-onboard-pi.sh \
   --ground-grpc 0.tcp.eu.ngrok.io:24863 \
   --video-pipeline-mode hailo \
   --hailo-hardware ai-hat-plus \
@@ -64,7 +78,7 @@ If the ground-machine tunnel is restarted, replace
 Ground machine:
 
 - Docker with Docker Compose.
-- Go 1.25.x for both backend generations and `atlas-agent`.
+- Go 1.25.x for both backend and agent generations.
 - Node.js `22.13.1` through `nvm` for `atlas-ui`.
 - `ngrok` CLI plus an auth token that supports TCP tunnels.
 - Network reachability to the Pi RTSP endpoint, normally
@@ -150,7 +164,7 @@ OS Python/OpenCV packages that Ubuntu 24.04 does not provide.
 Run the installer in Hailo mode:
 
 ```sh
-atlas-agent/scripts/install-onboard-pi.sh \
+atlas-agent-deprecated/scripts/install-onboard-pi.sh \
   --ground-grpc <ngrok-host:port> \
   --video-pipeline-mode hailo \
   --hailo-hardware ai-hat-plus \
@@ -196,10 +210,10 @@ finish, reboot the Pi, then run the status script before starting the stack.
 ### 5. Start And Verify The Pi Services
 
 ```sh
-atlas-agent/scripts/start-onboard-stack.sh
+atlas-agent-deprecated/scripts/start-onboard-stack.sh
 sleep 15
 systemctl is-active atlas-mediamtx atlas-mavlink-router atlas-mavsdk atlas-agent atlas-video-agent
-atlas-agent/scripts/status-onboard-stack.sh
+atlas-agent-deprecated/scripts/status-onboard-stack.sh
 ```
 
 The expected `systemctl is-active` output is five `active` lines.
@@ -264,7 +278,7 @@ Hailo pipeline fails with `no element "hailonet"` or `no element "hailofilter"`:
   before rebuilding it against the Raspberry Pi `6.8.*-raspi` kernel.
 - If `hailortcli fw-control identify` fails with
   `HAILO_PCIE_DRIVER_NOT_INSTALLED` immediately after the installer configured
-  `hailo-dkms`, reboot the Pi and rerun `atlas-agent/scripts/status-onboard-stack.sh`.
+  `hailo-dkms`, reboot the Pi and rerun `atlas-agent-deprecated/scripts/status-onboard-stack.sh`.
   A just-built DKMS module can exist on disk before it is loaded and bound to the
   PCIe device.
 - If `atlas-video-agent` reports that `ATLAS_PERCEPTION_MODEL_PATH` does not
@@ -281,7 +295,7 @@ RTSP returns `404 Not Found` for `/atlas`:
 
 - MediaMTX is running, but the video agent is not publishing the `/atlas`
   stream.
-- Run `atlas-agent/scripts/status-onboard-stack.sh`.
+- Run `atlas-agent-deprecated/scripts/status-onboard-stack.sh`.
 - Check `atlas-video-agent` logs for GStreamer errors.
 
 VLC video is black, delayed, or missing boxes:
@@ -319,7 +333,7 @@ ngrok tunnel does not publish an endpoint:
 Stop the Pi services:
 
 ```sh
-atlas-agent/scripts/start-onboard-stack.sh --stop
+atlas-agent-deprecated/scripts/start-onboard-stack.sh --stop
 ```
 
 Stop the native backend and ngrok with `Ctrl-C` in the tunnel script terminal.
@@ -329,8 +343,8 @@ Cleanup the Pi Atlas setup while preserving FFmpeg/media dependencies and
 MediaMTX:
 
 ```sh
-atlas-agent/scripts/cleanup-onboard-pi.sh --dry-run
-atlas-agent/scripts/cleanup-onboard-pi.sh --yes
+atlas-agent-deprecated/scripts/cleanup-onboard-pi.sh --dry-run
+atlas-agent-deprecated/scripts/cleanup-onboard-pi.sh --yes
 ```
 
 ## Local Development
@@ -341,9 +355,34 @@ Full PX4 SITL stack:
 scripts/start-sitl.sh
 ```
 
-This starts PX4 SITL, `mavsdk_server`, Atlas Backend, Atlas Agent, and Atlas UI
-in order. Logs are written under `.atlas-run/logs/`, and Ctrl-C stops the
-managed processes.
+This starts the current local-first stack in order:
+
+```text
+PX4 Gazebo -> mavsdk_server -> Atlas Agent -> Atlas Native (Tauri + SQLite)
+```
+
+The default profile uses the gimbal-equipped `gz_x500_gimbal` in the richer
+`baylands` environment. The model contains a simulated camera, but Atlas does
+not ingest or render its video stream yet. Baylands' Gazebo Fuel assets are
+downloaded and cached on first use, so the initial run may take longer. Logs are
+written under `.atlas-run/logs/`, and Ctrl-C stops every managed process.
+
+The launcher also republishes Gazebo's GUI tracking request after PX4 finishes
+booting, so the Baylands camera follows `x500_gimbal_0` automatically instead of
+depending on a race with the GUI plugin at model-spawn time. Override the target
+or chase-camera offset with `ATLAS_GZ_FOLLOW_TARGET` and
+`ATLAS_GZ_FOLLOW_OFFSET_{X,Y,Z}`, or set `ATLAS_GZ_AUTO_FOLLOW=0` to disable it.
+
+Use the local `walls` world when a deterministic, network-independent fallback
+is preferable:
+
+```sh
+scripts/start-sitl.sh --world walls
+```
+
+Native SQLite and the agent installation identity persist together under
+`.atlas-run/state/sitl/`. This prevents a restart from registering a duplicate
+drone and keeps simulated records out of the normal Atlas application database.
 
 If your PX4 checkout is not beside this repo, point the script at it:
 
@@ -354,33 +393,33 @@ ATLAS_PX4_DIR=/path/to/PX4-Autopilot scripts/start-sitl.sh
 Useful development variants:
 
 ```sh
+scripts/start-sitl.sh --world default --px4-model gz_x500
+scripts/start-sitl.sh --world walls
 scripts/start-sitl.sh --skip-px4
 scripts/start-sitl.sh --skip-px4 --skip-mavsdk
+scripts/start-sitl.sh --state-dir /absolute/path/to/sitl-state
 scripts/start-sitl.sh --dry-run
 ```
 
 ### SITL MAVLink fanout
 
-By default, `scripts/start-sitl.sh` runs MAVProxy as the local MAVLink fanout
-process. This matches the Atlas architecture: PX4 produces one MAVLink stream,
-then a router fans it out to each consumer instead of making tools compete for
-the same endpoint.
+The new agent is the only default MAVLink consumer, through `mavsdk_server`, so
+the launcher connects MAVSDK directly to PX4. MAVProxy remains available when
+QGroundControl or another MAVLink consumer is needed.
 
 ```sh
-scripts/start-sitl.sh
+scripts/start-sitl.sh \
+  --mavlink-router mavproxy \
+  --qgc-out udp:127.0.0.1:14553
 ```
 
-The default topology is:
+That optional topology is:
 
 ```text
 PX4 SITL -> MAVProxy
   -> udp:127.0.0.1:14541  mavsdk_server / Atlas Agent
-  -> udp:127.0.0.1:14552  Atlas Raw MAVLink Observer
   -> udp:127.0.0.1:14553  QGroundControl
 ```
-
-QGroundControl is not the main reason for MAVProxy mode; it is one consumer on
-the same fanout path as MAVSDK and the Atlas raw observer.
 
 In QGroundControl:
 
@@ -394,27 +433,55 @@ In QGroundControl:
 Override or disable the QGC route with:
 
 ```sh
-scripts/start-sitl.sh --qgc-out udp:127.0.0.1:14554
-scripts/start-sitl.sh --qgc-out none
+scripts/start-sitl.sh --mavlink-router mavproxy --qgc-out udp:127.0.0.1:14554
+scripts/start-sitl.sh --mavlink-router mavproxy --qgc-out none
 ```
 
-Direct mode is available only as an explicit fallback for narrow debugging:
+Direct mode is the default. It can also be selected explicitly:
 
 ```sh
 scripts/start-sitl.sh --mavlink-router none
 ```
 
-In direct mode, MAVProxy does not start, there is no QGC fanout on UDP `14553`,
-and Atlas components connect directly to PX4 endpoints. Do not use direct mode
-for normal SITL verification because it skips the routing layer used by the
-intended architecture.
+In direct mode, MAVProxy does not start and `mavsdk_server` consumes PX4's UDP
+output directly on port `14540`.
 
-Legacy backend used by this runbook:
+### Native command lifecycle SITL test
+
+The native command integration test uses the current Rust native app and Go
+agent. The first terminal supplies only PX4 SITL and `mavsdk_server`; the test
+itself starts an isolated native gRPC server and Atlas Agent.
+
+From the repository root, start the simulator dependencies:
 
 ```sh
-cd atlas-backend-deprecated
-go run ./cmd/atlas-backend
+ATLAS_RUN_LOG_DIR=/tmp/atlas-native-sitl-logs \
+ATLAS_PX4_BOOT_WAIT_SECONDS=12 \
+scripts/start-sitl.sh \
+  --px4-model gz_x500_gimbal \
+  --world baylands \
+  --skip-native \
+  --skip-agent \
+  --mavlink-router none \
+  --qgc-out none
 ```
+
+In a second terminal, run the ignored hardware-in-the-loop-style integration
+test explicitly:
+
+```sh
+cd atlas/src-tauri
+cargo test sitl_executes_hold_rtl_and_land_through_native_lifecycle \
+  -- --ignored --nocapture
+```
+
+The test-only `atlas-sitl-fixture` arms and takes off so the aircraft is in a
+useful initial state. The native lifecycle persists and delivers Hold, RTL, and
+Land through gRPC to the agent, which executes them through MAVSDK. Payload
+control is mission-scoped and is covered by the Agent payload-controller tests;
+it is intentionally no longer issued before a mission by this contingency test.
+Arm and Takeoff remain absent from the production operator command surface.
+Press Ctrl-C in the first terminal after the test completes.
 
 ### Native Non-SITL Backend Tunnel For Onboard Pi
 
@@ -447,7 +514,7 @@ Docker Postgres -> Docker migrations -> native atlas-backend-deprecated -> nativ
 It then prints a command like:
 
 ```sh
-atlas-agent/scripts/install-onboard-pi.sh --ground-grpc 1.tcp.ngrok.io:12345
+atlas-agent-deprecated/scripts/install-onboard-pi.sh --ground-grpc 1.tcp.ngrok.io:12345
 ```
 
 For a stable TCP endpoint, reserve an ngrok TCP address and pass it as:
@@ -468,10 +535,10 @@ npm install
 npm run dev
 ```
 
-Agent:
+Deprecated agent used by the backend-linked hardware runbook:
 
 ```sh
-cd atlas-agent
+cd atlas-agent-deprecated
 go run ./cmd/atlas-agent
 ```
 
@@ -486,3 +553,10 @@ ATLAS_MAVLINK_OBSERVER_ENDPOINT=udp-server://0.0.0.0:14550
 `ATLAS_PX4_SYSTEM_ADDRESS` is the MAVSDK connection source. The read-only
 MAVLink observer uses `ATLAS_MAVLINK_OBSERVER_ENDPOINT`; use UDP for SITL and a
 serial or router-fed UDP endpoint for hardware.
+
+New agent foundation:
+
+```sh
+cd atlas-agent
+go run ./cmd/atlas-agent
+```

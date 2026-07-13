@@ -1,122 +1,836 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { backendBaseUrl, getBackendHealth, type BackendHealth } from "./api/backend";
+import { FleetPage } from "./fleet/FleetPage";
+import { HistoryPage } from "./history/HistoryPage";
+import type { ConnectionStatus, FleetSnapshot, NativeState, Nullable, StatusTone } from "./operationsTypes";
 import "./App.css";
 
-type RuntimeInfo = {
-  appVersion: string;
-  targetArch: string;
-  targetOs: string;
+const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
+const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
+
+type WorkspaceView = "fleet" | "aircraft" | "missions" | "mission-execution" | "history";
+
+type GroundStationSnapshot = {
+  listenAddress: string;
+  connectionStatus: ConnectionStatus;
+  droneId?: string | null;
+  droneName?: string | null;
+  vehicleType?: string | null;
+  vehicleStatus?: string | null;
+  agentId?: string | null;
+  agentVersion?: string | null;
+  agentCapabilities: string[];
+  bindingId?: string | null;
+  communicationLinkId?: string | null;
+  sessionId?: string | null;
+  remoteAddress?: string | null;
+  connectedAtUnixMs?: number | null;
+  lastHeartbeatAtUnixMs?: number | null;
+  telemetry?: AircraftTelemetry | null;
+  statusEvents: StatusEvent[];
 };
 
-type CheckState<T> =
-  | { state: "checking" }
-  | { state: "available"; value: T }
-  | { state: "unavailable"; reason: string };
+type BatteryTelemetry = {
+  id: number;
+  function: string;
+  remainingPercent?: number | null;
+  voltageV?: number | null;
+  currentA?: number | null;
+  temperatureC?: number | null;
+  consumedAh?: number | null;
+  timeRemainingS?: number | null;
+};
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
+type VehicleHealth = {
+  gyrometerCalibrationOk: boolean;
+  accelerometerCalibrationOk: boolean;
+  magnetometerCalibrationOk: boolean;
+  localPositionOk: boolean;
+  globalPositionOk: boolean;
+  homePositionOk: boolean;
+  armable: boolean;
+};
+
+type RcStatus = {
+  available: boolean;
+  wasAvailableOnce: boolean;
+  signalStrengthPercent?: number | null;
+};
+
+type HomePosition = {
+  latitude?: number | null;
+  longitude?: number | null;
+  absoluteAltitudeM?: number | null;
+  relativeAltitudeM?: number | null;
+};
+
+type GpsQuality = {
+  hdop?: number | null;
+  vdop?: number | null;
+  horizontalUncertaintyM?: number | null;
+  verticalUncertaintyM?: number | null;
+  velocityUncertaintyMps?: number | null;
+  courseOverGroundDeg?: number | null;
+};
+
+type StatusEvent = {
+  id: string;
+  source: string;
+  severity: string;
+  message: string;
+  observedAtUnixMs: number;
+  receivedAtUnixMs: number;
+};
+
+type AircraftTelemetry = {
+  status: "live" | "stale";
+  source: string;
+  observedAtUnixMs: number;
+  receivedAtUnixMs: number;
+  batteryPercent?: number | null;
+  relativeAltitudeM?: number | null;
+  flightMode?: string | null;
+  armed?: boolean | null;
+  inAir?: boolean | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  headingDeg?: number | null;
+  groundSpeedMps?: number | null;
+  gpsFix?: string | null;
+  satellitesVisible?: number | null;
+  homePositionSet?: boolean | null;
+  batteries: BatteryTelemetry[];
+  health?: VehicleHealth | null;
+  absoluteAltitudeM?: number | null;
+  terrainAltitudeM?: number | null;
+  bottomClearanceM?: number | null;
+  velocityNorthMps?: number | null;
+  velocityEastMps?: number | null;
+  velocityDownMps?: number | null;
+  climbRateMps?: number | null;
+  landedState?: string | null;
+  rcStatus?: RcStatus | null;
+  homePosition?: HomePosition | null;
+  gpsQuality?: GpsQuality | null;
+};
+
+type OperatorView = {
+  title: string;
+  statusLabel: string;
+  guidance: string;
+  stateDetail: string;
+  tone: StatusTone;
+};
+
+const emptySnapshot: GroundStationSnapshot = {
+  listenAddress: "192.168.144.50:7443",
+  connectionStatus: "disconnected",
+  statusEvents: [],
+  agentCapabilities: [],
+};
 
 function App() {
-  const [runtime, setRuntime] = useState<CheckState<RuntimeInfo>>({ state: "checking" });
-  const [backend, setBackend] = useState<CheckState<BackendHealth>>({ state: "checking" });
+  const [snapshot, setSnapshot] = useState<GroundStationSnapshot>(emptySnapshot);
+  const [fleet, setFleet] = useState<FleetSnapshot>({ generatedAtUnixMs: 0, aircraft: [] });
+  const [nativeState, setNativeState] = useState<NativeState>("starting");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("fleet");
+  const [selectedDroneId, setSelectedDroneId] = useState<string>();
+  const [selectedMissionId, setSelectedMissionId] = useState<string>();
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
 
-    invoke<RuntimeInfo>("runtime_info")
-      .then((value) => setRuntime({ state: "available", value }))
-      .catch((error) => setRuntime({ state: "unavailable", reason: errorMessage(error) }));
-
-    getBackendHealth(controller.signal)
-      .then((value) => setBackend({ state: "available", value }))
-      .catch((error) => {
-        if (!controller.signal.aborted) {
-          setBackend({ state: "unavailable", reason: errorMessage(error) });
+    async function refresh() {
+      try {
+        const [nextFleet, nextSnapshot] = await Promise.all([
+          invoke<FleetSnapshot>("fleet_snapshot"),
+          selectedDroneId
+            ? invoke<GroundStationSnapshot>("vehicle_operations_snapshot", { droneId: selectedDroneId })
+            : invoke<GroundStationSnapshot>("ground_station_snapshot"),
+        ]);
+        if (active) {
+          setFleet(nextFleet);
+          setSnapshot(nextSnapshot);
+          setNativeState("available");
         }
-      });
+      } catch {
+        if (active) setNativeState("unavailable");
+      }
+    }
 
-    return () => controller.abort();
-  }, []);
+    void refresh();
+    const interval = window.setInterval(refresh, 1000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [selectedDroneId]);
+
+  const heartbeat = formatRelativeTime(snapshot.lastHeartbeatAtUnixMs);
+  const view = operatorView(snapshot, nativeState, heartbeat);
+  const fleetView = fleetSystemView(fleet, nativeState);
+  const hasAircraft = Boolean(snapshot.droneId || snapshot.droneName);
+  const sessionState = nativeState !== "available"
+    ? nativeState === "starting" ? "Checking" : "Unknown"
+    : snapshot.sessionId
+    ? snapshot.connectionStatus === "disconnected" ? "Closed" : "Active"
+    : "None";
+  const agentValue = nativeState !== "available"
+    ? nativeState === "starting" ? "Checking" : "Unknown"
+    : snapshot.agentVersion ? `Version ${snapshot.agentVersion}` : "Not detected";
+  const agentDetail = nativeState !== "available"
+    ? "Waiting for local services"
+    : snapshot.agentId ? compactIdentifier(snapshot.agentId) : "Waiting for agent identity";
+  const heartbeatValue = nativeState === "available" ? heartbeat : sessionState;
+  const heartbeatStatusDetail = nativeState === "available"
+    ? heartbeatDetail(snapshot.connectionStatus, snapshot.lastHeartbeatAtUnixMs)
+    : "Live state is not available";
+  const groundLinkDetail = nativeState === "available"
+    ? snapshot.remoteAddress || "No remote endpoint"
+    : "Live state is not available";
+  const sessionDetail = nativeState === "available"
+    ? snapshot.sessionId ? compactIdentifier(snapshot.sessionId) : "No active session"
+    : "Live state is not available";
 
   return (
-    <main className="app-shell">
-      <header className="masthead">
-        <div className="wordmark" aria-label="Atlas">
-          <span className="wordmark-mark" aria-hidden="true">A</span>
-          <span>Atlas</span>
+    <div className="operations-shell">
+      <header className="operations-header">
+        <BrandMark />
+        <nav className="workspace-nav" aria-label="Atlas workspace">
+          <button
+            type="button"
+            className={workspaceView === "fleet" || workspaceView === "aircraft" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "fleet" || workspaceView === "aircraft" ? "page" : undefined}
+            onClick={() => setWorkspaceView("fleet")}
+          >
+            Fleet
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "missions" || workspaceView === "mission-execution" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "missions" || workspaceView === "mission-execution" ? "page" : undefined}
+            onClick={() => {
+              setWorkspaceView("missions");
+            }}
+          >
+            Missions
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "history" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "history" ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("history");
+            }}
+          >
+            History
+          </button>
+        </nav>
+        <div
+          className={`system-state system-state--${fleetView.tone}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="state-dot" aria-hidden="true" />
+          <span>
+            <small>Fleet status</small>
+            <strong>{fleetView.statusLabel}</strong>
+          </span>
         </div>
-        <div className="environment-label">Native foundation · local</div>
       </header>
 
-      <section className="hero" aria-labelledby="page-title">
-        <p className="eyebrow">System readiness</p>
-        <h1 id="page-title">The new Atlas control surface starts here.</h1>
-        <p className="hero-copy">
-          This shell proves the two foundational connections: React to the native Rust host,
-          and the installed app to the independent Atlas API.
-        </p>
-      </section>
+      {workspaceView === "fleet" ? (
+        <FleetPage
+          aircraft={fleet.aircraft}
+          generatedAtUnixMs={fleet.generatedAtUnixMs}
+          nativeState={nativeState}
+          listenAddress={snapshot.listenAddress}
+          onOpenAircraft={(droneId) => {
+            setSelectedDroneId(droneId);
+            setWorkspaceView("aircraft");
+          }}
+          onOpenHistory={(droneId) => {
+            setSelectedDroneId(droneId);
+            setWorkspaceView("history");
+          }}
+        />
+      ) : workspaceView === "missions" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading mission map…</p></main>}>
+          <MissionPage
+            nativeAvailable={nativeState === "available"}
+            fleetAircraft={fleet.aircraft}
+            preferredDroneId={selectedDroneId}
+            onMissionReady={(missionId) => {
+              setSelectedMissionId(missionId);
+              setWorkspaceView("mission-execution");
+            }}
+          />
+        </Suspense>
+      ) : workspaceView === "mission-execution" && selectedMissionId ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading mission execution…</p></main>}>
+          <MissionExecutionPage
+            nativeAvailable={nativeState === "available"}
+            missionId={selectedMissionId}
+            onBack={() => setWorkspaceView("missions")}
+          />
+        </Suspense>
+      ) : workspaceView === "history" ? (
+        <HistoryPage
+          droneId={selectedDroneId}
+          droneName={snapshot.droneId === selectedDroneId ? snapshot.droneName : undefined}
+          nativeAvailable={nativeState === "available"}
+          onOpenDroneHistory={setSelectedDroneId}
+          onBackToOverview={() => setSelectedDroneId(undefined)}
+        />
+      ) : (
+      <main className="operations-main" id="main-content">
+        <button type="button" className="back-to-fleet" onClick={() => setWorkspaceView("fleet")}>
+          <span aria-hidden="true">←</span> Fleet
+        </button>
+        <section className="aircraft-overview" aria-labelledby="aircraft-title">
+          <div className="overview-copy">
+            <p className="eyebrow">Drone overview</p>
+            <h1 id="aircraft-title">{view.title}</h1>
+            <p className="overview-guidance">{view.guidance}</p>
+          </div>
 
-      <section className="readiness" aria-label="Application readiness checks">
-        <StatusRow
-          index="01"
-          label="Native host"
-          detail={runtime.state === "available"
-            ? `${runtime.value.targetOs} · ${runtime.value.targetArch} · v${runtime.value.appVersion}`
-            : runtime.state === "unavailable"
-              ? "Open with `npm run tauri dev` to load the Rust host."
-              : "Reading the Tauri runtime…"}
-          state={runtime.state}
-        />
-        <StatusRow
-          index="02"
-          label="Atlas API"
-          detail={backend.state === "available"
-            ? `${backend.value.service} answered at ${backendBaseUrl}`
-            : backend.state === "unavailable"
-              ? `Start atlas-backend on ${backendBaseUrl}.`
-              : `Checking ${backendBaseUrl}…`}
-          state={backend.state}
-        />
-        <StatusRow
-          index="03"
-          label="Operator workspace"
-          detail="Ready for the first domain workflow."
-          state="available"
-        />
-      </section>
+          <div className={`state-readout state-readout--${view.tone}`}>
+            <span className="readout-label">Current state</span>
+            <strong>{view.statusLabel}</strong>
+            <p>{view.stateDetail}</p>
+          </div>
+        </section>
 
-      <footer className="system-note">
-        <span>PX4 remains flight-control authority.</span>
-        <span>Atlas owns orchestration, policy, and operator state.</span>
+        <section className="status-grid" aria-label="Live drone status">
+          <StatusItem
+            label="Ground link"
+            value={view.statusLabel}
+            detail={groundLinkDetail}
+            tone={view.tone}
+          />
+          <StatusItem
+            label="Onboard agent"
+            value={agentValue}
+            detail={agentDetail}
+            tone={nativeState === "available" && snapshot.agentId ? "positive" : "neutral"}
+          />
+          <StatusItem
+            label="Last heartbeat"
+            value={heartbeatValue}
+            detail={heartbeatStatusDetail}
+            tone={nativeState === "available"
+              ? heartbeatTone(snapshot.connectionStatus, snapshot.lastHeartbeatAtUnixMs)
+              : "neutral"}
+          />
+          <StatusItem
+            label="Session"
+            value={sessionState}
+            detail={sessionDetail}
+            tone={sessionState === "Active" ? view.tone : "neutral"}
+          />
+        </section>
+
+        {hasAircraft && nativeState === "available" && (
+          <>
+            <TelemetryPanel telemetry={snapshot.telemetry} />
+            <StatusEventFeed events={snapshot.statusEvents} />
+          </>
+        )}
+
+        {!hasAircraft && nativeState === "available" && <ConnectionGuide />}
+        {nativeState === "unavailable" && <RecoveryNotice />}
+
+        <ConnectionDetails snapshot={snapshot} />
+      </main>
+      )}
+
+      <footer className="operations-footer">
+        <span>Atlas Ground Station</span>
+        <span>Local data · 7-day telemetry history</span>
       </footer>
-    </main>
+    </div>
   );
 }
 
-type StatusRowProps = {
-  detail: string;
-  index: string;
-  label: string;
-  state: "checking" | "available" | "unavailable";
-};
+function TelemetryPanel({ telemetry }: { telemetry?: AircraftTelemetry | null }) {
+  if (!telemetry) {
+    return (
+      <section className="telemetry-section telemetry-section--empty" aria-labelledby="telemetry-title">
+        <div>
+          <p className="eyebrow">Flight data</p>
+          <h2 id="telemetry-title">Waiting for telemetry</h2>
+        </div>
+        <p>The onboard agent is connected, but MAVSDK has not reported flight data yet.</p>
+      </section>
+    );
+  }
 
-function StatusRow({ detail, index, label, state }: StatusRowProps) {
-  const stateLabel = state === "available" ? "Ready" : state === "checking" ? "Checking" : "Offline";
+  const freshnessTone: StatusTone = telemetry.status === "live" ? "positive" : "warning";
+  const primaryBattery = selectPrimaryBattery(telemetry.batteries);
+  const metrics = [
+    ["Flight state", flightState(telemetry.armed, telemetry.inAir, telemetry.landedState)],
+    ["Flight mode", displayEnum(telemetry.flightMode)],
+    ["Battery", batteryStatus(primaryBattery, telemetry.batteryPercent)],
+    ["RC link", rcStatus(telemetry.rcStatus)],
+    ["Relative altitude", formatMeasurement(telemetry.relativeAltitudeM, 1, " m")],
+    ["Absolute altitude", formatMeasurement(telemetry.absoluteAltitudeM, 1, " m")],
+    ["Terrain altitude", formatMeasurement(telemetry.terrainAltitudeM, 1, " m")],
+    ["Bottom clearance", formatMeasurement(telemetry.bottomClearanceM, 1, " m")],
+    ["Climb rate", formatSignedMeasurement(telemetry.climbRateMps, 1, " m/s")],
+    ["Ground speed", formatMeasurement(telemetry.groundSpeedMps, 1, " m/s")],
+    ["Heading", formatMeasurement(telemetry.headingDeg, 0, "°")],
+    ["GPS", gpsStatus(telemetry.gpsFix, telemetry.satellitesVisible)],
+    ["GPS precision", gpsPrecision(telemetry.gpsQuality)],
+    ["NED velocity", nedVelocity(telemetry)],
+    ["Position", position(telemetry.latitude, telemetry.longitude)],
+    ["Home", homeStatus(telemetry.homePositionSet, telemetry.homePosition)],
+  ];
 
   return (
-    <article className="status-row">
-      <span className="status-index">{index}</span>
-      <h2>{label}</h2>
-      <p>{detail}</p>
-      <span className={`status-badge status-badge--${state}`}>
-        <span className="status-dot" aria-hidden="true" />
-        {stateLabel}
-      </span>
+    <section className="telemetry-section" aria-labelledby="telemetry-title">
+      <header className="telemetry-header">
+        <div>
+          <p className="eyebrow">Flight data</p>
+          <h2 id="telemetry-title">Current telemetry</h2>
+        </div>
+        <div className={`telemetry-freshness telemetry-freshness--${freshnessTone}`}>
+          <span className="state-dot" aria-hidden="true" />
+          <span>
+            <strong>{telemetry.status === "live" ? "Live" : "Stale"}</strong>
+            <small>Received {formatRelativeTime(telemetry.receivedAtUnixMs).toLowerCase()}</small>
+          </span>
+        </div>
+      </header>
+      <div className="telemetry-grid">
+        {metrics.map(([label, value]) => (
+          <article key={label}>
+            <p>{label}</p>
+            <strong>{value}</strong>
+          </article>
+        ))}
+      </div>
+      <div className="telemetry-support">
+        <PreflightHealth health={telemetry.health} />
+        <BatterySummary batteries={telemetry.batteries} />
+      </div>
+    </section>
+  );
+}
+
+function PreflightHealth({ health }: { health?: VehicleHealth | null }) {
+  const checks = health ? [
+    ["Armable", health.armable],
+    ["Gyroscope", health.gyrometerCalibrationOk],
+    ["Accelerometer", health.accelerometerCalibrationOk],
+    ["Magnetometer", health.magnetometerCalibrationOk],
+    ["Local position", health.localPositionOk],
+    ["Global position", health.globalPositionOk],
+    ["Home position", health.homePositionOk],
+  ] as const : [];
+
+  return (
+    <section className="telemetry-support-group" aria-labelledby="preflight-health-title">
+      <div className="support-heading">
+        <h3 id="preflight-health-title">Preflight health</h3>
+        {health && <span>{health.armable ? "Ready to arm" : "Attention required"}</span>}
+      </div>
+      {health ? (
+        <ul className="health-list">
+          {checks.map(([label, ready]) => (
+            <li key={label} className={ready ? "health-check--ready" : "health-check--attention"}>
+              <span className="health-marker" aria-hidden="true">{ready ? "✓" : "!"}</span>
+              <span>{label}</span>
+              <strong>{ready ? "Ready" : "Check"}</strong>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="support-empty">Waiting for MAVSDK health checks.</p>
+      )}
+    </section>
+  );
+}
+
+function BatterySummary({ batteries }: { batteries: BatteryTelemetry[] }) {
+  return (
+    <section className="telemetry-support-group" aria-labelledby="battery-summary-title">
+      <div className="support-heading">
+        <h3 id="battery-summary-title">Power systems</h3>
+        {batteries.length > 0 && <span>{batteries.length} {batteries.length === 1 ? "battery" : "batteries"}</span>}
+      </div>
+      {batteries.length > 0 ? (
+        <ul className="battery-list">
+          {batteries.map((battery) => (
+            <li key={`${battery.id}-${battery.function}`}>
+              <div>
+                <strong>{batteryLabel(battery)}</strong>
+                <span>{formatRemainingTime(battery.timeRemainingS)}</span>
+              </div>
+              <dl>
+                <div><dt>Charge</dt><dd>{formatMeasurement(battery.remainingPercent, 0, "%")}</dd></div>
+                <div><dt>Voltage</dt><dd>{formatMeasurement(battery.voltageV, 1, " V")}</dd></div>
+                <div><dt>Current</dt><dd>{formatMeasurement(battery.currentA, 1, " A")}</dd></div>
+                <div><dt>Temperature</dt><dd>{formatMeasurement(battery.temperatureC, 0, "°C")}</dd></div>
+              </dl>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="support-empty">Waiting for detailed battery data.</p>
+      )}
+    </section>
+  );
+}
+
+function StatusEventFeed({ events }: { events: StatusEvent[] }) {
+  return (
+    <section className="event-feed" aria-labelledby="event-feed-title">
+      <header>
+        <div>
+          <p className="eyebrow">Drone events</p>
+          <h2 id="event-feed-title">PX4 messages</h2>
+        </div>
+        <span>{events.length > 0 ? `${events.length} recent` : "No messages"}</span>
+      </header>
+      {events.length > 0 ? (
+        <ol>
+          {events.slice(0, 8).map((event) => (
+            <li key={event.id} className={`event-item event-item--${eventTone(event.severity)}`}>
+              <span className="event-severity">{displayEnum(event.severity)}</span>
+              <p>{event.message}</p>
+              <time dateTime={new Date(event.observedAtUnixMs).toISOString()}>
+                {formatRelativeTime(event.receivedAtUnixMs)}
+              </time>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="event-feed-empty">PX4 status and failsafe messages will appear here when reported.</p>
+      )}
+    </section>
+  );
+}
+
+function StatusItem({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone: StatusTone;
+}) {
+  return (
+    <article className={`status-item status-item--${tone}`}>
+      <p>{label}</p>
+      <strong>{value}</strong>
+      <span>{detail}</span>
     </article>
   );
+}
+
+function ConnectionGuide() {
+  const steps = [
+    ["Power drone systems", "Start the flight controller and onboard computer."],
+    ["Confirm the HM30 link", "Keep both endpoints on the same local network."],
+    ["Start Atlas Agent", "The drone appears automatically after it connects."],
+  ];
+
+  return (
+    <section className="connection-guide" aria-labelledby="connection-guide-title">
+      <div className="guide-heading">
+        <p className="eyebrow">First connection</p>
+        <h2 id="connection-guide-title">Connect a drone</h2>
+      </div>
+      <ol>
+        {steps.map(([title, detail], index) => (
+          <li key={title}>
+            <span>{String(index + 1).padStart(2, "0")}</span>
+            <div>
+              <strong>{title}</strong>
+              <p>{detail}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function RecoveryNotice() {
+  return (
+    <section className="recovery-notice" role="alert" aria-labelledby="recovery-title">
+      <p className="eyebrow">Action required</p>
+      <h2 id="recovery-title">Ground station services did not start</h2>
+      <p>
+        Close and reopen Atlas. If the problem continues, do not begin vehicle
+        operations and review the application log.
+      </p>
+    </section>
+  );
+}
+
+function ConnectionDetails({ snapshot }: { snapshot: GroundStationSnapshot }) {
+  const details = [
+    ["Listener", snapshot.listenAddress],
+    ["Remote endpoint", snapshot.remoteAddress || "—"],
+    ["Drone ID", snapshot.droneId || "—"],
+    ["Agent ID", snapshot.agentId || "—"],
+    ["Binding ID", snapshot.bindingId || "—"],
+    ["Communication link ID", snapshot.communicationLinkId || "—"],
+    ["Session ID", snapshot.sessionId || "—"],
+  ];
+
+  return (
+    <details className="connection-details">
+      <summary>Connection details</summary>
+      <dl>
+        {details.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
+function BrandMark() {
+  return (
+    <div className="wordmark" aria-label="Atlas Ground Station">
+      <span className="wordmark-mark" aria-hidden="true">A</span>
+      <span>
+        <strong>Atlas</strong>
+        <small>Ground Station</small>
+      </span>
+    </div>
+  );
+}
+
+function operatorView(
+  snapshot: GroundStationSnapshot,
+  nativeState: NativeState,
+  heartbeat: string,
+): OperatorView {
+  if (nativeState === "starting") {
+    return {
+      title: "Starting ground station",
+      statusLabel: "Starting",
+      guidance: "Preparing local drone services and connection state.",
+      stateDetail: "Checking local services.",
+      tone: "neutral",
+    };
+  }
+
+  if (nativeState === "unavailable") {
+    return {
+      title: "Ground station unavailable",
+      statusLabel: "Unavailable",
+      guidance: "Reopen Atlas to restore the local services required for vehicle operations.",
+      stateDetail: "Local services are not responding.",
+      tone: "critical",
+    };
+  }
+
+  if (snapshot.connectionStatus === "connected") {
+    return {
+      title: snapshot.droneName || "Drone connected",
+      statusLabel: "Connected",
+      guidance: "The onboard agent is responding over the local link.",
+      stateDetail: `Heartbeat ${heartbeat.toLowerCase()}.`,
+      tone: "positive",
+    };
+  }
+
+  if (snapshot.connectionStatus === "stale") {
+    return {
+      title: snapshot.droneName || "Drone link degraded",
+      statusLabel: "Degraded",
+      guidance: "Heartbeat updates have stopped. Check the HM30 link and onboard computer.",
+      stateDetail: `Last heartbeat ${heartbeat.toLowerCase()}.`,
+      tone: "warning",
+    };
+  }
+
+  if (snapshot.droneId || snapshot.droneName) {
+    return {
+      title: snapshot.droneName || "Drone offline",
+      statusLabel: "Offline",
+      guidance: "Atlas will restore the session when the onboard agent reconnects.",
+      stateDetail: snapshot.lastHeartbeatAtUnixMs
+        ? `Last heartbeat ${heartbeat.toLowerCase()}.`
+        : "No heartbeat has been recorded.",
+      tone: "neutral",
+    };
+  }
+
+  return {
+    title: "No drone connected",
+    statusLabel: "Waiting",
+    guidance: "Power the onboard computer and confirm the HM30 network link. Atlas Agent connects automatically.",
+    stateDetail: `Listening at ${snapshot.listenAddress}.`,
+    tone: "neutral",
+  };
+}
+
+function fleetSystemView(fleet: FleetSnapshot, nativeState: NativeState): Pick<OperatorView, "statusLabel" | "tone"> {
+  if (nativeState === "starting") return { statusLabel: "Starting", tone: "neutral" };
+  if (nativeState === "unavailable") return { statusLabel: "Unavailable", tone: "critical" };
+  if (fleet.aircraft.length === 0) return { statusLabel: "Waiting for drones", tone: "neutral" };
+
+  const connected = fleet.aircraft.filter((aircraft) => aircraft.connectionStatus === "connected").length;
+  const degraded = fleet.aircraft.some((aircraft) => aircraft.connectionStatus === "stale");
+  if (degraded) return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "warning" };
+  if (connected === fleet.aircraft.length) {
+    return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "positive" };
+  }
+  return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "neutral" };
+}
+
+function compactIdentifier(value: string) {
+  return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function formatRelativeTime(timestamp: Nullable<number>) {
+  if (!timestamp) return "Not received";
+  const ageSeconds = Math.max(0, Math.round((Date.now() - timestamp) / 1000));
+  if (ageSeconds < 2) return "Now";
+  if (ageSeconds < 60) return `${ageSeconds} seconds ago`;
+  const ageMinutes = Math.floor(ageSeconds / 60);
+  if (ageMinutes < 60) return `${ageMinutes} ${ageMinutes === 1 ? "minute" : "minutes"} ago`;
+  const ageHours = Math.floor(ageMinutes / 60);
+  return `${ageHours} ${ageHours === 1 ? "hour" : "hours"} ago`;
+}
+
+function heartbeatDetail(status: ConnectionStatus, timestamp: Nullable<number>) {
+  if (!timestamp) return "Waiting for first update";
+  if (status === "stale") return "Updates interrupted";
+  if (status === "disconnected") return "Session closed";
+  return "Updates every 5 seconds";
+}
+
+function heartbeatTone(status: ConnectionStatus, timestamp: Nullable<number>): StatusTone {
+  if (!timestamp || status === "disconnected") return "neutral";
+  return status === "stale" ? "warning" : "positive";
+}
+
+function flightState(armed: Nullable<boolean>, inAir: Nullable<boolean>, landedState: Nullable<string>) {
+  if (armed == null && inAir == null && !landedState) return "Not reported";
+  if (inAir) return armed === false ? "In air · disarmed" : "In air · armed";
+  if (landedState && landedState !== "UNKNOWN") {
+    const state = displayEnum(landedState);
+    return armed ? `${state} · armed` : `${state} · disarmed`;
+  }
+  return armed ? "On ground · armed" : "On ground · disarmed";
+}
+
+function displayEnum(value: Nullable<string>) {
+  if (!value) return "Not reported";
+  return value.toLowerCase().replace(/_/g, " ");
+}
+
+function formatMeasurement(value: Nullable<number>, digits: number, suffix: string) {
+  return value == null ? "Not reported" : `${value.toFixed(digits)}${suffix}`;
+}
+
+function formatSignedMeasurement(value: Nullable<number>, digits: number, suffix: string) {
+  if (value == null) return "Not reported";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${value.toFixed(digits)}${suffix}`;
+}
+
+function selectPrimaryBattery(batteries: BatteryTelemetry[]) {
+  return batteries.find((battery) => battery.function === "ALL" || battery.function === "PROPULSION")
+    ?? batteries[0];
+}
+
+function batteryStatus(battery: Nullable<BatteryTelemetry>, fallback: Nullable<number>) {
+  const charge = battery?.remainingPercent ?? fallback;
+  if (!battery) return formatMeasurement(charge, 0, "%");
+  const parts = [formatMeasurement(charge, 0, "%")];
+  if (battery.voltageV != null) parts.push(`${battery.voltageV.toFixed(1)} V`);
+  if (battery.currentA != null) parts.push(`${battery.currentA.toFixed(1)} A`);
+  return parts.join(" · ");
+}
+
+function batteryLabel(battery: BatteryTelemetry) {
+  const role = displayEnum(battery.function);
+  return battery.function === "UNKNOWN" ? `Battery ${battery.id}` : `${role} battery ${battery.id}`;
+}
+
+function formatRemainingTime(seconds: Nullable<number>) {
+  if (seconds == null) return "Time remaining not reported";
+  if (seconds < 60) return `${Math.round(seconds)} seconds remaining`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} remaining`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `${hours} h ${remainder} min remaining`;
+}
+
+function rcStatus(status: Nullable<RcStatus>) {
+  if (!status) return "Not reported";
+  if (!status.available) return status.wasAvailableOnce ? "Signal lost" : "Not detected";
+  return status.signalStrengthPercent == null
+    ? "Available"
+    : `Available · ${status.signalStrengthPercent.toFixed(0)}%`;
+}
+
+function gpsPrecision(quality: Nullable<GpsQuality>) {
+  if (!quality) return "Not reported";
+  const values: string[] = [];
+  if (quality.hdop != null) values.push(`HDOP ${quality.hdop.toFixed(1)}`);
+  if (quality.horizontalUncertaintyM != null) {
+    values.push(`±${quality.horizontalUncertaintyM.toFixed(1)} m`);
+  }
+  return values.length > 0 ? values.join(" · ") : "Not reported";
+}
+
+function nedVelocity(telemetry: AircraftTelemetry) {
+  const values = [
+    telemetry.velocityNorthMps,
+    telemetry.velocityEastMps,
+    telemetry.velocityDownMps,
+  ];
+  if (values.every((value) => value == null)) return "Not reported";
+  return values.map((value) => value == null ? "—" : value.toFixed(1)).join(" / ") + " m/s";
+}
+
+function homeStatus(isSet: Nullable<boolean>, home: Nullable<HomePosition>) {
+  if (isSet === false) return "Not set";
+  if (home?.latitude != null && home.longitude != null) {
+    return `${home.latitude.toFixed(4)}, ${home.longitude.toFixed(4)}`;
+  }
+  return isSet ? "Set" : "Not reported";
+}
+
+function eventTone(severity: string): StatusTone {
+  switch (severity.toUpperCase()) {
+    case "EMERGENCY":
+    case "ALERT":
+    case "CRITICAL":
+    case "ERROR":
+      return "critical";
+    case "WARNING":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
+
+function gpsStatus(fix: Nullable<string>, satellites: Nullable<number>) {
+  if (!fix && satellites == null) return "Not reported";
+  const fixLabel = displayEnum(fix);
+  return satellites == null ? fixLabel : `${fixLabel} · ${satellites} satellites`;
+}
+
+function position(latitude: Nullable<number>, longitude: Nullable<number>) {
+  if (latitude == null || longitude == null) return "Not reported";
+  return `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
 }
 
 export default App;

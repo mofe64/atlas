@@ -1,42 +1,126 @@
-use serde::Serialize;
+mod commands;
+mod database;
+mod ground_station;
+mod video;
 
-/// Values supplied by the compiled native host rather than the webview.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeInfo {
-    app_version: &'static str,
-    target_arch: &'static str,
-    target_os: &'static str,
-}
+use std::{net::SocketAddr, sync::Arc};
 
-/// Tauri commands are the deliberately small IPC boundary between React and Rust.
-#[tauri::command]
-fn runtime_info() -> RuntimeInfo {
-    RuntimeInfo {
-        app_version: env!("CARGO_PKG_VERSION"),
-        target_arch: std::env::consts::ARCH,
-        target_os: std::env::consts::OS,
-    }
+use commands::{
+    apply_mission_terrain_profile, cancel_vehicle_command, control_mission_run, create_mission,
+    fleet_snapshot, generate_mission_plan, ground_station_snapshot, history_overview,
+    mission_detail, mission_list, mission_plan, mission_run_detail, mission_run_history,
+    mission_templates, perception_snapshot, request_vehicle_command, runtime_info, update_mission,
+    upload_mission, vehicle_command_detail, vehicle_command_history, vehicle_event_history,
+    vehicle_operations_snapshot, vehicle_telemetry_chart_series, vehicle_telemetry_history,
+    video_stream_frame, video_stream_snapshot, video_stream_start, video_stream_stop,
+};
+use database::LocalDatabase;
+use tauri::Manager;
+
+pub(crate) struct AppState {
+    database: Arc<LocalDatabase>,
+    listen_address: String,
+    command_router: ground_station::CommandRouter,
+    perception: ground_station::PerceptionStore,
+    video: video::VideoManager,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![runtime_info])
+        .setup(|app| {
+            let listen_address = std::env::var("ATLAS_GROUND_STATION_LISTEN_ADDR")
+                .unwrap_or_else(|_| "192.168.144.50:7443".to_string());
+            let socket_address: SocketAddr = listen_address.parse().map_err(|error| {
+                std::io::Error::other(format!("invalid ground-station listen address: {error}"))
+            })?;
+            let database =
+                Arc::new(LocalDatabase::open(app.handle()).map_err(std::io::Error::other)?);
+
+            println!(
+                "Atlas local database ready: SQLite {}, journal={}, path={}",
+                database.sqlite_version,
+                database.journal_mode,
+                database.path.display()
+            );
+            let server_database = Arc::clone(&database);
+            let command_timeout_database = Arc::clone(&database);
+            let command_router = ground_station::CommandRouter::default();
+            let server_command_router = command_router.clone();
+            let perception = ground_station::PerceptionStore::default();
+            let server_perception = perception.clone();
+            let video = video::VideoManager::from_environment().map_err(std::io::Error::other)?;
+            tauri::async_runtime::spawn(async move {
+                if let Err(error) = ground_station::serve(
+                    socket_address,
+                    server_database,
+                    server_command_router,
+                    server_perception,
+                )
+                .await
+                {
+                    eprintln!("{error}");
+                }
+            });
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+                loop {
+                    interval.tick().await;
+                    if let Err(error) =
+                        command_timeout_database.expire_vehicle_commands(database::unix_time_ms())
+                    {
+                        eprintln!("Expire Atlas vehicle commands failed: {error}");
+                    }
+                }
+            });
+            if let Some(window) = app.get_webview_window("main") {
+                let shutdown_video = video.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::Destroyed) {
+                        let _ = shutdown_video.stop(None);
+                    }
+                });
+            }
+            app.manage(AppState {
+                database,
+                listen_address,
+                command_router,
+                perception,
+                video,
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            runtime_info,
+            perception_snapshot,
+            video_stream_start,
+            video_stream_stop,
+            video_stream_snapshot,
+            video_stream_frame,
+            fleet_snapshot,
+            ground_station_snapshot,
+            history_overview,
+            mission_templates,
+            mission_list,
+            mission_detail,
+            create_mission,
+            update_mission,
+            generate_mission_plan,
+            apply_mission_terrain_profile,
+            mission_plan,
+            upload_mission,
+            control_mission_run,
+            mission_run_detail,
+            mission_run_history,
+            request_vehicle_command,
+            vehicle_command_detail,
+            vehicle_command_history,
+            cancel_vehicle_command,
+            vehicle_operations_snapshot,
+            vehicle_telemetry_history,
+            vehicle_telemetry_chart_series,
+            vehicle_event_history
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Atlas");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::runtime_info;
-
-    #[test]
-    fn runtime_info_comes_from_the_compiled_host() {
-        let info = runtime_info();
-
-        assert!(!info.app_version.is_empty());
-        assert!(!info.target_arch.is_empty());
-        assert!(!info.target_os.is_empty());
-    }
 }

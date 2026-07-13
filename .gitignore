@@ -11,3 +11,8 @@ atlas-ui/.vite/
 .scratch/
 .atlas-run/
 .env
+
+# Python tooling used by the onboard HailoRT adapter
+__pycache__/
+*.pyc
+atlas-agent/dist/

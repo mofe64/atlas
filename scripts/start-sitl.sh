@@ -6,112 +6,108 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PX4_DIR="${ATLAS_PX4_DIR:-"${ROOT_DIR}/../PX4-Autopilot"}"
 PX4_VENV="${ATLAS_PX4_VENV:-"${PX4_DIR}/.venv/bin/activate"}"
 PX4_TARGET="${ATLAS_PX4_TARGET:-px4_sitl}"
-PX4_MODEL="${ATLAS_PX4_MODEL:-gz_x500}"
+PX4_MODEL="${ATLAS_PX4_MODEL:-gz_x500_gimbal}"
+PX4_WORLD="${ATLAS_PX4_WORLD:-baylands}"
 PX4_BOOT_WAIT_SECONDS="${ATLAS_PX4_BOOT_WAIT_SECONDS:-20}"
+STARTUP_TIMEOUT_SECONDS="${ATLAS_SITL_STARTUP_TIMEOUT_SECONDS:-120}"
+ATLAS_GZ_AUTO_FOLLOW="${ATLAS_GZ_AUTO_FOLLOW:-1}"
+ATLAS_GZ_FOLLOW_TARGET_EXPLICIT=0
+if [[ -n "${ATLAS_GZ_FOLLOW_TARGET:-}" ]]; then
+  ATLAS_GZ_FOLLOW_TARGET_EXPLICIT=1
+fi
+ATLAS_GZ_FOLLOW_TARGET="${ATLAS_GZ_FOLLOW_TARGET:-${PX4_MODEL#gz_}_0}"
+ATLAS_GZ_FOLLOW_OFFSET_X="${ATLAS_GZ_FOLLOW_OFFSET_X:--4.0}"
+ATLAS_GZ_FOLLOW_OFFSET_Y="${ATLAS_GZ_FOLLOW_OFFSET_Y:--4.0}"
+ATLAS_GZ_FOLLOW_OFFSET_Z="${ATLAS_GZ_FOLLOW_OFFSET_Z:-3.0}"
 
-SITL_MAVLINK_ROUTER="${ATLAS_SITL_MAVLINK_ROUTER:-mavproxy}"
+SITL_MAVLINK_ROUTER="${ATLAS_SITL_MAVLINK_ROUTER:-none}"
 MAVPROXY_BIN="${ATLAS_MAVPROXY_BIN:-"${PX4_DIR}/.venv/bin/mavproxy.py"}"
 MAVPROXY_MASTER="${ATLAS_MAVPROXY_MASTER:-udp:127.0.0.1:14550}"
 MAVPROXY_MAVSDK_OUT="${ATLAS_MAVPROXY_MAVSDK_OUT:-udp:127.0.0.1:14541}"
-MAVPROXY_OBSERVER_OUT="${ATLAS_MAVPROXY_OBSERVER_OUT:-udp:127.0.0.1:14552}"
-MAVPROXY_QGC_OUT="${ATLAS_MAVPROXY_QGC_OUT:-udp:127.0.0.1:14553}"
+MAVPROXY_QGC_OUT="${ATLAS_MAVPROXY_QGC_OUT:-none}"
 
 MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-mavsdk_server}"
 MAVSDK_PORT="${ATLAS_MAVSDK_PORT:-50051}"
 ATLAS_MAVSDK_GRPC_ADDR="${ATLAS_MAVSDK_GRPC_ADDR:-127.0.0.1:${MAVSDK_PORT}}"
 PX4_SYSTEM_ADDRESS_EXPLICIT=0
-MAVLINK_OBSERVER_ENDPOINT_EXPLICIT=0
 if [[ -n "${ATLAS_PX4_SYSTEM_ADDRESS:-}" ]]; then
   PX4_SYSTEM_ADDRESS_EXPLICIT=1
 fi
-if [[ -n "${ATLAS_MAVLINK_OBSERVER_ENDPOINT:-}" ]]; then
-  MAVLINK_OBSERVER_ENDPOINT_EXPLICIT=1
-fi
 ATLAS_PX4_SYSTEM_ADDRESS="${ATLAS_PX4_SYSTEM_ADDRESS:-}"
-ATLAS_MAVLINK_OBSERVER_ENDPOINT="${ATLAS_MAVLINK_OBSERVER_ENDPOINT:-}"
 
-ATLAS_BACKEND_ADDR="${ATLAS_BACKEND_ADDR:-:8080}"
-ATLAS_BACKEND_URL="${ATLAS_BACKEND_URL:-http://127.0.0.1:8080}"
-ATLAS_VEHICLE_AGENT_GRPC_ADDR="${ATLAS_VEHICLE_AGENT_GRPC_ADDR:-127.0.0.1:9090}"
-ATLAS_DATABASE_URL="${ATLAS_DATABASE_URL:-postgres://atlas:atlas@127.0.0.1:5432/atlas?sslmode=disable}"
-ATLAS_DB_HOST="${ATLAS_DB_HOST:-127.0.0.1}"
-ATLAS_DB_PORT="${ATLAS_DB_PORT:-5432}"
-ATLAS_DB_NAME="${ATLAS_DB_NAME:-atlas}"
-ATLAS_DB_USER="${ATLAS_DB_USER:-atlas}"
-ATLAS_DB_PASSWORD="${ATLAS_DB_PASSWORD:-atlas}"
-ATLAS_DB_COMPOSE_SERVICE="${ATLAS_DB_COMPOSE_SERVICE:-postgres}"
+ATLAS_GROUND_STATION_LISTEN_ADDR="${ATLAS_GROUND_STATION_LISTEN_ADDR:-127.0.0.1:7443}"
+ATLAS_NATIVE_UI_PORT=1420
+ATLAS_NATIVE_NVM_DIR="${ATLAS_NATIVE_NVM_DIR:-"${HOME}/.nvm"}"
+ATLAS_NATIVE_NODE_BIN_DIR="${ATLAS_NATIVE_NODE_BIN_DIR:-}"
 
-ATLAS_VEHICLE_AGENT_ID="${ATLAS_VEHICLE_AGENT_ID:-agent-001}"
-ATLAS_DRONE_ID="${ATLAS_DRONE_ID:-drone-001}"
-ATLAS_DRONE_NAME="${ATLAS_DRONE_NAME:-Training Quad 1}"
-ATLAS_VEHICLE_AGENT_VERSION="${ATLAS_VEHICLE_AGENT_VERSION:-0.1.0-dev}"
-
-ATLAS_UI_HOST="${ATLAS_UI_HOST:-127.0.0.1}"
-ATLAS_UI_PORT="${ATLAS_UI_PORT:-5173}"
-ATLAS_UI_NVM_DIR="${ATLAS_UI_NVM_DIR:-"${HOME}/.nvm"}"
-ATLAS_UI_NODE_BIN_DIR="${ATLAS_UI_NODE_BIN_DIR:-}"
+SITL_STATE_DIR="${ATLAS_SITL_STATE_DIR:-"${ROOT_DIR}/.atlas-run/state/sitl"}"
+ATLAS_SQLITE_PATH="${ATLAS_SQLITE_PATH:-"${SITL_STATE_DIR}/native/atlas.db"}"
+ATLAS_AGENT_STATE_DIR="${ATLAS_AGENT_STATE_DIR:-"${SITL_STATE_DIR}/agent"}"
+ATLAS_DRONE_NAME="${ATLAS_DRONE_NAME:-Atlas SITL Drone}"
+ATLAS_AGENT_VERSION="${ATLAS_AGENT_VERSION:-0.1.0-dev}"
+ATLAS_VEHICLE_TYPE="${ATLAS_VEHICLE_TYPE:-multicopter}"
 
 LOG_DIR="${ATLAS_RUN_LOG_DIR:-"${ROOT_DIR}/.atlas-run/logs/$(date +%Y%m%d-%H%M%S)"}"
 
 SKIP_PX4=0
 SKIP_MAVSDK=0
-SKIP_BACKEND=0
+SKIP_NATIVE=0
 SKIP_AGENT=0
-SKIP_UI=0
 DRY_RUN=0
 
 PIDS=()
 NAMES=()
-POSTGRES_STARTED=0
 
 usage() {
   cat <<EOF
 Usage: scripts/start-sitl.sh [options]
 
-Starts the Atlas local SITL stack:
-  datastore -> PX4 SITL -> mavsdk_server -> atlas-backend -> atlas-agent -> atlas-ui
+Starts the current local-first Atlas SITL stack:
+  PX4 Gazebo -> mavsdk_server -> atlas-agent -> Atlas Native (Tauri + SQLite)
 
 Options:
   --px4-dir PATH       PX4-Autopilot checkout. Default: ${PX4_DIR}
   --px4-model MODEL    PX4 Gazebo model. Default: ${PX4_MODEL}
+  --world WORLD        Gazebo world name without .sdf. Default: ${PX4_WORLD}
   --mavlink-router MODE
-                       MAVLink fanout mode: mavproxy or none. Default: ${SITL_MAVLINK_ROUTER}
-  --qgc-out ENDPOINT   MAVProxy QGC output endpoint. Use "none" to disable.
-                       Default: ${MAVPROXY_QGC_OUT}
-  --skip-px4           Do not start PX4 SITL.
+                       MAVLink fanout mode: none or mavproxy. Default: ${SITL_MAVLINK_ROUTER}
+  --qgc-out ENDPOINT   MAVProxy QGC output endpoint, or "none". Default: ${MAVPROXY_QGC_OUT}
+  --state-dir PATH     Persistent Native + Agent SITL state. Default: ${SITL_STATE_DIR}
+  --skip-px4           Do not start PX4 Gazebo SITL.
   --skip-mavsdk        Do not start mavsdk_server.
-  --skip-backend       Do not start atlas-backend.
-  --skip-agent         Do not start atlas-agent.
-  --skip-ui            Do not start atlas-ui.
-  --dry-run            Print commands without starting processes.
+  --skip-native        Do not start the Atlas Native Tauri application.
+  --skip-agent         Do not start the current Atlas Agent.
+  --dry-run            Validate inputs and print commands without starting processes.
   -h, --help           Show this help.
 
 Useful environment overrides:
   ATLAS_PX4_DIR
   ATLAS_PX4_VENV
   ATLAS_PX4_MODEL
+  ATLAS_PX4_WORLD
+  ATLAS_GZ_AUTO_FOLLOW
+  ATLAS_GZ_FOLLOW_TARGET
+  ATLAS_GZ_FOLLOW_OFFSET_X
+  ATLAS_GZ_FOLLOW_OFFSET_Y
+  ATLAS_GZ_FOLLOW_OFFSET_Z
+  ATLAS_SITL_STARTUP_TIMEOUT_SECONDS
   ATLAS_SITL_MAVLINK_ROUTER
   ATLAS_MAVPROXY_BIN
   ATLAS_MAVPROXY_MASTER
   ATLAS_MAVPROXY_MAVSDK_OUT
-  ATLAS_MAVPROXY_OBSERVER_OUT
   ATLAS_MAVPROXY_QGC_OUT
   ATLAS_MAVSDK_SERVER_BIN
   ATLAS_MAVSDK_GRPC_ADDR
   ATLAS_PX4_SYSTEM_ADDRESS
-  ATLAS_MAVLINK_OBSERVER_ENDPOINT
-  ATLAS_BACKEND_ADDR
-  ATLAS_BACKEND_URL
-  ATLAS_VEHICLE_AGENT_GRPC_ADDR
-  ATLAS_DATABASE_URL
-  ATLAS_DB_HOST
-  ATLAS_DB_PORT
-  ATLAS_DB_NAME
-  ATLAS_DB_USER
-  ATLAS_DB_PASSWORD
-  ATLAS_UI_PORT
-  ATLAS_UI_NVM_DIR
-  ATLAS_UI_NODE_BIN_DIR
+  ATLAS_GROUND_STATION_LISTEN_ADDR
+  ATLAS_GROUND_STATION_ADDR
+  ATLAS_NATIVE_NVM_DIR
+  ATLAS_NATIVE_NODE_BIN_DIR
+  ATLAS_SITL_STATE_DIR
+  ATLAS_SQLITE_PATH
+  ATLAS_AGENT_STATE_DIR
+  ATLAS_DRONE_NAME
+  ATLAS_AGENT_VERSION
 EOF
 }
 
@@ -124,6 +120,13 @@ while [[ $# -gt 0 ]]; do
       ;;
     --px4-model)
       PX4_MODEL="$2"
+      if [[ "$ATLAS_GZ_FOLLOW_TARGET_EXPLICIT" -eq 0 ]]; then
+        ATLAS_GZ_FOLLOW_TARGET="${PX4_MODEL#gz_}_0"
+      fi
+      shift 2
+      ;;
+    --world)
+      PX4_WORLD="$2"
       shift 2
       ;;
     --mavlink-router)
@@ -134,6 +137,12 @@ while [[ $# -gt 0 ]]; do
       MAVPROXY_QGC_OUT="$2"
       shift 2
       ;;
+    --state-dir)
+      SITL_STATE_DIR="$2"
+      ATLAS_SQLITE_PATH="${SITL_STATE_DIR}/native/atlas.db"
+      ATLAS_AGENT_STATE_DIR="${SITL_STATE_DIR}/agent"
+      shift 2
+      ;;
     --skip-px4)
       SKIP_PX4=1
       shift
@@ -142,16 +151,12 @@ while [[ $# -gt 0 ]]; do
       SKIP_MAVSDK=1
       shift
       ;;
-    --skip-backend)
-      SKIP_BACKEND=1
+    --skip-native)
+      SKIP_NATIVE=1
       shift
       ;;
     --skip-agent)
       SKIP_AGENT=1
-      shift
-      ;;
-    --skip-ui)
-      SKIP_UI=1
       shift
       ;;
     --dry-run)
@@ -180,20 +185,13 @@ fail() {
 }
 
 apply_mavlink_defaults() {
-  if [[ "$PX4_SYSTEM_ADDRESS_EXPLICIT" -eq 0 ]]; then
-    if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
-      ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14541"
-    else
-      ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14540"
-    fi
+  if [[ "$PX4_SYSTEM_ADDRESS_EXPLICIT" -eq 1 ]]; then
+    return
   fi
-
-  if [[ "$MAVLINK_OBSERVER_ENDPOINT_EXPLICIT" -eq 0 ]]; then
-    if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
-      ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14552"
-    else
-      ATLAS_MAVLINK_OBSERVER_ENDPOINT="udp-server://0.0.0.0:14550"
-    fi
+  if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
+    ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14541"
+  else
+    ATLAS_PX4_SYSTEM_ADDRESS="udpin://0.0.0.0:14540"
   fi
 }
 
@@ -209,17 +207,27 @@ require_path() {
   fi
 }
 
-tcp_port_from_addr() {
-  local addr="$1"
+require_absolute_path() {
+  if [[ "$1" != /* ]]; then
+    fail "$2 must be an absolute path: $1"
+  fi
+}
 
-  printf '%s\n' "${addr##*:}"
+tcp_port_from_addr() {
+  printf '%s\n' "${1##*:}"
+}
+
+tcp_host_from_addr() {
+  local host="${1%:*}"
+  if [[ "$host" == "0.0.0.0" || "$host" == "::" || "$host" == "[::]" ]]; then
+    host="127.0.0.1"
+  fi
+  printf '%s\n' "$host"
 }
 
 tcp_port_owner() {
-  local port="$1"
   local listeners
-
-  listeners="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)"
+  listeners="$(lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null || true)"
   printf '%s\n' "$listeners" | awk 'NR == 2 {print $1 " pid " $2}'
 }
 
@@ -227,11 +235,9 @@ require_tcp_port_free() {
   local label="$1"
   local port="$2"
   local owner
-
   if [[ -z "$port" ]]; then
     fail "could not determine ${label} port"
   fi
-
   owner="$(tcp_port_owner "$port")"
   if [[ -n "$owner" ]]; then
     fail "${label} port ${port} is already in use by ${owner}. Stop that process or override the port."
@@ -241,33 +247,25 @@ require_tcp_port_free() {
 kill_tree() {
   local pid="$1"
   local child
-
   for child in $(pgrep -P "$pid" 2>/dev/null || true); do
     kill_tree "$child"
   done
-
   kill "$pid" 2>/dev/null || true
 }
 
 cleanup() {
   local pid
-
   trap - INT TERM EXIT
-
   if [[ ${#PIDS[@]} -gt 0 ]]; then
     log "stopping ${#PIDS[@]} managed process(es)"
     for pid in "${PIDS[@]}"; do
       kill_tree "$pid"
     done
-
     sleep 2
-
     for pid in "${PIDS[@]}"; do
       kill -9 "$pid" 2>/dev/null || true
     done
   fi
-
-  stop_postgres
 }
 
 trap cleanup INT TERM EXIT
@@ -281,7 +279,6 @@ start_process() {
 
   log "starting ${name}"
   log "  log: ${logfile}"
-
   if [[ "$DRY_RUN" -eq 1 ]]; then
     printf '  (cd %q && %s)\n' "$workdir" "$command"
     return
@@ -308,11 +305,9 @@ wait_for_tcp() {
   local port="$3"
   local timeout_seconds="$4"
   local elapsed=0
-
   if [[ "$DRY_RUN" -eq 1 ]]; then
     return
   fi
-
   log "waiting for ${label} on ${host}:${port}"
   until nc -z "$host" "$port" >/dev/null 2>&1; do
     if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
@@ -323,194 +318,111 @@ wait_for_tcp() {
   done
 }
 
-wait_for_http() {
+wait_for_log() {
   local label="$1"
-  local url="$2"
-  local timeout_seconds="$3"
+  local logfile="$2"
+  local pattern="$3"
+  local timeout_seconds="$4"
   local elapsed=0
-
   if [[ "$DRY_RUN" -eq 1 ]]; then
     return
   fi
-
-  log "waiting for ${label} at ${url}"
-  until curl -fsS "$url" >/dev/null 2>&1; do
+  log "waiting for ${label}"
+  until grep -F "$pattern" "$logfile" >/dev/null 2>&1; do
     if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
-      fail "timed out waiting for ${label} at ${url}"
+      fail "timed out waiting for ${label}; see ${logfile}"
     fi
     sleep 1
     elapsed=$((elapsed + 1))
   done
 }
 
-wait_for_postgres_ready() {
-  local compose="$1"
-  local timeout_seconds="$2"
-  local elapsed=0
-
-  if [[ "$DRY_RUN" -eq 1 ]]; then
+native_runtime_prefix() {
+  if [[ -n "$ATLAS_NATIVE_NODE_BIN_DIR" ]]; then
+    printf 'export PATH="%s:$PATH" && ' "$ATLAS_NATIVE_NODE_BIN_DIR"
     return
   fi
-
-  log "waiting for postgres readiness"
-  until (cd "$ROOT_DIR" && $compose exec -T "$ATLAS_DB_COMPOSE_SERVICE" pg_isready -h 127.0.0.1 -p 5432 -U "$ATLAS_DB_USER" -d "$ATLAS_DB_NAME" >/dev/null 2>&1); do
-    if [[ "$elapsed" -ge "$timeout_seconds" ]]; then
-      fail "timed out waiting for postgres readiness"
-    fi
-    sleep 1
-    elapsed=$((elapsed + 1))
-  done
-}
-
-compose_command() {
-  if docker compose version >/dev/null 2>&1; then
-    printf 'docker compose'
-    return
-  fi
-
-  if command -v docker-compose >/dev/null 2>&1; then
-    printf 'docker-compose'
-    return
-  fi
-
-  fail "Docker Compose is required for the Atlas Postgres database"
-}
-
-start_postgres() {
-  local compose
-
-  require_command docker
-  compose="$(compose_command)"
-
-  log "starting postgres via docker compose"
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '  (cd %q && %s up -d %q)\n' "$ROOT_DIR" "$compose" "$ATLAS_DB_COMPOSE_SERVICE"
-    printf '  (cd %q && %s exec -T %q pg_isready -h 127.0.0.1 -p 5432 -U %q -d %q)\n' \
-      "$ROOT_DIR" \
-      "$compose" \
-      "$ATLAS_DB_COMPOSE_SERVICE" \
-      "$ATLAS_DB_USER" \
-      "$ATLAS_DB_NAME"
-    printf '  (cd %q && %s exec -T -e %q %q psql -h 127.0.0.1 -p 5432 -U %q -d %q -v ON_ERROR_STOP=1 < atlas-backend-deprecated/migrations/001_initial_atlas_store.sql)\n' \
-      "$ROOT_DIR" \
-      "$compose" \
-      "PGPASSWORD=${ATLAS_DB_PASSWORD}" \
-      "$ATLAS_DB_COMPOSE_SERVICE" \
-      "$ATLAS_DB_USER" \
-      "$ATLAS_DB_NAME"
-    return
-  fi
-
-  (cd "$ROOT_DIR" && $compose up -d "$ATLAS_DB_COMPOSE_SERVICE")
-  POSTGRES_STARTED=1
-  wait_for_tcp "postgres" "$ATLAS_DB_HOST" "$ATLAS_DB_PORT" 60
-  wait_for_postgres_ready "$compose" 60
-  run_migrations
-}
-
-stop_postgres() {
-  if [[ "$POSTGRES_STARTED" -ne 1 ]]; then
-    return
-  fi
-
-  log "bringing down postgres via docker compose"
-  if docker compose version >/dev/null 2>&1; then
-    (cd "$ROOT_DIR" && docker compose down) || log "failed to bring down postgres"
-    return
-  fi
-
-  if command -v docker-compose >/dev/null 2>&1; then
-    (cd "$ROOT_DIR" && docker-compose down) || log "failed to bring down postgres"
-    return
-  fi
-
-  log "Docker Compose unavailable; postgres may still be running"
-}
-
-run_migrations() {
-  local compose
-  local migration
-
-  compose="$(compose_command)"
-  log "applying atlas backend migrations"
-  for migration in "${ROOT_DIR}"/atlas-backend-deprecated/migrations/*.sql; do
-    if [[ ! -f "$migration" ]]; then
-      fail "no backend migrations found"
-    fi
-    log "  migration: ${migration##*/}"
-    (cd "$ROOT_DIR" && $compose exec -T -e "PGPASSWORD=${ATLAS_DB_PASSWORD}" "$ATLAS_DB_COMPOSE_SERVICE" psql -h 127.0.0.1 -p 5432 -U "$ATLAS_DB_USER" -d "$ATLAS_DB_NAME" -v ON_ERROR_STOP=1 < "$migration" >/dev/null)
-  done
-}
-
-ui_runtime_prefix() {
-  if [[ -n "$ATLAS_UI_NODE_BIN_DIR" ]]; then
-    printf 'export PATH="%s:$PATH" && ' "$ATLAS_UI_NODE_BIN_DIR"
-    return
-  fi
-
-  if [[ -s "${ATLAS_UI_NVM_DIR}/nvm.sh" ]]; then
+  if [[ -s "${ATLAS_NATIVE_NVM_DIR}/nvm.sh" ]]; then
     printf 'export NVM_DIR="%s" && source "%s/nvm.sh" && nvm use --silent && ' \
-      "$ATLAS_UI_NVM_DIR" \
-      "$ATLAS_UI_NVM_DIR"
+      "$ATLAS_NATIVE_NVM_DIR" \
+      "$ATLAS_NATIVE_NVM_DIR"
   fi
 }
 
-ui_command() {
-  printf '%snpm run dev -- --host "%s" --port "%s" --strictPort' \
-    "$(ui_runtime_prefix)" \
-    "$ATLAS_UI_HOST" \
-    "$ATLAS_UI_PORT"
+native_command() {
+  printf '%senv ATLAS_GROUND_STATION_LISTEN_ADDR="%s" ATLAS_SQLITE_PATH="%s" npm run tauri dev' \
+    "$(native_runtime_prefix)" \
+    "$ATLAS_GROUND_STATION_LISTEN_ADDR" \
+    "$ATLAS_SQLITE_PATH"
 }
 
 mavproxy_command() {
   local command
-
-  command="env MPLCONFIGDIR=\"${LOG_DIR}/matplotlib\" \"${MAVPROXY_BIN}\" --master=\"${MAVPROXY_MASTER}\" --out=\"${MAVPROXY_MAVSDK_OUT}\" --out=\"${MAVPROXY_OBSERVER_OUT}\""
+  command="env MPLCONFIGDIR=\"${LOG_DIR}/matplotlib\" \"${MAVPROXY_BIN}\" --master=\"${MAVPROXY_MASTER}\" --out=\"${MAVPROXY_MAVSDK_OUT}\""
   if [[ -n "$MAVPROXY_QGC_OUT" && "$MAVPROXY_QGC_OUT" != "none" ]]; then
     command="${command} --out=\"${MAVPROXY_QGC_OUT}\""
   fi
-  command="${command} --non-interactive --no-state"
-
-  printf '%s' "$command"
+  printf '%s --non-interactive --no-state' "$command"
 }
 
-validate_ui_runtime() {
+configure_gazebo_follow() {
+  local request
+  local attempt
+  if [[ "$ATLAS_GZ_AUTO_FOLLOW" != "1" ]]; then
+    log "Gazebo camera auto-follow disabled"
+    return
+  fi
+  request="track_mode: FOLLOW, follow_target: {name: '${ATLAS_GZ_FOLLOW_TARGET}'}, follow_offset: {x: ${ATLAS_GZ_FOLLOW_OFFSET_X}, y: ${ATLAS_GZ_FOLLOW_OFFSET_Y}, z: ${ATLAS_GZ_FOLLOW_OFFSET_Z}}, follow_pgain: 1.0, track_pgain: 1.0"
+  log "locking Gazebo camera to ${ATLAS_GZ_FOLLOW_TARGET}"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '  gz topic -t /gui/track -m gz.msgs.CameraTrack -p %q\n' "$request"
+    return
+  fi
+  # PX4 publishes the same message while the model is spawning. Republish after
+  # the boot wait so the GUI CameraTracking plugin is definitely subscribed.
+  for attempt in 1 2 3; do
+    if gz topic -t /gui/track -m gz.msgs.CameraTrack -p "$request" >/dev/null 2>&1; then
+      sleep 1
+    else
+      log "Gazebo camera follow attempt ${attempt} was not accepted"
+    fi
+  done
+}
+
+validate_native_runtime() {
   local version_check
   local node_version
-
-  version_check="$(ui_runtime_prefix)"'node -e '\''
+  version_check="$(native_runtime_prefix)"'node -e '\''
 const [major, minor] = process.versions.node.split(".").map(Number);
 const ok = major > 22 || (major === 22 && minor >= 12) || (major === 20 && minor >= 19);
 if (!ok) {
-  console.error(`Node ${process.versions.node} is too old for Atlas UI. Use Node 22.13.1 from atlas-ui/.nvmrc.`);
+  console.error(`Node ${process.versions.node} is too old for Atlas Native.`);
   process.exit(1);
 }
 console.log(process.versions.node);
 '\'''
-
-  if ! node_version="$(cd "${ROOT_DIR}/atlas-ui" && bash -lc "$version_check" 2>&1)"; then
-    fail "Atlas UI requires Node 20.19+ or 22.12+. ${node_version}"
+  if ! node_version="$(cd "${ROOT_DIR}/atlas" && bash -lc "$version_check" 2>&1)"; then
+    fail "Atlas Native requires Node 20.19+ or 22.12+. ${node_version}"
   fi
-
-  log "using Atlas UI Node ${node_version}"
+  log "using Atlas Native Node ${node_version}"
 }
 
 assert_prerequisites() {
   require_command bash
   require_command go
   require_command nc
-  require_command curl
   require_command lsof
+  require_command grep
+  require_absolute_path "$SITL_STATE_DIR" "SITL state directory"
+  require_absolute_path "$ATLAS_SQLITE_PATH" "Atlas SQLite path"
+  require_absolute_path "$ATLAS_AGENT_STATE_DIR" "Atlas Agent state directory"
 
-  if [[ "$SKIP_BACKEND" -eq 0 ]]; then
-    require_command docker
-    compose_command >/dev/null
-  fi
-
-  if [[ "$SKIP_UI" -eq 0 ]]; then
-    require_path "${ROOT_DIR}/atlas-ui/node_modules" "atlas-ui dependencies"
-    validate_ui_runtime
-    require_tcp_port_free "atlas-ui" "$ATLAS_UI_PORT"
+  if [[ "$SKIP_NATIVE" -eq 0 ]]; then
+    require_command cargo
+    require_path "${ROOT_DIR}/atlas/node_modules" "Atlas Native dependencies"
+    validate_native_runtime
+    require_tcp_port_free "Atlas Native UI" "$ATLAS_NATIVE_UI_PORT"
+    require_tcp_port_free "Atlas Native gRPC" "$(tcp_port_from_addr "$ATLAS_GROUND_STATION_LISTEN_ADDR")"
   fi
 
   if [[ "$SKIP_MAVSDK" -eq 0 ]]; then
@@ -520,6 +432,9 @@ assert_prerequisites() {
 
   case "$SITL_MAVLINK_ROUTER" in
     none)
+      if [[ -n "$MAVPROXY_QGC_OUT" && "$MAVPROXY_QGC_OUT" != "none" ]]; then
+        fail "--qgc-out requires --mavlink-router mavproxy"
+      fi
       ;;
     mavproxy)
       require_command "$MAVPROXY_BIN"
@@ -529,14 +444,11 @@ assert_prerequisites() {
       ;;
   esac
 
-  if [[ "$SKIP_BACKEND" -eq 0 ]]; then
-    require_tcp_port_free "atlas-backend HTTP" "$(tcp_port_from_addr "$ATLAS_BACKEND_ADDR")"
-    require_tcp_port_free "atlas-backend vehicle-agent gRPC" "$(tcp_port_from_addr "$ATLAS_VEHICLE_AGENT_GRPC_ADDR")"
-  fi
-
   if [[ "$SKIP_PX4" -eq 0 ]]; then
+    require_command gz
     require_path "$PX4_DIR" "PX4 checkout"
     require_path "$PX4_VENV" "PX4 virtualenv activation script"
+    require_path "${PX4_DIR}/Tools/simulation/gz/worlds/${PX4_WORLD}.sdf" "Gazebo world"
   fi
 }
 
@@ -544,14 +456,20 @@ monitor_processes() {
   local index
   local pid
   local name
-
   if [[ "$DRY_RUN" -eq 1 ]]; then
     return
   fi
 
-  log "stack is running"
-  log "  backend: ${ATLAS_BACKEND_URL}"
-  log "  ui:      http://${ATLAS_UI_HOST}:${ATLAS_UI_PORT}"
+  log "current Atlas SITL stack is running"
+  log "  vehicle: ${PX4_MODEL}"
+  log "  world:   ${PX4_WORLD}"
+  if [[ "$SKIP_NATIVE" -eq 0 ]]; then
+    log "  native:  gRPC ${ATLAS_GROUND_STATION_LISTEN_ADDR}"
+    log "  sqlite:  ${ATLAS_SQLITE_PATH}"
+  fi
+  if [[ "$SKIP_AGENT" -eq 0 ]]; then
+    log "  agent:   ${ATLAS_AGENT_STATE_DIR}"
+  fi
   log "  logs:    ${LOG_DIR}"
   log "press Ctrl-C to stop the stack"
 
@@ -571,43 +489,41 @@ monitor_processes() {
 apply_mavlink_defaults
 assert_prerequisites
 
+NATIVE_GRPC_PORT="$(tcp_port_from_addr "$ATLAS_GROUND_STATION_LISTEN_ADDR")"
+NATIVE_GRPC_HOST="$(tcp_host_from_addr "$ATLAS_GROUND_STATION_LISTEN_ADDR")"
+ATLAS_GROUND_STATION_ADDR="${ATLAS_GROUND_STATION_ADDR:-${NATIVE_GRPC_HOST}:${NATIVE_GRPC_PORT}}"
+
 log "using PX4_DIR=${PX4_DIR}"
+log "using PX4 model=${PX4_MODEL}"
+log "using Gazebo world=${PX4_WORLD}"
 log "using MAVLink router=${SITL_MAVLINK_ROUTER}"
 if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
   log "using MAVProxy master=${MAVPROXY_MASTER}"
   log "using MAVProxy MAVSDK output=${MAVPROXY_MAVSDK_OUT}"
-  log "using MAVProxy observer output=${MAVPROXY_OBSERVER_OUT}"
-  if [[ -n "$MAVPROXY_QGC_OUT" && "$MAVPROXY_QGC_OUT" != "none" ]]; then
-    log "using MAVProxy QGC output=${MAVPROXY_QGC_OUT}"
-  else
-    log "using MAVProxy QGC output=disabled"
-  fi
+  log "using MAVProxy QGC output=${MAVPROXY_QGC_OUT}"
 fi
 log "using PX4 system address=${ATLAS_PX4_SYSTEM_ADDRESS}"
-log "using MAVLink observer endpoint=${ATLAS_MAVLINK_OBSERVER_ENDPOINT}"
+log "using SITL state=${SITL_STATE_DIR}"
 log "using logs=${LOG_DIR}"
 
-if [[ "$SKIP_BACKEND" -eq 0 ]]; then
-  start_postgres
+if [[ "$DRY_RUN" -eq 0 ]]; then
+  mkdir -p "$(dirname "$ATLAS_SQLITE_PATH")" "$ATLAS_AGENT_STATE_DIR"
 fi
 
 if [[ "$SKIP_PX4" -eq 0 ]]; then
   start_process \
     "px4-sitl" \
     "$PX4_DIR" \
-    "source \"${PX4_VENV}\" && make \"${PX4_TARGET}\" \"${PX4_MODEL}\""
-
+    "source \"${PX4_VENV}\" && env PX4_GZ_WORLD=\"${PX4_WORLD}\" make \"${PX4_TARGET}\" \"${PX4_MODEL}\""
   if [[ "$DRY_RUN" -eq 0 ]]; then
     log "giving PX4 ${PX4_BOOT_WAIT_SECONDS}s to publish MAVLink"
     sleep "$PX4_BOOT_WAIT_SECONDS"
   fi
+  configure_gazebo_follow
 fi
 
 if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
-  start_process \
-    "mavproxy" \
-    "$ROOT_DIR" \
-    "$(mavproxy_command)"
+  start_process "mavproxy" "$ROOT_DIR" "$(mavproxy_command)"
 fi
 
 if [[ "$SKIP_MAVSDK" -eq 0 ]]; then
@@ -615,30 +531,25 @@ if [[ "$SKIP_MAVSDK" -eq 0 ]]; then
     "mavsdk-server" \
     "$ROOT_DIR" \
     "\"${MAVSDK_SERVER_BIN}\" -p \"${MAVSDK_PORT}\" \"${ATLAS_PX4_SYSTEM_ADDRESS}\""
-  wait_for_tcp "mavsdk_server" "127.0.0.1" "$MAVSDK_PORT" 30
+  wait_for_tcp "mavsdk_server" "127.0.0.1" "$MAVSDK_PORT" "$STARTUP_TIMEOUT_SECONDS"
 fi
 
-if [[ "$SKIP_BACKEND" -eq 0 ]]; then
-  start_process \
-    "atlas-backend" \
-    "${ROOT_DIR}/atlas-backend-deprecated" \
-    "env ATLAS_BACKEND_ADDR=\"${ATLAS_BACKEND_ADDR}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_DATABASE_URL=\"${ATLAS_DATABASE_URL}\" go run ./cmd/atlas-backend"
-  wait_for_http "atlas-backend" "${ATLAS_BACKEND_URL}/healthz" 30
+if [[ "$SKIP_NATIVE" -eq 0 ]]; then
+  start_process "atlas-native" "${ROOT_DIR}/atlas" "$(native_command)"
+  wait_for_tcp "Atlas Native UI" "localhost" "$ATLAS_NATIVE_UI_PORT" "$STARTUP_TIMEOUT_SECONDS"
+  wait_for_tcp "Atlas Native gRPC" "$NATIVE_GRPC_HOST" "$NATIVE_GRPC_PORT" "$STARTUP_TIMEOUT_SECONDS"
 fi
 
 if [[ "$SKIP_AGENT" -eq 0 ]]; then
   start_process \
     "atlas-agent" \
     "${ROOT_DIR}/atlas-agent" \
-    "env ATLAS_BACKEND_URL=\"${ATLAS_BACKEND_URL}\" ATLAS_VEHICLE_AGENT_ID=\"${ATLAS_VEHICLE_AGENT_ID}\" ATLAS_DRONE_ID=\"${ATLAS_DRONE_ID}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_VEHICLE_AGENT_VERSION=\"${ATLAS_VEHICLE_AGENT_VERSION}\" ATLAS_VEHICLE_AGENT_GRPC_ADDR=\"${ATLAS_VEHICLE_AGENT_GRPC_ADDR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_PX4_SYSTEM_ADDRESS=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" ATLAS_MAVLINK_OBSERVER_ENDPOINT=\"${ATLAS_MAVLINK_OBSERVER_ENDPOINT}\" go run ./cmd/atlas-agent"
-fi
-
-if [[ "$SKIP_UI" -eq 0 ]]; then
-  start_process \
-    "atlas-ui" \
-    "${ROOT_DIR}/atlas-ui" \
-    "$(ui_command)"
-  wait_for_tcp "atlas-ui" "$ATLAS_UI_HOST" "$ATLAS_UI_PORT" 30
+    "env ATLAS_GROUND_STATION_ADDR=\"${ATLAS_GROUND_STATION_ADDR}\" ATLAS_AGENT_STATE_DIR=\"${ATLAS_AGENT_STATE_DIR}\" ATLAS_MAVSDK_GRPC_ADDR=\"${ATLAS_MAVSDK_GRPC_ADDR}\" ATLAS_DRONE_NAME=\"${ATLAS_DRONE_NAME}\" ATLAS_AGENT_VERSION=\"${ATLAS_AGENT_VERSION}\" ATLAS_VEHICLE_TYPE=\"${ATLAS_VEHICLE_TYPE}\" ATLAS_FLIGHT_CONTROLLER_TRANSPORT=\"udp\" ATLAS_FLIGHT_CONTROLLER_ENDPOINT=\"${ATLAS_PX4_SYSTEM_ADDRESS}\" ATLAS_FLIGHT_CONTROLLER_BAUD_RATE=\"0\" go run ./cmd/atlas-agent"
+  wait_for_log \
+    "Atlas Agent registration with Native" \
+    "${LOG_DIR}/atlas-agent.log" \
+    "registered with Atlas Native" \
+    "$STARTUP_TIMEOUT_SECONDS"
 fi
 
 monitor_processes

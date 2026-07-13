@@ -1,0 +1,204 @@
+.fleet-workspace {
+  flex: 1;
+  animation: surface-enter 420ms var(--ease-out-quart) both;
+}
+
+.fleet-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: clamp(2.75rem, 7vw, 5rem) 0 clamp(2rem, 5vw, 3.5rem);
+}
+
+.fleet-heading h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 8vw, 6.5rem);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 0.85;
+}
+
+.fleet-heading p:not(.eyebrow) {
+  max-width: 58ch;
+  margin: 1.15rem 0 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+
+.fleet-updated {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.fleet-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+}
+
+.fleet-metric {
+  min-width: 0;
+  padding: 1.2rem clamp(0.8rem, 2vw, 1.75rem);
+  border-right: 1px solid var(--line);
+}
+
+.fleet-metric:first-child { padding-left: 0; }
+.fleet-metric:last-child { padding-right: 0; border-right: 0; }
+
+.fleet-metric span,
+.fleet-datum > span,
+.fleet-list__columns {
+  color: var(--muted);
+  font-size: 0.63rem;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.fleet-metric strong {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.fleet-metric--positive strong { color: var(--field); }
+.fleet-metric--warning strong { color: var(--signal); }
+
+.fleet-list { margin-top: clamp(2.5rem, 6vw, 4.5rem); }
+
+.fleet-list > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ink);
+}
+
+.fleet-list h2,
+.fleet-empty h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 4vw, 2.8rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.fleet-list > header > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.fleet-list__columns,
+.fleet-row {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1.35fr) repeat(5, minmax(7rem, 0.9fr)) minmax(9rem, auto);
+  gap: clamp(0.75rem, 1.5vw, 1.5rem);
+  align-items: center;
+}
+
+.fleet-list__columns { padding: 0.8rem 0; border-bottom: 1px solid var(--line); }
+
+.fleet-row {
+  min-height: 7rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.fleet-aircraft-identity {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.25rem 0.7rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.fleet-aircraft-identity .state-dot { grid-row: 1; }
+.fleet-row--positive .state-dot { background: var(--field); box-shadow: 0 0 0 4px var(--field-soft); }
+.fleet-row--warning .state-dot { background: var(--signal); box-shadow: 0 0 0 4px var(--signal-soft); }
+
+.fleet-aircraft-identity > div { min-width: 0; }
+.fleet-aircraft-identity strong,
+.fleet-aircraft-identity > div > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-aircraft-identity strong { font-size: 0.95rem; font-weight: 700; }
+.fleet-aircraft-identity > div > span { margin-top: 0.2rem; color: var(--muted); font-size: 0.72rem; text-transform: capitalize; }
+.fleet-datum { min-width: 0; }
+.fleet-datum > span { display: none; }
+.fleet-datum strong,
+.fleet-datum small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-datum strong { font-size: 0.82rem; font-variant-numeric: tabular-nums; font-weight: 650; text-transform: capitalize; }
+.fleet-datum small { margin-top: 0.28rem; color: var(--muted); font-size: 0.7rem; }
+.fleet-datum--positive strong { color: var(--field); }
+.fleet-datum--warning strong { color: var(--signal); }
+
+.fleet-row__actions { display: flex; justify-content: flex-end; gap: 0.4rem; }
+.fleet-row__actions button {
+  min-height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+.text-action { color: var(--ink-soft); background: transparent; }
+.text-action:hover { color: var(--ink); }
+.primary-action { color: var(--panel); background: var(--ink); }
+.primary-action:hover { background: var(--field); }
+.fleet-row__actions button:focus-visible { outline: 2px solid var(--field); outline-offset: 2px; }
+
+.fleet-empty,
+.fleet-notice {
+  display: grid;
+  gap: clamp(2rem, 8vw, 8rem);
+  margin-top: clamp(2.5rem, 6vw, 4.5rem);
+  padding: 1.5rem 0 2rem;
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+.fleet-empty > div:last-child { max-width: 58ch; }
+.fleet-empty p { margin: 0; color: var(--ink-soft); line-height: 1.55; }
+.fleet-empty dl { margin: 1.5rem 0 0; }
+.fleet-empty dt { color: var(--muted); font-size: 0.65rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+.fleet-empty dd { margin: 0.35rem 0 0; font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+.fleet-notice { gap: 0.35rem; }
+.fleet-notice p { margin: 0; color: var(--muted); }
+.fleet-notice--critical strong { color: var(--critical); }
+
+@media (min-width: 48rem) {
+  .fleet-empty { grid-template-columns: minmax(14rem, 0.65fr) minmax(0, 1.35fr); }
+}
+
+@media (max-width: 70rem) {
+  .fleet-list__columns { display: none; }
+  .fleet-row {
+    grid-template-columns: minmax(12rem, 1.25fr) repeat(2, minmax(8rem, 1fr));
+  }
+  .fleet-datum > span { display: block; margin-bottom: 0.35rem; }
+  .fleet-row__actions { grid-column: 2 / -1; }
+}
+
+@media (max-width: 44rem) {
+  .fleet-heading { align-items: flex-start; flex-direction: column; }
+  .fleet-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-metric:nth-child(2) { border-right: 0; }
+  .fleet-metric:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+  .fleet-metric:nth-child(3) { padding-left: 0; }
+  .fleet-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem 1rem; }
+  .fleet-aircraft-identity { grid-column: 1 / -1; }
+  .fleet-row__actions { grid-column: 1 / -1; justify-content: flex-start; }
+}

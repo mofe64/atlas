@@ -1,392 +1,255 @@
 # Atlas Agent
 
-Atlas Agent is the onboard vehicle-agent service that will eventually run on the drone companion computer.
+Atlas Agent is the new Go 1.25 onboard runtime. It initiates and maintains the
+direct HM30/local-network session to Atlas Native; it does not connect to the
+Atlas backend.
 
-The first implementation only proves the backend-vehicle-agent loop:
+The previous PX4, MAVSDK, video, and backend-stream prototype remains in
+`../atlas-agent-deprecated` while those capabilities are ported deliberately.
 
-1. Open the backend-vehicle-agent gRPC stream and register with a hello message.
-2. Send heartbeat and telemetry messages over that same stream.
-3. Receive authorized vehicle actions and mission actions over the stream.
-4. Let the backend derive online/stale/offline state for the vehicle agent.
-
-Phase 1 reads real PX4 SITL telemetry through `mavsdk_server` using generated
-Go gRPC clients from `MAVSDK-Proto`. The agent does not generate simulated
-telemetry.
-
-PX4-specific code is kept behind the agent's Vehicle Gateway abstraction:
+## Current flow
 
 ```text
-atlas-agent/internal/vehicle
+load or create stable installation + drone ids
+    -> connect to Atlas Native
+        -> send registration as the first gRPC message
+            -> receive local agent/drone/binding/link ids
+                -> send heartbeat every five seconds
+                -> sample latest MAVSDK telemetry once per second
+                -> forward PX4 status text as discrete events
+                -> discover MAVSDK gimbals and MAVSDK/SIYI camera zoom
+                -> run the supervised HailoRT/TAPPAS object-detection adapter
+                    -> publish normalized frame metadata over a protected Unix socket
+                    -> stream detections and health independently from vehicle commands
+                -> execute idempotent Hold, RTL, Land, and payload commands
+                -> upload and control MAVSDK missions
+                    -> report upload progress, current item, completion, and errors
+                    -> apply template gimbal/zoom intent with mission-scoped manual override
+                    -> reconnect with bounded backoff on failure
 ```
 
-The rest of the agent should call the gateway interface for telemetry and
-vehicle operations instead of importing generated MAVSDK protobuf packages directly.
-The MAVSDK gateway currently implements telemetry plus arm, takeoff,
-return-to-launch, and land actions.
+The current transport contains registration, heartbeat, read-only flight
+telemetry, and PX4 status events. Telemetry includes multi-battery power data,
+preflight health, altitude and NED velocity, landed and RC state, home position,
+and GPS quality. The command transport supports the deliberately small
+contingency set of Hold, Return to Launch, and Land. During an active mission,
+the payload controller supports gimbal pitch/yaw angles, angular rates, centre,
+geographic ROI, and camera zoom. Gimbal yaw explicitly chooses
+aircraft-relative yaw-follow or north-locked yaw. Every request uses the same
+accepted/executing/result lifecycle and deadline as other vehicle commands.
 
-Vehicle action delivery uses the gRPC backend-vehicle-agent stream. The vehicle agent
-opens an outbound stream to the backend, the backend pushes authorized vehicle actions
-over that stream, and the agent reports vehicle action lifecycle status back on the
-same connection. Telemetry and heartbeat use the same stream, so the agent does
-not run a separate HTTP polling loop.
+The payload controller is the sole owner of automatic mission view and temporary
+operator override. A manual session claims primary MAVLink Gimbal v2 control and
+must renew a short lease. Ending the session, losing the UI, or allowing the
+lease to expire restores the gimbal and zoom for the mission's current waypoint;
+it does not replay the view from the waypoint where manual control began.
 
-The agent applies outbound backpressure by message importance:
+Camera zoom prefers MAVSDK Camera when a camera component is discovered and
+falls back to the SIYI A8 Mini UDP SDK. The A8 Mini is treated as a fixed-focus
+camera: Atlas does not advertise or issue autofocus/focus commands.
 
-- vehicle action status and hello messages use the critical queue and are not dropped;
-- heartbeat messages use a small separate queue and may be skipped if the stream
-  is badly backed up;
-- telemetry keeps only the latest pending snapshot, so stale samples are dropped
-  before they can delay vehicle action acknowledgements.
+Mission operations accept an immutable Atlas plan, translate navigation to
+MAVSDK Mission items, and support upload, start, pause, resume, cancel-to-hold,
+and Return-to-Launch. Mission progress is streamed back to Atlas Native. Camera
+and gimbal actions remain in the Agent payload plan instead of being embedded in
+PX4 mission items, preventing automatic waypoint setpoints from racing a manual
+override. RTL-after-completion is configured before upload. An initial Start
+runs native preflight gates, commands MAVSDK Action Arm, then enters PX4 mission
+mode; Resume only resumes a paused mission.
+If mission start fails after arming, the agent commands HOLD and reports the
+failure. The v1 perception actions are reported as translation warnings rather
+than silently claimed as executed.
 
-If the backend is unavailable when the agent starts, the agent keeps retrying
-the gRPC channel connection with capped exponential backoff.
+`mavsdk_server` runs beside Atlas Agent and owns the MAVLink connection to PX4.
+Atlas Agent consumes its local gRPC API; it does not access the serial device
+directly in this slice.
 
-If the stream fails later, the vehicle agent reconnects and sends hello again.
-This lets the vehicle agent recover after a backend restart, network
-interruption, or lost session.
+## Run
 
-Run locally:
+Against Atlas Native on the HM30 ground address:
 
 ```sh
+ATLAS_GROUND_STATION_ADDR=192.168.144.50:7443 \
 go run ./cmd/atlas-agent
 ```
 
-The agent module targets Go 1.25 because the live MAVLink observer uses
-`gomavlib` v4.
-
-Configuration:
+Start MAVSDK first for a serial flight-controller connection:
 
 ```sh
-ATLAS_VEHICLE_AGENT_ID=agent-001
-ATLAS_DRONE_ID=drone-001
-ATLAS_DRONE_NAME="Training Quad 1"
-ATLAS_VEHICLE_AGENT_VERSION=0.1.0-dev
-ATLAS_VEHICLE_AGENT_GRPC_ADDR=127.0.0.1:9090
-ATLAS_MAVSDK_GRPC_ADDR=127.0.0.1:50051
-ATLAS_PX4_SYSTEM_ADDRESS=udpin://0.0.0.0:14540
-ATLAS_MAVLINK_OBSERVER_ENDPOINT=udp-server://0.0.0.0:14550
+mavsdk_server -p 50051 serial:///dev/serial0:921600
 ```
 
-Default runtime intervals:
-
-```text
-heartbeat:      5s
-telemetry:      2s
-command timeout: 15s
-```
-
-Onboard Hailo video MVP:
-
-- `scripts/atlas-video-agent.py` runs the Pi-side Hailo/GStreamer video pipeline.
-- The raw A8 input defaults to `rtsp://192.168.144.25:8554/main.264`.
-- The processed MediaMTX output defaults to `rtsp://127.0.0.1:8554/atlas`.
-- The ground machine should read `rtsp://192.168.144.168:8554/atlas`.
-- The video agent uses GStreamer's dynamic decoder path with
-  `ATLAS_A8_RTP_CODEC=auto`; override with `ATLAS_A8_RTP_CODEC=h264` or `h265`
-  only when you want to force a specific RTP depayloader.
-- Use `ATLAS_VIDEO_PIPELINE_MODE=passthrough` to validate camera -> MediaMTX ->
-  UI video without requiring the Hailo runtime. Use `hailo` for the inference
-  pipeline; the installer then attempts to install the matching Hailo apt
-  packages and fails if `hailonet`, `hailofilter`, or `hailooverlay` are still
-  unavailable.
-- On Raspberry Pi OS, the Hailo install defaults to the AI Kit / AI HAT+
-  package family (`hailo-all`). Use `--hailo-hardware ai-hat-plus-2` for
-  AI HAT+ 2 (`hailo-h10-all`).
-- On Ubuntu, the installer does not add Raspberry Pi OS repositories. If
-  `--hailo-apt-packages` is provided, it installs those Ubuntu/Hailo apt package
-  names. Otherwise, Ubuntu defaults to downloading the public Raspberry Pi Hailo
-  `.deb` package set into `~/hailo-debs`, then installing those local files. Use
-  the default `bookworm` package suite on Ubuntu 24.04; `trixie` requires newer
-  Python/OpenCV/libc packages than Ubuntu 24.04 provides. Use
-  `--hailo-deb-source none` and `--hailo-deb-dir /path/to/hailo-debs` only when
-  using an internal mirror or predownloaded package set. The Ubuntu package set
-  pins HailoRT below `4.19`, because `hailort` `4.19+` conflicts with the
-  Ubuntu-compatible `hailo-tappas-core` `3.29.1` package. It also patches the
-  `hailo-dkms` source before build because the Raspberry Pi Ubuntu `6.8.*-raspi`
-  kernel treats Hailo's missing PCIe helper prototype warning as a DKMS build
-  error.
-- The RTSP publish stage requires the `rtspclientsink` GStreamer element, installed
-  by Ubuntu's `gstreamer1.0-rtsp` package.
-- The video pipeline is tuned for operator preview latency, not archival
-  completeness. `ATLAS_A8_RTSP_LATENCY_MS` defaults to `50`, the pipeline uses
-  leaky one-buffer queues after decode so only raw frames are dropped under
-  load. Compressed RTP/H.264 packets are not intentionally dropped before the
-  decoder because that can corrupt the picture until the next keyframe.
-- `ATLAS_A8_RTSP_TRANSPORT` defaults to `tcp` between the A8 camera and the Pi
-  because that leg is usually a direct local camera link. If the camera/link
-  accumulates latency, try `ATLAS_A8_RTSP_TRANSPORT=udp` and restart
-  `atlas-video-agent`.
-- In Hailo mode the video agent requires the full detection chain:
-  `hailonet -> hailofilter -> hailooverlay`. `hailofilter` loads
-  `ATLAS_PERCEPTION_POSTPROCESS_SO` and converts YOLO tensors into boxes that
-  `hailooverlay` can draw into the RTSP stream.
-- Detection boxes are burned into the processed RTSP stream for VLC viewing.
-  The Go `atlas-agent` does not currently forward detection metadata over gRPC.
-
-Run the video service dry-run locally:
-
-```sh
-ATLAS_PERCEPTION_MODEL_PATH=/opt/atlas/models/yolov6n.hef \
-scripts/atlas-video-agent.py --dry-run
-```
-
-Raspberry Pi one-run setup:
-
-From the repo root, run the current hardware quick start:
-
-```sh
-atlas-agent/scripts/install-onboard-pi.sh \
-  --ground-grpc 0.tcp.eu.ngrok.io:24863 \
-  --video-pipeline-mode hailo \
-  --hailo-hardware ai-hat-plus \
-  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
-  --mavlink-baud 921600
-```
-
-Additional installer examples from the `atlas-agent/` directory:
-
-```sh
-scripts/install-onboard-pi.sh --dry-run --ground-grpc 192.168.144.50:9090
-scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --configure-eth0
-scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode passthrough
-scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-hardware ai-kit
-scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-apt-packages "dkms hailo-dkms hailort hailo-tappas-core"
-scripts/install-onboard-pi.sh --ground-grpc 192.168.144.50:9090 --video-pipeline-mode hailo --hailo-hardware ai-hat-plus
-scripts/start-onboard-stack.sh
-scripts/status-onboard-stack.sh
-```
-
-Existing installs can tune preview latency by editing
-`~/.config/atlas-agent/onboard.env`:
-
-```sh
-ATLAS_A8_RTSP_LATENCY_MS=50
-ATLAS_A8_RTSP_TRANSPORT=tcp
-ATLAS_VIDEO_KEY_INT_MAX=15
-```
-
-Then restart the video service:
-
-```sh
-sudo systemctl restart atlas-video-agent
-```
-
-For the Raspberry Pi AI HAT+ hardware path on Ubuntu, run the installer with
-the AI HAT+ selector and the stable USB serial path for the Pixhawk TELEM2
-adapter:
-
-```sh
-scripts/install-onboard-pi.sh \
-  --ground-grpc 0.tcp.eu.ngrok.io:24863 \
-  --video-pipeline-mode hailo \
-  --hailo-hardware ai-hat-plus \
-  --mavlink-device /dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_EHDSb2A5414-if00-port0 \
-  --mavlink-baud 921600
-```
-
-Replace `0.tcp.eu.ngrok.io:24863` with the current ngrok TCP endpoint printed
-by the ground-machine backend tunnel script. On Ubuntu, `~/hailo-debs` must
-be writable; the installer downloads a matching Hailo package set there.
-The installer also downloads Raspberry Pi's Hailo postprocess package, extracts
-the `yolov6n_h8l.hef` model for Hailo-8L hardware, and installs it at
-`/opt/atlas/models/yolov6n.hef`. Use `--model-source /path/to/custom.hef` only
-when overriding the default model.
-
-After a fresh Hailo install or recovery, reboot once:
-
-```sh
-sudo reboot
-```
-
-After reconnecting, verify with:
-
-```sh
-hailortcli fw-control identify
-gst-inspect-1.0 hailonet hailofilter hailooverlay
-```
-
-If the installer reports that Hailo verification was deferred, this is expected
-after it has just recovered or installed `hailo-dkms`. Let the installer finish,
-reboot the Pi, then run `scripts/status-onboard-stack.sh` to confirm that the
-Hailo PCIe module is loaded and HailoRT can identify the device.
-
-On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
-repositories. The installer handles that by building `mavlink-routerd` from the
-upstream source with Meson/Ninja and installing it under `/usr`.
-
-Cleanup the Atlas agent setup while preserving FFmpeg/media dependencies and
-MediaMTX:
-
-```sh
-scripts/cleanup-onboard-pi.sh --dry-run
-scripts/cleanup-onboard-pi.sh --yes
-```
-
-Network config and package removal are opt-in because they can affect the rest
-of the Pi:
-
-```sh
-scripts/cleanup-onboard-pi.sh --yes --remove-eth0-config
-scripts/cleanup-onboard-pi.sh --yes --purge-agent-packages
-```
-
-Telemetry source:
-
-```text
-px4   PX4 telemetry through mavsdk_server gRPC
-```
-
-Raw MAVLink observer:
-
-```text
-atlas-agent/internal/mavlinkobserver
-```
-
-The observer is always enabled and is selected by
-`ATLAS_MAVLINK_OBSERVER_ENDPOINT`. It uses `gomavlib` for live MAVLink parsing
-and emits typed observations for heartbeat, system status, battery status, GPS,
-global position, status text, mission current, and command ACK messages. It is
-supplemental evidence beside MAVSDK telemetry; it is not a command gateway and
-does not replace the `px4` telemetry source.
-
-Supported observer endpoints:
-
-```text
-udp-server://0.0.0.0:14550              listen for MAVLink UDP datagrams
-udp-client://127.0.0.1:14550            connect to a MAVLink UDP peer
-serial:///dev/ttyUSB0?baud=57600        read a telemetry serial device
-serial:///dev/ttyAMA0?baud=921600       read a high-speed companion link
-```
-
-For local SITL, the default UDP server endpoint is the right starting point.
-For hardware, configure a serial endpoint only when the companion computer has a
-dedicated telemetry tap, or point the observer at a MAVLink router UDP output.
-Do not put the observer and MAVSDK in competition for the same exclusive serial
-device.
-
-For reliable `COMMAND_ACK` evidence, the observer must see the MAVLink path that
-receives the vehicle's ACKs. In practice that means using a MAVLink router/fanout
-when MAVSDK is also sending commands. A separate UDP listener can see heartbeat
-and telemetry but may miss ACKs that are routed only back to MAVSDK's channel.
-
-Raspberry Pi MAVLink Router setup:
-
-```sh
-scripts/setup-mavlink-router.sh --device /dev/serial0 --baud 921600
-```
-
-The script generates:
-
-```text
-~/.config/atlas-agent/mavlink-router/main.conf
-~/.config/atlas-agent/mavlink-router/atlas-mavlink.env
-```
-
-It does not require systemd. To run the router in the foreground:
-
-```sh
-scripts/setup-mavlink-router.sh --start
-```
-
-If `mavlink-routerd` is not installed on a Debian/Raspberry Pi OS system, the
-script can try to install it:
-
-```sh
-scripts/setup-mavlink-router.sh --install
-```
-
-Optional QGroundControl UDP output:
-
-```sh
-scripts/setup-mavlink-router.sh \
-  --device /dev/serial0 \
-  --baud 921600 \
-  --qgc 192.168.1.20:14550
-```
-
-After setup, use the generated environment file before starting `mavsdk_server`
-and `atlas-agent`:
-
-```sh
-source ~/.config/atlas-agent/mavlink-router/atlas-mavlink.env
-mavsdk_server -p 50051 "$ATLAS_PX4_SYSTEM_ADDRESS"
-go run ./cmd/atlas-agent
-```
-
-Or start the companion runtime stack with:
-
-```sh
-scripts/start-companion-agent.sh --backend-grpc 10.0.0.5:9090
-```
-
-This starts:
-
-```text
-mavlink-routerd -> mavsdk_server -> atlas-agent
-```
-
-It keeps the processes in the foreground, writes logs under
-`~/.local/state/atlas-agent/logs`, and stops child processes on Ctrl-C. Use
-`--dry-run` to inspect the exact commands before starting anything:
-
-```sh
-scripts/start-companion-agent.sh --dry-run --backend-grpc 10.0.0.5:9090
-```
-
-If you already run `mavlink-routerd` or `mavsdk_server` separately, skip those
-parts:
-
-```sh
-scripts/start-companion-agent.sh --skip-router
-scripts/start-companion-agent.sh --skip-router --skip-mavsdk
-```
-
-The script configures the Raspberry Pi side only. Pixhawk TELEM2 must still be
-configured in PX4/QGroundControl with a matching MAVLink instance and baud rate.
-
-Generate Atlas backend-vehicle-agent gRPC clients after editing `proto/atlas/*.proto`:
-
-```sh
-../scripts/generate-atlas-proto-go.sh
-```
-
-Generate MAVSDK Go clients after updating `third_party/mavsdk-proto`:
-
-```sh
-../scripts/generate-mavsdk-go.sh
-```
-
-PX4 SITL telemetry run sequence:
-
-From the repository root, the preferred Phase 3 development command is:
-
-```sh
-scripts/start-sitl.sh
-```
-
-It starts PX4 SITL, `mavsdk_server`, Atlas Backend, Atlas Agent, and Atlas UI.
-Use `ATLAS_PX4_DIR=/path/to/PX4-Autopilot scripts/start-sitl.sh` if PX4 is not
-checked out beside the Atlas repository.
-
-Manual sequence:
-
-```sh
-cd /Users/mofe/dev/sunnyside/PX4-Autopilot
-source .venv/bin/activate
-make px4_sitl gz_x500
-```
-
-In another terminal:
+For PX4 SITL:
 
 ```sh
 mavsdk_server -p 50051 udpin://0.0.0.0:14540
 ```
 
-Then run the backend and start the agent with:
+Local loopback:
 
 ```sh
-ATLAS_MAVSDK_GRPC_ADDR=127.0.0.1:50051 \
-ATLAS_PX4_SYSTEM_ADDRESS=udpin://0.0.0.0:14540 \
-ATLAS_MAVLINK_OBSERVER_ENDPOINT=udp-server://0.0.0.0:14550 \
+ATLAS_GROUND_STATION_ADDR=127.0.0.1:7443 \
+ATLAS_AGENT_STATE_DIR=/tmp/atlas-agent-dev \
 go run ./cmd/atlas-agent
+```
+
+## Package and install on Raspberry Pi 5
+
+The supported onboard profile is Ubuntu 24.04 arm64 on Raspberry Pi 5 with a
+Raspberry Pi AI HAT+ (Hailo-8L by default). Build the Debian package on a Linux
+build machine with Go 1.25 and Debian packaging tools:
+
+```sh
+cd atlas-agent
+ATLAS_RELEASE_VERSION=0.1.0 packaging/build-deb.sh
+```
+
+The package builder cross-compiles `atlas-agent` and `atlas-setup`, downloads
+the pinned official MAVSDK arm64 binary, verifies its SHA-256, and packages the
+metadata-only Hailo adapter and a checksum-pinned Hailo-8L HEF. To build for a
+26 TOPS Hailo-8 AI HAT+, provide a compatible HEF and identify its target:
+
+```sh
+ATLAS_RELEASE_VERSION=0.1.0 \
+ATLAS_HEF_MODEL_PATH=/path/to/objects-h8.hef \
+ATLAS_MODEL_ACCELERATOR=hailo-8 \
+packaging/build-deb.sh
+```
+
+Copy `dist/atlas-agent_<version>_arm64.deb` to the onboard computer, then run:
+
+```sh
+sudo apt install ./atlas-agent_<version>_arm64.deb
+sudo atlas-setup
+```
+
+With no arguments, `atlas-setup` is interactive. It verifies Ubuntu, the Pi,
+the camera, and Hailo; lists stable `/dev/serial/by-id` devices; and passively
+listens for a checksum-valid MAVLink heartbeat before configuring TELEM2. It
+then writes `/etc/atlas-agent/atlas-agent.env` and enables only:
+
+```text
+atlas-mavsdk.service -> atlas-agent.service
+```
+
+The Hailo adapter is supervised by `atlas-agent`; it is not a third service.
+MediaMTX and MAVLink Router are not installed by this topology.
+
+When deprecated units are still present under `/etc/systemd/system`, the
+interactive wizard shows each one and asks permission to stop and archive it
+under `/var/lib/atlas-agent/legacy-units`. This prevents an old locally written
+unit from shadowing the packaged unit in `/usr/lib/systemd/system`.
+
+Run the field diagnostic at any time:
+
+```sh
+sudo atlas-setup doctor
+```
+
+For fleet automation, the discovery defaults can be applied without prompts:
+
+```sh
+sudo atlas-setup install --non-interactive
+```
+
+`--dry-run` prints the generated configuration and system actions without
+changing the computer.
+
+### Ubuntu 24.04 and Hailo
+
+Atlas verifies all of the following before enabling perception:
+
+- the Hailo PCIe device;
+- `hailortcli fw-control identify`;
+- the `hailonet` and `hailofilter` GStreamer elements;
+- the system Python `gi` and `hailo` bindings;
+- a HEF matching the detected Hailo-8 or Hailo-8L accelerator;
+- the configured TAPPAS postprocess library.
+
+Raspberry Pi's turnkey `hailo-all` setup is published for Raspberry Pi OS.
+Ubuntu 24.04 therefore needs a compatible HailoRT/TAPPAS package source or
+preinstalled runtime. If that source exposes `hailo-all`, the wizard offers to
+install it. Otherwise setup pauses with the missing prerequisites instead of
+transplanting Raspberry Pi OS packages or patching vendor DKMS source. The rest
+of Atlas can be installed without perception only after explicit confirmation.
+
+The default package contains a Hailo-8L model. Setup refuses to enable it on a
+detected Hailo-8 accelerator; build the package with the matching HEF instead.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ATLAS_AGENT_STATE_DIR` | OS config directory under `atlas-agent` | Stable local installation identity |
+| `ATLAS_GROUND_STATION_ADDR` | `192.168.144.50:7443` | Native app gRPC listener |
+| `ATLAS_DRONE_NAME` | `Atlas Drone` | Local display name |
+| `ATLAS_AGENT_VERSION` | `0.1.0-dev` | Reported agent version |
+| `ATLAS_FLIGHT_CONTROLLER_UID` | Empty | Observed controller identity |
+| `ATLAS_FLIGHT_CONTROLLER_TRANSPORT` | `serial` | Agent-to-controller attachment |
+| `ATLAS_FLIGHT_CONTROLLER_ENDPOINT` | `/dev/serial0` | Attachment endpoint description |
+| `ATLAS_FLIGHT_CONTROLLER_BAUD_RATE` | `921600` | Serial baud rate |
+| `ATLAS_MAVLINK_SYSTEM_ID` | `1` | Expected MAVLink system ID |
+| `ATLAS_MAVLINK_COMPONENT_ID` | `1` | Expected MAVLink component ID |
+| `ATLAS_MAVSDK_GRPC_ADDR` | `127.0.0.1:50051` | Local `mavsdk_server` gRPC address |
+| `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI A8 Mini UDP SDK endpoint used for zoom discovery/fallback |
+| `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest-snapshot publish interval (minimum `100ms`) |
+| `ATLAS_PERCEPTION_PROVIDER` | `disabled` | Neutral runtime selector: `external`, `hailo`, `deepstream`, `tensorrt`, or `onnx` |
+| `ATLAS_PERCEPTION_SOCKET_PATH` | Agent state directory under `perception/runtime.sock` | Protected Unix socket where the selected runtime publishes Atlas perception envelopes |
+| `ATLAS_PERCEPTION_ADAPTER_PATH` | `atlas-hailort-adapter` | Hailo adapter executable supervised when the provider is `hailo` |
+| `ATLAS_A8_RTSP_URL` | `rtsp://192.168.144.25:8554/main.264` | Clean A8 stream consumed by Hailo inference |
+| `ATLAS_A8_RTP_CODEC` | `auto` | `auto`, `h264`, or `h265` depay/decode selection |
+| `ATLAS_A8_RTSP_TRANSPORT` | `tcp` | RTSP transport used by the Hailo pipeline |
+| `ATLAS_A8_RTSP_LATENCY_MS` | `75` | Hailo pipeline jitter-buffer latency |
+| `ATLAS_PERCEPTION_MODEL_PATH` | Required for Hailo | Hailo HEF object-detection model |
+| `ATLAS_PERCEPTION_MODEL_NAME` | HEF filename | Stable model identity sent to Native |
+| `ATLAS_PERCEPTION_MODEL_VERSION` | `1` | Model version sent with every detection frame |
+| `ATLAS_PERCEPTION_POSTPROCESS_SO` | TAPPAS YOLO postprocess library | Library that converts model tensors into Hailo detection metadata |
+| `ATLAS_PERCEPTION_POSTPROCESS_FUNCTION` | `filter` | Postprocess entry point |
+| `ATLAS_PERCEPTION_POSTPROCESS_CONFIG` | Empty | Optional postprocess labels/configuration file |
+| `ATLAS_PERCEPTION_WIDTH` / `ATLAS_PERCEPTION_HEIGHT` | `640` / `640` | Hailo inference input size |
+| `ATLAS_VIDEO_SOURCE_ID` | `a8-main` | Identity shared with the native decoder for overlay matching |
+| `ATLAS_HAILO_ACCELERATOR` | `hailo-8l` | Accelerator identity reported in health |
+
+Perception providers are separate runtime processes. They translate native
+runtime output into the versioned Atlas contract before connecting to the Unix
+socket. Live frames use a latest-value buffer, so stale detections are discarded
+instead of delaying current state. The current concrete adapter is HailoRT via
+the Hailo GStreamer/TAPPAS elements; Jetson adapters remain future work.
+
+Install the adapter on the onboard computer after HailoRT, TAPPAS Core,
+PyGObject, and their Python bindings are available:
+
+```sh
+sudo install -m 0755 scripts/atlas-hailort-adapter.py /usr/local/bin/atlas-hailort-adapter
+```
+
+Then enable it alongside Atlas Agent:
+
+```sh
+ATLAS_PERCEPTION_PROVIDER=hailo \
+ATLAS_PERCEPTION_MODEL_PATH=/opt/atlas/models/objects.hef \
+go run ./cmd/atlas-agent
+```
+
+The Hailo pipeline contains no `hailooverlay` element. It consumes the camera
+for inference and publishes only structured detections; Native independently
+decodes the clean RTSP stream and decides whether to render those detections.
+
+## Generate protobuf code
+
+From the repository root:
+
+```sh
+scripts/generate-ground-station-proto-go.sh
+scripts/generate-mavsdk-go.sh
+```
+
+Rust protobuf code is generated by the Tauri crate's `build.rs`.
+
+## Validate
+
+```sh
+go test ./...
+go vet ./...
+python3 -m unittest discover -s scripts -p '*_test.py'
 ```

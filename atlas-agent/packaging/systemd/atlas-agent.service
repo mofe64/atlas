@@ -1,0 +1,29 @@
+[Unit]
+Description=Atlas Onboard Agent
+After=network-online.target atlas-mavsdk.service
+Wants=network-online.target
+Requires=atlas-mavsdk.service
+ConditionPathExists=/etc/atlas-agent/atlas-agent.env
+
+[Service]
+Type=simple
+User=atlas-agent
+Group=atlas-agent
+SupplementaryGroups=dialout
+EnvironmentFile=/etc/atlas-agent/atlas-agent.env
+ExecStart=/usr/bin/atlas-agent
+Restart=always
+RestartSec=3
+StateDirectory=atlas-agent
+StateDirectoryMode=0700
+RuntimeDirectory=atlas-agent
+RuntimeDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/atlas-agent /run/atlas-agent
+
+[Install]
+WantedBy=multi-user.target
+

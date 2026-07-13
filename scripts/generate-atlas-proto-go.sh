@@ -6,7 +6,7 @@ PROTO_DIR="${ROOT_DIR}/proto"
 PROTO_FILE="${PROTO_DIR}/atlas/vehicle_agent_channel.proto"
 
 BACKEND_OUT_DIR="${ROOT_DIR}/atlas-backend-deprecated/internal/transport/vehicleagentchannelpb"
-AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent/internal/transport/vehicleagentchannelpb"
+AGENT_OUT_DIR="${ROOT_DIR}/atlas-agent-deprecated/internal/transport/vehicleagentchannelpb"
 
 export PATH="$(go env GOPATH)/bin:${PATH}"
 

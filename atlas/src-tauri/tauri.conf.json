@@ -13,6 +13,7 @@
     "windows": [
       {
         "title": "Atlas",
+        "userAgent": "AtlasGroundStation/0.1",
         "width": 1180,
         "height": 760,
         "minWidth": 760,
@@ -20,7 +21,16 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "connect-src": "ipc: http://ipc.localhost https://tile.openstreetmap.org https://s3.amazonaws.com",
+        "img-src": "'self' asset: http://asset.localhost data: blob: https://tile.openstreetmap.org https://s3.amazonaws.com",
+        "style-src": "'self' 'unsafe-inline'",
+        "worker-src": "blob:",
+        "child-src": "blob:"
+      },
+      "devCsp": null,
+      "freezePrototype": true
     }
   },
   "bundle": {
