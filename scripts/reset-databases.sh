@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script resets only the new Atlas backend and native-app databases.
+# This script resets only the current Atlas Backend and Native databases.
 # It deliberately leaves the operating-system credential vault untouched.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND_DIR="${ROOT_DIR}/atlas-backend"

@@ -1,7 +1,8 @@
 # Atlas Backend
 
-The new Atlas backend is a Go 1.25 + Gin service with PostgreSQL-backed
-organization, user, and session authentication.
+Atlas Backend is a Go 1.25 + Gin service with PostgreSQL-backed organization,
+user, and session authentication. It is independently deployable and is not on
+the current direct Atlas Native-to-Agent flight-control path.
 
 ## Start the complete local stack
 
@@ -51,6 +52,7 @@ be created through an admin-controlled invitation flow.
 | --- | --- | --- | --- |
 | `GET` | `/healthz` | None | Process liveness |
 | `GET` | `/readyz` | None | PostgreSQL readiness |
+| `GET` | `/api/v1/version` | None | Backend development version |
 | `POST` | `/api/v1/auth/register` | None | Create organization, first admin, and session |
 | `POST` | `/api/v1/auth/login` | None | Create a session from email/password |
 | `GET` | `/api/v1/auth/me` | Bearer token | Resolve the current identity |
@@ -106,8 +108,13 @@ starts.
 
 ```text
 organizations
-    └── users
-          └── sessions
+    ├── users
+    │     └── sessions
+    ├── drones
+    ├── vehicle_agents
+    │     └── vehicle_agent_bindings
+    │           └── communication_links
+    └── vehicle_agent_enrollment_tokens
 ```
 
 Database constraints are the final defense against invalid roles, statuses,

@@ -1,8 +1,7 @@
 # Atlas Agent Installation Guide
 
-This guide migrates an onboard Raspberry Pi from the deprecated Atlas Agent
-stack to the packaged Atlas Agent with systemd-managed MAVSDK and Hailo
-perception services.
+This guide covers both a clean installation and an upgrade of the packaged
+Atlas Agent with systemd-managed MAVSDK and Hailo perception services.
 
 ## Supported onboard computer
 
@@ -14,20 +13,16 @@ perception services.
 The commands use `0.1.0` as an example release. Replace that value with the
 release being deployed.
 
-## Migration overview
+## Initial installation overview
 
-The migration has a short period where no Atlas service is running:
+An initial installation has five stages:
 
 1. Build and transfer the new Debian package.
-2. Remove the deprecated services and files.
-3. Install the new package.
-4. Move Hailo userspace into the pinned container profile.
-5. Run the interactive Atlas configuration.
-6. Validate the complete installation.
-
-The deprecated cleanup preserves the existing camera network configuration and
-Hailo installation by default. Do not use `--remove-eth0-config` during this
-migration because Atlas still needs the A8 network.
+2. Install the package on the onboard computer.
+3. Configure the pinned Hailo profile or deliberately retain a compatible
+   native Hailo runtime.
+4. Run the interactive Atlas configuration.
+5. Validate the complete installation.
 
 ## 1. Build the Atlas package
 
@@ -62,44 +57,7 @@ scp \
 Skip this section when the release package is already available on the onboard
 computer.
 
-## 2. Remove the deprecated Atlas stack
-
-Run these commands on the onboard computer from the deprecated checkout:
-
-```sh
-cd /path/to/sunnyside/atlas/atlas-agent-deprecated
-
-./scripts/cleanup-onboard-pi.sh --dry-run
-./scripts/cleanup-onboard-pi.sh --yes
-```
-
-The default cleanup removes:
-
-- deprecated Atlas, video, MAVSDK, MAVLink Router, and MediaMTX services;
-- deprecated binaries and Hailo model copies under `/opt/atlas`;
-- deprecated configuration, state, and logs.
-
-It preserves:
-
-- Hailo driver, firmware, HailoRT, and TAPPAS packages;
-- FFmpeg and GStreamer packages;
-- the A8 `eth0`/netplan configuration;
-- downloaded Hailo package caches.
-
-Do not use `--purge-agent-packages` for a normal migration. Package removal can
-affect tools or libraries used by other software on the Pi.
-
-Optionally confirm that the deprecated-only services are no longer active:
-
-```sh
-systemctl is-active atlas-video-agent.service || true
-systemctl is-active atlas-mediamtx.service || true
-systemctl is-active atlas-mavlink-router.service || true
-```
-
-Inactive, disabled, or not-found results are expected.
-
-## 3. Install the packaged Atlas Agent
+## 2. Install the packaged Atlas Agent
 
 On the onboard computer, verify and install the transferred package:
 
@@ -116,15 +74,14 @@ pinned Hailo container build context, MAVSDK, the compatible HEF model, and the
 systemd unit files. It does not enable the services until `atlas-setup` has
 written a valid configuration.
 
-## 4. Configure Hailo
+## 3. Configure Hailo
 
-### Recommended migration: pinned container profile
+### Recommended: pinned container profile
 
-The deprecated stack normally leaves HailoRT and TAPPAS installed on the host.
-Migrate them into the Atlas container with:
+On a clean Ubuntu host, install the pinned Atlas profile with:
 
 ```sh
-sudo atlas-hailo-setup --replace-existing
+sudo atlas-hailo-setup
 ```
 
 The command is interactive and will ask before changing kernel or container
@@ -150,23 +107,24 @@ Reconnect to the onboard computer and inspect the Hailo installation:
 sudo atlas-hailo-setup status
 ```
 
-### Clean Ubuntu host
-
-When no Hailo packages have previously been installed, omit the replacement
-flag:
+When the command reports conflicting host HailoRT/TAPPAS packages and replacing
+them with the Atlas container profile is intentional, rerun it with:
 
 ```sh
-sudo atlas-hailo-setup
+sudo atlas-hailo-setup --replace-existing
 ```
+
+The replacement removes host Hailo userspace packages, but keeps the host-side
+driver and firmware on the pinned compatibility profile.
 
 ### Keep an existing native Hailo runtime
 
-If the deprecated Hailo runtime is known to work and container migration is not
-currently desired, skip `atlas-hailo-setup`. The interactive Atlas setup can
+If a compatible Hailo runtime is already installed and container migration is
+not currently desired, skip `atlas-hailo-setup`. The interactive Atlas setup can
 discover and continue using the native process runtime. Confirm it afterward
 with `sudo atlas-setup doctor`.
 
-## 5. Configure and start Atlas
+## 4. Configure and start Atlas
 
 Run the interactive installer on the onboard computer:
 
@@ -200,7 +158,7 @@ The generated configuration is stored at:
 /etc/atlas-agent/atlas-agent.env
 ```
 
-## 6. Validate the installation
+## 5. Validate the installation
 
 Run the complete Atlas diagnostic:
 
@@ -243,8 +201,8 @@ journalctl -u atlas-hailo-adapter.service -f
 
 Use this runbook after changing Atlas Agent and deploying a new package to a
 computer that already has the packaged Agent, `/etc/atlas-agent/atlas-agent.env`,
-and the systemd services. Do not repeat the deprecated-stack cleanup or initial
-Hailo migration during a normal Agent upgrade.
+and the systemd services. Do not repeat the initial Hailo setup during a normal
+Agent upgrade.
 
 An upgrade briefly stops MAVSDK, Atlas Agent, and perception. Perform it only
 while the aircraft is landed, disarmed, and not executing a mission or holding

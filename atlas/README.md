@@ -1,8 +1,8 @@
 # Atlas Native Ground Station
 
 Atlas is a local-first Tauri v2 ground station. React renders the operator
-interface while Rust owns the agent-facing gRPC server, embedded SQLite, and
-future vehicle operations.
+interface while Rust owns the agent-facing gRPC server, embedded SQLite,
+vehicle policy, mission execution records, and video/perception alignment.
 
 There is currently no backend dependency, organization, user login, enrollment
 token, or operator authentication.
@@ -64,7 +64,7 @@ binary, then configure the clean camera stream before startup:
 ```sh
 ATLAS_VIDEO_RTSP_URL=rtsp://192.168.144.25:8554/main.264 \
 ATLAS_VIDEO_DECODER_PATH=ffmpeg \
-npm run tauri dev
+npm run tauri:dev:isolated
 ```
 
 Video configuration:
@@ -94,7 +94,7 @@ live-video backlog.
 Override the native listener when needed:
 
 ```sh
-ATLAS_GROUND_STATION_LISTEN_ADDR=127.0.0.1:7443 npm run tauri dev
+ATLAS_GROUND_STATION_LISTEN_ADDR=127.0.0.1:7443 npm run tauri:dev:isolated
 ```
 
 ## Initial registration flow
@@ -113,6 +113,29 @@ ATLAS_GROUND_STATION_LISTEN_ADDR=127.0.0.1:7443 npm run tauri dev
 8. PX4 status text is sent as a separate event stream so warnings and failsafe
    messages are retained instead of being overwritten by the next snapshot.
 
+## Aircraft operations workspace
+
+Selecting an aircraft opens one persistent workspace with five sections:
+
+- **Overview** shows connection, readiness, power, position, and recent PX4
+  information.
+- **Live** shows the clean A8 feed, optional frame-aligned detection overlays,
+  perception health, and leased inspection gimbal/zoom control.
+- **Missions** shows current and previous runs and links into the dedicated
+  planning/execution workspace.
+- **History** shows aircraft-scoped telemetry charts and operational events.
+- **Settings** exposes lifecycle state, archive, and restore.
+
+Opening Live observes only. Physical payload controls require an acknowledged
+inspection lease and fresh telemetry that explicitly reports both disarmed and
+on-ground. Leaving Live, switching aircraft, losing renewal, or ending control
+causes the Agent to stop angular rates and release gimbal ownership.
+
+Archive is a reversible lifecycle transition, not deletion. An archived drone
+is removed from operational fleet counts and mission selectors, while commands,
+missions, telemetry, events, agents, and ended bindings remain queryable. Agent
+reconnects are rejected and audited until an operator restores the drone.
+
 The protocol is defined in `../proto/atlas/ground_station.proto`. The current
 slice contains registration, heartbeat, telemetry, PX4 status events, durable
 Hold/RTL/Land commands, and acknowledged gimbal angle/rate/centre commands.
@@ -128,7 +151,7 @@ and a five-second busy timeout.
 Development and SITL workflows can isolate the database with an absolute path:
 
 ```sh
-ATLAS_SQLITE_PATH=/absolute/path/to/atlas-sitl.db npm run tauri dev
+ATLAS_SQLITE_PATH=/absolute/path/to/atlas-sitl.db npm run tauri:dev:isolated
 ```
 
 The normal platform application-data location remains the default when this
@@ -299,7 +322,7 @@ while retaining previous plans for audit history.
 The development default uses OpenStreetMap raster tiles with visible attribution:
 
 ```sh
-VITE_ATLAS_MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png npm run tauri dev
+VITE_ATLAS_MAP_TILE_URL=https://tile.openstreetmap.org/{z}/{x}/{y}.png npm run tauri:dev:isolated
 ```
 
 `VITE_ATLAS_MAP_TILE_URL` is a build-time tile template and can point at an Atlas-
@@ -348,10 +371,14 @@ contains no authentication or backend-sync models.
 ## Project map
 
 - `src/App.tsx`: local operations shell, workspace navigation, and link status.
+- `src/fleet/`: fleet list plus aircraft Overview, Live, Missions, History, and
+  Settings workspaces, including archive/restore.
 - `src/history/`: detailed seven-day flight-history workspace with server-
   downsampled telemetry charts, a flight-mode ribbon, and vehicle-event timeline.
 - `src/missions/`: MapLibre planning/tracking map, structured mission editor,
   dedicated execution workspace, live aircraft track, run controls, and reports.
+- `src/video/`: clean-video canvas, aligned perception overlay, and renewable
+  detection subscription lifecycle.
 - `src-tauri/src/ground_station/`: protobuf boundary, tonic server, session state
   machine, registration mapping, telemetry and status-event mapping, and
   transport tests.

@@ -27,7 +27,6 @@ func run(arguments []string) int {
 	nonInteractive := flags.Bool("non-interactive", false, "use discovered/default values without prompting")
 	allowUnsupported := flags.Bool("allow-unsupported", false, "allow development validation on a non-target platform")
 	installHailo := flags.Bool("install-hailo", false, "deprecated: use sudo atlas-hailo-setup before atlas-setup")
-	replaceLegacy := flags.Bool("replace-legacy", false, "stop and archive deprecated Atlas systemd units")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
 	}
@@ -47,7 +46,6 @@ func run(arguments []string) int {
 		DryRun:               *dryRun,
 		NonInteractive:       *nonInteractive,
 		AllowUnsupported:     *allowUnsupported,
-		ReplaceLegacy:        *replaceLegacy,
 		Paths:                onboardsetup.DefaultPaths(root),
 		Input:                os.Stdin,
 		Output:               os.Stdout,

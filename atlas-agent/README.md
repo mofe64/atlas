@@ -1,11 +1,8 @@
 # Atlas Agent
 
-Atlas Agent is the new Go 1.25 onboard runtime. It initiates and maintains the
-direct HM30/local-network session to Atlas Native; it does not connect to the
-Atlas backend.
-
-The previous PX4, MAVSDK, video, and backend-stream prototype remains in
-`../atlas-agent-deprecated` while those capabilities are ported deliberately.
+Atlas Agent is the supported Go 1.25 onboard runtime. It initiates and maintains
+the direct HM30/local-network session to Atlas Native; it does not connect to
+the Atlas Backend.
 
 ## Current flow
 
@@ -166,14 +163,10 @@ If the result is `192.168.144.50`, use the default ground-station address
 Atlas Native's `ATLAS_GROUND_STATION_LISTEN_ADDR` and Atlas Agent's
 `ATLAS_GROUND_STATION_ADDR` to that same address with port `7443`.
 
-See the
-[A8, HM30, Pi, and ground-computer network guide](../../docs/atlas_a8_hm30_pi_video_setup.md)
-for wiring, configuration, routing, and troubleshooting details.
-
 ## Package and install on Raspberry Pi 5
 
-See [INSTALLATION.md](INSTALLATION.md) for the complete build, deprecated-stack
-cleanup, Hailo migration, interactive setup, and verification procedure.
+See [INSTALLATION.md](INSTALLATION.md) for the complete build, clean-install,
+upgrade, same-version replacement, rollback, and verification procedures.
 
 The supported onboard profile is Ubuntu 24.04 arm64 on Raspberry Pi 5 with a
 Raspberry Pi AI HAT+ (Hailo-8L by default). Build the Debian package on a Linux
@@ -206,14 +199,14 @@ sudo atlas-setup
 ```
 
 `atlas-hailo-setup` is needed on a clean Ubuntu installation. If the computer
-already has a working Hailo installation from the deprecated Atlas Agent, do
-not replace it automatically: skip `atlas-hailo-setup` and run the interactive
-`sudo atlas-setup`. Its discovery checks can select the existing native runtime;
-after configuration, confirm it with `sudo atlas-setup doctor`. Use
-`atlas-hailo-setup --replace-existing` only when deliberately migrating to the
-pinned container profile. That migration removes host HailoRT/TAPPAS packages,
-but retains/reinstalls the pinned host driver and firmware; changing a loaded
-PCIe driver requires a reboot.
+already has a compatible working Hailo installation, do not replace it
+automatically: skip `atlas-hailo-setup` and run the interactive
+`sudo atlas-setup`. Its discovery checks can select the native runtime; after
+configuration, confirm it with `sudo atlas-setup doctor`. Use
+`atlas-hailo-setup --replace-existing` only when deliberately moving to the
+pinned container profile. That operation removes host HailoRT/TAPPAS userspace
+packages, but retains/reinstalls the pinned host driver and firmware; changing
+a loaded PCIe driver requires a reboot.
 
 With no arguments, `atlas-setup` is interactive. It verifies Ubuntu, the Pi,
 the camera, and Hailo; lists stable `/dev/serial/by-id` devices; and passively
@@ -228,13 +221,8 @@ atlas-mavsdk.service -> atlas-agent.service
 
 In native/process mode the Hailo adapter remains supervised by `atlas-agent`.
 In container mode systemd supervises `atlas-hailo-adapter.service`, and the
-agent only owns the perception socket. MediaMTX and MAVLink Router are not
-installed by this topology.
-
-When deprecated units are still present under `/etc/systemd/system`, the
-interactive wizard shows each one and asks permission to stop and archive it
-under `/var/lib/atlas-agent/legacy-units`. This prevents an old locally written
-unit from shadowing the packaged unit in `/usr/lib/systemd/system`.
+Agent owns the protected perception socket. Native decodes the A8 RTSP stream
+directly, while the Agent talks to the local `mavsdk_server` gRPC endpoint.
 
 Run the field diagnostic at any time:
 

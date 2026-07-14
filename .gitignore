@@ -5,9 +5,6 @@ bin/
 coverage.out
 
 # Node
-atlas-ui/node_modules/
-atlas-ui/dist/
-atlas-ui/.vite/
 .scratch/
 .atlas-run/
 .env

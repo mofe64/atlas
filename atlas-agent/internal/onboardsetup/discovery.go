@@ -46,27 +46,8 @@ func Discover(ctx context.Context, runner Runner, options Options) (Discovery, e
 		Camera:          probeRTSP(ctx, runner, cameraURL),
 		GroundReachable: probeTCP(groundAddress, 800*time.Millisecond),
 		ExistingConfig:  existingConfig,
-		LegacyUnits:     discoverLegacyUnits(paths.Root),
 	}
 	return discovery, nil
-}
-
-func discoverLegacyUnits(root string) []string {
-	names := []string{
-		"atlas-agent.service",
-		"atlas-mavsdk.service",
-		"atlas-mavlink-router.service",
-		"atlas-mediamtx.service",
-		"atlas-video-agent.service",
-	}
-	units := make([]string, 0, len(names))
-	for _, name := range names {
-		path := rootPath(root, filepath.Join("/etc/systemd/system", name))
-		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
-			units = append(units, path)
-		}
-	}
-	return units
 }
 
 func rootPath(root, path string) string {

@@ -79,15 +79,6 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	if err := validateInstalledPayload(options.Paths, plan.Config, options.DryRun); err != nil {
 		return ApplyResult{}, err
 	}
-	legacyUnits := discoverLegacyUnits(options.Paths.Root)
-	if len(legacyUnits) > 0 {
-		if !plan.ReplaceLegacy {
-			return ApplyResult{}, errors.New("deprecated Atlas systemd units would shadow the packaged services")
-		}
-		if err := archiveLegacyUnits(ctx, runner, options.Paths, legacyUnits); err != nil {
-			return ApplyResult{}, err
-		}
-	}
 	if err := ensureServiceAccount(ctx, commandRunner, runner); err != nil {
 		return ApplyResult{}, err
 	}
@@ -129,21 +120,6 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	}
 	_, _ = fmt.Fprintln(output, "Atlas onboard installation is active. Run 'sudo atlas-setup doctor' for the full health report.")
 	return result, nil
-}
-
-func archiveLegacyUnits(ctx context.Context, runner ApplyRunner, paths Paths, units []string) error {
-	archiveDirectory := filepath.Join(paths.StateDirectory, "legacy-units")
-	if err := runner.Run(ctx, "install", "-d", "-m", "0700", "-o", "root", "-g", "root", archiveDirectory); err != nil {
-		return err
-	}
-	for _, unit := range units {
-		name := filepath.Base(unit)
-		runner.RunOptional(ctx, "systemctl", "disable", "--now", name)
-		if err := runner.Run(ctx, "mv", unit, filepath.Join(archiveDirectory, name)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) error {

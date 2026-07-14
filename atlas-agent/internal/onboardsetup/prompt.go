@@ -11,8 +11,7 @@ import (
 )
 
 type InstallPlan struct {
-	Config        InstallConfig
-	ReplaceLegacy bool
+	Config InstallConfig
 }
 
 type Prompter struct {
@@ -26,11 +25,8 @@ func NewPrompter(input io.Reader, output io.Writer) *Prompter {
 
 func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, options Options) (InstallPlan, error) {
 	config := installConfigFromDiscovery(discovery, options.Paths)
-	plan := InstallPlan{Config: config, ReplaceLegacy: options.ReplaceLegacy}
+	plan := InstallPlan{Config: config}
 	if options.NonInteractive {
-		if len(discovery.LegacyUnits) > 0 && !plan.ReplaceLegacy {
-			return InstallPlan{}, fmt.Errorf("deprecated Atlas systemd units were found; rerun interactively or explicitly allow their replacement")
-		}
 		if err := ensureSerialCandidate(config, discovery); err != nil {
 			return InstallPlan{}, err
 		}
@@ -47,20 +43,6 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 
 	prompt := NewPrompter(options.Input, options.Output)
 	printDiscovery(options.Output, discovery)
-	if len(discovery.LegacyUnits) > 0 {
-		_, _ = fmt.Fprintln(options.Output, "  Legacy Atlas units:")
-		for _, unit := range discovery.LegacyUnits {
-			_, _ = fmt.Fprintf(options.Output, "    - %s\n", unit)
-		}
-		replaceLegacy, confirmErr := prompt.confirm("Stop and archive these deprecated services", true)
-		if confirmErr != nil {
-			return InstallPlan{}, confirmErr
-		}
-		plan.ReplaceLegacy = replaceLegacy
-		if !plan.ReplaceLegacy {
-			return InstallPlan{}, fmt.Errorf("deprecated systemd units would shadow the packaged Atlas services")
-		}
-	}
 	selected, err := prompt.selectSerial(discovery.Serial, config.SerialDevice)
 	if err != nil {
 		return InstallPlan{}, err

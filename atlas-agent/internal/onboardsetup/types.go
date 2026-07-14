@@ -144,7 +144,6 @@ type Discovery struct {
 	Camera          RTSPStatus
 	GroundReachable bool
 	ExistingConfig  map[string]string
-	LegacyUnits     []string
 }
 
 func (discovery Discovery) PlatformSupported() bool {
@@ -221,7 +220,6 @@ type Options struct {
 	DryRun                   bool
 	NonInteractive           bool
 	AllowUnsupported         bool
-	ReplaceLegacy            bool
 	Paths                    Paths
 	Input                    io.Reader
 	Output                   io.Writer

@@ -58,29 +58,6 @@ func TestDiscoverSerialPrefersPersistentPath(t *testing.T) {
 	}
 }
 
-func TestDiscoverLegacyUnitsFindsOnlyDeprecatedEtcUnits(t *testing.T) {
-	root := t.TempDir()
-	legacy := filepath.Join(root, "etc", "systemd", "system", "atlas-agent.service")
-	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(legacy, []byte("legacy"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	packaged := filepath.Join(root, "usr", "lib", "systemd", "system", "atlas-mavsdk.service")
-	if err := os.MkdirAll(filepath.Dir(packaged), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(packaged, []byte("packaged"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	units := discoverLegacyUnits(root)
-	if len(units) != 1 || units[0] != legacy {
-		t.Fatalf("legacy units = %#v, want only %s", units, legacy)
-	}
-}
-
 func TestDiscoverHailoRequiresCompleteRuntime(t *testing.T) {
 	runner := &fakeRunner{results: map[string]CommandResult{
 		"lspci -Dnn":                     {Output: "0000:01:00.0 Co-processor [1e60:2864] Hailo Technologies"},
@@ -387,8 +364,8 @@ func TestPackagedSystemdUnitsUseDirectExecutables(t *testing.T) {
 			t.Fatal(err)
 		}
 		unit := string(raw)
-		if strings.Contains(unit, "bash -lc") || strings.Contains(unit, "atlas-mediamtx") || strings.Contains(unit, "atlas-video-agent") {
-			t.Fatalf("%s retains a deprecated shell/media dependency:\n%s", name, unit)
+		if strings.Contains(unit, "bash -lc") {
+			t.Fatalf("%s uses an indirect shell command:\n%s", name, unit)
 		}
 		if !strings.Contains(unit, "EnvironmentFile=/etc/atlas-agent/atlas-agent.env") {
 			t.Fatalf("%s does not load the canonical Atlas configuration", name)
