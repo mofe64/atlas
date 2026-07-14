@@ -4,6 +4,11 @@ set -eu
 : "${ATLAS_HAILO_CONTAINER_IMAGE:?ATLAS_HAILO_CONTAINER_IMAGE is required}"
 : "${ATLAS_HAILO_CONTAINER_NAME:?ATLAS_HAILO_CONTAINER_NAME is required}"
 
+if [ ! -c /dev/hailo0 ]; then
+    printf '%s\n' 'Hailo device /dev/hailo0 is not available; retrying through systemd' >&2
+    exit 1
+fi
+
 agent_uid="$(id -u atlas-agent)"
 agent_gid="$(id -g atlas-agent)"
 device_gid="$(stat -c '%g' /dev/hailo0)"
@@ -15,6 +20,7 @@ exec /usr/bin/docker run \
     --rm \
     --name "${ATLAS_HAILO_CONTAINER_NAME}" \
     --network host \
+    --workdir /tmp \
     --device /dev/hailo0:/dev/hailo0 \
     --user "${agent_uid}:${agent_gid}" \
     --group-add "${device_gid}" \

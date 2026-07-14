@@ -32,7 +32,18 @@ DEFAULT_POSTPROCESS_SO = "/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes
 
 
 def environment(name: str, fallback: str = "") -> str:
-    return os.environ.get(name, fallback).strip()
+    value = os.environ.get(name, fallback).strip()
+    # atlas-setup emits a systemd-compatible EnvironmentFile with double-quoted
+    # values. Docker's --env-file keeps those quotes, so decode the same escaped
+    # string format before validating paths and adapter options.
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+        if isinstance(decoded, str):
+            return decoded.strip()
+    return value
 
 
 def utc_now() -> str:

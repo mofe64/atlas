@@ -187,6 +187,20 @@ func TestDoctorContainerHailoValidatesHEFAccelerator(t *testing.T) {
 	if !HasFailures(checks) {
 		t.Fatalf("checks = %#v, want HEF accelerator mismatch", checks)
 	}
+
+	configuration["ATLAS_HAILO_ACCELERATOR"] = "hailo-8l"
+	runner.results["docker exec atlas-hailo-adapter /usr/local/bin/atlas-hailo-container-check --model "+model] = CommandResult{
+		Output: "MODEL_READY=true\nMODEL_ARCHITECTURE=hailo-8l\nMODEL_COMPATIBLE=false",
+		Err:    errors.New("exit status 1"),
+	}
+	checks = doctorHailoContainer(context.Background(), runner, configuration, status)
+	levels := map[string]CheckLevel{}
+	for _, check := range checks {
+		levels[check.Name] = check.Level
+	}
+	if levels["Hailo HEF parse"] != CheckPass || levels["Hailo HEF accelerator"] != CheckFail {
+		t.Fatalf("checks = %#v, want independent parse pass and accelerator failure", checks)
+	}
 }
 
 func slicesEqual(left, right []string) bool {
@@ -381,13 +395,22 @@ func TestHailoContainerServiceUsesLeastPrivilegeLauncher(t *testing.T) {
 	}
 	unit := string(raw)
 	for _, expected := range []string{
-		"Requires=docker.service atlas-agent.service dev-hailo0.device",
+		"Requires=docker.service atlas-agent.service",
 		"EnvironmentFile=/etc/atlas-agent/hailo-container.env",
 		"ExecStart=/usr/libexec/atlas-agent/atlas-hailo-container-run",
+		"ExecStop=/usr/bin/docker stop --timeout 10 ${ATLAS_HAILO_CONTAINER_NAME}",
 		"PartOf=atlas-agent.service",
 	} {
 		if !strings.Contains(unit, expected) {
 			t.Fatalf("Hailo unit missing %q:\n%s", expected, unit)
+		}
+	}
+	for _, invalid := range []string{
+		"dev-hailo0.device",
+		"ConditionPathExists=/dev/hailo0",
+	} {
+		if strings.Contains(unit, invalid) {
+			t.Fatalf("Hailo unit relies on unavailable device-unit behavior %q:\n%s", invalid, unit)
 		}
 	}
 
@@ -398,7 +421,10 @@ func TestHailoContainerServiceUsesLeastPrivilegeLauncher(t *testing.T) {
 	}
 	launcher := string(raw)
 	for _, expected := range []string{
+		"[ ! -c /dev/hailo0 ]",
+		"Hailo device /dev/hailo0 is not available; retrying through systemd",
 		"--network host",
+		"--workdir /tmp",
 		"--device /dev/hailo0:/dev/hailo0",
 		"--user \"${agent_uid}:${agent_gid}\"",
 		"--group-add \"${device_gid}\"",

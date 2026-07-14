@@ -1,7 +1,9 @@
 import importlib.util
+import os
 import pathlib
 import sys
 import unittest
+from unittest import mock
 
 
 SCRIPT = pathlib.Path(__file__).with_name("atlas-hailort-adapter.py")
@@ -36,6 +38,16 @@ class FakeHailo:
 
 
 class HailoAdapterTests(unittest.TestCase):
+    def test_environment_decodes_atlas_setup_values_preserved_by_docker(self):
+        with mock.patch.dict(
+            os.environ,
+            {"ATLAS_PERCEPTION_SOCKET_PATH": '"/run/atlas-agent/perception.sock"'},
+        ):
+            self.assertEqual(
+                ADAPTER.environment("ATLAS_PERCEPTION_SOCKET_PATH"),
+                "/run/atlas-agent/perception.sock",
+            )
+
     def test_detection_payload_is_normalized_and_tracks_identity(self):
         payload = ADAPTER.detection_payload(FakeDetection(), FakeHailo)
         self.assertEqual(payload["trackId"], "17")

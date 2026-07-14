@@ -1,8 +1,21 @@
 #!/bin/sh
 set -u
 
+decode_environment_value() {
+    value="$1"
+    case "$value" in
+        \"*\")
+            value="${value#\"}"
+            value="${value%\"}"
+            ;;
+    esac
+    printf '%s' "$value"
+}
+
 SOFTWARE_ONLY=0
-MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-}"
+MODEL_PATH="$(decode_environment_value "${ATLAS_PERCEPTION_MODEL_PATH:-}")"
+DEVICE_PATH="$(decode_environment_value "${ATLAS_HAILO_DEVICE_PATH:-/dev/hailo0}")"
+EXPECTED_ARCHITECTURE="$(decode_environment_value "${ATLAS_HAILO_ACCELERATOR:-unknown}")"
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -52,7 +65,7 @@ device_ready=false
 device_architecture=unknown
 firmware_version=unknown
 
-if [ -c /dev/hailo0 ] && [ -r /dev/hailo0 ] && [ -w /dev/hailo0 ]; then
+if [ -c "$DEVICE_PATH" ] && [ -r "$DEVICE_PATH" ] && [ -w "$DEVICE_PATH" ]; then
     device_node_ready=true
 else
     result=1
@@ -97,10 +110,9 @@ if [ -n "$MODEL_PATH" ]; then
     else
         result=1
     fi
-    expected_architecture="${ATLAS_HAILO_ACCELERATOR:-unknown}"
     if [ "$model_ready" = true ] && \
        [ "$model_architecture" = "$device_architecture" ] && \
-       [ "$expected_architecture" = "$device_architecture" ]; then
+       [ "$EXPECTED_ARCHITECTURE" = "$device_architecture" ]; then
         model_compatible=true
     else
         result=1

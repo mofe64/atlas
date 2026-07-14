@@ -245,7 +245,10 @@ cd /path/to/sunnyside/atlas/atlas-agent
 
 go test ./...
 ./packaging/build-deb.sh
-sha256sum -c "dist/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
+(
+  cd dist
+  sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
+)
 ```
 
 Record the packaged Agent binary checksum as well. This is required to verify a

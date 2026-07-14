@@ -92,7 +92,10 @@ func doctorHailoContainer(ctx context.Context, runner Runner, configuration map[
 	modelPath := configuration["ATLAS_PERCEPTION_MODEL_PATH"]
 	modelResult := runHailoContainerCheck(ctx, runner, hailo, modelPath)
 	modelValues := parseKeyValueOutput(modelResult.Output)
-	modelReady := modelResult.Err == nil && modelValues["MODEL_READY"] == "true"
+	// Parsing and accelerator compatibility are separate diagnostics. The
+	// container check exits non-zero when either fails, so its structured output
+	// is the authoritative result for each individual doctor check.
+	modelReady := modelValues["MODEL_READY"] == "true"
 	checks = append(checks, booleanCheck("Hailo HEF parse", modelReady, "hailortcli parsed the packaged HEF"))
 	expectedAccelerator := configuration["ATLAS_HAILO_ACCELERATOR"]
 	compatible := modelValues["MODEL_COMPATIBLE"] == "true" && expectedAccelerator != "" && expectedAccelerator == hailo.Accelerator

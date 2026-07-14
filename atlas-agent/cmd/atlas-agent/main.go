@@ -72,8 +72,13 @@ func main() {
 		os.Exit(1)
 	}
 	defer missionExecutor.Close()
-	discoveryContext, cancelDiscovery := context.WithTimeout(ctx, 3*time.Second)
-	gimbalIDs, discoveryErr := actionExecutor.DiscoverGimbals(discoveryContext)
+	discoveryContext, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
+	gimbalIDs, discoveryErr := discoverGimbalsWithRetry(
+		discoveryContext,
+		time.Second,
+		250*time.Millisecond,
+		actionExecutor.DiscoverGimbals,
+	)
 	cancelDiscovery()
 	if discoveryErr != nil {
 		logger.Info("no MAVSDK gimbal discovered", "error", discoveryErr)

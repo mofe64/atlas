@@ -1,12 +1,13 @@
 [Unit]
 Description=Atlas Hailo Perception Container
-After=network-online.target docker.service atlas-agent.service dev-hailo0.device
+# The Hailo character-device udev rule does not publish a systemd device unit.
+# The supervised launcher retries until the real /dev/hailo0 node is usable.
+After=network-online.target docker.service atlas-agent.service
 Wants=network-online.target
-Requires=docker.service atlas-agent.service dev-hailo0.device
+Requires=docker.service atlas-agent.service
 PartOf=atlas-agent.service
 ConditionPathExists=/etc/atlas-agent/atlas-agent.env
 ConditionPathExists=/etc/atlas-agent/hailo-container.env
-ConditionPathExists=/dev/hailo0
 
 [Service]
 Type=simple
@@ -14,7 +15,7 @@ EnvironmentFile=/etc/atlas-agent/hailo-container.env
 ExecStartPre=/usr/bin/docker image inspect ${ATLAS_HAILO_CONTAINER_IMAGE}
 ExecStartPre=-/usr/bin/docker rm -f ${ATLAS_HAILO_CONTAINER_NAME}
 ExecStart=/usr/libexec/atlas-agent/atlas-hailo-container-run
-ExecStop=/usr/bin/docker stop --time 10 ${ATLAS_HAILO_CONTAINER_NAME}
+ExecStop=/usr/bin/docker stop --timeout 10 ${ATLAS_HAILO_CONTAINER_NAME}
 Restart=always
 RestartSec=3
 TimeoutStartSec=0
