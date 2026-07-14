@@ -56,7 +56,24 @@ message AgentPerception {
 message GroundStationPerception {
   oneof payload {
     PerceptionStreamAccepted stream_accepted = 1;
+    PerceptionFrameSubscription frame_subscription = 2;
   }
+}
+
+enum PerceptionFrameSubscriptionAction {
+  PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED = 0;
+  PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW = 1;
+  PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP = 2;
+}
+
+// Native renews short consumer leases while a live view is mounted. The agent
+// keeps inference and health reporting active but suppresses high-rate frame
+// metadata when no subscription or active mission requires it.
+message PerceptionFrameSubscription {
+  string subscription_id = 1;
+  string purpose = 2;
+  PerceptionFrameSubscriptionAction action = 3;
+  int64 lease_duration_ms = 4;
 }
 
 message PerceptionStreamRegistration {

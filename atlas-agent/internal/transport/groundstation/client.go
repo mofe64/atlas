@@ -31,9 +31,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdent
 	if logger == nil {
 		logger = slog.Default()
 	}
+	frameDemand := newFrameDemand()
 	backoff := minimumRetry
 	for ctx.Err() == nil {
-		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, executor, missionExecutor)
+		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, executor, missionExecutor, frameDemand)
 		if ctx.Err() != nil {
 			return
 		}
@@ -63,7 +64,7 @@ type MissionExecutor interface {
 	Capabilities() []string
 }
 
-func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor) error {
+func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, frameDemand *frameDemand) error {
 	connection, err := grpc.NewClient(cfg.GroundStationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("create ground-station client: %w", err)
@@ -79,7 +80,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	now := time.Now().UTC()
 	capabilities := append(executor.Capabilities(), missionExecutor.Capabilities()...)
 	if cfg.PerceptionEnabled() {
-		capabilities = append(capabilities, "perception:object_detection:v1", "perception:health:v1")
+		capabilities = append(capabilities, "perception:object_detection:v1", "perception:health:v1", "perception:frame_subscription:v1")
 	}
 	if err := stream.Send(&pb.AgentToGroundStation{
 		SessionId: sessionID,
@@ -108,7 +109,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	perceptionContext, cancelPerception := context.WithCancel(ctx)
 	defer cancelPerception()
 	if cfg.PerceptionEnabled() {
-		go runPerception(perceptionContext, logger, client, cfg, localIdentity, sessionID, perceptionOutputs)
+		go runPerception(perceptionContext, logger, client, cfg, localIdentity, sessionID, perceptionOutputs, frameDemand)
 	}
 
 	receiveErrors := make(chan error, 1)
@@ -184,6 +185,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 			}
 			go missionExecutor.Execute(ctx, vehicle.MissionOperation{OperationID: operation.GetOperationId(), RunID: operation.GetMissionRunId(), Type: operationType, MissionPlanJSON: operation.GetMissionPlanJson()})
 		case update := <-missionExecutor.Updates():
+			frameDemand.setMissionState(update.RunID, update.State)
 			if err := sendMissionUpdate(stream, sessionID, update); err != nil {
 				return err
 			}

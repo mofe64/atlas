@@ -34,8 +34,14 @@ Native app:
 ```sh
 nvm use 22.13.1
 npm install
-npm run tauri dev
+npm run tauri:dev:isolated
 ```
+
+The isolated command stores development state at
+`../.atlas-run/native-dev/atlas.db`, which is ignored by Git and cannot mutate
+the normal installed application's database. An explicitly supplied absolute
+`ATLAS_SQLITE_PATH` still takes precedence. Use `npm run tauri dev` only when
+you deliberately want the platform application-data database.
 
 Agent on the same machine for a loopback smoke test:
 
@@ -97,7 +103,9 @@ ATLAS_GROUND_STATION_LISTEN_ADDR=127.0.0.1:7443 npm run tauri dev
 2. The Go agent loads or creates stable installation and drone IDs.
 3. The agent opens a bidirectional session and sends registration first.
 4. SQLite upserts the drone and agent, creates or reuses their active binding,
-   closes any superseded communication link, and creates the new link.
+    closes any superseded communication link, and creates the new link.
+   Archived drone identities reject registration until an operator restores
+   them; each rejected attempt is recorded as a lifecycle event.
 5. Rust returns the local agent, drone, binding, and communication-link IDs.
 6. The agent sends a heartbeat every five seconds until the stream ends.
 7. The agent samples its MAVSDK subscriptions and sends the latest telemetry
@@ -126,7 +134,13 @@ ATLAS_SQLITE_PATH=/absolute/path/to/atlas-sitl.db npm run tauri dev
 The normal platform application-data location remains the default when this
 variable is absent.
 
-Schema version 10 contains:
+For ordinary native development, prefer the repeatable isolated shortcut:
+
+```sh
+npm run tauri:dev:isolated
+```
+
+Schema version 12 contains:
 
 - `drones`
 - `vehicle_agents`
@@ -140,6 +154,7 @@ Schema version 10 contains:
 - `missions` (reusable operator definitions and template parameters)
 - `mission_plans`, `mission_items`, `mission_actions` (immutable generated outputs)
 - `mission_runs`, `mission_run_events` (durable upload, execution, error, and history lifecycle)
+- `drone_lifecycle_events` (archive, restore, and rejected archived reconnect audit)
 
 Mission definitions and executions are separate on purpose. Regenerating a plan
 adds a new plan row. Every upload creates a new run rather than mutating an

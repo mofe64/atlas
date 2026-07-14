@@ -1,4 +1,5 @@
 mod commands;
+mod drones;
 mod events;
 mod history;
 mod migrations;
@@ -21,7 +22,7 @@ pub(crate) use missions::{
     templates as mission_templates, ApplyTerrainProfileInput, CreateMissionInput,
     MissionPlanSnapshot, MissionSnapshot, MissionTemplate,
 };
-pub(crate) use registration::{RegisteredSession, RegistrationInput};
+pub(crate) use registration::{RegisteredSession, RegistrationInput, ARCHIVED_REGISTRATION_ERROR};
 pub(crate) use snapshots::AircraftTelemetrySnapshot;
 pub(crate) use snapshots::{FleetSnapshot, OperationsSnapshot};
 pub(crate) use telemetry::{

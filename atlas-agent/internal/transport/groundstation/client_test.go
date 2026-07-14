@@ -210,7 +210,7 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			ProtocolVersion:      "1",
 			HeartbeatInterval:    10 * time.Millisecond,
 			VehicleType:          "multicopter",
-		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor)
+		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor, newFrameDemand())
 	}()
 
 	select {
@@ -326,10 +326,19 @@ func TestPerceptionUsesIndependentHardwareNeutralStream(t *testing.T) {
 		Model: perception.ModelIdentity{Name: "atlas-objects", Version: "1"},
 	}
 	done := make(chan error, 1)
+	demand := newFrameDemand()
+	if err := demand.applySubscription(&pb.PerceptionFrameSubscription{
+		SubscriptionId:  "view-1",
+		Purpose:         "live_view",
+		Action:          pb.PerceptionFrameSubscriptionAction_PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW,
+		LeaseDurationMs: 7_000,
+	}, now); err != nil {
+		t.Fatalf("start frame demand: %v", err)
+	}
 	go func() {
 		done <- streamPerception(ctx, pb.NewGroundStationServiceClient(connection), config.Config{
 			PerceptionProvider: "deepstream",
-		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, "session-1", perception.Outputs{Frames: frames, Health: health})
+		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, "session-1", perception.Outputs{Frames: frames, Health: health}, demand)
 	}()
 
 	registration := <-recorder.messages

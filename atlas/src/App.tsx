@@ -2,13 +2,17 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FleetPage } from "./fleet/FleetPage";
 import { HistoryPage } from "./history/HistoryPage";
+import { InspectionPayloadControl } from "./missions/MissionPayloadControl";
+import type { MissionRun } from "./missions/missionTypes";
 import type { ConnectionStatus, FleetSnapshot, NativeState, Nullable, StatusTone } from "./operationsTypes";
+import { LiveVideo } from "./video/LiveVideo";
 import "./App.css";
 
 const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
 const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
 
 type WorkspaceView = "fleet" | "aircraft" | "missions" | "mission-execution" | "history";
+type AircraftSection = "overview" | "live" | "missions" | "settings";
 
 type GroundStationSnapshot = {
   listenAddress: string;
@@ -136,6 +140,8 @@ function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("fleet");
   const [selectedDroneId, setSelectedDroneId] = useState<string>();
   const [selectedMissionId, setSelectedMissionId] = useState<string>();
+  const [aircraftSection, setAircraftSection] = useState<AircraftSection>("overview");
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -143,7 +149,7 @@ function App() {
     async function refresh() {
       try {
         const [nextFleet, nextSnapshot] = await Promise.all([
-          invoke<FleetSnapshot>("fleet_snapshot"),
+          invoke<FleetSnapshot>("fleet_snapshot", { includeArchived: showArchived }),
           selectedDroneId
             ? invoke<GroundStationSnapshot>("vehicle_operations_snapshot", { droneId: selectedDroneId })
             : invoke<GroundStationSnapshot>("ground_station_snapshot"),
@@ -164,11 +170,15 @@ function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [selectedDroneId]);
+  }, [selectedDroneId, showArchived]);
 
   const heartbeat = formatRelativeTime(snapshot.lastHeartbeatAtUnixMs);
   const view = operatorView(snapshot, nativeState, heartbeat);
-  const fleetView = fleetSystemView(fleet, nativeState);
+  const operationalAircraft = fleet.aircraft.filter((aircraft) => aircraft.vehicleStatus !== "archived");
+  const visibleAircraft = showArchived
+    ? fleet.aircraft.filter((aircraft) => aircraft.vehicleStatus === "archived")
+    : operationalAircraft;
+  const fleetView = fleetSystemView({ ...fleet, aircraft: operationalAircraft }, nativeState);
   const hasAircraft = Boolean(snapshot.droneId || snapshot.droneName);
   const sessionState = nativeState !== "available"
     ? nativeState === "starting" ? "Checking" : "Unknown"
@@ -191,6 +201,7 @@ function App() {
   const sessionDetail = nativeState === "available"
     ? snapshot.sessionId ? compactIdentifier(snapshot.sessionId) : "No active session"
     : "Live state is not available";
+  const selectedAircraft = fleet.aircraft.find((aircraft) => aircraft.droneId === selectedDroneId);
 
   return (
     <div className="operations-shell">
@@ -242,12 +253,19 @@ function App() {
 
       {workspaceView === "fleet" ? (
         <FleetPage
-          aircraft={fleet.aircraft}
+          aircraft={visibleAircraft}
           generatedAtUnixMs={fleet.generatedAtUnixMs}
           nativeState={nativeState}
           listenAddress={snapshot.listenAddress}
+          showArchived={showArchived}
+          onShowArchivedChange={setShowArchived}
           onOpenAircraft={(droneId) => {
             setSelectedDroneId(droneId);
+            setAircraftSection(
+              visibleAircraft.find((aircraft) => aircraft.droneId === droneId)?.vehicleStatus === "archived"
+                ? "settings"
+                : "overview",
+            );
             setWorkspaceView("aircraft");
           }}
           onOpenHistory={(droneId) => {
@@ -259,7 +277,7 @@ function App() {
         <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading mission map…</p></main>}>
           <MissionPage
             nativeAvailable={nativeState === "available"}
-            fleetAircraft={fleet.aircraft}
+            fleetAircraft={operationalAircraft}
             preferredDroneId={selectedDroneId}
             onMissionReady={(missionId) => {
               setSelectedMissionId(missionId);
@@ -288,11 +306,11 @@ function App() {
         <button type="button" className="back-to-fleet" onClick={() => setWorkspaceView("fleet")}>
           <span aria-hidden="true">←</span> Fleet
         </button>
-        <section className="aircraft-overview" aria-labelledby="aircraft-title">
+        <section className="aircraft-overview aircraft-overview--workspace" aria-labelledby="aircraft-title">
           <div className="overview-copy">
-            <p className="eyebrow">Drone overview</p>
+            <p className="eyebrow">{aircraftSectionLabel(aircraftSection)}</p>
             <h1 id="aircraft-title">{view.title}</h1>
-            <p className="overview-guidance">{view.guidance}</p>
+            <p className="overview-guidance">{aircraftSectionGuidance(aircraftSection, view.guidance)}</p>
           </div>
 
           <div className={`state-readout state-readout--${view.tone}`}>
@@ -302,6 +320,22 @@ function App() {
           </div>
         </section>
 
+        <section className="aircraft-context-strip" aria-label="Selected aircraft context">
+          <StatusItem label="Ground link" value={view.statusLabel} detail={groundLinkDetail} tone={view.tone} />
+          <StatusItem label="Aircraft" value={flightState(snapshot.telemetry?.armed, snapshot.telemetry?.inAir, snapshot.telemetry?.landedState)} detail={displayEnum(snapshot.telemetry?.flightMode)} tone={snapshot.telemetry?.armed ? "warning" : "neutral"} />
+          <StatusItem label="Lifecycle" value={displayEnum(snapshot.vehicleStatus)} detail={snapshot.droneId ? compactIdentifier(snapshot.droneId) : "No aircraft identity"} tone={snapshot.vehicleStatus === "active" ? "positive" : "neutral"} />
+        </section>
+
+        <nav className="aircraft-section-nav" aria-label={`${view.title} workspace`}>
+          {(["overview", "live", "missions", "settings"] as AircraftSection[]).map((section) => (
+            <button key={section} type="button" className={aircraftSection === section ? "aircraft-section-nav__active" : undefined} aria-current={aircraftSection === section ? "page" : undefined} onClick={() => setAircraftSection(section)}>
+              {displayEnum(section)}
+            </button>
+          ))}
+          <button type="button" onClick={() => setWorkspaceView("history")}>History</button>
+        </nav>
+
+        {aircraftSection === "overview" && <>
         <section className="status-grid" aria-label="Live drone status">
           <StatusItem
             label="Ground link"
@@ -342,6 +376,37 @@ function App() {
         {nativeState === "unavailable" && <RecoveryNotice />}
 
         <ConnectionDetails snapshot={snapshot} />
+        </>}
+
+        {aircraftSection === "live" && (
+          <section className="aircraft-live-workspace" aria-label="Live aircraft inspection">
+            <div className="aircraft-live-video">
+              <LiveVideo nativeAvailable={nativeState === "available"} droneId={snapshot.droneId ?? undefined} />
+            </div>
+            <aside className="aircraft-live-control" aria-label="Inspection payload controls">
+              <InspectionPayloadControl aircraft={selectedAircraft} />
+            </aside>
+          </section>
+        )}
+
+        {aircraftSection === "missions" && snapshot.droneId && (
+          <AircraftMissionRuns
+            droneId={snapshot.droneId}
+            nativeAvailable={nativeState === "available"}
+            onOpenMission={(missionId) => {
+              setSelectedMissionId(missionId);
+              setWorkspaceView("mission-execution");
+            }}
+            onPlanMission={() => setWorkspaceView("missions")}
+          />
+        )}
+
+        {aircraftSection === "settings" && (
+          <AircraftSettings
+            snapshot={snapshot}
+            onLifecycleChanged={(operations) => setSnapshot((current) => ({ ...current, ...operations }))}
+          />
+        )}
       </main>
       )}
 
@@ -351,6 +416,179 @@ function App() {
       </footer>
     </div>
   );
+}
+
+function AircraftMissionRuns({
+  droneId,
+  nativeAvailable,
+  onOpenMission,
+  onPlanMission,
+}: {
+  droneId: string;
+  nativeAvailable: boolean;
+  onOpenMission: (missionId: string) => void;
+  onPlanMission: () => void;
+}) {
+  const [runs, setRuns] = useState<MissionRun[]>([]);
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    if (!nativeAvailable) return;
+    let active = true;
+    async function refresh() {
+      try {
+        const next = await invoke<MissionRun[]>("mission_run_history", { droneId, limit: 30 });
+        if (active) {
+          setRuns(next);
+          setError(undefined);
+        }
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
+    void refresh();
+    const interval = window.setInterval(refresh, 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [droneId, nativeAvailable]);
+
+  const activeRun = runs.find((run) => !["COMPLETED", "FAILED", "CANCELLED", "RTL"].includes(run.status));
+  const previousRuns = runs.filter((run) => run !== activeRun);
+
+  return (
+    <section className="aircraft-missions" aria-labelledby="aircraft-missions-title">
+      <header>
+        <div>
+          <p className="eyebrow">Aircraft assignment</p>
+          <h2 id="aircraft-missions-title">Missions</h2>
+        </div>
+        <button type="button" onClick={onPlanMission}>Plan a mission</button>
+      </header>
+      {error && <p className="aircraft-workspace-error" role="alert">{error}</p>}
+      {activeRun ? (
+        <article className="aircraft-active-run">
+          <div><span>Current assignment</span><strong>{activeRun.missionName}</strong><small>{displayEnum(activeRun.status)} · {Math.round(activeRun.progressPercent)}% complete</small></div>
+          <button type="button" onClick={() => onOpenMission(activeRun.missionId)}>Open execution</button>
+        </article>
+      ) : (
+        <p className="aircraft-workspace-empty">No mission is currently assigned. Inspection controls remain aircraft-owned until a mission begins.</p>
+      )}
+      <div className="aircraft-run-history">
+        <header><strong>Previous runs</strong><span>{previousRuns.length}</span></header>
+        {previousRuns.length > 0 ? previousRuns.map((run) => (
+          <button key={run.id} type="button" onClick={() => onOpenMission(run.missionId)}>
+            <span><strong>{run.missionName}</strong><small>{formatDateTime(run.createdAtUnixMs)}</small></span>
+            <span>{displayEnum(run.status)} · {Math.round(run.progressPercent)}%</span>
+          </button>
+        )) : <p>No previous mission runs are stored for this aircraft.</p>}
+      </div>
+    </section>
+  );
+}
+
+function AircraftSettings({
+  snapshot,
+  onLifecycleChanged,
+}: {
+  snapshot: GroundStationSnapshot;
+  onLifecycleChanged: (snapshot: Partial<GroundStationSnapshot>) => void;
+}) {
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
+  const archived = snapshot.vehicleStatus === "archived";
+  const connected = snapshot.connectionStatus === "connected";
+
+  async function changeLifecycle(action: "archive" | "restore") {
+    if (!snapshot.droneId || busy) return;
+    setBusy(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
+      const operations = await invoke<Partial<GroundStationSnapshot>>(
+        action === "archive" ? "archive_drone" : "restore_drone",
+        action === "archive"
+          ? { droneId: snapshot.droneId, reason: "operator archived aircraft from settings" }
+          : { droneId: snapshot.droneId },
+      );
+      onLifecycleChanged(operations);
+      setConfirmingArchive(false);
+      setNotice(action === "archive"
+        ? "Aircraft archived. Missions, telemetry, events, and command history remain available."
+        : "Aircraft restored. It will remain disconnected until Atlas Agent registers again.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="aircraft-settings" aria-labelledby="aircraft-settings-title">
+      <header>
+        <p className="eyebrow">Aircraft lifecycle</p>
+        <h2 id="aircraft-settings-title">Settings</h2>
+        <p>Identity and lifecycle actions affect this aircraft record, not its retained missions, telemetry, events, or command history.</p>
+      </header>
+      <dl>
+        <div><dt>Name</dt><dd>{snapshot.droneName || "Not reported"}</dd></div>
+        <div><dt>Drone ID</dt><dd>{snapshot.droneId || "Not reported"}</dd></div>
+        <div><dt>Vehicle type</dt><dd>{displayEnum(snapshot.vehicleType)}</dd></div>
+        <div><dt>Lifecycle</dt><dd>{displayEnum(snapshot.vehicleStatus)}</dd></div>
+        <div><dt>Binding</dt><dd>{snapshot.bindingId || "No binding"}</dd></div>
+      </dl>
+      <section className="aircraft-lifecycle-action">
+        <div>
+          <strong>{archived ? "Restore aircraft" : "Archive aircraft"}</strong>
+          <p>{archived
+            ? "Restoring makes this identity eligible to reconnect. It does not fabricate a link or binding."
+            : "Archiving is available only after the communication link is disconnected. Operational evidence is retained."}</p>
+        </div>
+        {archived ? (
+          <button type="button" disabled={busy} onClick={() => void changeLifecycle("restore")}>
+            {busy ? "Restoring…" : "Restore aircraft"}
+          </button>
+        ) : confirmingArchive ? (
+          <div className="aircraft-lifecycle-confirmation">
+            <p>This removes the aircraft from operational fleet views and blocks reconnects until it is restored.</p>
+            <div>
+              <button type="button" disabled={busy} onClick={() => setConfirmingArchive(false)}>Cancel</button>
+              <button type="button" className="aircraft-lifecycle-danger" disabled={busy} onClick={() => void changeLifecycle("archive")}>
+                {busy ? "Archiving…" : "Confirm archive"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" disabled={connected || busy || !snapshot.droneId} onClick={() => setConfirmingArchive(true)}>
+            {connected ? "Disconnect before archiving" : "Archive aircraft"}
+          </button>
+        )}
+      </section>
+      {error && <p className="aircraft-workspace-error" role="alert">{error}</p>}
+      {notice && <p className="aircraft-workspace-notice" role="status">{notice}</p>}
+    </section>
+  );
+}
+
+function aircraftSectionLabel(section: AircraftSection) {
+  if (section === "live") return "Live inspection";
+  if (section === "missions") return "Aircraft missions";
+  if (section === "settings") return "Aircraft settings";
+  return "Drone overview";
+}
+
+function aircraftSectionGuidance(section: AircraftSection, overviewGuidance: string) {
+  if (section === "live") return "Observe clean video and perception readiness first. Physical gimbal and zoom controls require an explicit, renewable inspection lease.";
+  if (section === "missions") return "Review the current assignment and retained execution history for this aircraft.";
+  if (section === "settings") return "Manage aircraft identity and service lifecycle without deleting operational history.";
+  return overviewGuidance;
+}
+
+function formatDateTime(value: number) {
+  return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(value);
 }
 
 function TelemetryPanel({ telemetry }: { telemetry?: AircraftTelemetry | null }) {
@@ -633,6 +871,16 @@ function operatorView(
       guidance: "Reopen Atlas to restore the local services required for vehicle operations.",
       stateDetail: "Local services are not responding.",
       tone: "critical",
+    };
+  }
+
+  if (snapshot.vehicleStatus === "archived") {
+    return {
+      title: snapshot.droneName || "Archived aircraft",
+      statusLabel: "Archived",
+      guidance: "This aircraft is outside operational fleet views and cannot reconnect until it is restored in Settings.",
+      stateDetail: "Operational history is retained locally.",
+      tone: "neutral",
     };
   }
 

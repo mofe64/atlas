@@ -73,8 +73,10 @@ type PerceptionSnapshot = {
 };
 
 type ParsedVideoFrame = { header: VideoFrameHeader; jpeg: Blob };
+type FrameSubscriptionState = "idle" | "requesting" | "active" | "waiting";
 
 const packetMagic = [0x41, 0x54, 0x56, 0x31];
+const frameSubscriptionLeaseMs = 12_000;
 
 export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
   const videoCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -86,6 +88,7 @@ export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
   const [detectionCount, setDetectionCount] = useState(0);
   const [alignmentDeltaMs, setAlignmentDeltaMs] = useState<number>();
   const [error, setError] = useState<string>();
+  const [frameSubscriptionState, setFrameSubscriptionState] = useState<FrameSubscriptionState>("idle");
 
   useEffect(() => {
     overlayEnabledRef.current = overlayEnabled;
@@ -104,6 +107,21 @@ export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
     let active = true;
     let lastSequence = 0;
     let lastStatsUpdate = 0;
+    const subscriptionId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+
+    async function updateFrameSubscription(command: "perception_frame_subscription_start" | "perception_frame_subscription_renew") {
+      try {
+        await invoke(command, {
+          droneId,
+          subscriptionId,
+          purpose: "live_view",
+          leaseDurationMs: frameSubscriptionLeaseMs,
+        });
+        if (active) setFrameSubscriptionState("active");
+      } catch {
+        if (active) setFrameSubscriptionState("waiting");
+      }
+    }
 
     async function readFrames() {
       while (active) {
@@ -149,6 +167,8 @@ export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
       }
     }
 
+    setFrameSubscriptionState("requesting");
+    void updateFrameSubscription("perception_frame_subscription_start");
     void invoke<VideoStreamSnapshot>("video_stream_start", { droneId })
       .then((snapshot) => {
         if (!active) return;
@@ -161,10 +181,20 @@ export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
         if (active) setError(messageFrom(reason));
       });
     const statusInterval = window.setInterval(() => void refreshStatus(), 1_000);
+    const subscriptionInterval = window.setInterval(
+      () => void updateFrameSubscription("perception_frame_subscription_renew"),
+      5_000,
+    );
 
     return () => {
       active = false;
       window.clearInterval(statusInterval);
+      window.clearInterval(subscriptionInterval);
+      void invoke("perception_frame_subscription_stop", {
+        droneId,
+        subscriptionId,
+        purpose: "live_view",
+      }).catch(() => undefined);
       void invoke("video_stream_stop", { droneId }).catch(() => undefined);
     };
   }, [droneId, nativeAvailable]);
@@ -201,6 +231,7 @@ export function LiveVideo({ nativeAvailable, droneId }: LiveVideoProps) {
           <VideoMetric label="Provider" value={perception?.provider?.toUpperCase() || "OFFLINE"} />
           <VideoMetric label="Accelerator" value={sourceHealth?.accelerator || "—"} />
           <VideoMetric label="Inference" value={sourceHealth?.inferenceReady ? `${sourceHealth.inferenceFps.toFixed(1)} FPS` : "NOT READY"} />
+          <VideoMetric label="Frame demand" value={frameSubscriptionLabel(frameSubscriptionState)} />
           <VideoMetric label="Detections" value={overlayEnabled ? String(detectionCount) : "HIDDEN"} />
           <VideoMetric label="Alignment" value={alignmentDeltaMs == null ? "NO MATCH" : `${signed(alignmentDeltaMs)} MS`} />
           <VideoMetric label="Playout" value={stream ? `${stream.playoutDelayMs} MS` : "—"} />
@@ -291,5 +322,11 @@ function detectionColour(classId: number) {
 
 function clamp(value: number) { return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)); }
 function signed(value: number) { return value > 0 ? `+${value}` : String(value); }
+function frameSubscriptionLabel(state: FrameSubscriptionState) {
+  if (state === "active") return "LEASED";
+  if (state === "waiting") return "WAITING";
+  if (state === "requesting") return "REQUESTING";
+  return "OFF";
+}
 function wait(milliseconds: number) { return new Promise((resolve) => window.setTimeout(resolve, milliseconds)); }
 function messageFrom(reason: unknown) { return reason instanceof Error ? reason.message : String(reason); }

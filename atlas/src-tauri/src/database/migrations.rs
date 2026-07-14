@@ -6,7 +6,7 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
     let current_version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|error| format!("read local database schema version: {error}"))?;
-    if current_version > 11 {
+    if current_version > 12 {
         return Err(format!(
             "local database schema version {current_version} is newer than this Atlas build"
         ));
@@ -604,6 +604,31 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
                 "#,
             )
             .map_err(|error| format!("apply local database migration 11: {error}"))?;
+    }
+    if current_version < 12 {
+        connection
+            .execute_batch(
+                r#"
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE drone_lifecycle_events (
+                    id TEXT PRIMARY KEY,
+                    drone_id TEXT NOT NULL REFERENCES drones(id) ON DELETE RESTRICT,
+                    event_type TEXT NOT NULL
+                        CHECK (event_type IN ('archived', 'restored',
+                                              'archived_reconnect_rejected')),
+                    reason TEXT NOT NULL DEFAULT '',
+                    occurred_at_unix_ms INTEGER NOT NULL,
+                    details_json TEXT
+                );
+                CREATE INDEX drone_lifecycle_events_drone_occurred
+                    ON drone_lifecycle_events(drone_id, occurred_at_unix_ms DESC);
+
+                PRAGMA user_version = 12;
+                COMMIT;
+                "#,
+            )
+            .map_err(|error| format!("apply local database migration 12: {error}"))?;
     }
     Ok(())
 }

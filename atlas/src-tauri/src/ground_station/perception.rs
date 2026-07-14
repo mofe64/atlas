@@ -18,8 +18,9 @@ use crate::database::LocalDatabase;
 use super::{
     proto::pb::{
         agent_perception, ground_station_perception, AgentPerception, GroundStationPerception,
-        NormalizedBoundingBox, PerceptionDetection, PerceptionFrame, PerceptionHealth,
-        PerceptionModelIdentity, PerceptionStreamAccepted,
+        NormalizedBoundingBox, PerceptionDetection, PerceptionFrame, PerceptionFrameSubscription,
+        PerceptionFrameSubscriptionAction, PerceptionHealth, PerceptionModelIdentity,
+        PerceptionStreamAccepted,
     },
     unix_time_ms,
 };
@@ -30,6 +31,8 @@ const MAX_ATTRIBUTES_BYTES: usize = 64 * 1024;
 const STALE_AFTER_MS: i64 = 3_000;
 const PERCEPTION_HISTORY_MAX_FRAMES: usize = 240;
 const PERCEPTION_HISTORY_MAX_AGE_MS: i64 = 10_000;
+const MINIMUM_FRAME_SUBSCRIPTION_LEASE_MS: i64 = 3_000;
+const MAXIMUM_FRAME_SUBSCRIPTION_LEASE_MS: i64 = 30_000;
 
 pub(super) type PerceptionResponseStream =
     Pin<Box<dyn Stream<Item = Result<GroundStationPerception, Status>> + Send + 'static>>;
@@ -49,6 +52,7 @@ struct StreamState {
     connected_at_unix_ms: i64,
     last_received_at_unix_ms: i64,
     sources: HashMap<String, PerceptionSourceSnapshot>,
+    outbound: mpsc::Sender<Result<GroundStationPerception, Status>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -150,6 +154,7 @@ impl PerceptionStore {
         stream_id: &str,
         provider: &str,
         now: i64,
+        outbound: mpsc::Sender<Result<GroundStationPerception, Status>>,
     ) -> Result<(), Status> {
         let mut streams = self
             .streams
@@ -166,6 +171,7 @@ impl PerceptionStore {
                 connected_at_unix_ms: now,
                 last_received_at_unix_ms: now,
                 sources: HashMap::new(),
+                outbound,
             },
         );
         Ok(())
@@ -285,6 +291,84 @@ impl PerceptionStore {
         })
     }
 
+    pub(crate) async fn start_or_renew_frame_subscription(
+        &self,
+        drone_id: &str,
+        subscription_id: &str,
+        purpose: &str,
+        lease_duration_ms: i64,
+    ) -> Result<(), String> {
+        if !(MINIMUM_FRAME_SUBSCRIPTION_LEASE_MS..=MAXIMUM_FRAME_SUBSCRIPTION_LEASE_MS)
+            .contains(&lease_duration_ms)
+        {
+            return Err("perception frame lease must be between 3000 and 30000 ms".into());
+        }
+        self.send_frame_subscription(
+            drone_id,
+            subscription_id,
+            purpose,
+            PerceptionFrameSubscriptionAction::StartOrRenew,
+            lease_duration_ms,
+        )
+        .await
+    }
+
+    pub(crate) async fn stop_frame_subscription(
+        &self,
+        drone_id: &str,
+        subscription_id: &str,
+        purpose: &str,
+    ) -> Result<(), String> {
+        self.send_frame_subscription(
+            drone_id,
+            subscription_id,
+            purpose,
+            PerceptionFrameSubscriptionAction::Stop,
+            0,
+        )
+        .await
+    }
+
+    async fn send_frame_subscription(
+        &self,
+        drone_id: &str,
+        subscription_id: &str,
+        purpose: &str,
+        action: PerceptionFrameSubscriptionAction,
+        lease_duration_ms: i64,
+    ) -> Result<(), String> {
+        if subscription_id.trim().is_empty() {
+            return Err("perception subscription id is required".into());
+        }
+        if purpose != "live_view" {
+            return Err("unsupported perception subscription purpose".into());
+        }
+        let outbound = {
+            let streams = self
+                .streams
+                .read()
+                .map_err(|_| "perception state lock was poisoned".to_string())?;
+            let stream = streams
+                .get(drone_id)
+                .filter(|stream| stream.status == "connected")
+                .ok_or_else(|| "aircraft perception stream is not connected".to_string())?;
+            stream.outbound.clone()
+        };
+        outbound
+            .send(Ok(GroundStationPerception {
+                payload: Some(ground_station_perception::Payload::FrameSubscription(
+                    PerceptionFrameSubscription {
+                        subscription_id: subscription_id.to_string(),
+                        purpose: purpose.to_string(),
+                        action: action as i32,
+                        lease_duration_ms,
+                    },
+                )),
+            }))
+            .await
+            .map_err(|_| "aircraft perception response stream is closed".to_string())
+    }
+
     /// Matches a delayed native video frame to recent perception using only
     /// ground-station clock values. Subtracting measured inference latency
     /// avoids requiring synchronized clocks between the aircraft and operator.
@@ -373,6 +457,7 @@ async fn run_stream(
         &registration.stream_id,
         &registration.provider,
         now,
+        outbound.clone(),
     )?;
     let result = run_registered_stream(
         &store,
@@ -648,8 +733,9 @@ mod alignment_tests {
     #[test]
     fn alignment_uses_native_receive_time_and_inference_latency() {
         let store = PerceptionStore::default();
+        let (outbound, _responses) = mpsc::channel(2);
         store
-            .register("session-1", "drone-1", "stream-1", "hailo", 1_000)
+            .register("session-1", "drone-1", "stream-1", "hailo", 1_000, outbound)
             .expect("register perception");
         store
             .record_frame(
@@ -683,5 +769,36 @@ mod alignment_tests {
         assert!(store
             .aligned_frame("drone-1", "a8-main", 1_300, 0, 10)
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn frame_subscription_is_delivered_to_the_matching_agent_stream() {
+        let store = PerceptionStore::default();
+        let (outbound, mut responses) = mpsc::channel(2);
+        store
+            .register("session-1", "drone-1", "stream-1", "hailo", 1_000, outbound)
+            .expect("register perception");
+        store
+            .start_or_renew_frame_subscription("drone-1", "view-1", "live_view", 12_000)
+            .await
+            .expect("start frame subscription");
+        let response = responses
+            .recv()
+            .await
+            .expect("subscription response")
+            .expect("valid subscription response");
+        let subscription = response
+            .payload
+            .and_then(|payload| match payload {
+                ground_station_perception::Payload::FrameSubscription(value) => Some(value),
+                _ => None,
+            })
+            .expect("frame subscription payload");
+        assert_eq!(subscription.subscription_id, "view-1");
+        assert_eq!(subscription.lease_duration_ms, 12_000);
+        assert_eq!(
+            subscription.action(),
+            PerceptionFrameSubscriptionAction::StartOrRenew
+        );
     }
 }

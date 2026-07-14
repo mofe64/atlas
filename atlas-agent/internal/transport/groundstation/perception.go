@@ -14,10 +14,10 @@ import (
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb"
 )
 
-func runPerception(ctx context.Context, logger *slog.Logger, client pb.GroundStationServiceClient, cfg config.Config, localIdentity identity.Identity, sessionID string, outputs perception.Outputs) {
+func runPerception(ctx context.Context, logger *slog.Logger, client pb.GroundStationServiceClient, cfg config.Config, localIdentity identity.Identity, sessionID string, outputs perception.Outputs, demand *frameDemand) {
 	backoff := minimumRetry
 	for ctx.Err() == nil {
-		err := streamPerception(ctx, client, cfg, localIdentity, sessionID, outputs)
+		err := streamPerception(ctx, client, cfg, localIdentity, sessionID, outputs, demand)
 		if ctx.Err() != nil {
 			return
 		}
@@ -36,12 +36,13 @@ func runPerception(ctx context.Context, logger *slog.Logger, client pb.GroundSta
 	}
 }
 
-func streamPerception(ctx context.Context, client pb.GroundStationServiceClient, cfg config.Config, localIdentity identity.Identity, sessionID string, outputs perception.Outputs) error {
+func streamPerception(ctx context.Context, client pb.GroundStationServiceClient, cfg config.Config, localIdentity identity.Identity, sessionID string, outputs perception.Outputs, demand *frameDemand) error {
 	stream, err := client.OpenPerceptionStream(ctx)
 	if err != nil {
 		return fmt.Errorf("open perception stream: %w", err)
 	}
 	defer stream.CloseSend()
+	defer demand.clearSubscriptions()
 	streamID := identity.NewID()
 	if err := stream.Send(&pb.AgentPerception{
 		SessionId: sessionID,
@@ -51,7 +52,7 @@ func streamPerception(ctx context.Context, client pb.GroundStationServiceClient,
 			InstallationId:   localIdentity.InstallationID,
 			ProtocolVersion:  perception.RuntimeProtocolVersion,
 			Provider:         cfg.PerceptionProvider,
-			Capabilities:     []string{"object_detection:v1", "health:v1"},
+			Capabilities:     []string{"object_detection:v1", "health:v1", "frame_subscription:v1"},
 			ObservedAtUnixMs: time.Now().UTC().UnixMilli(),
 		}},
 	}); err != nil {
@@ -67,12 +68,16 @@ func streamPerception(ctx context.Context, client pb.GroundStationServiceClient,
 	}
 
 	receiveErrors := make(chan error, 1)
+	subscriptionUpdates := make(chan *pb.PerceptionFrameSubscription, 8)
 	go func() {
 		for {
-			_, err := stream.Recv()
+			message, err := stream.Recv()
 			if err != nil {
 				receiveErrors <- err
 				return
+			}
+			if subscription := message.GetFrameSubscription(); subscription != nil {
+				subscriptionUpdates <- subscription
 			}
 		}
 	}()
@@ -88,9 +93,16 @@ func streamPerception(ctx context.Context, client pb.GroundStationServiceClient,
 				return errors.New("ground station closed perception stream")
 			}
 			return err
+		case subscription := <-subscriptionUpdates:
+			if err := demand.applySubscription(subscription, time.Now()); err != nil {
+				return fmt.Errorf("apply perception frame subscription: %w", err)
+			}
 		case frame, ok := <-frames:
 			if !ok {
 				frames = nil
+				continue
+			}
+			if !demand.active(time.Now()) {
 				continue
 			}
 			if err := stream.Send(perceptionFrameMessage(sessionID, localIdentity.DroneID, frame)); err != nil {

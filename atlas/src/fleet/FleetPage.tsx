@@ -6,6 +6,8 @@ type FleetPageProps = {
   generatedAtUnixMs?: number;
   nativeState: NativeState;
   listenAddress: string;
+  showArchived: boolean;
+  onShowArchivedChange: (showArchived: boolean) => void;
   onOpenAircraft: (droneId: string) => void;
   onOpenHistory: (droneId: string) => void;
 };
@@ -15,6 +17,8 @@ export function FleetPage({
   generatedAtUnixMs,
   nativeState,
   listenAddress,
+  showArchived,
+  onShowArchivedChange,
   onOpenAircraft,
   onOpenHistory,
 }: FleetPageProps) {
@@ -26,22 +30,41 @@ export function FleetPage({
     <main className="fleet-workspace" id="main-content">
       <header className="fleet-heading">
         <div>
-          <p className="eyebrow">Local operations</p>
-          <h1>Fleet</h1>
+          <p className="eyebrow">{showArchived ? "Retained aircraft" : "Local operations"}</p>
+          <h1>{showArchived ? "Archive" : "Fleet"}</h1>
           <p>
-            Drones registered with this ground station, ordered by most recent telemetry.
+            {showArchived
+              ? "Aircraft removed from operations. Their missions, telemetry, events, and command history remain available."
+              : "Drones registered with this ground station, ordered by most recent telemetry."}
           </p>
         </div>
-        <span className="fleet-updated">
-          {generatedAtUnixMs ? `Updated ${formatRelativeTime(generatedAtUnixMs).toLowerCase()}` : "Checking local fleet"}
-        </span>
+        <div className="fleet-heading__controls">
+          <div className="fleet-view-switch" aria-label="Fleet lifecycle filter">
+            <button type="button" className={!showArchived ? "fleet-view-switch__active" : undefined} aria-pressed={!showArchived} onClick={() => onShowArchivedChange(false)}>Operational</button>
+            <button type="button" className={showArchived ? "fleet-view-switch__active" : undefined} aria-pressed={showArchived} onClick={() => onShowArchivedChange(true)}>Archived</button>
+          </div>
+          <span className="fleet-updated">
+            {generatedAtUnixMs ? `Updated ${formatRelativeTime(generatedAtUnixMs).toLowerCase()}` : "Checking local fleet"}
+          </span>
+        </div>
       </header>
 
       <section className="fleet-summary" aria-label="Fleet summary">
-        <FleetMetric label="Drones" value={aircraft.length} />
-        <FleetMetric label="Connected" value={connected} tone={connected > 0 ? "positive" : "neutral"} />
-        <FleetMetric label="Link alerts" value={linkAlerts} tone={linkAlerts > 0 ? "warning" : "neutral"} />
-        <FleetMetric label="Airborne" value={airborne} tone={airborne > 0 ? "positive" : "neutral"} />
+        {showArchived ? (
+          <>
+            <FleetMetric label="Archived" value={aircraft.length} />
+            <FleetMetric label="History retained" value={aircraft.length} tone={aircraft.length > 0 ? "positive" : "neutral"} />
+            <FleetMetric label="Active links" value={connected} tone={connected > 0 ? "warning" : "neutral"} />
+            <FleetMetric label="In operations" value={0} />
+          </>
+        ) : (
+          <>
+            <FleetMetric label="Drones" value={aircraft.length} />
+            <FleetMetric label="Connected" value={connected} tone={connected > 0 ? "positive" : "neutral"} />
+            <FleetMetric label="Link alerts" value={linkAlerts} tone={linkAlerts > 0 ? "warning" : "neutral"} />
+            <FleetMetric label="Airborne" value={airborne} tone={airborne > 0 ? "positive" : "neutral"} />
+          </>
+        )}
       </section>
 
       {nativeState === "unavailable" && (
@@ -51,7 +74,19 @@ export function FleetPage({
         </section>
       )}
 
-      {nativeState !== "unavailable" && aircraft.length === 0 && (
+      {nativeState !== "unavailable" && aircraft.length === 0 && showArchived && (
+        <section className="fleet-empty" aria-labelledby="fleet-empty-title">
+          <div>
+            <p className="eyebrow">No archived aircraft</p>
+            <h2 id="fleet-empty-title">Archive is empty</h2>
+          </div>
+          <div>
+            <p>Archived aircraft appear here after they are disconnected and deliberately removed from operational fleet views.</p>
+          </div>
+        </section>
+      )}
+
+      {nativeState !== "unavailable" && aircraft.length === 0 && !showArchived && (
         <section className="fleet-empty" aria-labelledby="fleet-empty-title">
           <div>
             <p className="eyebrow">No registered drones</p>
@@ -75,8 +110,8 @@ export function FleetPage({
       {aircraft.length > 0 && (
         <section className="fleet-list" aria-labelledby="fleet-list-title">
           <header>
-            <h2 id="fleet-list-title">Drones</h2>
-            <span>{aircraft.length} registered locally</span>
+            <h2 id="fleet-list-title">{showArchived ? "Archived aircraft" : "Drones"}</h2>
+            <span>{aircraft.length} {showArchived ? "retained" : "registered locally"}</span>
           </header>
           <div className="fleet-list__columns" aria-hidden="true">
             <span>Drone</span>
@@ -94,6 +129,7 @@ export function FleetPage({
                 aircraft={item}
                 onOpen={() => item.droneId && onOpenAircraft(item.droneId)}
                 onOpenHistory={() => item.droneId && onOpenHistory(item.droneId)}
+                archived={showArchived}
               />
             ))}
           </div>
@@ -116,10 +152,12 @@ function FleetRow({
   aircraft,
   onOpen,
   onOpenHistory,
+  archived,
 }: {
   aircraft: FleetAircraft;
   onOpen: () => void;
   onOpenHistory: () => void;
+  archived: boolean;
 }) {
   const telemetry = aircraft.telemetry;
   const tone = connectionTone(aircraft.connectionStatus);
@@ -169,7 +207,7 @@ function FleetRow({
       />
       <div className="fleet-row__actions">
         <button type="button" className="text-action" onClick={onOpenHistory}>History</button>
-        <button type="button" className="primary-action" onClick={onOpen}>Open drone</button>
+        <button type="button" className="primary-action" onClick={onOpen}>{archived ? "Review" : "Open drone"}</button>
       </div>
     </article>
   );

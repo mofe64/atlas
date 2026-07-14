@@ -89,11 +89,11 @@ func TestActionExecutorMapsGimbalYawFrameAndAcknowledgement(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = executor.Close() })
 	configurePayloadForManualTest(executor, "run-1", 2)
-	if _, err := executor.Execute(context.Background(), "payload-begin-1", "payload_control_begin", `{"missionRunId":"run-1","controlSessionId":"session-1","leaseDurationMs":7000,"gimbalId":2}`); err != nil {
+	if _, err := executor.Execute(context.Background(), "payload-begin-1", "payload_control_begin", `{"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","leaseDurationMs":7000,"gimbalId":2}`); err != nil {
 		t.Fatalf("begin manual payload control: %v", err)
 	}
 
-	result, err := executor.Execute(context.Background(), "gimbal-command-1", "gimbal_set_angles", `{"missionRunId":"run-1","controlSessionId":"session-1","gimbalId":2,"pitchDegrees":-45,"yawDegrees":120,"yawFrame":"NORTH_LOCKED"}`)
+	result, err := executor.Execute(context.Background(), "gimbal-command-1", "gimbal_set_angles", `{"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","gimbalId":2,"pitchDegrees":-45,"yawDegrees":120,"yawFrame":"NORTH_LOCKED"}`)
 	if err != nil {
 		t.Fatalf("execute gimbal angles: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestActionExecutorReportsGimbalControlRejection(t *testing.T) {
 	t.Cleanup(func() { _ = executor.Close() })
 	configurePayloadForManualTest(executor, "run-1", 1)
 
-	result, err := executor.Execute(context.Background(), "payload-begin-denied", "payload_control_begin", `{"missionRunId":"run-1","controlSessionId":"session-1","leaseDurationMs":7000,"gimbalId":1}`)
+	result, err := executor.Execute(context.Background(), "payload-begin-denied", "payload_control_begin", `{"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","leaseDurationMs":7000,"gimbalId":1}`)
 	if err == nil {
 		t.Fatal("expected gimbal control rejection")
 	}

@@ -21,6 +21,55 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type PerceptionFrameSubscriptionAction int32
+
+const (
+	PerceptionFrameSubscriptionAction_PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED    PerceptionFrameSubscriptionAction = 0
+	PerceptionFrameSubscriptionAction_PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW PerceptionFrameSubscriptionAction = 1
+	PerceptionFrameSubscriptionAction_PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP           PerceptionFrameSubscriptionAction = 2
+)
+
+// Enum value maps for PerceptionFrameSubscriptionAction.
+var (
+	PerceptionFrameSubscriptionAction_name = map[int32]string{
+		0: "PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED",
+		1: "PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW",
+		2: "PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP",
+	}
+	PerceptionFrameSubscriptionAction_value = map[string]int32{
+		"PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED":    0,
+		"PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW": 1,
+		"PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP":           2,
+	}
+)
+
+func (x PerceptionFrameSubscriptionAction) Enum() *PerceptionFrameSubscriptionAction {
+	p := new(PerceptionFrameSubscriptionAction)
+	*p = x
+	return p
+}
+
+func (x PerceptionFrameSubscriptionAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PerceptionFrameSubscriptionAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_atlas_ground_station_proto_enumTypes[0].Descriptor()
+}
+
+func (PerceptionFrameSubscriptionAction) Type() protoreflect.EnumType {
+	return &file_atlas_ground_station_proto_enumTypes[0]
+}
+
+func (x PerceptionFrameSubscriptionAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PerceptionFrameSubscriptionAction.Descriptor instead.
+func (PerceptionFrameSubscriptionAction) EnumDescriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{0}
+}
+
 type VehicleCommandType int32
 
 const (
@@ -81,11 +130,11 @@ func (x VehicleCommandType) String() string {
 }
 
 func (VehicleCommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[0].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[1].Descriptor()
 }
 
 func (VehicleCommandType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[0]
+	return &file_atlas_ground_station_proto_enumTypes[1]
 }
 
 func (x VehicleCommandType) Number() protoreflect.EnumNumber {
@@ -94,7 +143,7 @@ func (x VehicleCommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VehicleCommandType.Descriptor instead.
 func (VehicleCommandType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{0}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{1}
 }
 
 type VehicleCommandUpdateType int32
@@ -151,11 +200,11 @@ func (x VehicleCommandUpdateType) String() string {
 }
 
 func (VehicleCommandUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[1].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[2].Descriptor()
 }
 
 func (VehicleCommandUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[1]
+	return &file_atlas_ground_station_proto_enumTypes[2]
 }
 
 func (x VehicleCommandUpdateType) Number() protoreflect.EnumNumber {
@@ -164,7 +213,7 @@ func (x VehicleCommandUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VehicleCommandUpdateType.Descriptor instead.
 func (VehicleCommandUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{1}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{2}
 }
 
 // Mission operations use the same durable request/update boundary as vehicle
@@ -214,11 +263,11 @@ func (x MissionOperationType) String() string {
 }
 
 func (MissionOperationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[2].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
 }
 
 func (MissionOperationType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[2]
+	return &file_atlas_ground_station_proto_enumTypes[3]
 }
 
 func (x MissionOperationType) Number() protoreflect.EnumNumber {
@@ -227,7 +276,7 @@ func (x MissionOperationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionOperationType.Descriptor instead.
 func (MissionOperationType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{2}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
 }
 
 type MissionRunUpdateType int32
@@ -305,11 +354,11 @@ func (x MissionRunUpdateType) String() string {
 }
 
 func (MissionRunUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[4].Descriptor()
 }
 
 func (MissionRunUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[3]
+	return &file_atlas_ground_station_proto_enumTypes[4]
 }
 
 func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
@@ -318,7 +367,7 @@ func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionRunUpdateType.Descriptor instead.
 func (MissionRunUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
 }
 
 type AgentToGroundStation struct {
@@ -711,6 +760,7 @@ type GroundStationPerception struct {
 	// Types that are valid to be assigned to Payload:
 	//
 	//	*GroundStationPerception_StreamAccepted
+	//	*GroundStationPerception_FrameSubscription
 	Payload       isGroundStationPerception_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -762,6 +812,15 @@ func (x *GroundStationPerception) GetStreamAccepted() *PerceptionStreamAccepted 
 	return nil
 }
 
+func (x *GroundStationPerception) GetFrameSubscription() *PerceptionFrameSubscription {
+	if x != nil {
+		if x, ok := x.Payload.(*GroundStationPerception_FrameSubscription); ok {
+			return x.FrameSubscription
+		}
+	}
+	return nil
+}
+
 type isGroundStationPerception_Payload interface {
 	isGroundStationPerception_Payload()
 }
@@ -770,7 +829,84 @@ type GroundStationPerception_StreamAccepted struct {
 	StreamAccepted *PerceptionStreamAccepted `protobuf:"bytes,1,opt,name=stream_accepted,json=streamAccepted,proto3,oneof"`
 }
 
+type GroundStationPerception_FrameSubscription struct {
+	FrameSubscription *PerceptionFrameSubscription `protobuf:"bytes,2,opt,name=frame_subscription,json=frameSubscription,proto3,oneof"`
+}
+
 func (*GroundStationPerception_StreamAccepted) isGroundStationPerception_Payload() {}
+
+func (*GroundStationPerception_FrameSubscription) isGroundStationPerception_Payload() {}
+
+// Native renews short consumer leases while a live view is mounted. The agent
+// keeps inference and health reporting active but suppresses high-rate frame
+// metadata when no subscription or active mission requires it.
+type PerceptionFrameSubscription struct {
+	state           protoimpl.MessageState            `protogen:"open.v1"`
+	SubscriptionId  string                            `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
+	Purpose         string                            `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
+	Action          PerceptionFrameSubscriptionAction `protobuf:"varint,3,opt,name=action,proto3,enum=atlas.groundstation.v1.PerceptionFrameSubscriptionAction" json:"action,omitempty"`
+	LeaseDurationMs int64                             `protobuf:"varint,4,opt,name=lease_duration_ms,json=leaseDurationMs,proto3" json:"lease_duration_ms,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PerceptionFrameSubscription) Reset() {
+	*x = PerceptionFrameSubscription{}
+	mi := &file_atlas_ground_station_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionFrameSubscription) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionFrameSubscription) ProtoMessage() {}
+
+func (x *PerceptionFrameSubscription) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionFrameSubscription.ProtoReflect.Descriptor instead.
+func (*PerceptionFrameSubscription) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *PerceptionFrameSubscription) GetSubscriptionId() string {
+	if x != nil {
+		return x.SubscriptionId
+	}
+	return ""
+}
+
+func (x *PerceptionFrameSubscription) GetPurpose() string {
+	if x != nil {
+		return x.Purpose
+	}
+	return ""
+}
+
+func (x *PerceptionFrameSubscription) GetAction() PerceptionFrameSubscriptionAction {
+	if x != nil {
+		return x.Action
+	}
+	return PerceptionFrameSubscriptionAction_PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED
+}
+
+func (x *PerceptionFrameSubscription) GetLeaseDurationMs() int64 {
+	if x != nil {
+		return x.LeaseDurationMs
+	}
+	return 0
+}
 
 type PerceptionStreamRegistration struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
@@ -786,7 +922,7 @@ type PerceptionStreamRegistration struct {
 
 func (x *PerceptionStreamRegistration) Reset() {
 	*x = PerceptionStreamRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[4]
+	mi := &file_atlas_ground_station_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -798,7 +934,7 @@ func (x *PerceptionStreamRegistration) String() string {
 func (*PerceptionStreamRegistration) ProtoMessage() {}
 
 func (x *PerceptionStreamRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[4]
+	mi := &file_atlas_ground_station_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -811,7 +947,7 @@ func (x *PerceptionStreamRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionStreamRegistration.ProtoReflect.Descriptor instead.
 func (*PerceptionStreamRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PerceptionStreamRegistration) GetStreamId() string {
@@ -866,7 +1002,7 @@ type PerceptionStreamAccepted struct {
 
 func (x *PerceptionStreamAccepted) Reset() {
 	*x = PerceptionStreamAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[5]
+	mi := &file_atlas_ground_station_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -878,7 +1014,7 @@ func (x *PerceptionStreamAccepted) String() string {
 func (*PerceptionStreamAccepted) ProtoMessage() {}
 
 func (x *PerceptionStreamAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[5]
+	mi := &file_atlas_ground_station_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -891,7 +1027,7 @@ func (x *PerceptionStreamAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionStreamAccepted.ProtoReflect.Descriptor instead.
 func (*PerceptionStreamAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PerceptionStreamAccepted) GetStreamId() string {
@@ -926,7 +1062,7 @@ type PerceptionFrame struct {
 
 func (x *PerceptionFrame) Reset() {
 	*x = PerceptionFrame{}
-	mi := &file_atlas_ground_station_proto_msgTypes[6]
+	mi := &file_atlas_ground_station_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -938,7 +1074,7 @@ func (x *PerceptionFrame) String() string {
 func (*PerceptionFrame) ProtoMessage() {}
 
 func (x *PerceptionFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[6]
+	mi := &file_atlas_ground_station_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -951,7 +1087,7 @@ func (x *PerceptionFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionFrame.ProtoReflect.Descriptor instead.
 func (*PerceptionFrame) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PerceptionFrame) GetSourceId() string {
@@ -1035,7 +1171,7 @@ type PerceptionModelIdentity struct {
 
 func (x *PerceptionModelIdentity) Reset() {
 	*x = PerceptionModelIdentity{}
-	mi := &file_atlas_ground_station_proto_msgTypes[7]
+	mi := &file_atlas_ground_station_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1047,7 +1183,7 @@ func (x *PerceptionModelIdentity) String() string {
 func (*PerceptionModelIdentity) ProtoMessage() {}
 
 func (x *PerceptionModelIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[7]
+	mi := &file_atlas_ground_station_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1060,7 +1196,7 @@ func (x *PerceptionModelIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionModelIdentity.ProtoReflect.Descriptor instead.
 func (*PerceptionModelIdentity) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PerceptionModelIdentity) GetName() string {
@@ -1098,7 +1234,7 @@ type PerceptionDetection struct {
 
 func (x *PerceptionDetection) Reset() {
 	*x = PerceptionDetection{}
-	mi := &file_atlas_ground_station_proto_msgTypes[8]
+	mi := &file_atlas_ground_station_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1110,7 +1246,7 @@ func (x *PerceptionDetection) String() string {
 func (*PerceptionDetection) ProtoMessage() {}
 
 func (x *PerceptionDetection) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[8]
+	mi := &file_atlas_ground_station_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1123,7 +1259,7 @@ func (x *PerceptionDetection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionDetection.ProtoReflect.Descriptor instead.
 func (*PerceptionDetection) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{8}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PerceptionDetection) GetTrackId() string {
@@ -1180,7 +1316,7 @@ type NormalizedBoundingBox struct {
 
 func (x *NormalizedBoundingBox) Reset() {
 	*x = NormalizedBoundingBox{}
-	mi := &file_atlas_ground_station_proto_msgTypes[9]
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1328,7 @@ func (x *NormalizedBoundingBox) String() string {
 func (*NormalizedBoundingBox) ProtoMessage() {}
 
 func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[9]
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1341,7 @@ func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedBoundingBox.ProtoReflect.Descriptor instead.
 func (*NormalizedBoundingBox) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{9}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *NormalizedBoundingBox) GetX() float64 {
@@ -1258,7 +1394,7 @@ type PerceptionHealth struct {
 
 func (x *PerceptionHealth) Reset() {
 	*x = PerceptionHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1270,7 +1406,7 @@ func (x *PerceptionHealth) String() string {
 func (*PerceptionHealth) ProtoMessage() {}
 
 func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1283,7 +1419,7 @@ func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionHealth.ProtoReflect.Descriptor instead.
 func (*PerceptionHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *PerceptionHealth) GetSourceId() string {
@@ -1401,7 +1537,7 @@ type AgentRegistration struct {
 
 func (x *AgentRegistration) Reset() {
 	*x = AgentRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1413,7 +1549,7 @@ func (x *AgentRegistration) String() string {
 func (*AgentRegistration) ProtoMessage() {}
 
 func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1426,7 +1562,7 @@ func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRegistration.ProtoReflect.Descriptor instead.
 func (*AgentRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AgentRegistration) GetRegistrationRequestId() string {
@@ -1507,7 +1643,7 @@ type DeviceProfile struct {
 
 func (x *DeviceProfile) Reset() {
 	*x = DeviceProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1519,7 +1655,7 @@ func (x *DeviceProfile) String() string {
 func (*DeviceProfile) ProtoMessage() {}
 
 func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1532,7 +1668,7 @@ func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceProfile.ProtoReflect.Descriptor instead.
 func (*DeviceProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *DeviceProfile) GetDeviceName() string {
@@ -1597,7 +1733,7 @@ type DroneProfile struct {
 
 func (x *DroneProfile) Reset() {
 	*x = DroneProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1609,7 +1745,7 @@ func (x *DroneProfile) String() string {
 func (*DroneProfile) ProtoMessage() {}
 
 func (x *DroneProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1622,7 +1758,7 @@ func (x *DroneProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DroneProfile.ProtoReflect.Descriptor instead.
 func (*DroneProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DroneProfile) GetDroneId() string {
@@ -1673,7 +1809,7 @@ type FlightControllerAttachment struct {
 
 func (x *FlightControllerAttachment) Reset() {
 	*x = FlightControllerAttachment{}
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1685,7 +1821,7 @@ func (x *FlightControllerAttachment) String() string {
 func (*FlightControllerAttachment) ProtoMessage() {}
 
 func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1698,7 +1834,7 @@ func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlightControllerAttachment.ProtoReflect.Descriptor instead.
 func (*FlightControllerAttachment) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *FlightControllerAttachment) GetTransport() string {
@@ -1745,7 +1881,7 @@ type AgentHeartbeat struct {
 
 func (x *AgentHeartbeat) Reset() {
 	*x = AgentHeartbeat{}
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1757,7 +1893,7 @@ func (x *AgentHeartbeat) String() string {
 func (*AgentHeartbeat) ProtoMessage() {}
 
 func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1770,7 +1906,7 @@ func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentHeartbeat.ProtoReflect.Descriptor instead.
 func (*AgentHeartbeat) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *AgentHeartbeat) GetObservedAtUnixMs() int64 {
@@ -1818,7 +1954,7 @@ type AircraftTelemetry struct {
 
 func (x *AircraftTelemetry) Reset() {
 	*x = AircraftTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1830,7 +1966,7 @@ func (x *AircraftTelemetry) String() string {
 func (*AircraftTelemetry) ProtoMessage() {}
 
 func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1843,7 +1979,7 @@ func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftTelemetry.ProtoReflect.Descriptor instead.
 func (*AircraftTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *AircraftTelemetry) GetObservedAtUnixMs() int64 {
@@ -2051,7 +2187,7 @@ type BatteryTelemetry struct {
 
 func (x *BatteryTelemetry) Reset() {
 	*x = BatteryTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2063,7 +2199,7 @@ func (x *BatteryTelemetry) String() string {
 func (*BatteryTelemetry) ProtoMessage() {}
 
 func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2076,7 +2212,7 @@ func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatteryTelemetry.ProtoReflect.Descriptor instead.
 func (*BatteryTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *BatteryTelemetry) GetId() uint32 {
@@ -2150,7 +2286,7 @@ type VehicleHealth struct {
 
 func (x *VehicleHealth) Reset() {
 	*x = VehicleHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2162,7 +2298,7 @@ func (x *VehicleHealth) String() string {
 func (*VehicleHealth) ProtoMessage() {}
 
 func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2175,7 +2311,7 @@ func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleHealth.ProtoReflect.Descriptor instead.
 func (*VehicleHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *VehicleHealth) GetGyrometerCalibrationOk() bool {
@@ -2238,7 +2374,7 @@ type RcStatus struct {
 
 func (x *RcStatus) Reset() {
 	*x = RcStatus{}
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2250,7 +2386,7 @@ func (x *RcStatus) String() string {
 func (*RcStatus) ProtoMessage() {}
 
 func (x *RcStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2263,7 +2399,7 @@ func (x *RcStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RcStatus.ProtoReflect.Descriptor instead.
 func (*RcStatus) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *RcStatus) GetAvailable() bool {
@@ -2299,7 +2435,7 @@ type HomePosition struct {
 
 func (x *HomePosition) Reset() {
 	*x = HomePosition{}
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2311,7 +2447,7 @@ func (x *HomePosition) String() string {
 func (*HomePosition) ProtoMessage() {}
 
 func (x *HomePosition) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2324,7 +2460,7 @@ func (x *HomePosition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HomePosition.ProtoReflect.Descriptor instead.
 func (*HomePosition) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *HomePosition) GetLatitude() float64 {
@@ -2369,7 +2505,7 @@ type GpsQuality struct {
 
 func (x *GpsQuality) Reset() {
 	*x = GpsQuality{}
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2381,7 +2517,7 @@ func (x *GpsQuality) String() string {
 func (*GpsQuality) ProtoMessage() {}
 
 func (x *GpsQuality) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2394,7 +2530,7 @@ func (x *GpsQuality) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpsQuality.ProtoReflect.Descriptor instead.
 func (*GpsQuality) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *GpsQuality) GetHdop() float64 {
@@ -2453,7 +2589,7 @@ type AgentStatusText struct {
 
 func (x *AgentStatusText) Reset() {
 	*x = AgentStatusText{}
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2465,7 +2601,7 @@ func (x *AgentStatusText) String() string {
 func (*AgentStatusText) ProtoMessage() {}
 
 func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2478,7 +2614,7 @@ func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStatusText.ProtoReflect.Descriptor instead.
 func (*AgentStatusText) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *AgentStatusText) GetObservedAtUnixMs() int64 {
@@ -2522,7 +2658,7 @@ type RegistrationAccepted struct {
 
 func (x *RegistrationAccepted) Reset() {
 	*x = RegistrationAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2534,7 +2670,7 @@ func (x *RegistrationAccepted) String() string {
 func (*RegistrationAccepted) ProtoMessage() {}
 
 func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2547,7 +2683,7 @@ func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegistrationAccepted.ProtoReflect.Descriptor instead.
 func (*RegistrationAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *RegistrationAccepted) GetAgentId() string {
@@ -2600,7 +2736,7 @@ type VehicleCommandRequest struct {
 
 func (x *VehicleCommandRequest) Reset() {
 	*x = VehicleCommandRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2612,7 +2748,7 @@ func (x *VehicleCommandRequest) String() string {
 func (*VehicleCommandRequest) ProtoMessage() {}
 
 func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2625,7 +2761,7 @@ func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandRequest.ProtoReflect.Descriptor instead.
 func (*VehicleCommandRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *VehicleCommandRequest) GetCommandId() string {
@@ -2687,7 +2823,7 @@ type VehicleCommandCancellation struct {
 
 func (x *VehicleCommandCancellation) Reset() {
 	*x = VehicleCommandCancellation{}
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2699,7 +2835,7 @@ func (x *VehicleCommandCancellation) String() string {
 func (*VehicleCommandCancellation) ProtoMessage() {}
 
 func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2712,7 +2848,7 @@ func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandCancellation.ProtoReflect.Descriptor instead.
 func (*VehicleCommandCancellation) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *VehicleCommandCancellation) GetCommandId() string {
@@ -2745,7 +2881,7 @@ type VehicleCommandUpdate struct {
 
 func (x *VehicleCommandUpdate) Reset() {
 	*x = VehicleCommandUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2757,7 +2893,7 @@ func (x *VehicleCommandUpdate) String() string {
 func (*VehicleCommandUpdate) ProtoMessage() {}
 
 func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2770,7 +2906,7 @@ func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandUpdate.ProtoReflect.Descriptor instead.
 func (*VehicleCommandUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *VehicleCommandUpdate) GetEventId() string {
@@ -2845,7 +2981,7 @@ type MissionOperationRequest struct {
 
 func (x *MissionOperationRequest) Reset() {
 	*x = MissionOperationRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2857,7 +2993,7 @@ func (x *MissionOperationRequest) String() string {
 func (*MissionOperationRequest) ProtoMessage() {}
 
 func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2870,7 +3006,7 @@ func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionOperationRequest.ProtoReflect.Descriptor instead.
 func (*MissionOperationRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *MissionOperationRequest) GetOperationId() string {
@@ -2944,7 +3080,7 @@ type MissionRunUpdate struct {
 
 func (x *MissionRunUpdate) Reset() {
 	*x = MissionRunUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2956,7 +3092,7 @@ func (x *MissionRunUpdate) String() string {
 func (*MissionRunUpdate) ProtoMessage() {}
 
 func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2969,7 +3105,7 @@ func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionRunUpdate.ProtoReflect.Descriptor instead.
 func (*MissionRunUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *MissionRunUpdate) GetEventId() string {
@@ -3085,10 +3221,16 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\fregistration\x18\x03 \x01(\v24.atlas.groundstation.v1.PerceptionStreamRegistrationH\x00R\fregistration\x12?\n" +
 	"\x05frame\x18\x04 \x01(\v2'.atlas.groundstation.v1.PerceptionFrameH\x00R\x05frame\x12B\n" +
 	"\x06health\x18\x05 \x01(\v2(.atlas.groundstation.v1.PerceptionHealthH\x00R\x06healthB\t\n" +
-	"\apayload\"\x81\x01\n" +
+	"\apayload\"\xe7\x01\n" +
 	"\x17GroundStationPerception\x12[\n" +
-	"\x0fstream_accepted\x18\x01 \x01(\v20.atlas.groundstation.v1.PerceptionStreamAcceptedH\x00R\x0estreamAcceptedB\t\n" +
-	"\apayload\"\xfe\x01\n" +
+	"\x0fstream_accepted\x18\x01 \x01(\v20.atlas.groundstation.v1.PerceptionStreamAcceptedH\x00R\x0estreamAccepted\x12d\n" +
+	"\x12frame_subscription\x18\x02 \x01(\v23.atlas.groundstation.v1.PerceptionFrameSubscriptionH\x00R\x11frameSubscriptionB\t\n" +
+	"\apayload\"\xdf\x01\n" +
+	"\x1bPerceptionFrameSubscription\x12'\n" +
+	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
+	"\apurpose\x18\x02 \x01(\tR\apurpose\x12Q\n" +
+	"\x06action\x18\x03 \x01(\x0e29.atlas.groundstation.v1.PerceptionFrameSubscriptionActionR\x06action\x12*\n" +
+	"\x11lease_duration_ms\x18\x04 \x01(\x03R\x0fleaseDurationMs\"\xfe\x01\n" +
 	"\x1cPerceptionStreamRegistration\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12'\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12)\n" +
@@ -3358,7 +3500,11 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\revidence_json\x18\f \x01(\tR\fevidenceJsonB\x13\n" +
 	"\x11_progress_percentB\x13\n" +
 	"\x11_current_waypointB\x12\n" +
-	"\x10_total_waypoints*\x83\x04\n" +
+	"\x10_total_waypoints*\xc1\x01\n" +
+	"!PerceptionFrameSubscriptionAction\x124\n" +
+	"0PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x127\n" +
+	"3PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW\x10\x01\x12-\n" +
+	")PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP\x10\x02*\x83\x04\n" +
 	"\x12VehicleCommandType\x12$\n" +
 	" VEHICLE_COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19VEHICLE_COMMAND_TYPE_HOLD\x10\x01\x12)\n" +
@@ -3427,83 +3573,87 @@ func file_atlas_ground_station_proto_rawDescGZIP() []byte {
 	return file_atlas_ground_station_proto_rawDescData
 }
 
-var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_atlas_ground_station_proto_goTypes = []any{
-	(VehicleCommandType)(0),              // 0: atlas.groundstation.v1.VehicleCommandType
-	(VehicleCommandUpdateType)(0),        // 1: atlas.groundstation.v1.VehicleCommandUpdateType
-	(MissionOperationType)(0),            // 2: atlas.groundstation.v1.MissionOperationType
-	(MissionRunUpdateType)(0),            // 3: atlas.groundstation.v1.MissionRunUpdateType
-	(*AgentToGroundStation)(nil),         // 4: atlas.groundstation.v1.AgentToGroundStation
-	(*GroundStationToAgent)(nil),         // 5: atlas.groundstation.v1.GroundStationToAgent
-	(*AgentPerception)(nil),              // 6: atlas.groundstation.v1.AgentPerception
-	(*GroundStationPerception)(nil),      // 7: atlas.groundstation.v1.GroundStationPerception
-	(*PerceptionStreamRegistration)(nil), // 8: atlas.groundstation.v1.PerceptionStreamRegistration
-	(*PerceptionStreamAccepted)(nil),     // 9: atlas.groundstation.v1.PerceptionStreamAccepted
-	(*PerceptionFrame)(nil),              // 10: atlas.groundstation.v1.PerceptionFrame
-	(*PerceptionModelIdentity)(nil),      // 11: atlas.groundstation.v1.PerceptionModelIdentity
-	(*PerceptionDetection)(nil),          // 12: atlas.groundstation.v1.PerceptionDetection
-	(*NormalizedBoundingBox)(nil),        // 13: atlas.groundstation.v1.NormalizedBoundingBox
-	(*PerceptionHealth)(nil),             // 14: atlas.groundstation.v1.PerceptionHealth
-	(*AgentRegistration)(nil),            // 15: atlas.groundstation.v1.AgentRegistration
-	(*DeviceProfile)(nil),                // 16: atlas.groundstation.v1.DeviceProfile
-	(*DroneProfile)(nil),                 // 17: atlas.groundstation.v1.DroneProfile
-	(*FlightControllerAttachment)(nil),   // 18: atlas.groundstation.v1.FlightControllerAttachment
-	(*AgentHeartbeat)(nil),               // 19: atlas.groundstation.v1.AgentHeartbeat
-	(*AircraftTelemetry)(nil),            // 20: atlas.groundstation.v1.AircraftTelemetry
-	(*BatteryTelemetry)(nil),             // 21: atlas.groundstation.v1.BatteryTelemetry
-	(*VehicleHealth)(nil),                // 22: atlas.groundstation.v1.VehicleHealth
-	(*RcStatus)(nil),                     // 23: atlas.groundstation.v1.RcStatus
-	(*HomePosition)(nil),                 // 24: atlas.groundstation.v1.HomePosition
-	(*GpsQuality)(nil),                   // 25: atlas.groundstation.v1.GpsQuality
-	(*AgentStatusText)(nil),              // 26: atlas.groundstation.v1.AgentStatusText
-	(*RegistrationAccepted)(nil),         // 27: atlas.groundstation.v1.RegistrationAccepted
-	(*VehicleCommandRequest)(nil),        // 28: atlas.groundstation.v1.VehicleCommandRequest
-	(*VehicleCommandCancellation)(nil),   // 29: atlas.groundstation.v1.VehicleCommandCancellation
-	(*VehicleCommandUpdate)(nil),         // 30: atlas.groundstation.v1.VehicleCommandUpdate
-	(*MissionOperationRequest)(nil),      // 31: atlas.groundstation.v1.MissionOperationRequest
-	(*MissionRunUpdate)(nil),             // 32: atlas.groundstation.v1.MissionRunUpdate
+	(PerceptionFrameSubscriptionAction)(0), // 0: atlas.groundstation.v1.PerceptionFrameSubscriptionAction
+	(VehicleCommandType)(0),                // 1: atlas.groundstation.v1.VehicleCommandType
+	(VehicleCommandUpdateType)(0),          // 2: atlas.groundstation.v1.VehicleCommandUpdateType
+	(MissionOperationType)(0),              // 3: atlas.groundstation.v1.MissionOperationType
+	(MissionRunUpdateType)(0),              // 4: atlas.groundstation.v1.MissionRunUpdateType
+	(*AgentToGroundStation)(nil),           // 5: atlas.groundstation.v1.AgentToGroundStation
+	(*GroundStationToAgent)(nil),           // 6: atlas.groundstation.v1.GroundStationToAgent
+	(*AgentPerception)(nil),                // 7: atlas.groundstation.v1.AgentPerception
+	(*GroundStationPerception)(nil),        // 8: atlas.groundstation.v1.GroundStationPerception
+	(*PerceptionFrameSubscription)(nil),    // 9: atlas.groundstation.v1.PerceptionFrameSubscription
+	(*PerceptionStreamRegistration)(nil),   // 10: atlas.groundstation.v1.PerceptionStreamRegistration
+	(*PerceptionStreamAccepted)(nil),       // 11: atlas.groundstation.v1.PerceptionStreamAccepted
+	(*PerceptionFrame)(nil),                // 12: atlas.groundstation.v1.PerceptionFrame
+	(*PerceptionModelIdentity)(nil),        // 13: atlas.groundstation.v1.PerceptionModelIdentity
+	(*PerceptionDetection)(nil),            // 14: atlas.groundstation.v1.PerceptionDetection
+	(*NormalizedBoundingBox)(nil),          // 15: atlas.groundstation.v1.NormalizedBoundingBox
+	(*PerceptionHealth)(nil),               // 16: atlas.groundstation.v1.PerceptionHealth
+	(*AgentRegistration)(nil),              // 17: atlas.groundstation.v1.AgentRegistration
+	(*DeviceProfile)(nil),                  // 18: atlas.groundstation.v1.DeviceProfile
+	(*DroneProfile)(nil),                   // 19: atlas.groundstation.v1.DroneProfile
+	(*FlightControllerAttachment)(nil),     // 20: atlas.groundstation.v1.FlightControllerAttachment
+	(*AgentHeartbeat)(nil),                 // 21: atlas.groundstation.v1.AgentHeartbeat
+	(*AircraftTelemetry)(nil),              // 22: atlas.groundstation.v1.AircraftTelemetry
+	(*BatteryTelemetry)(nil),               // 23: atlas.groundstation.v1.BatteryTelemetry
+	(*VehicleHealth)(nil),                  // 24: atlas.groundstation.v1.VehicleHealth
+	(*RcStatus)(nil),                       // 25: atlas.groundstation.v1.RcStatus
+	(*HomePosition)(nil),                   // 26: atlas.groundstation.v1.HomePosition
+	(*GpsQuality)(nil),                     // 27: atlas.groundstation.v1.GpsQuality
+	(*AgentStatusText)(nil),                // 28: atlas.groundstation.v1.AgentStatusText
+	(*RegistrationAccepted)(nil),           // 29: atlas.groundstation.v1.RegistrationAccepted
+	(*VehicleCommandRequest)(nil),          // 30: atlas.groundstation.v1.VehicleCommandRequest
+	(*VehicleCommandCancellation)(nil),     // 31: atlas.groundstation.v1.VehicleCommandCancellation
+	(*VehicleCommandUpdate)(nil),           // 32: atlas.groundstation.v1.VehicleCommandUpdate
+	(*MissionOperationRequest)(nil),        // 33: atlas.groundstation.v1.MissionOperationRequest
+	(*MissionRunUpdate)(nil),               // 34: atlas.groundstation.v1.MissionRunUpdate
 }
 var file_atlas_ground_station_proto_depIdxs = []int32{
-	15, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
-	19, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
-	20, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
-	26, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
-	30, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
-	32, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
-	27, // 6: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
-	28, // 7: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
-	29, // 8: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
-	31, // 9: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
-	8,  // 10: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
-	10, // 11: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
-	14, // 12: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
-	9,  // 13: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
-	11, // 14: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	12, // 15: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
-	13, // 16: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	11, // 17: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	16, // 18: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
-	17, // 19: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
-	18, // 20: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
-	21, // 21: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
-	22, // 22: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
-	23, // 23: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
-	24, // 24: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
-	25, // 25: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
-	0,  // 26: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
-	1,  // 27: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
-	2,  // 28: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
-	3,  // 29: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
-	4,  // 30: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
-	6,  // 31: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
-	5,  // 32: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
-	7,  // 33: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
-	32, // [32:34] is the sub-list for method output_type
-	30, // [30:32] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	17, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
+	21, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
+	22, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
+	28, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
+	32, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
+	34, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
+	29, // 6: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
+	30, // 7: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
+	31, // 8: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
+	33, // 9: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
+	10, // 10: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
+	12, // 11: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
+	16, // 12: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
+	11, // 13: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
+	9,  // 14: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
+	0,  // 15: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
+	13, // 16: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	14, // 17: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
+	15, // 18: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	13, // 19: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	18, // 20: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
+	19, // 21: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
+	20, // 22: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
+	23, // 23: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
+	24, // 24: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
+	25, // 25: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
+	26, // 26: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
+	27, // 27: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
+	1,  // 28: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
+	2,  // 29: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
+	3,  // 30: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
+	4,  // 31: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
+	5,  // 32: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
+	7,  // 33: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
+	6,  // 34: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
+	8,  // 35: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
+	34, // [34:36] is the sub-list for method output_type
+	32, // [32:34] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_atlas_ground_station_proto_init() }
@@ -3532,21 +3682,22 @@ func file_atlas_ground_station_proto_init() {
 	}
 	file_atlas_ground_station_proto_msgTypes[3].OneofWrappers = []any{
 		(*GroundStationPerception_StreamAccepted)(nil),
+		(*GroundStationPerception_FrameSubscription)(nil),
 	}
-	file_atlas_ground_station_proto_msgTypes[16].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[17].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[19].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[18].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[20].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[21].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[26].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[28].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[22].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[27].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[29].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_ground_station_proto_rawDesc), len(file_atlas_ground_station_proto_rawDesc)),
-			NumEnums:      4,
-			NumMessages:   29,
+			NumEnums:      5,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

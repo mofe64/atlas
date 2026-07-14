@@ -19,6 +19,8 @@ import (
 const (
 	minimumPayloadLease = 3 * time.Second
 	maximumPayloadLease = 15 * time.Second
+	inspectionControl   = "inspection"
+	missionOverride     = "mission_override"
 )
 
 type payloadIntent struct {
@@ -42,6 +44,7 @@ type PayloadEvent struct {
 
 type manualPayloadSession struct {
 	id              string
+	kind            string
 	runID           string
 	gimbalID        int32
 	cameraID        int32
@@ -123,14 +126,16 @@ func (p *PayloadController) ConfigureMission(runID string, plan payloadMissionPl
 	p.commandMu.Lock()
 	defer p.commandMu.Unlock()
 	p.mu.Lock()
-	if p.manual != nil && p.manual.expirationTimer != nil {
-		p.manual.expirationTimer.Stop()
+	if p.manual != nil && p.manual.kind == missionOverride {
+		if p.manual.expirationTimer != nil {
+			p.manual.expirationTimer.Stop()
+		}
+		p.manual = nil
 	}
 	p.runID = runID
 	p.runState = "READY"
 	p.plan = plan
 	p.waypoint = 0
-	p.manual = nil
 	p.mu.Unlock()
 }
 
@@ -142,10 +147,14 @@ func (p *PayloadController) ActivateMission(ctx context.Context, runID, state st
 		p.mu.Unlock()
 		return errors.New("payload mission plan is not configured for this run")
 	}
+	manual := p.manual
+	if manual != nil && manual.kind == inspectionControl {
+		p.mu.Unlock()
+		return errors.New("end inspection payload control before starting the mission")
+	}
 	p.runState = state
-	manual := p.manual != nil
 	p.mu.Unlock()
-	if manual {
+	if manual != nil {
 		return nil
 	}
 	return p.restoreMissionIntent(ctx)
@@ -187,20 +196,22 @@ func (p *PayloadController) EndMission(ctx context.Context, runID string) {
 		return
 	}
 	manual := p.manual
-	if manual != nil && manual.expirationTimer != nil {
+	clearManual := manual != nil && manual.kind == missionOverride && manual.runID == runID
+	if clearManual && manual.expirationTimer != nil {
 		manual.expirationTimer.Stop()
 	}
 	gimbalID := p.primaryGimbalIDLocked()
-	p.manual = nil
+	if clearManual {
+		p.manual = nil
+	}
 	p.runState = ""
 	p.runID = ""
 	p.plan = payloadMissionPlan{}
 	p.mu.Unlock()
-	if gimbalID > 0 {
+	if manual == nil || clearManual {
 		stopContext, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		_, _ = p.gimbal.SetAngularRates(stopContext, &gimbalpb.SetAngularRatesRequest{GimbalId: gimbalID, SendMode: gimbalpb.SendMode_SEND_MODE_ONCE})
-		_, _ = p.gimbal.ReleaseControl(stopContext, &gimbalpb.ReleaseControlRequest{GimbalId: gimbalID})
+		_ = p.stopAndReleaseGimbal(stopContext, gimbalID)
 	}
 }
 
@@ -242,32 +253,46 @@ func (p *PayloadController) Execute(ctx context.Context, commandType, parameters
 }
 
 type payloadCommand struct {
-	MissionRunID              string  `json:"missionRunId"`
-	ControlSessionID          string  `json:"controlSessionId"`
-	LeaseDurationMS           int64   `json:"leaseDurationMs"`
-	GimbalID                  int32   `json:"gimbalId"`
-	CameraComponentID         int32   `json:"cameraComponentId"`
-	PitchDegrees              float32 `json:"pitchDegrees"`
-	YawDegrees                float32 `json:"yawDegrees"`
-	YawFrame                  string  `json:"yawFrame"`
-	PitchRateDegreesPerSecond float32 `json:"pitchRateDegreesPerSecond"`
-	YawRateDegreesPerSecond   float32 `json:"yawRateDegreesPerSecond"`
-	Latitude                  float64 `json:"latitude"`
-	Longitude                 float64 `json:"longitude"`
-	AltitudeAmslMeters        float32 `json:"altitudeAmslMeters"`
-	ZoomPercent               float32 `json:"zoomPercent"`
+	ControlContext            payloadControlContext `json:"controlContext"`
+	ControlSessionID          string                `json:"controlSessionId"`
+	LeaseDurationMS           int64                 `json:"leaseDurationMs"`
+	GimbalID                  int32                 `json:"gimbalId"`
+	CameraComponentID         int32                 `json:"cameraComponentId"`
+	PitchDegrees              float32               `json:"pitchDegrees"`
+	YawDegrees                float32               `json:"yawDegrees"`
+	YawFrame                  string                `json:"yawFrame"`
+	PitchRateDegreesPerSecond float32               `json:"pitchRateDegreesPerSecond"`
+	YawRateDegreesPerSecond   float32               `json:"yawRateDegreesPerSecond"`
+	Latitude                  float64               `json:"latitude"`
+	Longitude                 float64               `json:"longitude"`
+	AltitudeAmslMeters        float32               `json:"altitudeAmslMeters"`
+	ZoomPercent               float32               `json:"zoomPercent"`
+}
+
+type payloadControlContext struct {
+	Kind         string `json:"kind"`
+	MissionRunID string `json:"missionRunId"`
 }
 
 func (p *PayloadController) beginManual(ctx context.Context, input payloadCommand) (CommandResult, error) {
+	kind, runID, err := input.controlIdentity()
+	if err != nil {
+		return CommandResult{Code: "INVALID_CONTROL_CONTEXT", Message: err.Error()}, err
+	}
 	lease, err := payloadLease(input.LeaseDurationMS)
 	if err != nil {
 		return CommandResult{Code: "INVALID_PAYLOAD_LEASE", Message: err.Error()}, err
 	}
 	p.mu.Lock()
-	if p.runID != input.MissionRunID || !matchesActiveMissionState(p.runState) {
+	if kind == missionOverride && (p.runID != runID || !matchesActiveMissionState(p.runState)) {
 		p.mu.Unlock()
 		err := errors.New("manual payload control requires the active RUNNING or PAUSED mission")
 		return CommandResult{Code: "MISSION_NOT_ACTIVE", Message: err.Error()}, err
+	}
+	if kind == inspectionControl && matchesActiveMissionState(p.runState) {
+		p.mu.Unlock()
+		err := errors.New("inspection payload control is unavailable during an active mission")
+		return CommandResult{Code: "MISSION_ACTIVE", Message: err.Error()}, err
 	}
 	if p.manual != nil && p.manual.id != input.ControlSessionID {
 		p.mu.Unlock()
@@ -289,13 +314,19 @@ func (p *PayloadController) beginManual(ctx context.Context, input payloadComman
 		}
 	}
 	p.mu.Lock()
-	p.manual = &manualPayloadSession{id: input.ControlSessionID, runID: input.MissionRunID, gimbalID: gimbalID, cameraID: cameraID, expiresAt: time.Now().Add(lease)}
+	p.manual = &manualPayloadSession{id: input.ControlSessionID, kind: kind, runID: runID, gimbalID: gimbalID, cameraID: cameraID, expiresAt: time.Now().Add(lease)}
 	p.scheduleExpirationLocked(lease)
 	waypoint := p.waypoint
 	state := p.runState
 	p.mu.Unlock()
-	p.emit(PayloadEvent{RunID: input.MissionRunID, Type: "payload_manual_started", State: state, CurrentWaypoint: waypoint, Message: "Operator took manual payload control"})
-	return CommandResult{Code: "PAYLOAD_MANUAL_ACTIVE", Message: "Manual payload control active"}, nil
+	if kind == missionOverride {
+		p.emit(PayloadEvent{RunID: runID, Type: "payload_manual_started", State: state, CurrentWaypoint: waypoint, Message: "Operator took manual payload control"})
+	}
+	message := "Inspection payload control active"
+	if kind == missionOverride {
+		message = "Mission payload override active"
+	}
+	return CommandResult{Code: "PAYLOAD_MANUAL_ACTIVE", Message: message}, nil
 }
 
 func (p *PayloadController) renewManual(input payloadCommand) (CommandResult, error) {
@@ -322,11 +353,18 @@ func (p *PayloadController) endManual(ctx context.Context, input payloadCommand)
 	if p.manual.expirationTimer != nil {
 		p.manual.expirationTimer.Stop()
 	}
+	manual := p.manual
 	p.manual = nil
 	runID := p.runID
 	state := p.runState
 	waypoint := p.waypoint
 	p.mu.Unlock()
+	if manual.kind == inspectionControl {
+		if err := p.stopAndReleaseGimbal(ctx, manual.gimbalID); err != nil {
+			return CommandResult{Code: "PAYLOAD_RELEASE_FAILED", Message: err.Error()}, err
+		}
+		return CommandResult{Code: "PAYLOAD_INSPECTION_RELEASED", Message: "Inspection control released safely"}, nil
+	}
 	if err := p.restoreMissionIntent(ctx); err != nil {
 		p.emit(PayloadEvent{RunID: runID, Type: "payload_restore_failed", State: state, CurrentWaypoint: waypoint, ErrorCode: "PAYLOAD_RESTORE_FAILED", Message: err.Error()})
 		return CommandResult{Code: "PAYLOAD_RESTORE_FAILED", Message: err.Error()}, err
@@ -343,13 +381,20 @@ func (p *PayloadController) expireManual(sessionID string) {
 		p.mu.Unlock()
 		return
 	}
-	runID := p.runID
+	manual := p.manual
+	runID := manual.runID
 	state := p.runState
 	waypoint := p.waypoint
 	p.manual = nil
 	p.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if manual.kind == inspectionControl {
+		if err := p.stopAndReleaseGimbal(ctx, manual.gimbalID); err != nil {
+			p.logger.Error("release inspection payload control after lease expiry", "error", err)
+		}
+		return
+	}
 	if err := p.restoreMissionIntent(ctx); err != nil {
 		p.logger.Error("restore mission payload after manual lease expiry", "mission_run_id", runID, "error", err)
 		p.emit(PayloadEvent{RunID: runID, Type: "payload_restore_failed", State: state, CurrentWaypoint: waypoint, ErrorCode: "PAYLOAD_LEASE_RESTORE_FAILED", Message: err.Error()})
@@ -373,11 +418,50 @@ func (p *PayloadController) validateManual(input payloadCommand) error {
 }
 
 func (p *PayloadController) validateManualLocked(input payloadCommand) error {
-	if p.manual == nil || p.manual.id != input.ControlSessionID || p.manual.runID != input.MissionRunID {
+	kind, runID, err := input.controlIdentity()
+	if err != nil {
+		return err
+	}
+	if p.manual == nil || p.manual.id != input.ControlSessionID || p.manual.kind != kind || p.manual.runID != runID {
 		return errors.New("manual payload-control session is not active")
 	}
 	if time.Now().After(p.manual.expiresAt) {
 		return errors.New("manual payload-control lease expired")
+	}
+	return nil
+}
+
+func (input payloadCommand) controlIdentity() (string, string, error) {
+	if input.ControlSessionID == "" {
+		return "", "", errors.New("controlSessionId is required")
+	}
+	switch input.ControlContext.Kind {
+	case inspectionControl:
+		if input.ControlContext.MissionRunID != "" {
+			return "", "", errors.New("inspection control cannot contain missionRunId")
+		}
+		return inspectionControl, "", nil
+	case missionOverride:
+		if input.ControlContext.MissionRunID == "" {
+			return "", "", errors.New("mission override requires missionRunId")
+		}
+		return missionOverride, input.ControlContext.MissionRunID, nil
+	default:
+		return "", "", errors.New("controlContext.kind must be inspection or mission_override")
+	}
+}
+
+func (p *PayloadController) stopAndReleaseGimbal(ctx context.Context, gimbalID int32) error {
+	if gimbalID <= 0 {
+		return nil
+	}
+	rates, err := p.gimbal.SetAngularRates(ctx, &gimbalpb.SetAngularRatesRequest{GimbalId: gimbalID, SendMode: gimbalpb.SendMode_SEND_MODE_ONCE})
+	if _, err = gimbalResponse(rates.GetGimbalResult(), err); err != nil {
+		return fmt.Errorf("stop manual gimbal rate: %w", err)
+	}
+	release, err := p.gimbal.ReleaseControl(ctx, &gimbalpb.ReleaseControlRequest{GimbalId: gimbalID})
+	if _, err = gimbalResponse(release.GetGimbalResult(), err); err != nil {
+		return fmt.Errorf("release manual gimbal control: %w", err)
 	}
 	return nil
 }

@@ -38,7 +38,7 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read schema version");
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     let cached_identity_tables: i64 = connection
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cached_identity'",
@@ -99,7 +99,7 @@ fn migration_upgrades_existing_v3_telemetry_database_to_vehicle_tables() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read upgraded schema version");
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     let new_columns: i64 = connection
         .query_row(
             "SELECT count(*) FROM pragma_table_info('vehicle_telemetry_current') WHERE name IN ('batteries_json', 'health_json', 'rc_status_json', 'gps_quality_json')",
@@ -431,7 +431,7 @@ fn registration_creates_graph_and_tracks_link_lifecycle() {
         .expect("read selected aircraft snapshot");
     assert_eq!(selected.drone_name.as_deref(), Some("Atlas One"));
     let fleet = database
-        .fleet_snapshot()
+        .fleet_snapshot(false)
         .expect("read local fleet snapshot");
     assert_eq!(fleet.aircraft.len(), 1);
     assert_eq!(fleet.aircraft[0].drone_id.as_deref(), Some("drone-1"));
@@ -806,6 +806,117 @@ fn registration_creates_graph_and_tracks_link_lifecycle() {
         .expect("count expired snapshots after startup retention");
     assert_eq!(expired_after_startup, 0);
     drop(reopened);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn archive_is_safe_idempotent_and_blocks_registration_until_restore() {
+    let (database, path) = test_database();
+    let now = unix_time_ms();
+    let input = RegistrationInput {
+        session_id: "archive-session-1".into(),
+        installation_id: "archive-agent-1".into(),
+        agent_version: "0.1.0".into(),
+        protocol_version: "1".into(),
+        device_profile_json: r#"{"hostname":"pi"}"#.into(),
+        capabilities_json: r#"["registration","heartbeat"]"#.into(),
+        drone_id: "archive-drone-1".into(),
+        drone_name: "Atlas Archive".into(),
+        flight_controller_uid: "archive-fc-1".into(),
+        serial_number: "archive-serial-1".into(),
+        vehicle_type: "multicopter".into(),
+        flight_controller_transport: "serial".into(),
+        endpoint_description: "/dev/serial0".into(),
+        baud_rate: 921_600,
+        mavlink_system_id: 1,
+        mavlink_component_id: 1,
+        remote_address: "192.168.144.168:50000".into(),
+        observed_at_unix_ms: now,
+    };
+    database.register_agent(&input).expect("register aircraft");
+
+    let error = database
+        .archive_drone(&input.drone_id, "retired from service")
+        .expect_err("freshly connected aircraft must not archive");
+    assert!(error.contains("disconnect the aircraft"));
+
+    database
+        .close_session(&input.session_id, "operator disconnected", now + 1)
+        .expect("close aircraft session");
+    let archived = database
+        .archive_drone(&input.drone_id, "retired from service")
+        .expect("archive disconnected aircraft");
+    assert_eq!(archived.vehicle_status.as_deref(), Some("archived"));
+    assert_eq!(archived.connection_status, "disconnected");
+    database
+        .archive_drone(&input.drone_id, "duplicate request")
+        .expect("archive is idempotent");
+    assert!(database
+        .fleet_snapshot(false)
+        .expect("read operational fleet")
+        .aircraft
+        .is_empty());
+    assert_eq!(
+        database
+            .fleet_snapshot(true)
+            .expect("read fleet including archived")
+            .aircraft
+            .len(),
+        1
+    );
+
+    let mut reconnect = input.clone();
+    reconnect.session_id = "archive-session-rejected".into();
+    reconnect.observed_at_unix_ms = now + 2;
+    let error = database
+        .register_agent(&reconnect)
+        .expect_err("archived aircraft registration must fail");
+    assert!(error.starts_with(super::ARCHIVED_REGISTRATION_ERROR));
+    let current_binding_count: i64 = database
+        .connection
+        .lock()
+        .expect("lock database")
+        .query_row(
+            "SELECT count(*) FROM vehicle_agent_bindings WHERE drone_id = ?1 AND status IN ('active', 'suspended')",
+            [&input.drone_id],
+            |row| row.get(0),
+        )
+        .expect("count current bindings");
+    assert_eq!(current_binding_count, 0);
+
+    let restored = database
+        .restore_drone(&input.drone_id)
+        .expect("restore aircraft");
+    assert_eq!(restored.vehicle_status.as_deref(), Some("active"));
+    assert_eq!(restored.connection_status, "disconnected");
+    database
+        .restore_drone(&input.drone_id)
+        .expect("restore is idempotent");
+
+    reconnect.session_id = "archive-session-restored".into();
+    reconnect.observed_at_unix_ms = now + 3;
+    database
+        .register_agent(&reconnect)
+        .expect("restored aircraft can register");
+    let lifecycle_counts: (i64, i64, i64) = database
+        .connection
+        .lock()
+        .expect("lock database")
+        .query_row(
+            r#"
+            SELECT
+                sum(event_type = 'archived'),
+                sum(event_type = 'restored'),
+                sum(event_type = 'archived_reconnect_rejected')
+            FROM drone_lifecycle_events WHERE drone_id = ?1
+            "#,
+            [&input.drone_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("read lifecycle event counts");
+    assert_eq!(lifecycle_counts, (1, 1, 1));
+
+    drop(database);
     remove_sqlite_files(&path);
 }
 

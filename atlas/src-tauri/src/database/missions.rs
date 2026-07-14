@@ -676,7 +676,7 @@ fn plan_lawn_mower(params: &Value) -> Result<PlannedMission, String> {
         let mut intersections = horizontal_intersections(&local, y);
         intersections.sort_by(f64::total_cmp);
         for pair in intersections.chunks_exact(2) {
-            let endpoints = if lane % 2 == 0 {
+            let endpoints = if lane.is_multiple_of(2) {
                 [pair[0], pair[1]]
             } else {
                 [pair[1], pair[0]]

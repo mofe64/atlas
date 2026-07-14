@@ -47,6 +47,47 @@ pub(crate) fn perception_snapshot(
 }
 
 #[tauri::command]
+pub(crate) async fn perception_frame_subscription_start(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+    purpose: String,
+    lease_duration_ms: i64,
+) -> Result<(), String> {
+    state
+        .perception
+        .start_or_renew_frame_subscription(&drone_id, &subscription_id, &purpose, lease_duration_ms)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn perception_frame_subscription_renew(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+    purpose: String,
+    lease_duration_ms: i64,
+) -> Result<(), String> {
+    state
+        .perception
+        .start_or_renew_frame_subscription(&drone_id, &subscription_id, &purpose, lease_duration_ms)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn perception_frame_subscription_stop(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+    purpose: String,
+) -> Result<(), String> {
+    state
+        .perception
+        .stop_frame_subscription(&drone_id, &subscription_id, &purpose)
+        .await
+}
+
+#[tauri::command]
 pub(crate) fn video_stream_start(
     state: State<'_, AppState>,
     drone_id: String,
@@ -87,8 +128,31 @@ pub(crate) fn video_stream_frame(
 #[tauri::command]
 pub(crate) fn fleet_snapshot(
     state: State<'_, AppState>,
+    include_archived: Option<bool>,
 ) -> Result<database::FleetSnapshot, String> {
-    state.database.fleet_snapshot()
+    state
+        .database
+        .fleet_snapshot(include_archived.unwrap_or(false))
+}
+
+#[tauri::command]
+pub(crate) fn archive_drone(
+    state: State<'_, AppState>,
+    drone_id: String,
+    reason: Option<String>,
+) -> Result<database::OperationsSnapshot, String> {
+    state.database.archive_drone(
+        &drone_id,
+        reason.as_deref().unwrap_or("operator archived aircraft"),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn restore_drone(
+    state: State<'_, AppState>,
+    drone_id: String,
+) -> Result<database::OperationsSnapshot, String> {
+    state.database.restore_drone(&drone_id)
 }
 
 #[tauri::command]

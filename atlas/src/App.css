@@ -850,6 +850,215 @@ summary {
   border-top: 1px solid var(--ink);
 }
 
+.aircraft-overview--workspace {
+  padding-bottom: clamp(1.5rem, 4vw, 2.5rem);
+}
+
+.aircraft-context-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.aircraft-context-strip .status-item {
+  padding: 1rem clamp(0.8rem, 2vw, 1.5rem);
+  border-right: 1px solid var(--line);
+}
+
+.aircraft-context-strip .status-item:first-child { padding-left: 0; }
+.aircraft-context-strip .status-item:last-child { padding-right: 0; border-right: 0; }
+
+.aircraft-section-nav {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--ink);
+}
+
+.aircraft-section-nav button {
+  flex: 0 0 auto;
+  min-height: 3.4rem;
+  padding: 0 1.1rem;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.aircraft-section-nav button:first-child { padding-left: 0; }
+.aircraft-section-nav button:hover { color: var(--ink); }
+.aircraft-section-nav button:focus-visible { outline: 2px solid var(--field); outline-offset: -2px; }
+.aircraft-section-nav .aircraft-section-nav__active { border-color: var(--field); color: var(--field); }
+
+.aircraft-live-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(20rem, 0.65fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  padding-top: clamp(1.5rem, 4vw, 3rem);
+  align-items: start;
+}
+
+.aircraft-live-video,
+.aircraft-live-control {
+  min-width: 0;
+}
+
+.aircraft-live-control {
+  position: sticky;
+  top: 1rem;
+}
+
+.aircraft-missions,
+.aircraft-settings {
+  padding-top: clamp(2rem, 5vw, 4rem);
+  animation: surface-enter 320ms var(--ease-out-quart) both;
+}
+
+.aircraft-missions > header,
+.aircraft-run-history > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.aircraft-missions h2,
+.aircraft-settings h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 5vw, 3.5rem);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+}
+
+.aircraft-missions > header button,
+.aircraft-active-run button,
+.aircraft-lifecycle-action button {
+  min-height: 2.75rem;
+  padding: 0 1rem;
+  border: 1px solid var(--ink);
+  color: var(--panel);
+  background: var(--ink);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.aircraft-missions button:focus-visible,
+.aircraft-settings button:focus-visible,
+.aircraft-run-history button:focus-visible {
+  outline: 2px solid var(--field);
+  outline-offset: 2px;
+}
+
+.aircraft-active-run {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding: 1.5rem;
+  color: var(--panel);
+  background: var(--field);
+}
+
+.aircraft-active-run div,
+.aircraft-active-run span,
+.aircraft-active-run strong,
+.aircraft-active-run small { display: block; }
+.aircraft-active-run span,
+.aircraft-active-run small { opacity: 0.78; font-size: 0.7rem; }
+.aircraft-active-run strong { margin: 0.35rem 0; font-size: 1.15rem; }
+.aircraft-active-run button { border-color: var(--panel); }
+
+.aircraft-workspace-empty {
+  margin: 2rem 0 0;
+  padding: 1.5rem 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-soft);
+  line-height: 1.6;
+}
+
+.aircraft-run-history { margin-top: clamp(2.5rem, 6vw, 4rem); }
+.aircraft-run-history > header { padding-bottom: 0.8rem; border-bottom: 1px solid var(--ink); }
+.aircraft-run-history > header span { color: var(--muted); font-variant-numeric: tabular-nums; }
+.aircraft-run-history > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.aircraft-run-history > button span:first-child { display: grid; gap: 0.2rem; }
+.aircraft-run-history small,
+.aircraft-run-history > button > span:last-child,
+.aircraft-run-history > p { color: var(--muted); font-size: 0.72rem; }
+
+.aircraft-settings > header { max-width: 62ch; }
+.aircraft-settings > header > p:last-child { color: var(--ink-soft); line-height: 1.6; }
+.aircraft-settings > dl { margin: 2rem 0 0; border-top: 1px solid var(--ink); }
+.aircraft-settings > dl > div {
+  display: grid;
+  grid-template-columns: minmax(9rem, 0.3fr) minmax(0, 1fr);
+  gap: 1.5rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.aircraft-settings dt { color: var(--muted); font-size: 0.68rem; font-weight: 750; letter-spacing: 0.07em; text-transform: uppercase; }
+.aircraft-settings dd { margin: 0; overflow-wrap: anywhere; font-size: 0.82rem; }
+
+.aircraft-lifecycle-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, auto);
+  gap: 2rem;
+  align-items: start;
+  margin-top: 2.5rem;
+  padding: 1.5rem;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in oklch, var(--panel) 72%, transparent);
+}
+.aircraft-lifecycle-action p { margin: 0.35rem 0 0; color: var(--muted); line-height: 1.5; }
+.aircraft-lifecycle-action button:disabled { cursor: not-allowed; opacity: 0.52; }
+.aircraft-lifecycle-confirmation { max-width: 30rem; }
+.aircraft-lifecycle-confirmation > div { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+.aircraft-lifecycle-confirmation button:first-child { color: var(--ink); background: transparent; }
+.aircraft-lifecycle-confirmation .aircraft-lifecycle-danger { border-color: var(--critical); background: var(--critical); }
+.aircraft-workspace-error,
+.aircraft-workspace-notice { margin: 1rem 0 0; padding: 0.85rem 1rem; font-size: 0.78rem; }
+.aircraft-workspace-error { color: var(--critical); background: var(--critical-soft); }
+.aircraft-workspace-notice { color: var(--field); background: var(--field-soft); }
+
+@media (max-width: 64rem) {
+  .aircraft-live-workspace { grid-template-columns: 1fr; }
+  .aircraft-live-control { position: static; }
+}
+
+@media (max-width: 44rem) {
+  .aircraft-context-strip { grid-template-columns: 1fr; }
+  .aircraft-context-strip .status-item,
+  .aircraft-context-strip .status-item:first-child,
+  .aircraft-context-strip .status-item:last-child { padding: 0.9rem 0; border-right: 0; border-bottom: 1px solid var(--line); }
+  .aircraft-context-strip .status-item:last-child { border-bottom: 0; }
+  .aircraft-active-run { align-items: stretch; flex-direction: column; }
+  .aircraft-run-history > button { align-items: flex-start; flex-direction: column; }
+  .aircraft-lifecycle-action { grid-template-columns: 1fr; }
+  .aircraft-settings > dl > div { grid-template-columns: 1fr; gap: 0.35rem; }
+}
+
 @container (min-width: 42rem) {
   .status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -20,7 +20,7 @@ load or create stable installation + drone ids
                 -> discover MAVSDK gimbals and MAVSDK/SIYI camera zoom
                 -> run the supervised HailoRT/TAPPAS object-detection adapter
                     -> publish normalized frame metadata over a protected Unix socket
-                    -> stream detections and health independently from vehicle commands
+                    -> stream health continuously and detection frames on renewable demand
                 -> execute idempotent Hold, RTL, Land, and payload commands
                 -> upload and control MAVSDK missions
                     -> report upload progress, current item, completion, and errors
@@ -38,11 +38,23 @@ geographic ROI, and camera zoom. Gimbal yaw explicitly chooses
 aircraft-relative yaw-follow or north-locked yaw. Every request uses the same
 accepted/executing/result lifecycle and deadline as other vehicle commands.
 
-The payload controller is the sole owner of automatic mission view and temporary
-operator override. A manual session claims primary MAVLink Gimbal v2 control and
-must renew a short lease. Ending the session, losing the UI, or allowing the
-lease to expire restores the gimbal and zoom for the mission's current waypoint;
-it does not replay the view from the waypoint where manual control began.
+The payload controller is the sole owner of physical gimbal/camera control. A
+manual session declares exactly one context and renews a short lease:
+
+- `inspection` is aircraft-owned, allowed only while connected with fresh,
+  explicitly disarmed/on-ground telemetry, and releases Gimbal v2 primary
+  control when it ends or expires.
+- `mission_override` belongs to one running/paused mission and restores the
+  gimbal and zoom for that mission's current waypoint when it ends or expires;
+  it does not replay the view from the waypoint where manual control began.
+
+Mission activation is rejected while an inspection session owns the payload,
+so autonomous mission intent cannot race manual inspection movement.
+
+Perception health is always forwarded. Detection frames are forwarded only
+while at least one renewable Native consumer lease is active or the current
+mission is running/paused. Consumers have independent leases, so one view
+closing cannot stop frames required by another view or by a mission.
 
 Camera zoom prefers MAVSDK Camera when a camera component is discovered and
 falls back to the SIYI A8 Mini UDP SDK. The A8 Mini is treated as a fixed-focus

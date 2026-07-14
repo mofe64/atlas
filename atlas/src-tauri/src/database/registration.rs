@@ -2,6 +2,8 @@ use rusqlite::{params, OptionalExtension, Transaction};
 
 use super::LocalDatabase;
 
+pub(crate) const ARCHIVED_REGISTRATION_ERROR: &str = "archived aircraft registration rejected";
+
 #[derive(Debug, Clone)]
 pub(crate) struct RegistrationInput {
     pub session_id: String,
@@ -44,6 +46,41 @@ impl LocalDatabase {
         let tx = connection
             .transaction()
             .map_err(|error| format!("begin agent registration: {error}"))?;
+
+        let existing_status = tx
+            .query_row(
+                "SELECT status FROM drones WHERE id = ?1",
+                [&input.drone_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(|error| format!("read aircraft lifecycle during registration: {error}"))?;
+        if existing_status.as_deref() == Some("archived") {
+            let event_id = generate_id(&tx)?;
+            let details = serde_json::json!({
+                "installationId": input.installation_id,
+                "sessionId": input.session_id,
+                "remoteAddress": input.remote_address,
+            })
+            .to_string();
+            tx.execute(
+                r#"
+                INSERT INTO drone_lifecycle_events (
+                    id, drone_id, event_type, reason,
+                    occurred_at_unix_ms, details_json
+                ) VALUES (?1, ?2, 'archived_reconnect_rejected',
+                          'agent registration rejected while archived', ?3, ?4)
+                "#,
+                params![event_id, input.drone_id, input.observed_at_unix_ms, details],
+            )
+            .map_err(|error| format!("record archived reconnect rejection: {error}"))?;
+            tx.commit()
+                .map_err(|error| format!("commit archived reconnect rejection: {error}"))?;
+            return Err(format!(
+                "{ARCHIVED_REGISTRATION_ERROR}: restore {} before reconnecting it",
+                input.drone_id
+            ));
+        }
 
         tx.execute(
             r#"

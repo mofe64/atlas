@@ -218,7 +218,7 @@ impl LocalDatabase {
         Ok(snapshot)
     }
 
-    pub(crate) fn fleet_snapshot(&self) -> Result<FleetSnapshot, String> {
+    pub(crate) fn fleet_snapshot(&self, include_archived: bool) -> Result<FleetSnapshot, String> {
         let drone_ids = {
             let connection = self
                 .connection
@@ -230,6 +230,7 @@ impl LocalDatabase {
                     SELECT d.id
                     FROM drones d
                     LEFT JOIN vehicle_telemetry_current t ON t.drone_id = d.id
+                    WHERE d.status != 'archived' OR ?1
                     ORDER BY t.received_at_unix_ms DESC NULLS LAST,
                              d.updated_at_unix_ms DESC,
                              d.id ASC
@@ -237,7 +238,7 @@ impl LocalDatabase {
                 )
                 .map_err(|error| format!("prepare local fleet: {error}"))?;
             let rows = statement
-                .query_map([], |row| row.get::<_, String>(0))
+                .query_map([include_archived], |row| row.get::<_, String>(0))
                 .map_err(|error| format!("read local fleet: {error}"))?
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|error| format!("decode local fleet: {error}"))?;

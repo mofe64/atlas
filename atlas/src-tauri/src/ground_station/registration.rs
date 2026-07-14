@@ -1,7 +1,9 @@
 use serde_json::json;
 use tonic::Status;
 
-use crate::database::{LocalDatabase, RegisteredSession, RegistrationInput};
+use crate::database::{
+    LocalDatabase, RegisteredSession, RegistrationInput, ARCHIVED_REGISTRATION_ERROR,
+};
 
 use super::{proto::pb, unix_time_ms};
 
@@ -64,7 +66,13 @@ pub(super) fn register(
             remote_address: remote_address.to_string(),
             observed_at_unix_ms: now,
         })
-        .map_err(Status::internal)?;
+        .map_err(|error| {
+            if error.starts_with(ARCHIVED_REGISTRATION_ERROR) {
+                Status::failed_precondition(error)
+            } else {
+                Status::internal(error)
+            }
+        })?;
 
     Ok(pb::RegistrationAccepted {
         agent_id: registered.agent_id,

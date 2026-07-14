@@ -6,6 +6,12 @@ use super::LocalDatabase;
 const DEFAULT_COMMAND_TIMEOUT_MS: i64 = 15_000;
 const MAX_COMMAND_TIMEOUT_MS: i64 = 120_000;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PayloadControlContext<'a> {
+    Inspection,
+    MissionOverride(&'a str),
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VehicleCommandSnapshot {
@@ -502,14 +508,13 @@ fn validate_command_parameters(
         || command_type.starts_with("camera_")
         || command_type.starts_with("payload_control_");
     if payload_command {
-        for key in ["missionRunId", "controlSessionId"] {
-            if value
-                .get(key)
-                .and_then(serde_json::Value::as_str)
-                .is_none_or(str::is_empty)
-            {
-                return Err(format!("{key} must be a non-empty string"));
-            }
+        payload_control_context(value)?;
+        if value
+            .get("controlSessionId")
+            .and_then(serde_json::Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Err("controlSessionId must be a non-empty string".to_string());
         }
     }
     match command_type {
@@ -585,8 +590,10 @@ fn validate_command_policy(
                 SELECT 1
                 FROM communication_links l
                 JOIN vehicle_agent_bindings b ON b.id = l.vehicle_agent_binding_id
+                JOIN drones d ON d.id = b.drone_id
                 WHERE b.drone_id = ?1
                   AND b.status = 'active'
+                  AND d.status = 'active'
                   AND l.status = 'connected'
                   AND l.ended_at_unix_ms IS NULL
                   AND l.last_heartbeat_at_unix_ms >= ?2
@@ -603,21 +610,52 @@ fn validate_command_policy(
         || command_type.starts_with("camera_")
         || command_type.starts_with("payload_control_")
     {
-        let run_id = parameters
-            .get("missionRunId")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| "missionRunId is required for payload control".to_string())?;
-        let run_ready: bool = connection
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE id = ?1 AND drone_id = ?2 AND status IN ('RUNNING', 'PAUSED'))",
-                params![run_id, drone_id],
-                |row| row.get(0),
-            )
-            .map_err(|error| format!("check payload mission policy: {error}"))?;
-        if !run_ready {
-            return Err(
-                "payload control requires this drone's RUNNING or PAUSED mission run".into(),
-            );
+        match payload_control_context(parameters)? {
+            PayloadControlContext::MissionOverride(run_id) => {
+                let run_ready: bool = connection
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE id = ?1 AND drone_id = ?2 AND status IN ('RUNNING', 'PAUSED'))",
+                        params![run_id, drone_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|error| format!("check payload mission policy: {error}"))?;
+                if !run_ready {
+                    return Err(
+                        "mission override requires this drone's RUNNING or PAUSED mission run"
+                            .into(),
+                    );
+                }
+            }
+            PayloadControlContext::Inspection => {
+                let telemetry = connection
+                    .query_row(
+                        "SELECT received_at_unix_ms, armed, in_air FROM vehicle_telemetry_current WHERE drone_id = ?1",
+                        [drone_id],
+                        |row| {
+                            Ok((
+                                row.get::<_, i64>(0)?,
+                                row.get::<_, Option<bool>>(1)?,
+                                row.get::<_, Option<bool>>(2)?,
+                            ))
+                        },
+                    )
+                    .optional()
+                    .map_err(|error| format!("read inspection telemetry policy state: {error}"))?
+                    .ok_or_else(|| {
+                        "live telemetry is required before taking inspection control".to_string()
+                    })?;
+                if now - telemetry.0 > 5_000 {
+                    return Err(
+                        "live telemetry is required before taking inspection control".into(),
+                    );
+                }
+                if telemetry.1 != Some(false) || telemetry.2 != Some(false) {
+                    return Err(
+                        "inspection control requires the aircraft to be explicitly disarmed and on the ground"
+                            .into(),
+                    );
+                }
+            }
         }
         return Ok(());
     }
@@ -656,6 +694,36 @@ fn validate_command_policy(
         return Err("return_to_launch requires GPS and home position readiness".to_string());
     }
     Ok(())
+}
+
+fn payload_control_context(value: &serde_json::Value) -> Result<PayloadControlContext<'_>, String> {
+    let context = value
+        .get("controlContext")
+        .and_then(serde_json::Value::as_object)
+        .ok_or_else(|| "controlContext must be an object".to_string())?;
+    match context
+        .get("kind")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+    {
+        "inspection" => {
+            if context.get("missionRunId").is_some() {
+                return Err("inspection controlContext cannot contain missionRunId".into());
+            }
+            Ok(PayloadControlContext::Inspection)
+        }
+        "mission_override" => {
+            let run_id = context
+                .get("missionRunId")
+                .and_then(serde_json::Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    "mission_override controlContext requires a non-empty missionRunId".to_string()
+                })?;
+            Ok(PayloadControlContext::MissionOverride(run_id))
+        }
+        _ => Err("controlContext.kind must be inspection or mission_override".into()),
+    }
 }
 
 fn validate_transition(current: &str, next: &str) -> Result<(), String> {
@@ -698,24 +766,24 @@ mod parameter_tests {
     fn gimbal_yaw_frame_is_explicit_and_angles_are_bounded() {
         assert!(validate_command_parameters(
             "gimbal_set_angles",
-            &json!({"missionRunId":"run-1","controlSessionId":"session-1","pitchDegrees": -45, "yawDegrees": 30, "yawFrame": "AIRCRAFT_RELATIVE"})
+            &json!({"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","pitchDegrees": -45, "yawDegrees": 30, "yawFrame": "AIRCRAFT_RELATIVE"})
         )
         .is_ok());
         assert!(validate_command_parameters(
             "gimbal_set_angles",
-            &json!({"missionRunId":"run-1","controlSessionId":"session-1","pitchDegrees": -100, "yawDegrees": 30})
+            &json!({"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","pitchDegrees": -100, "yawDegrees": 30})
         )
         .is_err());
         assert!(validate_command_parameters(
             "gimbal_set_angles",
-            &json!({"missionRunId":"run-1","controlSessionId":"session-1","pitchDegrees": -45, "yawDegrees": 30, "yawFrame": "AIRCRAFT_YAW"})
+            &json!({"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1","pitchDegrees": -45, "yawDegrees": 30, "yawFrame": "AIRCRAFT_YAW"})
         )
         .is_err());
     }
 
     #[test]
     fn payload_roi_zoom_and_lease_are_bounded() {
-        let identity = json!({"missionRunId":"run-1","controlSessionId":"session-1"});
+        let identity = json!({"controlContext":{"kind":"mission_override","missionRunId":"run-1"},"controlSessionId":"session-1"});
         let mut begin = identity.clone();
         begin["leaseDurationMs"] = json!(7000);
         assert!(validate_command_parameters("payload_control_begin", &begin).is_ok());
@@ -733,5 +801,31 @@ mod parameter_tests {
         assert!(validate_command_parameters("camera_set_zoom", &zoom).is_ok());
         zoom["zoomPercent"] = json!(101);
         assert!(validate_command_parameters("camera_set_zoom", &zoom).is_err());
+    }
+
+    #[test]
+    fn payload_context_is_a_strict_discriminated_union() {
+        let inspection = json!({
+            "controlContext":{"kind":"inspection"},
+            "controlSessionId":"session-1",
+            "leaseDurationMs":7000
+        });
+        assert!(validate_command_parameters("payload_control_begin", &inspection).is_ok());
+
+        let inspection_with_run = json!({
+            "controlContext":{"kind":"inspection","missionRunId":"run-1"},
+            "controlSessionId":"session-1",
+            "leaseDurationMs":7000
+        });
+        assert!(
+            validate_command_parameters("payload_control_begin", &inspection_with_run).is_err()
+        );
+
+        let missing_run = json!({
+            "controlContext":{"kind":"mission_override"},
+            "controlSessionId":"session-1",
+            "leaseDurationMs":7000
+        });
+        assert!(validate_command_parameters("payload_control_begin", &missing_run).is_err());
     }
 }

@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { FleetAircraft } from "../operationsTypes";
 import type { PayloadTarget } from "./OperationalMissionMap";
 import type { MissionPlan, MissionRun } from "./missionTypes";
+import "./PayloadControl.css";
 
 type CommandReceipt = {
   id: string;
@@ -24,6 +25,21 @@ type MissionPayloadControlProps = {
   onClearPayloadTarget: () => void;
 };
 
+type ControlContext =
+  | { kind: "inspection" }
+  | { kind: "mission_override"; missionRunId: string };
+
+type PayloadControlProps = {
+  context: ControlContext;
+  run?: MissionRun;
+  plan?: MissionPlan;
+  aircraft?: FleetAircraft;
+  payloadTarget?: PayloadTarget;
+  selectingPayloadTarget: boolean;
+  onSelectingPayloadTargetChange: (selecting: boolean) => void;
+  onClearPayloadTarget: () => void;
+};
+
 const terminalCommandStates = new Set(["succeeded", "failed", "rejected", "timed_out", "cancelled"]);
 const leaseDurationMs = 7_000;
 
@@ -36,13 +52,54 @@ export function MissionPayloadControl({
   onSelectingPayloadTargetChange,
   onClearPayloadTarget,
 }: MissionPayloadControlProps) {
+  return (
+    <PayloadControl
+      context={{ kind: "mission_override", missionRunId: run.id }}
+      run={run}
+      plan={plan}
+      aircraft={aircraft}
+      payloadTarget={payloadTarget}
+      selectingPayloadTarget={selectingPayloadTarget}
+      onSelectingPayloadTargetChange={onSelectingPayloadTargetChange}
+      onClearPayloadTarget={onClearPayloadTarget}
+    />
+  );
+}
+
+export function InspectionPayloadControl({ aircraft }: { aircraft?: FleetAircraft }) {
+  return (
+    <PayloadControl
+      context={{ kind: "inspection" }}
+      aircraft={aircraft}
+      selectingPayloadTarget={false}
+      onSelectingPayloadTargetChange={() => undefined}
+      onClearPayloadTarget={() => undefined}
+    />
+  );
+}
+
+function PayloadControl({
+  context,
+  run,
+  plan,
+  aircraft,
+  payloadTarget,
+  selectingPayloadTarget,
+  onSelectingPayloadTargetChange,
+  onClearPayloadTarget,
+}: PayloadControlProps) {
   const capabilities = aircraft?.agentCapabilities ?? [];
   const gimbalDetected = capabilities.includes("gimbal:detected");
   const roiSupported = capabilities.includes("gimbal:roi");
   const zoomSupported = capabilities.includes("camera:zoom:range");
   const gimbalId = capabilityNumber(capabilities, /^gimbal:id:(\d+)$/);
   const cameraComponentId = capabilityNumber(capabilities, /^camera:component_id:(\d+)$/);
-  const missionView = useMemo(() => currentMissionView(plan, run.currentWaypoint), [plan, run.currentWaypoint]);
+  const missionView = useMemo(
+    () => run && plan
+      ? currentMissionView(plan, run.currentWaypoint)
+      : { cameraMode: "INSPECTION", pitchDegrees: 0, yawDegrees: 0, yawMode: "AIRCRAFT_RELATIVE", zoomPercent: 0 },
+    [plan, run],
+  );
   const sessionRef = useRef<string | undefined>(undefined);
   const [overrideState, setOverrideState] = useState<OverrideState>("automatic");
   const [pitch, setPitch] = useState(missionView.pitchDegrees);
@@ -54,9 +111,15 @@ export function MissionPayloadControl({
   const [pendingLabel, setPendingLabel] = useState<string>();
   const [result, setResult] = useState<string>();
   const [error, setError] = useState<string>();
-  const activeRun = run.status === "RUNNING" || run.status === "PAUSED";
   const linkReady = aircraft?.connectionStatus === "connected";
+  const inspectionSafe = aircraft?.telemetry?.status === "live"
+    && aircraft.telemetry.armed === false
+    && aircraft.telemetry.inAir === false;
+  const activeRun = context.kind === "inspection"
+    ? inspectionSafe
+    : run?.status === "RUNNING" || run?.status === "PAUSED";
   const manual = overrideState === "manual";
+  const contextKey = context.kind === "inspection" ? context.kind : context.missionRunId;
   const terrainElevation = payloadTarget?.terrainElevationMeters;
   const targetAltitude = terrainElevation === undefined ? manualTargetAltitude : terrainElevation + targetHeightAboveGround;
 
@@ -83,14 +146,16 @@ export function MissionPayloadControl({
       const sessionID = sessionRef.current;
       if (!sessionID) return;
       void dispatchCommand("payload_control_renew", {
-        ...commandIdentity(run.id, sessionID, gimbalId, cameraComponentId),
+        ...commandIdentity(context, sessionID, gimbalId, cameraComponentId),
         leaseDurationMs,
       }, true).catch((reason) => {
-        setError(`Manual-control lease could not be renewed. Mission view will restore automatically: ${messageFrom(reason)}`);
+        setError(context.kind === "inspection"
+          ? `Inspection lease could not be renewed. Movement will stop and gimbal ownership will release automatically: ${messageFrom(reason)}`
+          : `Manual-control lease could not be renewed. Mission view will restore automatically: ${messageFrom(reason)}`);
       });
     }, 3_000);
     return () => window.clearInterval(interval);
-  }, [cameraComponentId, gimbalId, manual, run.id]);
+  }, [cameraComponentId, contextKey, gimbalId, manual]);
 
   useEffect(() => {
     return () => {
@@ -99,24 +164,24 @@ export function MissionPayloadControl({
       void invoke("request_vehicle_command", {
         droneId: aircraft.droneId,
         commandType: "payload_control_end",
-        parametersJson: JSON.stringify(commandIdentity(run.id, sessionID, gimbalId, cameraComponentId)),
+        parametersJson: JSON.stringify(commandIdentity(context, sessionID, gimbalId, cameraComponentId)),
         timeoutMs: 15_000,
       });
     };
-  }, [aircraft?.droneId, cameraComponentId, gimbalId, run.id]);
+  }, [aircraft?.droneId, cameraComponentId, contextKey, gimbalId]);
 
   useEffect(() => {
-    if (activeRun || !sessionRef.current) return;
+    if (context.kind === "inspection" || activeRun || !sessionRef.current) return;
     sessionRef.current = undefined;
     setOverrideState("automatic");
     onSelectingPayloadTargetChange(false);
     onClearPayloadTarget();
-  }, [activeRun, onClearPayloadTarget, onSelectingPayloadTargetChange]);
+  }, [activeRun, context.kind, onClearPayloadTarget, onSelectingPayloadTargetChange]);
 
   async function dispatchCommand(commandType: string, parameters: Record<string, unknown>, quiet = false) {
-    if (!aircraft?.droneId) throw new Error("No aircraft is attached to this run.");
+    if (!aircraft?.droneId) throw new Error("No aircraft is available for payload control.");
     if (!quiet) {
-      setPendingLabel(commandLabel(commandType));
+      setPendingLabel(commandLabel(commandType, context.kind));
       setError(undefined);
     }
     try {
@@ -145,7 +210,7 @@ export function MissionPayloadControl({
     setError(undefined);
     try {
       await dispatchCommand("payload_control_begin", {
-        ...commandIdentity(run.id, sessionID, gimbalId, cameraComponentId),
+        ...commandIdentity(context, sessionID, gimbalId, cameraComponentId),
         leaseDurationMs,
       });
       setOverrideState("manual");
@@ -162,7 +227,7 @@ export function MissionPayloadControl({
     setOverrideState("restoring");
     onSelectingPayloadTargetChange(false);
     try {
-      await dispatchCommand("payload_control_end", commandIdentity(run.id, sessionID, gimbalId, cameraComponentId));
+      await dispatchCommand("payload_control_end", commandIdentity(context, sessionID, gimbalId, cameraComponentId));
       sessionRef.current = undefined;
       setOverrideState("automatic");
       onClearPayloadTarget();
@@ -173,7 +238,9 @@ export function MissionPayloadControl({
       sessionRef.current = undefined;
       setOverrideState("automatic");
       onClearPayloadTarget();
-      setError(`Manual control ended, but Atlas could not confirm the mission view was restored: ${messageFrom(reason)}`);
+      setError(context.kind === "inspection"
+        ? `Inspection control ended, but Atlas could not confirm gimbal ownership was released: ${messageFrom(reason)}`
+        : `Manual control ended, but Atlas could not confirm the mission view was restored: ${messageFrom(reason)}`);
     }
   }
 
@@ -182,7 +249,7 @@ export function MissionPayloadControl({
     if (!sessionID || !manual) return;
     try {
       await dispatchCommand(commandType, {
-        ...commandIdentity(run.id, sessionID, gimbalId, cameraComponentId),
+        ...commandIdentity(context, sessionID, gimbalId, cameraComponentId),
         ...parameters,
       });
     } catch (reason) {
@@ -201,9 +268,9 @@ export function MissionPayloadControl({
   const baseStateLabel = !gimbalDetected
     ? "No gimbal detected"
     : !activeRun
-      ? "Available during mission"
+      ? context.kind === "inspection" ? inspectionBlocker(aircraft) : "Available during mission"
       : overrideState === "manual"
-        ? "Manual control"
+        ? context.kind === "inspection" ? "Inspection control" : "Manual override"
         : overrideState === "acquiring"
           ? "Taking control"
           : overrideState === "restoring"
@@ -212,7 +279,7 @@ export function MissionPayloadControl({
 
   return (
     <section
-      className={manual ? "execution-card payload-control payload-control--manual" : "execution-card payload-control"}
+      className={`${context.kind === "inspection" ? "payload-control payload-control--inspection" : "execution-card payload-control"}${manual ? " payload-control--manual" : ""}`}
       aria-labelledby="payload-control-title"
       tabIndex={manual ? 0 : undefined}
       onKeyDown={(event) => {
@@ -231,29 +298,33 @@ export function MissionPayloadControl({
         if (manual && !event.currentTarget.contains(event.relatedTarget)) stopRate();
       }}
     >
-      <div className="execution-card__title payload-control__title">
-        <span>02</span>
-        <strong id="payload-control-title">Camera & gimbal</strong>
+      <div className="execution-card__title payload-control__title payload-control__heading">
+        <span>{context.kind === "inspection" ? "CTRL" : "02"}</span>
+        <strong id="payload-control-title">{context.kind === "inspection" ? "Inspection control" : "Camera & gimbal"}</strong>
         <i className={manual ? "payload-state payload-state--manual" : "payload-state"}>{baseStateLabel}</i>
       </div>
 
       <div className="payload-mission-view">
-        <span>Mission view now</span>
-        <strong>{displayMode(missionView.cameraMode)}</strong>
-        <small>{missionView.pitchDegrees}° pitch · {displayMode(missionView.yawMode)}{zoomSupported ? ` · ${Math.round(missionView.zoomPercent)}% zoom` : ""}</small>
+        <span>{context.kind === "inspection" ? "Control context" : "Mission view now"}</span>
+        <strong>{context.kind === "inspection" ? "Ground inspection" : displayMode(missionView.cameraMode)}</strong>
+        <small>{context.kind === "inspection" ? "No mission intent is active. Ending or losing the lease stops movement and releases gimbal ownership." : `${missionView.pitchDegrees}° pitch · ${displayMode(missionView.yawMode)}${zoomSupported ? ` · ${Math.round(missionView.zoomPercent)}% zoom` : ""}`}</small>
       </div>
 
       {!manual && overrideState === "automatic" && (
         <>
           <button type="button" className="execution-secondary-action payload-take-control" disabled={!activeRun || !linkReady || !gimbalDetected || Boolean(pendingLabel)} onClick={() => void beginManual()}>
-            Take manual payload control
+            {context.kind === "inspection" ? "Take inspection control" : "Take manual payload control"}
           </button>
-          <p className="execution-command-note">{gimbalDetected ? "Flight continues on its mission route. Atlas restores the current mission view when manual control ends." : "The connected Agent has not discovered a MAVLink gimbal."}</p>
+          <p className="execution-command-note">{controlGuidance(context, aircraft, gimbalDetected)}</p>
         </>
       )}
 
       {(overrideState === "acquiring" || overrideState === "restoring") && (
-        <p className="payload-transition" role="status">{overrideState === "acquiring" ? "Claiming primary gimbal control…" : "Stopping manual movement and restoring mission intent…"}</p>
+        <p className="payload-transition" role="status">{overrideState === "acquiring"
+          ? "Claiming primary gimbal control…"
+          : context.kind === "inspection"
+            ? "Stopping movement and releasing gimbal ownership…"
+            : "Stopping manual movement and restoring mission intent…"}</p>
       )}
 
       {manual && (
@@ -283,7 +354,7 @@ export function MissionPayloadControl({
             <RateButton label="Tilt down" glyph="↓" onStart={() => rate(-15, 0)} onStop={stopRate} />
           </div>
 
-          {roiSupported && (
+          {context.kind === "mission_override" && roiSupported && (
             <div className="payload-roi">
               <div><strong>Look at map target</strong><span>Geographic ROI</span></div>
               <button type="button" className={selectingPayloadTarget ? "payload-map-select payload-map-select--active" : "payload-map-select"} onClick={() => onSelectingPayloadTargetChange(!selectingPayloadTarget)}>
@@ -319,7 +390,7 @@ export function MissionPayloadControl({
             </label>
           )}
 
-          <button type="button" className="execution-primary-action payload-return" disabled={Boolean(pendingLabel)} onClick={() => void endManual()}>Return to mission view</button>
+          <button type="button" className="execution-primary-action payload-return" disabled={Boolean(pendingLabel)} onClick={() => void endManual()}>{context.kind === "inspection" ? "Release inspection control" : "Return to mission view"}</button>
         </div>
       )}
 
@@ -332,8 +403,30 @@ function RateButton({ label, glyph, onStart, onStop }: { label: string; glyph: s
   return <button type="button" aria-label={label} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onStart(); }} onPointerUp={onStop} onPointerCancel={onStop} onLostPointerCapture={onStop}>{glyph}</button>;
 }
 
-function commandIdentity(missionRunId: string, controlSessionId: string, gimbalId: number, cameraComponentId: number) {
-  return { missionRunId, controlSessionId, gimbalId, cameraComponentId };
+function commandIdentity(controlContext: ControlContext, controlSessionId: string, gimbalId: number, cameraComponentId: number) {
+  return {
+    controlContext,
+    controlSessionId,
+    gimbalId,
+    cameraComponentId,
+  };
+}
+
+function inspectionBlocker(aircraft?: FleetAircraft) {
+  if (aircraft?.connectionStatus !== "connected") return "Link required";
+  if (aircraft.telemetry?.status !== "live") return "Live telemetry required";
+  if (aircraft.telemetry.armed !== false) return "Disarm required";
+  if (aircraft.telemetry.inAir !== false) return "On-ground state required";
+  return "Inspection unavailable";
+}
+
+function controlGuidance(context: ControlContext, aircraft: FleetAircraft | undefined, gimbalDetected: boolean) {
+  if (!gimbalDetected) return "The connected Agent has not discovered a MAVLink gimbal.";
+  if (context.kind === "mission_override") return "Flight continues on its mission route. Atlas restores the current mission view when manual control ends.";
+  if (aircraft?.connectionStatus !== "connected") return "Connect the aircraft before taking inspection control.";
+  if (aircraft.telemetry?.status !== "live") return "Atlas requires live telemetry before enabling physical inspection controls.";
+  if (aircraft.telemetry.armed !== false || aircraft.telemetry.inAir !== false) return "Inspection control is available only when PX4 explicitly reports disarmed and on the ground.";
+  return "Atlas holds a short renewable lease. Leaving this view stops movement and releases gimbal ownership.";
 }
 
 async function awaitCommandResult(initial: CommandReceipt) {
@@ -370,9 +463,11 @@ function capabilityNumber(capabilities: string[], pattern: RegExp) {
   return 0;
 }
 
-function commandLabel(commandType: string) {
+function commandLabel(commandType: string, contextKind: ControlContext["kind"]) {
   if (commandType === "payload_control_begin") return "Taking manual payload control…";
-  if (commandType === "payload_control_end") return "Restoring mission payload view…";
+  if (commandType === "payload_control_end") return contextKind === "inspection"
+    ? "Releasing inspection control…"
+    : "Restoring mission payload view…";
   if (commandType === "gimbal_set_roi") return "Sending geographic look target…";
   if (commandType === "camera_set_zoom") return "Setting camera zoom…";
   return "Sending payload command…";

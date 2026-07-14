@@ -6,11 +6,13 @@ mod video;
 use std::{net::SocketAddr, sync::Arc};
 
 use commands::{
-    apply_mission_terrain_profile, cancel_vehicle_command, control_mission_run, create_mission,
-    fleet_snapshot, generate_mission_plan, ground_station_snapshot, history_overview,
-    mission_detail, mission_list, mission_plan, mission_run_detail, mission_run_history,
-    mission_templates, perception_snapshot, request_vehicle_command, runtime_info, update_mission,
-    upload_mission, vehicle_command_detail, vehicle_command_history, vehicle_event_history,
+    apply_mission_terrain_profile, archive_drone, cancel_vehicle_command, control_mission_run,
+    create_mission, fleet_snapshot, generate_mission_plan, ground_station_snapshot,
+    history_overview, mission_detail, mission_list, mission_plan, mission_run_detail,
+    mission_run_history, mission_templates, perception_frame_subscription_renew,
+    perception_frame_subscription_start, perception_frame_subscription_stop, perception_snapshot,
+    request_vehicle_command, restore_drone, runtime_info, update_mission, upload_mission,
+    vehicle_command_detail, vehicle_command_history, vehicle_event_history,
     vehicle_operations_snapshot, vehicle_telemetry_chart_series, vehicle_telemetry_history,
     video_stream_frame, video_stream_snapshot, video_stream_start, video_stream_stop,
 };
@@ -93,11 +95,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             runtime_info,
             perception_snapshot,
+            perception_frame_subscription_start,
+            perception_frame_subscription_renew,
+            perception_frame_subscription_stop,
             video_stream_start,
             video_stream_stop,
             video_stream_snapshot,
             video_stream_frame,
             fleet_snapshot,
+            archive_drone,
+            restore_drone,
             ground_station_snapshot,
             history_overview,
             mission_templates,
