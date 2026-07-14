@@ -53,8 +53,10 @@ PACKAGE_ROOT="${BUILD_DIR}/atlas-agent"
 mkdir -p \
   "${PACKAGE_ROOT}/DEBIAN" \
   "${PACKAGE_ROOT}/usr/bin" \
+  "${PACKAGE_ROOT}/usr/sbin" \
   "${PACKAGE_ROOT}/usr/libexec/atlas-agent" \
   "${PACKAGE_ROOT}/usr/lib/systemd/system" \
+  "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container" \
   "${PACKAGE_ROOT}/usr/share/atlas-agent/models" \
   "${CACHE_DIR}" \
   "${OUTPUT_DIR}"
@@ -97,7 +99,13 @@ install -m 0644 "${MODEL_SOURCE}" "${PACKAGE_ROOT}/usr/share/atlas-agent/models/
 MODEL_SHA256="$(sha256sum "${MODEL_SOURCE}" | awk '{print $1}')"
 
 install -m 0755 "${AGENT_DIR}/scripts/atlas-hailort-adapter.py" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-hailort-adapter"
+install -m 0755 "${AGENT_DIR}/scripts/setup-hailo-ubuntu.sh" "${PACKAGE_ROOT}/usr/sbin/atlas-hailo-setup"
+install -m 0644 "${SCRIPT_DIR}/hailo/Dockerfile" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/Dockerfile"
+install -m 0755 "${SCRIPT_DIR}/hailo/atlas-hailo-container-check" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/atlas-hailo-container-check"
+install -m 0755 "${SCRIPT_DIR}/hailo/atlas-hailo-container-run" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-hailo-container-run"
+install -m 0755 "${AGENT_DIR}/scripts/atlas-hailort-adapter.py" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/atlas-hailort-adapter.py"
 install -m 0644 "${SCRIPT_DIR}/systemd/atlas-agent.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-agent.service"
+install -m 0644 "${SCRIPT_DIR}/systemd/atlas-hailo-adapter.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-hailo-adapter.service"
 install -m 0644 "${SCRIPT_DIR}/systemd/atlas-mavsdk.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-mavsdk.service"
 install -m 0755 "${SCRIPT_DIR}/debian/postinst" "${PACKAGE_ROOT}/DEBIAN/postinst"
 install -m 0755 "${SCRIPT_DIR}/debian/prerm" "${PACKAGE_ROOT}/DEBIAN/prerm"

@@ -2,7 +2,6 @@
 set -eu
 
 if [ "${1:-}" = remove ] && command -v systemctl >/dev/null 2>&1; then
-    systemctl stop atlas-agent.service atlas-mavsdk.service || true
-    systemctl disable atlas-agent.service atlas-mavsdk.service || true
+    systemctl stop atlas-hailo-adapter.service atlas-agent.service atlas-mavsdk.service || true
+    systemctl disable atlas-hailo-adapter.service atlas-agent.service atlas-mavsdk.service || true
 fi
-

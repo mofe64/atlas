@@ -50,23 +50,74 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 	}
 
 	if configuration["ATLAS_PERCEPTION_PROVIDER"] == "hailo" {
-		hailo := discoverHailo(ctx, runner)
-		if hailo.Ready() {
-			checks = append(checks, Check{Name: "Hailo runtime", Level: CheckPass, Message: hailo.Accelerator})
+		hailo := discoverHailo(ctx, runner, paths)
+		if configuration["ATLAS_PERCEPTION_ADAPTER_MODE"] == AdapterModeContainer || hailo.RuntimeMode == AdapterModeContainer {
+			checks = append(checks, doctorHailoContainer(ctx, runner, configuration, hailo)...)
 		} else {
-			checks = append(checks, Check{Name: "Hailo runtime", Level: CheckFail, Message: strings.Join(hailo.MissingComponents, ", ")})
+			if hailo.Ready() {
+				checks = append(checks, Check{Name: "Hailo runtime", Level: CheckPass, Message: hailo.Accelerator})
+			} else {
+				checks = append(checks, Check{Name: "Hailo runtime", Level: CheckFail, Message: strings.Join(hailo.MissingComponents, ", ")})
+			}
+			checks = append(checks,
+				fileCheck("Hailo HEF model", configuration["ATLAS_PERCEPTION_MODEL_PATH"], true),
+				fileCheck("Hailo postprocess", configuration["ATLAS_PERCEPTION_POSTPROCESS_SO"], true),
+				fileCheck("Hailo adapter", configuration["ATLAS_PERCEPTION_ADAPTER_PATH"], true),
+			)
 		}
-		checks = append(checks,
-			fileCheck("Hailo HEF model", configuration["ATLAS_PERCEPTION_MODEL_PATH"], true),
-			fileCheck("Hailo postprocess", configuration["ATLAS_PERCEPTION_POSTPROCESS_SO"], true),
-			fileCheck("Hailo adapter", configuration["ATLAS_PERCEPTION_ADAPTER_PATH"], true),
-		)
 	}
 
 	for _, check := range checks {
 		_, _ = fmt.Fprintf(output, "[%s] %-24s %s\n", check.Level, check.Name, check.Message)
 	}
 	return checks, nil
+}
+
+func doctorHailoContainer(ctx context.Context, runner Runner, configuration map[string]string, hailo HailoStatus) []Check {
+	checks := []Check{
+		serviceCheck(ctx, runner, "atlas-hailo-adapter.service"),
+		versionCheck("Hailo driver package", hailo.HostDriverPackageVersion, hailo.ExpectedDriverPackageVersion, false),
+		versionCheck("Hailo loaded driver", hailo.HostDriverVersion, hailo.ExpectedDriverVersion, false),
+		versionCheck("Hailo host firmware pkg", hailo.HostFirmwareVersion, hailo.ExpectedFirmwareVersion, false),
+		versionCheck("Hailo device firmware", hailo.FirmwareVersion, hailo.ExpectedDeviceFirmwareVersion, true),
+		booleanCheck("Hailo /dev access", hailo.DeviceNodeReady, "/dev/hailo0 available to container"),
+		booleanCheck("Hailo container image", hailo.RuntimeInstalled, hailo.ContainerImage),
+		versionCheck("HailoRT container", hailo.UserspaceVersion, hailo.ExpectedUserspaceVersion, false),
+		versionCheck("TAPPAS container", hailo.TAPPASVersion, hailo.ExpectedTAPPASVersion, false),
+		booleanCheck("Hailo GStreamer", hailo.GStreamerReady, "hailonet and hailofilter available"),
+		booleanCheck("Hailo Python bindings", hailo.PythonReady, "gi and hailo import successfully"),
+		fileCheck("Hailo HEF model", configuration["ATLAS_PERCEPTION_MODEL_PATH"], true),
+	}
+
+	modelPath := configuration["ATLAS_PERCEPTION_MODEL_PATH"]
+	modelResult := runHailoContainerCheck(ctx, runner, hailo, modelPath)
+	modelValues := parseKeyValueOutput(modelResult.Output)
+	modelReady := modelResult.Err == nil && modelValues["MODEL_READY"] == "true"
+	checks = append(checks, booleanCheck("Hailo HEF parse", modelReady, "hailortcli parsed the packaged HEF"))
+	expectedAccelerator := configuration["ATLAS_HAILO_ACCELERATOR"]
+	compatible := modelValues["MODEL_COMPATIBLE"] == "true" && expectedAccelerator != "" && expectedAccelerator == hailo.Accelerator
+	message := fmt.Sprintf("HEF=%s configured=%s device=%s", fallback(modelValues["MODEL_ARCHITECTURE"], "unknown"), fallback(expectedAccelerator, "unknown"), fallback(hailo.Accelerator, "unknown"))
+	checks = append(checks, booleanCheck("Hailo HEF accelerator", compatible, message))
+	return checks
+}
+
+func versionCheck(name, actual, expected string, coreOnly bool) Check {
+	compatible := versionMatches(actual, expected)
+	if coreOnly {
+		compatible = versionCoreMatches(actual, expected)
+	}
+	message := fmt.Sprintf("actual=%s expected=%s", fallback(actual, "missing"), fallback(expected, "missing"))
+	if compatible {
+		return Check{Name: name, Level: CheckPass, Message: message}
+	}
+	return Check{Name: name, Level: CheckFail, Message: message}
+}
+
+func booleanCheck(name string, ready bool, message string) Check {
+	if ready {
+		return Check{Name: name, Level: CheckPass, Message: message}
+	}
+	return Check{Name: name, Level: CheckFail, Message: message}
 }
 
 func fileCheck(name, path string, required bool) Check {

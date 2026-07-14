@@ -39,11 +39,13 @@ func main() {
 			os.Exit(1)
 		}
 		logger.Info("perception runtime source ready", "provider", cfg.PerceptionProvider, "socket_path", cfg.PerceptionSocketPath)
-		if cfg.PerceptionProvider == "hailo" {
+		if cfg.PerceptionProvider == "hailo" && cfg.PerceptionAdapterMode == "process" {
 			if err := perception.StartHailoRTAdapter(ctx, logger, cfg.PerceptionAdapterPath, cfg.PerceptionSocketPath); err != nil {
 				logger.Error("start HailoRT perception adapter", "error", err)
 				os.Exit(1)
 			}
+		} else if cfg.PerceptionProvider == "hailo" {
+			logger.Info("HailoRT perception adapter is externally supervised", "mode", cfg.PerceptionAdapterMode)
 		}
 	}
 	telemetryOutputs, err := mavsdktelemetry.Start(ctx, logger, cfg.MAVSDKGRPCAddress, cfg.TelemetryInterval)

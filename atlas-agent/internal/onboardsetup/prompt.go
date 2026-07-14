@@ -12,7 +12,6 @@ import (
 
 type InstallPlan struct {
 	Config        InstallConfig
-	InstallHailo  bool
 	ReplaceLegacy bool
 }
 
@@ -27,7 +26,7 @@ func NewPrompter(input io.Reader, output io.Writer) *Prompter {
 
 func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, options Options) (InstallPlan, error) {
 	config := installConfigFromDiscovery(discovery, options.Paths)
-	plan := InstallPlan{Config: config, InstallHailo: options.InstallHailo, ReplaceLegacy: options.ReplaceLegacy}
+	plan := InstallPlan{Config: config, ReplaceLegacy: options.ReplaceLegacy}
 	if options.NonInteractive {
 		if len(discovery.LegacyUnits) > 0 && !plan.ReplaceLegacy {
 			return InstallPlan{}, fmt.Errorf("deprecated Atlas systemd units were found; rerun interactively or explicitly allow their replacement")
@@ -35,7 +34,7 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 		if err := ensureSerialCandidate(config, discovery); err != nil {
 			return InstallPlan{}, err
 		}
-		if config.PerceptionEnabled && !discovery.Hailo.Ready() && !plan.InstallHailo {
+		if config.PerceptionEnabled && !discovery.Hailo.Ready() {
 			return InstallPlan{}, fmt.Errorf("Hailo perception is configured but the runtime is not ready: %s", strings.Join(discovery.Hailo.MissingComponents, ", "))
 		}
 		if config.PerceptionEnabled {
@@ -123,15 +122,9 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 		if err != nil {
 			return InstallPlan{}, err
 		}
-	} else if discovery.Hailo.PCIVisible && discovery.Hailo.AptPackageReady {
-		plan.InstallHailo, err = prompt.confirm("Install the configured hailo-all package and enable detection", true)
-		if err != nil {
-			return InstallPlan{}, err
-		}
-		config.PerceptionEnabled = plan.InstallHailo
 	} else {
 		_, _ = fmt.Fprintf(options.Output, "\nHailo perception is not ready: %s\n", strings.Join(discovery.Hailo.MissingComponents, ", "))
-		_, _ = fmt.Fprintln(options.Output, "Ubuntu 24.04 needs a compatible HailoRT/TAPPAS package source configured before Atlas can enable perception.")
+		_, _ = fmt.Fprintln(options.Output, "On a clean Ubuntu 24.04 host, run sudo atlas-hailo-setup to install the pinned host driver and container runtime.")
 		config.PerceptionEnabled = false
 		proceed, confirmErr := prompt.confirm("Continue installing Atlas with perception disabled", false)
 		if confirmErr != nil {
@@ -146,16 +139,18 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 		if err != nil {
 			return InstallPlan{}, err
 		}
-		config.PostprocessSO, err = prompt.text("Hailo postprocess library", config.PostprocessSO)
-		if err != nil {
-			return InstallPlan{}, err
+		if config.PerceptionAdapterMode == AdapterModeProcess {
+			config.PostprocessSO, err = prompt.text("Hailo postprocess library", config.PostprocessSO)
+			if err != nil {
+				return InstallPlan{}, err
+			}
 		}
 	}
 	plan.Config = config
 	if config.PerceptionEnabled && !fileExists(config.ModelPath) {
 		return InstallPlan{}, fmt.Errorf("Hailo HEF model does not exist: %s", config.ModelPath)
 	}
-	if config.PerceptionEnabled && !plan.InstallHailo && !fileExists(config.PostprocessSO) {
+	if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeProcess && !fileExists(config.PostprocessSO) {
 		return InstallPlan{}, fmt.Errorf("Hailo postprocess library does not exist: %s", config.PostprocessSO)
 	}
 	if err := config.Validate(options.Paths); err != nil {
@@ -183,7 +178,7 @@ func printDiscovery(output io.Writer, discovery Discovery) {
 		_, _ = fmt.Fprintf(output, "  A8 RTSP:  not verified (%s)\n", fallback(discovery.Camera.Error, "connection failed"))
 	}
 	if discovery.Hailo.Ready() {
-		_, _ = fmt.Fprintf(output, "  Hailo:    ready (%s)\n", discovery.Hailo.Accelerator)
+		_, _ = fmt.Fprintf(output, "  Hailo:    ready (%s, %s)\n", discovery.Hailo.Accelerator, discovery.Hailo.RuntimeMode)
 	} else {
 		_, _ = fmt.Fprintf(output, "  Hailo:    incomplete (%s)\n", strings.Join(discovery.Hailo.MissingComponents, ", "))
 	}
@@ -203,9 +198,9 @@ func printPlan(output io.Writer, plan InstallPlan, paths Paths) {
 	_, _ = fmt.Fprintf(output, "  Drone:       %s\n", plan.Config.DroneName)
 	_, _ = fmt.Fprintf(output, "  Native:      %s\n", plan.Config.GroundStationAddress)
 	_, _ = fmt.Fprintf(output, "  TELEM2:      %s at %d baud\n", plan.Config.SerialDevice, plan.Config.BaudRate)
-	_, _ = fmt.Fprintf(output, "  Perception:  %s\n", provider)
+	_, _ = fmt.Fprintf(output, "  Perception:  %s (%s)\n", provider, plan.Config.PerceptionAdapterMode)
 	_, _ = fmt.Fprintf(output, "  Config:      %s\n", paths.ConfigFile)
-	_, _ = fmt.Fprintln(output, "  Services:    atlas-mavsdk.service, atlas-agent.service")
+	_, _ = fmt.Fprintf(output, "  Services:    %s\n", strings.Join(configuredServices(plan.Config), ", "))
 }
 
 func (prompt *Prompter) text(label, defaultValue string) (string, error) {

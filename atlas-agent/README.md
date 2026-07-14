@@ -93,7 +93,75 @@ ATLAS_AGENT_STATE_DIR=/tmp/atlas-agent-dev \
 go run ./cmd/atlas-agent
 ```
 
+## Understanding the HM30 network addresses
+
+The HM30 link connects the drone-side Ethernet network to the ground-side
+Ethernet network over radio. Think of it as a long Ethernet cable between the
+air unit and the ground unit: devices on either side can communicate because
+they are all on the `192.168.144.x` network.
+
+```text
+Drone side                                                  Ground side
+
+A8 camera       Raspberry Pi       HM30 Air       HM30 Ground       Ground computer
+.25             .168               .11    ))) radio ((( .12         .50:7443
+     \____________ Ethernet hub __________/              \________ Ethernet ________/
+```
+
+The complete address map is:
+
+| Device | Address | What it is used for |
+| --- | --- | --- |
+| HM30 Air unit | `192.168.144.11` | Management address for the air radio |
+| HM30 Ground unit | `192.168.144.12` | Management address for the ground radio |
+| SIYI A8 camera | `192.168.144.25` | RTSP video and camera control |
+| Raspberry Pi `eth0` | `192.168.144.168` | Atlas Agent and onboard Hailo access |
+| Ground computer Ethernet | `192.168.144.50` | Atlas Native; gRPC listens on port `7443` |
+
+`192.168.144.50` is **not** an HM30 address. It is an address we chose and
+manually assigned to the ground computer's Ethernet adapter. It is editable,
+but keeping it makes setup easier because Atlas Native and Atlas Agent both use
+`192.168.144.50:7443` as their default.
+
+The HM30 units use `.11` and `.12` for the radios themselves. Atlas does not
+send agent messages to `.12`; the Pi connects through the radio link to Atlas
+Native at `.50:7443`. Similarly, the ground computer can request the A8 RTSP
+stream from `.25`, and the radio link carries that traffic to the drone side.
+No port forwarding or internet connection is required.
+
+All addresses must be unique and use the `255.255.255.0` subnet mask. Leave the
+router/gateway field empty on the Pi's HM30 Ethernet connection and on the
+ground computer's HM30 Ethernet connection. The Pi should continue to use
+Wi-Fi for its internet/default route; the HM30 Ethernet connection is only for
+local `192.168.144.x` traffic.
+
+On a macOS ground computer, find the Ethernet device with:
+
+```sh
+networksetup -listallhardwareports
+```
+
+Then check its address, replacing `en7` with the device shown for the Ethernet
+adapter:
+
+```sh
+ipconfig getifaddr en7
+```
+
+If the result is `192.168.144.50`, use the default ground-station address
+`192.168.144.50:7443` during `atlas-setup`. If a different unused
+`192.168.144.x` address is intentionally assigned to the ground computer, set
+Atlas Native's `ATLAS_GROUND_STATION_LISTEN_ADDR` and Atlas Agent's
+`ATLAS_GROUND_STATION_ADDR` to that same address with port `7443`.
+
+See the
+[A8, HM30, Pi, and ground-computer network guide](../../docs/atlas_a8_hm30_pi_video_setup.md)
+for wiring, configuration, routing, and troubleshooting details.
+
 ## Package and install on Raspberry Pi 5
+
+See [INSTALLATION.md](INSTALLATION.md) for the complete build, deprecated-stack
+cleanup, Hailo migration, interactive setup, and verification procedure.
 
 The supported onboard profile is Ubuntu 24.04 arm64 on Raspberry Pi 5 with a
 Raspberry Pi AI HAT+ (Hailo-8L by default). Build the Debian package on a Linux
@@ -120,20 +188,36 @@ Copy `dist/atlas-agent_<version>_arm64.deb` to the onboard computer, then run:
 
 ```sh
 sudo apt install ./atlas-agent_<version>_arm64.deb
+sudo atlas-hailo-setup  # clean Ubuntu host only
+# Reboot here if atlas-hailo-setup exits with status 3.
 sudo atlas-setup
 ```
+
+`atlas-hailo-setup` is needed on a clean Ubuntu installation. If the computer
+already has a working Hailo installation from the deprecated Atlas Agent, do
+not replace it automatically: skip `atlas-hailo-setup` and run the interactive
+`sudo atlas-setup`. Its discovery checks can select the existing native runtime;
+after configuration, confirm it with `sudo atlas-setup doctor`. Use
+`atlas-hailo-setup --replace-existing` only when deliberately migrating to the
+pinned container profile. That migration removes host HailoRT/TAPPAS packages,
+but retains/reinstalls the pinned host driver and firmware; changing a loaded
+PCIe driver requires a reboot.
 
 With no arguments, `atlas-setup` is interactive. It verifies Ubuntu, the Pi,
 the camera, and Hailo; lists stable `/dev/serial/by-id` devices; and passively
 listens for a checksum-valid MAVLink heartbeat before configuring TELEM2. It
-then writes `/etc/atlas-agent/atlas-agent.env` and enables only:
+then writes `/etc/atlas-agent/atlas-agent.env` and enables:
 
 ```text
 atlas-mavsdk.service -> atlas-agent.service
+                            |
+                            +-> atlas-hailo-adapter.service (container mode only)
 ```
 
-The Hailo adapter is supervised by `atlas-agent`; it is not a third service.
-MediaMTX and MAVLink Router are not installed by this topology.
+In native/process mode the Hailo adapter remains supervised by `atlas-agent`.
+In container mode systemd supervises `atlas-hailo-adapter.service`, and the
+agent only owns the perception socket. MediaMTX and MAVLink Router are not
+installed by this topology.
 
 When deprecated units are still present under `/etc/systemd/system`, the
 interactive wizard shows each one and asks permission to stop and archive it
@@ -144,6 +228,8 @@ Run the field diagnostic at any time:
 
 ```sh
 sudo atlas-setup doctor
+sudo atlas-hailo-setup status
+journalctl -u atlas-hailo-adapter.service -f
 ```
 
 For fleet automation, the discovery defaults can be applied without prompts:
@@ -157,21 +243,39 @@ changing the computer.
 
 ### Ubuntu 24.04 and Hailo
 
-Atlas verifies all of the following before enabling perception:
+`atlas-hailo-setup` installs one pinned compatibility profile:
 
-- the Hailo PCIe device;
-- `hailortcli fw-control identify`;
-- the `hailonet` and `hailofilter` GStreamer elements;
-- the system Python `gi` and `hailo` bindings;
-- a HEF matching the detected Hailo-8 or Hailo-8L accelerator;
-- the configured TAPPAS postprocess library.
+- Hailo PCIe driver and firmware `4.20.0` on the Ubuntu host;
+- HailoRT `4.20.0-1` and TAPPAS Core `3.31.0+1-1` in a digest-pinned Debian
+  arm64 container;
+- a narrow, deterministic DKMS source patch needed by Ubuntu's Raspberry Pi
+  kernel warning policy;
+- an immutable local container image ID recorded in
+  `/etc/atlas-agent/hailo-container.env`.
 
-Raspberry Pi's turnkey `hailo-all` setup is published for Raspberry Pi OS.
-Ubuntu 24.04 therefore needs a compatible HailoRT/TAPPAS package source or
-preinstalled runtime. If that source exposes `hailo-all`, the wizard offers to
-install it. Otherwise setup pauses with the missing prerequisites instead of
-transplanting Raspberry Pi OS packages or patching vendor DKMS source. The rest
-of Atlas can be installed without perception only after explicit confirmation.
+The profile uses checksum-pinned packages from Raspberry Pi's public archive.
+Keeping kernel-facing driver/firmware on the host and Hailo userspace in the
+container prevents Atlas's Python and GStreamer dependencies from becoming
+host-global dependencies. Only the Hailo adapter is containerized. It receives
+host networking for the A8 RTSP stream, `/dev/hailo0`, the Atlas runtime socket,
+and the packaged model directory. It runs as the host `atlas-agent` UID plus the
+Hailo device group, with a read-only root filesystem and all Linux capabilities
+dropped.
+
+`atlas-setup doctor` verifies all of the following before container perception
+is considered healthy:
+
+- installed and loaded host driver version;
+- installed host firmware package and live device firmware version;
+- `/dev/hailo0` availability inside the container;
+- exact HailoRT/TAPPAS userspace compatibility with the host profile;
+- `hailonet` and `hailofilter` GStreamer elements and Python `gi`/`hailo`
+  bindings inside the container;
+- successful HEF parsing and a Hailo-8 versus Hailo-8L accelerator match.
+
+The container has host networking because it must reach the SIYI A8 network;
+this is intentionally broader than a dedicated container bridge. It does not
+mount the Docker socket or the rest of the host filesystem.
 
 The default package contains a Hailo-8L model. Setup refuses to enable it on a
 detected Hailo-8 accelerator; build the package with the matching HEF instead.
@@ -194,6 +298,7 @@ detected Hailo-8 accelerator; build the package with the matching HEF instead.
 | `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI A8 Mini UDP SDK endpoint used for zoom discovery/fallback |
 | `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest-snapshot publish interval (minimum `100ms`) |
 | `ATLAS_PERCEPTION_PROVIDER` | `disabled` | Neutral runtime selector: `external`, `hailo`, `deepstream`, `tensorrt`, or `onnx` |
+| `ATLAS_PERCEPTION_ADAPTER_MODE` | `process` | `process` lets `atlas-agent` launch the adapter; `container` delegates it to the Hailo systemd unit |
 | `ATLAS_PERCEPTION_SOCKET_PATH` | Agent state directory under `perception/runtime.sock` | Protected Unix socket where the selected runtime publishes Atlas perception envelopes |
 | `ATLAS_PERCEPTION_ADAPTER_PATH` | `atlas-hailort-adapter` | Hailo adapter executable supervised when the provider is `hailo` |
 | `ATLAS_A8_RTSP_URL` | `rtsp://192.168.144.25:8554/main.264` | Clean A8 stream consumed by Hailo inference |
@@ -216,8 +321,8 @@ socket. Live frames use a latest-value buffer, so stale detections are discarded
 instead of delaying current state. The current concrete adapter is HailoRT via
 the Hailo GStreamer/TAPPAS elements; Jetson adapters remain future work.
 
-Install the adapter on the onboard computer after HailoRT, TAPPAS Core,
-PyGObject, and their Python bindings are available:
+For native development, install the adapter on a computer where HailoRT, TAPPAS
+Core, PyGObject, and their Python bindings are already available:
 
 ```sh
 sudo install -m 0755 scripts/atlas-hailort-adapter.py /usr/local/bin/atlas-hailort-adapter
@@ -227,6 +332,7 @@ Then enable it alongside Atlas Agent:
 
 ```sh
 ATLAS_PERCEPTION_PROVIDER=hailo \
+ATLAS_PERCEPTION_ADAPTER_MODE=process \
 ATLAS_PERCEPTION_MODEL_PATH=/opt/atlas/models/objects.hef \
 go run ./cmd/atlas-agent
 ```

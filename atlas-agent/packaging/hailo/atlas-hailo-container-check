@@ -1,0 +1,113 @@
+#!/bin/sh
+set -u
+
+SOFTWARE_ONLY=0
+MODEL_PATH="${ATLAS_PERCEPTION_MODEL_PATH:-}"
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --software-only)
+            SOFTWARE_ONLY=1
+            shift
+            ;;
+        --model)
+            [ "$#" -ge 2 ] || exit 2
+            MODEL_PATH="$2"
+            shift 2
+            ;;
+        *)
+            exit 2
+            ;;
+    esac
+done
+
+result=0
+hailort_version="$(dpkg-query -W -f='${Version}' hailort 2>/dev/null || true)"
+tappas_version="$(dpkg-query -W -f='${Version}' hailo-tappas-core 2>/dev/null || true)"
+printf 'HAILORT_VERSION=%s\n' "$hailort_version"
+printf 'TAPPAS_VERSION=%s\n' "$tappas_version"
+
+gstreamer_ready=false
+if gst-inspect-1.0 hailonet >/dev/null 2>&1 && gst-inspect-1.0 hailofilter >/dev/null 2>&1; then
+    gstreamer_ready=true
+else
+    result=1
+fi
+printf 'GSTREAMER_READY=%s\n' "$gstreamer_ready"
+
+python_ready=false
+if python3 -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo" >/dev/null 2>&1; then
+    python_ready=true
+else
+    result=1
+fi
+printf 'PYTHON_READY=%s\n' "$python_ready"
+
+if [ "$SOFTWARE_ONLY" -eq 1 ]; then
+    exit "$result"
+fi
+
+device_node_ready=false
+device_ready=false
+device_architecture=unknown
+firmware_version=unknown
+
+if [ -c /dev/hailo0 ] && [ -r /dev/hailo0 ] && [ -w /dev/hailo0 ]; then
+    device_node_ready=true
+else
+    result=1
+fi
+printf 'DEVICE_NODE_READY=%s\n' "$device_node_ready"
+
+identify_output="$(hailortcli fw-control identify 2>&1)"
+if [ "$?" -eq 0 ]; then
+    device_ready=true
+    architecture_text="$(printf '%s\n' "$identify_output" | sed -n 's/^[[:space:]]*Device Architecture:[[:space:]]*//p' | head -n 1)"
+    case "$(printf '%s' "$architecture_text" | tr '[:upper:]_' '[:lower:]-')" in
+        *hailo8l*) device_architecture=hailo-8l ;;
+        *hailo8*) device_architecture=hailo-8 ;;
+    esac
+    firmware_text="$(printf '%s\n' "$identify_output" | sed -n 's/^[[:space:]]*Firmware Version:[[:space:]]*//p' | head -n 1)"
+    if [ -n "$firmware_text" ]; then
+        firmware_version="$(printf '%s' "$firmware_text" | sed 's/[[:space:]].*$//')"
+    fi
+else
+    result=1
+fi
+printf 'DEVICE_READY=%s\n' "$device_ready"
+printf 'DEVICE_ARCHITECTURE=%s\n' "$device_architecture"
+printf 'FIRMWARE_VERSION=%s\n' "$firmware_version"
+
+model_ready=unchecked
+model_compatible=unchecked
+model_architecture=unchecked
+if [ -n "$MODEL_PATH" ]; then
+    model_ready=false
+    model_compatible=false
+    model_architecture=unknown
+    hef_output="$(hailortcli parse-hef "$MODEL_PATH" 2>&1)"
+    hef_status=$?
+    if [ -s "$MODEL_PATH" ] && [ "$hef_status" -eq 0 ]; then
+        model_ready=true
+        architecture_text="$(printf '%s\n' "$hef_output" | sed -n 's/^Architecture HEF was compiled for:[[:space:]]*//p' | head -n 1)"
+        case "$(printf '%s' "$architecture_text" | tr '[:upper:]_' '[:lower:]-')" in
+            *hailo8l*) model_architecture=hailo-8l ;;
+            *hailo8*) model_architecture=hailo-8 ;;
+        esac
+    else
+        result=1
+    fi
+    expected_architecture="${ATLAS_HAILO_ACCELERATOR:-unknown}"
+    if [ "$model_ready" = true ] && \
+       [ "$model_architecture" = "$device_architecture" ] && \
+       [ "$expected_architecture" = "$device_architecture" ]; then
+        model_compatible=true
+    else
+        result=1
+    fi
+fi
+printf 'MODEL_READY=%s\n' "$model_ready"
+printf 'MODEL_ARCHITECTURE=%s\n' "$model_architecture"
+printf 'MODEL_COMPATIBLE=%s\n' "$model_compatible"
+
+exit "$result"

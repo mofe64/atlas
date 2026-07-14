@@ -1,0 +1,28 @@
+#!/bin/sh
+set -eu
+
+: "${ATLAS_HAILO_CONTAINER_IMAGE:?ATLAS_HAILO_CONTAINER_IMAGE is required}"
+: "${ATLAS_HAILO_CONTAINER_NAME:?ATLAS_HAILO_CONTAINER_NAME is required}"
+
+agent_uid="$(id -u atlas-agent)"
+agent_gid="$(id -g atlas-agent)"
+device_gid="$(stat -c '%g' /dev/hailo0)"
+
+# The adapter must own the private Atlas runtime directory while retaining the
+# supplementary group that the kernel assigned to the Hailo device. Running as
+# this numeric host identity avoids granting the container DAC override powers.
+exec /usr/bin/docker run \
+    --rm \
+    --name "${ATLAS_HAILO_CONTAINER_NAME}" \
+    --network host \
+    --device /dev/hailo0:/dev/hailo0 \
+    --user "${agent_uid}:${agent_gid}" \
+    --group-add "${device_gid}" \
+    --env-file /etc/atlas-agent/atlas-agent.env \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+    --volume /run/atlas-agent:/run/atlas-agent:rw \
+    --volume /usr/share/atlas-agent/models:/usr/share/atlas-agent/models:ro \
+    "${ATLAS_HAILO_CONTAINER_IMAGE}"

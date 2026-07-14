@@ -7,7 +7,8 @@ DRY_RUN=0
 CONFIRM=0
 REMOVE_ETH0_CONFIG=0
 PURGE_AGENT_PACKAGES=0
-REMOVE_MEDIA=0
+REMOVE_MEDIA=1
+REMOVE_DOWNLOAD_CACHE=0
 LOG_DIR_OVERRIDDEN=0
 
 INSTALL_PREFIX="${ATLAS_ONBOARD_INSTALL_PREFIX:-/opt/atlas}"
@@ -20,6 +21,12 @@ MAVSDK_SERVER_BIN="${ATLAS_MAVSDK_SERVER_BIN:-${INSTALL_PREFIX}/bin/mavsdk_serve
 MAVLINK_ROUTER_SOURCE_DIR="${ATLAS_MAVLINK_ROUTER_SOURCE_DIR:-${INSTALL_PREFIX}/src/mavlink-router}"
 MAVLINK_ROUTER_SOURCE_MARKER="${MAVLINK_ROUTER_SOURCE_DIR}/.atlas-source-install"
 ETH0_NETPLAN_FILE="${ATLAS_ONBOARD_ETH0_NETPLAN_FILE:-/etc/netplan/99-siyi-eth0-local.yaml}"
+HAILO_MODEL_CACHE_DIR="${ATLAS_HAILO_MODEL_CACHE_DIR:-${HOME}/hailo-models}"
+HAILO_DEB_DIR="${ATLAS_DEFAULT_HAILO_DEB_DIR:-${HOME}/hailo-debs}"
+SYSTEMD_DIR="${ATLAS_LEGACY_SYSTEMD_DIR:-/etc/systemd/system}"
+PACKAGED_SYSTEMD_DIR="${ATLAS_PACKAGED_SYSTEMD_DIR:-/usr/lib/systemd/system}"
+PACKAGED_AGENT_BIN="${ATLAS_PACKAGED_AGENT_BIN:-/usr/bin/atlas-agent}"
+PACKAGED_AGENT_CONFIG="${ATLAS_PACKAGED_AGENT_CONFIG:-/etc/atlas-agent/atlas-agent.env}"
 
 CORE_SERVICES=(
   atlas-video-agent.service
@@ -33,14 +40,14 @@ MEDIA_SERVICES=(
 )
 
 CORE_UNIT_FILES=(
-  /etc/systemd/system/atlas-video-agent.service
-  /etc/systemd/system/atlas-agent.service
-  /etc/systemd/system/atlas-mavsdk.service
-  /etc/systemd/system/atlas-mavlink-router.service
+  "${SYSTEMD_DIR}/atlas-video-agent.service"
+  "${SYSTEMD_DIR}/atlas-agent.service"
+  "${SYSTEMD_DIR}/atlas-mavsdk.service"
+  "${SYSTEMD_DIR}/atlas-mavlink-router.service"
 )
 
 MEDIA_UNIT_FILES=(
-  /etc/systemd/system/atlas-mediamtx.service
+  "${SYSTEMD_DIR}/atlas-mediamtx.service"
 )
 
 AGENT_PACKAGE_CANDIDATES=(
@@ -58,15 +65,22 @@ Usage: scripts/cleanup-onboard-pi.sh [options]
 
 Removes Atlas onboard agent setup created by install-onboard-pi.sh.
 
-By default this preserves ffmpeg, GStreamer/media packages, Hailo packages,
-MediaMTX files, and atlas-mediamtx.service.
+By default this removes deprecated Atlas services, binaries, models, MediaMTX,
+configuration, and logs. It preserves Hailo, FFmpeg/GStreamer packages, the
+camera network configuration, and downloaded Hailo package caches.
+
+If the packaged Atlas Agent is already installed and configured, cleanup
+switches the shared atlas-agent.service and atlas-mavsdk.service names back to
+their packaged units instead of disabling the new installation.
 
 Options:
   --dry-run                 Print actions without changing the system.
   --yes                     Required for destructive cleanup.
   --remove-eth0-config      Remove ${ETH0_NETPLAN_FILE}.
   --purge-agent-packages    apt purge agent-side packages only; preserves ffmpeg/media packages.
-  --remove-media            Also remove atlas-mediamtx.service, ${MEDIAMTX_DIR}, and MediaMTX logs.
+  --remove-media            Remove deprecated MediaMTX (the default; retained for compatibility).
+  --preserve-media          Preserve atlas-mediamtx.service, ${MEDIAMTX_DIR}, and its log.
+  --remove-download-cache   Remove old ${HAILO_MODEL_CACHE_DIR} and ${HAILO_DEB_DIR} caches.
   --install-prefix PATH     Install prefix used by install script. Default: ${INSTALL_PREFIX}
   --env-file PATH           Onboard env file path. Default: ${ENV_FILE}
   --state-dir PATH          Atlas state dir. Default: ${STATE_DIR}
@@ -145,8 +159,29 @@ systemctl_available() {
   command -v systemctl >/dev/null 2>&1
 }
 
+packaged_agent_present() {
+  [[ -x "$PACKAGED_AGENT_BIN" ]] &&
+    [[ -f "${PACKAGED_SYSTEMD_DIR}/atlas-agent.service" ]] &&
+    [[ -f "${PACKAGED_SYSTEMD_DIR}/atlas-mavsdk.service" ]]
+}
+
+packaged_agent_configured() {
+  packaged_agent_present && [[ -f "$PACKAGED_AGENT_CONFIG" ]]
+}
+
 cleanup_services() {
-  local services=("${CORE_SERVICES[@]}")
+  local services=(
+    atlas-video-agent.service
+    atlas-mavlink-router.service
+  )
+  if ! packaged_agent_configured; then
+    services+=(
+      atlas-agent.service
+      atlas-mavsdk.service
+    )
+  else
+    log "packaged Atlas is configured; shared agent and MAVSDK services will be switched, not disabled"
+  fi
   if [[ "$REMOVE_MEDIA" -eq 1 ]]; then
     services+=("${MEDIA_SERVICES[@]}")
   fi
@@ -176,6 +211,11 @@ remove_systemd_units() {
   if systemctl_available; then
     run_optional sudo systemctl daemon-reload
     run_optional sudo systemctl reset-failed
+    if packaged_agent_configured; then
+      log "enabling and restarting packaged Atlas services"
+      run_optional sudo systemctl reenable atlas-mavsdk.service atlas-agent.service
+      run_optional sudo systemctl restart atlas-mavsdk.service atlas-agent.service
+    fi
   fi
 }
 
@@ -191,6 +231,13 @@ remove_agent_binaries() {
   else
     log "preserving MediaMTX files in ${MEDIAMTX_DIR}"
   fi
+
+  local legacy_models_dir="${INSTALL_PREFIX}/models"
+  assert_safe_dir "$legacy_models_dir" "legacy model dir"
+  log "removing deprecated Atlas models"
+  run sudo rm -rf "$legacy_models_dir"
+
+  sudo_remove_empty_dir "$INSTALL_PREFIX"
 }
 
 remove_mavlink_router_source_install() {
@@ -265,18 +312,38 @@ purge_agent_packages() {
   log "purging agent-side apt packages"
   run sudo apt-get remove -y --purge "${AGENT_PACKAGE_CANDIDATES[@]}"
   run sudo apt-get autoremove -y
-  log "preserved ffmpeg, GStreamer/media packages, Hailo packages, and MediaMTX"
+  log "preserved ffmpeg, GStreamer/media packages, and Hailo packages"
+}
+
+remove_download_cache() {
+  if [[ "$REMOVE_DOWNLOAD_CACHE" -ne 1 ]]; then
+    log "preserving downloaded Hailo caches; pass --remove-download-cache to remove them"
+    return
+  fi
+
+  local cache_dir
+  for cache_dir in "$HAILO_MODEL_CACHE_DIR" "$HAILO_DEB_DIR"; do
+    assert_safe_dir "$cache_dir" "Hailo download cache"
+    log "removing deprecated download cache ${cache_dir}"
+    run rm -rf "$cache_dir"
+  done
 }
 
 print_plan() {
   log "cleanup plan:"
-  log "  remove services: ${CORE_SERVICES[*]}"
+  if packaged_agent_configured; then
+    log "  remove deprecated-only services: atlas-video-agent.service atlas-mavlink-router.service"
+    log "  switch shared service names to packaged units: atlas-mavsdk.service atlas-agent.service"
+  else
+    log "  remove services: ${CORE_SERVICES[*]}"
+  fi
   if [[ "$REMOVE_MEDIA" -eq 1 ]]; then
     log "  remove media service: ${MEDIA_SERVICES[*]}"
     log "  remove MediaMTX dir: ${MEDIAMTX_DIR}"
   else
     log "  preserve media service/files: ${MEDIA_SERVICES[*]}, ${MEDIAMTX_DIR}"
   fi
+  log "  remove legacy model dir: ${INSTALL_PREFIX}/models"
   log "  remove env file: ${ENV_FILE}"
   log "  remove config dir: ${ENV_DIR}/mavlink-router"
   log "  remove source-built mavlink-router only when marker exists: ${MAVLINK_ROUTER_SOURCE_MARKER}"
@@ -288,6 +355,9 @@ print_plan() {
   if [[ "$PURGE_AGENT_PACKAGES" -eq 1 ]]; then
     log "  purge apt packages: ${AGENT_PACKAGE_CANDIDATES[*]}"
     log "  preserve apt media packages: ffmpeg, gstreamer*, hailo*, rpicam*"
+  fi
+  if [[ "$REMOVE_DOWNLOAD_CACHE" -eq 1 ]]; then
+    log "  remove download caches: ${HAILO_MODEL_CACHE_DIR}, ${HAILO_DEB_DIR}"
   fi
 }
 
@@ -311,6 +381,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --remove-media)
       REMOVE_MEDIA=1
+      shift
+      ;;
+    --preserve-media)
+      REMOVE_MEDIA=0
+      shift
+      ;;
+    --remove-download-cache)
+      REMOVE_DOWNLOAD_CACHE=1
       shift
       ;;
     --install-prefix)
@@ -366,5 +444,6 @@ remove_config
 remove_state
 remove_eth0_config
 purge_agent_packages
+remove_download_cache
 
 log "cleanup complete"

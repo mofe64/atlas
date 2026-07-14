@@ -42,7 +42,7 @@ func Discover(ctx context.Context, runner Runner, options Options) (Discovery, e
 		Architecture:    architecture,
 		BoardModel:      readBoardModel(rootPath(paths.Root, "/proc/device-tree/model")),
 		Serial:          discoverSerial(paths.Root),
-		Hailo:           discoverHailo(ctx, runner),
+		Hailo:           discoverHailo(ctx, runner, paths),
 		Camera:          probeRTSP(ctx, runner, cameraURL),
 		GroundReachable: probeTCP(groundAddress, 800*time.Millisecond),
 		ExistingConfig:  existingConfig,
@@ -149,13 +149,20 @@ func discoverSerial(root string) []SerialCandidate {
 	return candidates
 }
 
-func discoverHailo(ctx context.Context, runner Runner) HailoStatus {
-	status := HailoStatus{Accelerator: "unknown"}
+func discoverHailo(ctx context.Context, runner Runner, paths Paths) HailoStatus {
+	status := HailoStatus{RuntimeMode: AdapterModeProcess, Accelerator: "unknown", VersionsCompatible: true}
 	if _, err := runner.LookPath("lspci"); err == nil {
 		result := runner.Run(ctx, "lspci", "-Dnn")
 		lower := strings.ToLower(result.Output)
 		status.PCIVisible = result.Err == nil && (strings.Contains(lower, "hailo") || strings.Contains(lower, "[1e60:"))
 	}
+	status.DeviceNodeReady = commandSucceeds(ctx, runner, "test", "-c", rootPath(paths.Root, "/dev/hailo0"))
+
+	containerConfig := readEnvironmentFile(paths.HailoContainerEnv)
+	if containerConfig["ATLAS_HAILO_CONTAINER_IMAGE"] != "" {
+		return discoverHailoContainer(ctx, runner, status, containerConfig)
+	}
+
 	if _, err := runner.LookPath("hailortcli"); err == nil {
 		status.RuntimeInstalled = true
 		result := runner.Run(ctx, "hailortcli", "fw-control", "identify")
@@ -165,7 +172,6 @@ func discoverHailo(ctx context.Context, runner Runner) HailoStatus {
 	}
 	status.GStreamerReady = commandSucceeds(ctx, runner, "gst-inspect-1.0", "hailonet") && commandSucceeds(ctx, runner, "gst-inspect-1.0", "hailofilter")
 	status.PythonReady = commandSucceeds(ctx, runner, "python3", "-c", "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo")
-	status.AptPackageReady = commandSucceeds(ctx, runner, "apt-cache", "show", "hailo-all")
 	if !status.PCIVisible {
 		status.MissingComponents = append(status.MissingComponents, "Hailo PCIe device")
 	}
@@ -181,6 +187,130 @@ func discoverHailo(ctx context.Context, runner Runner) HailoStatus {
 		status.MissingComponents = append(status.MissingComponents, "Hailo Python bindings")
 	}
 	return status
+}
+
+func discoverHailoContainer(ctx context.Context, runner Runner, status HailoStatus, config map[string]string) HailoStatus {
+	status.RuntimeMode = AdapterModeContainer
+	status.ContainerImage = config["ATLAS_HAILO_CONTAINER_IMAGE"]
+	status.ContainerName = fallback(config["ATLAS_HAILO_CONTAINER_NAME"], "atlas-hailo-adapter")
+	status.ExpectedDriverVersion = config["ATLAS_HAILO_DRIVER_VERSION"]
+	status.ExpectedDriverPackageVersion = config["ATLAS_HAILO_DRIVER_PACKAGE_VERSION"]
+	status.ExpectedFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_PACKAGE_VERSION"]
+	status.ExpectedDeviceFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_VERSION"]
+	status.ExpectedUserspaceVersion = config["ATLAS_HAILORT_PACKAGE_VERSION"]
+	status.ExpectedTAPPASVersion = config["ATLAS_HAILO_TAPPAS_PACKAGE_VERSION"]
+
+	if result := runner.Run(ctx, "cat", "/sys/module/hailo_pci/version"); result.Err == nil {
+		status.HostDriverVersion = strings.TrimSpace(result.Output)
+	}
+	if status.HostDriverVersion == "" {
+		if result := runner.Run(ctx, "modinfo", "-F", "version", "hailo_pci"); result.Err == nil {
+			status.HostDriverVersion = strings.TrimSpace(result.Output)
+		}
+	}
+	if result := runner.Run(ctx, "dpkg-query", "-W", "-f=${Version}", "hailo-dkms"); result.Err == nil {
+		status.HostDriverPackageVersion = strings.TrimSpace(result.Output)
+	}
+	if result := runner.Run(ctx, "dpkg-query", "-W", "-f=${Version}", "hailofw"); result.Err == nil {
+		status.HostFirmwareVersion = strings.TrimSpace(result.Output)
+	}
+
+	if _, err := runner.LookPath("docker"); err == nil {
+		image := runner.Run(ctx, "docker", "image", "inspect", status.ContainerImage)
+		status.RuntimeInstalled = image.Err == nil
+	}
+	if status.RuntimeInstalled {
+		result := runHailoContainerCheck(ctx, runner, status, "")
+		values := parseKeyValueOutput(result.Output)
+		status.ContainerReady = result.Err == nil
+		status.DeviceReady = values["DEVICE_READY"] == "true"
+		status.DeviceNodeReady = status.DeviceNodeReady && values["DEVICE_NODE_READY"] == "true"
+		status.GStreamerReady = values["GSTREAMER_READY"] == "true"
+		status.PythonReady = values["PYTHON_READY"] == "true"
+		status.Accelerator = fallback(values["DEVICE_ARCHITECTURE"], "unknown")
+		status.FirmwareVersion = values["FIRMWARE_VERSION"]
+		status.UserspaceVersion = values["HAILORT_VERSION"]
+		status.TAPPASVersion = values["TAPPAS_VERSION"]
+		status.IdentifyOutput = result.Output
+	}
+
+	status.VersionsCompatible =
+		versionMatches(status.HostDriverVersion, status.ExpectedDriverVersion) &&
+			versionMatches(status.HostDriverPackageVersion, status.ExpectedDriverPackageVersion) &&
+			versionMatches(status.HostFirmwareVersion, status.ExpectedFirmwareVersion) &&
+			versionMatches(status.UserspaceVersion, status.ExpectedUserspaceVersion) &&
+			versionMatches(status.TAPPASVersion, status.ExpectedTAPPASVersion) &&
+			versionCoreMatches(status.FirmwareVersion, status.ExpectedDeviceFirmwareVersion)
+
+	if !status.PCIVisible {
+		status.MissingComponents = append(status.MissingComponents, "Hailo PCIe device")
+	}
+	if !status.DeviceNodeReady {
+		status.MissingComponents = append(status.MissingComponents, "/dev/hailo0 access")
+	}
+	if !status.RuntimeInstalled {
+		status.MissingComponents = append(status.MissingComponents, "pinned Hailo container image")
+	} else if !status.DeviceReady {
+		status.MissingComponents = append(status.MissingComponents, "container HailoRT device access")
+	}
+	if !status.GStreamerReady {
+		status.MissingComponents = append(status.MissingComponents, "container hailonet/hailofilter")
+	}
+	if !status.PythonReady {
+		status.MissingComponents = append(status.MissingComponents, "container Hailo Python bindings")
+	}
+	if !status.VersionsCompatible {
+		status.MissingComponents = append(status.MissingComponents, "matching host/container Hailo versions")
+	}
+	return status
+}
+
+func runHailoContainerCheck(ctx context.Context, runner Runner, status HailoStatus, modelPath string) CommandResult {
+	checkPath := "/usr/local/bin/atlas-hailo-container-check"
+	arguments := []string{}
+	if modelPath != "" {
+		arguments = append(arguments, "--model", modelPath)
+	}
+	running := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Running}}", status.ContainerName)
+	if running.Err == nil && strings.TrimSpace(running.Output) == "true" {
+		return runner.Run(ctx, "docker", append([]string{"exec", status.ContainerName, checkPath}, arguments...)...)
+	}
+	dockerArguments := []string{
+		"run", "--rm", "--network", "none", "--device", "/dev/hailo0:/dev/hailo0",
+		"--env", "ATLAS_HAILO_ACCELERATOR=" + status.Accelerator, "--entrypoint", checkPath,
+	}
+	if modelPath != "" {
+		dockerArguments = append(dockerArguments, "--volume", filepath.Dir(modelPath)+":"+filepath.Dir(modelPath)+":ro")
+	}
+	dockerArguments = append(dockerArguments, status.ContainerImage)
+	dockerArguments = append(dockerArguments, arguments...)
+	return runner.Run(ctx, "docker", dockerArguments...)
+}
+
+func parseKeyValueOutput(output string) map[string]string {
+	values := map[string]string{}
+	for _, line := range strings.Split(output, "\n") {
+		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
+		if found && key != "" {
+			values[key] = value
+		}
+	}
+	return values
+}
+
+func versionMatches(actual, expected string) bool {
+	return actual != "" && expected != "" && actual == expected
+}
+
+func versionCoreMatches(actual, expected string) bool {
+	if actual == "" || expected == "" {
+		return false
+	}
+	actual = strings.Fields(actual)[0]
+	actual, _, _ = strings.Cut(actual, "-")
+	expected = strings.Fields(expected)[0]
+	expected, _, _ = strings.Cut(expected, "-")
+	return actual == expected
 }
 
 func parseHailoAccelerator(output string) string {
@@ -283,8 +413,15 @@ func installConfigFromDiscovery(discovery Discovery, paths Paths) InstallConfig 
 	if discovery.Hailo.Accelerator != "unknown" {
 		config.HailoAccelerator = discovery.Hailo.Accelerator
 	}
-	config.PerceptionEnabled = discovery.Hailo.Ready() && fileExists(paths.DefaultModel) && fileExists(paths.DefaultPostprocessSO)
+	if discovery.Hailo.RuntimeMode == AdapterModeContainer {
+		config.PerceptionAdapterMode = AdapterModeContainer
+	}
+	postprocessReady := fileExists(paths.DefaultPostprocessSO) || config.PerceptionAdapterMode == AdapterModeContainer
+	config.PerceptionEnabled = discovery.Hailo.Ready() && fileExists(paths.DefaultModel) && postprocessReady
 	applyExistingConfig(&config, discovery.ExistingConfig)
+	if discovery.Hailo.RuntimeMode == AdapterModeContainer {
+		config.PerceptionAdapterMode = AdapterModeContainer
+	}
 	return config
 }
 
@@ -308,6 +445,9 @@ func applyExistingConfig(config *InstallConfig, values map[string]string) {
 		config.SIYICameraAddress = value
 	}
 	config.PerceptionEnabled = values["ATLAS_PERCEPTION_PROVIDER"] == "hailo" || (values["ATLAS_PERCEPTION_PROVIDER"] == "" && config.PerceptionEnabled)
+	if value := values["ATLAS_PERCEPTION_ADAPTER_MODE"]; value != "" {
+		config.PerceptionAdapterMode = value
+	}
 	if value := values["ATLAS_HAILO_ACCELERATOR"]; value != "" {
 		config.HailoAccelerator = value
 	}

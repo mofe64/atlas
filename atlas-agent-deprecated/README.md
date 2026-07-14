@@ -218,8 +218,9 @@ On Ubuntu 24.04 arm64, `mavlink-router` may not exist in the enabled apt
 repositories. The installer handles that by building `mavlink-routerd` from the
 upstream source with Meson/Ninja and installing it under `/usr`.
 
-Cleanup the Atlas agent setup while preserving FFmpeg/media dependencies and
-MediaMTX:
+Cleanup the deprecated Atlas agent setup. The default removes its services,
+binaries, models, MediaMTX, configuration, and logs while preserving Hailo and
+media packages, the camera network configuration, and downloaded Hailo caches:
 
 ```sh
 scripts/cleanup-onboard-pi.sh --dry-run
@@ -232,7 +233,14 @@ of the Pi:
 ```sh
 scripts/cleanup-onboard-pi.sh --yes --remove-eth0-config
 scripts/cleanup-onboard-pi.sh --yes --purge-agent-packages
+scripts/cleanup-onboard-pi.sh --yes --remove-download-cache
 ```
+
+Use `--preserve-media` only if another application still needs the deprecated
+MediaMTX service. When the packaged Atlas Agent is installed and configured,
+cleanup recognizes its `/usr/lib/systemd/system` units, removes only the old
+`/etc/systemd/system` overrides, and re-enables/restarts the packaged
+`atlas-agent` and `atlas-mavsdk` services instead of disabling them.
 
 Telemetry source:
 

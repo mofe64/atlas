@@ -25,6 +25,7 @@ type Config struct {
 	PerceptionProvider        string
 	PerceptionSocketPath      string
 	PerceptionAdapterPath     string
+	PerceptionAdapterMode     string
 	FlightControllerUID       string
 	FlightControllerSerial    string
 	VehicleType               string
@@ -74,6 +75,10 @@ func Load() (Config, error) {
 	if !filepath.IsAbs(perceptionSocketPath) {
 		return Config{}, errors.New("ATLAS_PERCEPTION_SOCKET_PATH must be an absolute path")
 	}
+	perceptionAdapterMode := strings.ToLower(environmentOrDefault("ATLAS_PERCEPTION_ADAPTER_MODE", "process"))
+	if perceptionAdapterMode != "process" && perceptionAdapterMode != "container" {
+		return Config{}, errors.New("ATLAS_PERCEPTION_ADAPTER_MODE must be one of: process, container")
+	}
 
 	return Config{
 		StateDirectory:            filepath.Clean(stateDirectory),
@@ -88,6 +93,7 @@ func Load() (Config, error) {
 		PerceptionProvider:        perceptionProvider,
 		PerceptionSocketPath:      filepath.Clean(perceptionSocketPath),
 		PerceptionAdapterPath:     environmentOrDefault("ATLAS_PERCEPTION_ADAPTER_PATH", "atlas-hailort-adapter"),
+		PerceptionAdapterMode:     perceptionAdapterMode,
 		FlightControllerUID:       strings.TrimSpace(os.Getenv("ATLAS_FLIGHT_CONTROLLER_UID")),
 		FlightControllerSerial:    strings.TrimSpace(os.Getenv("ATLAS_FLIGHT_CONTROLLER_SERIAL")),
 		VehicleType:               environmentOrDefault("ATLAS_VEHICLE_TYPE", "unknown"),

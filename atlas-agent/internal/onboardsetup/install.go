@@ -76,7 +76,7 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 		output = io.Discard
 	}
 	runner := ApplyRunner{Runner: commandRunner, DryRun: options.DryRun, Output: output}
-	if err := validateInstalledPayload(options.Paths, plan.Config.PerceptionEnabled, options.DryRun); err != nil {
+	if err := validateInstalledPayload(options.Paths, plan.Config, options.DryRun); err != nil {
 		return ApplyResult{}, err
 	}
 	legacyUnits := discoverLegacyUnits(options.Paths.Root)
@@ -91,22 +91,12 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	if err := ensureServiceAccount(ctx, commandRunner, runner); err != nil {
 		return ApplyResult{}, err
 	}
-	if plan.InstallHailo {
-		_, _ = fmt.Fprintln(output, "Installing the configured Hailo runtime package...")
-		if err := runner.Run(ctx, "apt-get", "update"); err != nil {
-			return ApplyResult{}, err
-		}
-		if err := runner.Run(ctx, "apt-get", "install", "-y", "hailo-all"); err != nil {
-			return ApplyResult{}, err
-		}
-		_ = runner.Run(ctx, "modprobe", "hailo_pci")
-	}
 	if !options.DryRun {
 		if err := verifySerialAccess(ctx, commandRunner, plan.Config.SerialDevice); err != nil {
 			return ApplyResult{}, err
 		}
-		if plan.Config.PerceptionEnabled {
-			if err := ensureHailoAccess(ctx, commandRunner, runner); err != nil && !plan.InstallHailo {
+		if plan.Config.PerceptionEnabled && plan.Config.PerceptionAdapterMode == AdapterModeProcess {
+			if err := ensureHailoAccess(ctx, commandRunner, runner); err != nil {
 				return ApplyResult{}, err
 			}
 		}
@@ -120,21 +110,17 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 
 	result := ApplyResult{PerceptionReady: !plan.Config.PerceptionEnabled}
 	if plan.Config.PerceptionEnabled && !options.DryRun {
-		hailo := discoverHailo(ctx, commandRunner)
-		result.PerceptionReady = hailo.Ready() && fileExists(plan.Config.ModelPath) && fileExists(plan.Config.PostprocessSO)
-		if !result.PerceptionReady && plan.InstallHailo {
-			result.RebootRequired = true
-			if err := runner.Run(ctx, "systemctl", "enable", "atlas-mavsdk.service", "atlas-agent.service"); err != nil {
-				return ApplyResult{}, err
-			}
-			_, _ = fmt.Fprintln(output, "Hailo packages were installed but the runtime is not ready yet. Reboot, then run sudo atlas-setup again.")
-			return result, nil
-		}
+		hailo := discoverHailo(ctx, commandRunner, options.Paths)
+		postprocessReady := fileExists(plan.Config.PostprocessSO) || plan.Config.PerceptionAdapterMode == AdapterModeContainer
+		result.PerceptionReady = hailo.Ready() && fileExists(plan.Config.ModelPath) && postprocessReady
 		if !result.PerceptionReady {
 			return result, errors.New("Hailo perception was selected but its runtime, model, or postprocess library is not ready")
 		}
 	}
-	if err := runner.Run(ctx, "systemctl", "enable", "--now", "atlas-mavsdk.service", "atlas-agent.service"); err != nil {
+	if plan.Config.PerceptionAdapterMode != AdapterModeContainer || !plan.Config.PerceptionEnabled {
+		runner.RunOptional(ctx, "systemctl", "disable", "--now", "atlas-hailo-adapter.service")
+	}
+	if err := runner.Run(ctx, "systemctl", append([]string{"enable", "--now"}, configuredServices(plan.Config)...)...); err != nil {
 		return ApplyResult{}, err
 	}
 	if options.DryRun {
@@ -160,13 +146,15 @@ func archiveLegacyUnits(ctx context.Context, runner ApplyRunner, paths Paths, un
 	return nil
 }
 
-func validateInstalledPayload(paths Paths, perceptionEnabled, dryRun bool) error {
+func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) error {
 	if dryRun {
 		return nil
 	}
 	required := []string{paths.AgentBinary, paths.MAVSDKBinary, paths.AgentService, paths.MAVSDKService}
-	if perceptionEnabled {
+	if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeProcess {
 		required = append(required, paths.HailoAdapter)
+	} else if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeContainer {
+		required = append(required, paths.HailoContainerService, paths.HailoContainerEnv)
 	}
 	for _, path := range required {
 		if !fileExists(path) {
@@ -174,6 +162,14 @@ func validateInstalledPayload(paths Paths, perceptionEnabled, dryRun bool) error
 		}
 	}
 	return nil
+}
+
+func configuredServices(config InstallConfig) []string {
+	services := []string{"atlas-mavsdk.service", "atlas-agent.service"}
+	if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeContainer {
+		services = append(services, "atlas-hailo-adapter.service")
+	}
+	return services
 }
 
 func ensureServiceAccount(ctx context.Context, commandRunner Runner, runner ApplyRunner) error {
@@ -263,6 +259,7 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 		{"ATLAS_MAVSDK_SYSTEM_ADDRESS", "serial://" + config.SerialDevice + ":" + strconv.FormatUint(uint64(config.BaudRate), 10)},
 		{"ATLAS_SIYI_CAMERA_ADDR", config.SIYICameraAddress},
 		{"ATLAS_PERCEPTION_PROVIDER", provider},
+		{"ATLAS_PERCEPTION_ADAPTER_MODE", config.PerceptionAdapterMode},
 		{"ATLAS_PERCEPTION_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "perception.sock")},
 		{"ATLAS_PERCEPTION_ADAPTER_PATH", paths.HailoAdapter},
 		{"ATLAS_A8_RTSP_URL", config.A8RTSPURL},

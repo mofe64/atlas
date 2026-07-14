@@ -32,6 +32,9 @@ func TestLoadUsesExplicitAbsoluteStateDirectory(t *testing.T) {
 	if config.PerceptionAdapterPath != "atlas-hailort-adapter" {
 		t.Fatalf("PerceptionAdapterPath = %q", config.PerceptionAdapterPath)
 	}
+	if config.PerceptionAdapterMode != "process" {
+		t.Fatalf("PerceptionAdapterMode = %q", config.PerceptionAdapterMode)
+	}
 }
 
 func TestLoadReadsHardwareNeutralPerceptionSettings(t *testing.T) {
@@ -41,13 +44,22 @@ func TestLoadReadsHardwareNeutralPerceptionSettings(t *testing.T) {
 	t.Setenv("ATLAS_PERCEPTION_PROVIDER", "deepstream")
 	t.Setenv("ATLAS_PERCEPTION_SOCKET_PATH", socketPath)
 	t.Setenv("ATLAS_PERCEPTION_ADAPTER_PATH", "/opt/atlas/atlas-hailort-adapter")
+	t.Setenv("ATLAS_PERCEPTION_ADAPTER_MODE", "container")
 
 	config, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !config.PerceptionEnabled() || config.PerceptionProvider != "deepstream" || config.PerceptionSocketPath != socketPath || config.PerceptionAdapterPath != "/opt/atlas/atlas-hailort-adapter" {
+	if !config.PerceptionEnabled() || config.PerceptionProvider != "deepstream" || config.PerceptionSocketPath != socketPath || config.PerceptionAdapterPath != "/opt/atlas/atlas-hailort-adapter" || config.PerceptionAdapterMode != "container" {
 		t.Fatalf("perception config = %#v", config)
+	}
+}
+
+func TestLoadRejectsUnknownPerceptionAdapterMode(t *testing.T) {
+	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
+	t.Setenv("ATLAS_PERCEPTION_ADAPTER_MODE", "magic")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want adapter mode validation error")
 	}
 }
 

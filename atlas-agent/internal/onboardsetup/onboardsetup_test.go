@@ -88,19 +88,140 @@ func TestDiscoverHailoRequiresCompleteRuntime(t *testing.T) {
 		"gst-inspect-1.0 hailonet":       {},
 		"gst-inspect-1.0 hailofilter":    {},
 		"python3 -c import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo": {},
-		"apt-cache show hailo-all": {},
 	}}
 
-	status := discoverHailo(context.Background(), runner)
+	status := discoverHailo(context.Background(), runner, DefaultPaths("/"))
 	if !status.Ready() || status.Accelerator != "hailo-8l" {
 		t.Fatalf("status = %#v, want ready Hailo-8L", status)
 	}
 
 	runner.results["gst-inspect-1.0 hailofilter"] = CommandResult{Err: errors.New("missing")}
-	status = discoverHailo(context.Background(), runner)
+	status = discoverHailo(context.Background(), runner, DefaultPaths("/"))
 	if status.Ready() || !strings.Contains(strings.Join(status.MissingComponents, ","), "hailonet/hailofilter") {
 		t.Fatalf("status = %#v, want incomplete GStreamer runtime", status)
 	}
+}
+
+func TestDiscoverContainerHailoRequiresPinnedMatchingStack(t *testing.T) {
+	paths := DefaultPaths(t.TempDir())
+	if err := os.MkdirAll(filepath.Dir(paths.HailoContainerEnv), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	containerEnvironment := strings.Join([]string{
+		`ATLAS_HAILO_CONTAINER_IMAGE="sha256:image"`,
+		`ATLAS_HAILO_CONTAINER_NAME="atlas-hailo-adapter"`,
+		`ATLAS_HAILO_DRIVER_VERSION="4.20.0"`,
+		`ATLAS_HAILO_DRIVER_PACKAGE_VERSION="4.20.0-1"`,
+		`ATLAS_HAILO_FIRMWARE_VERSION="4.20.0"`,
+		`ATLAS_HAILO_FIRMWARE_PACKAGE_VERSION="4.20.0-1"`,
+		`ATLAS_HAILORT_PACKAGE_VERSION="4.20.0-1"`,
+		`ATLAS_HAILO_TAPPAS_PACKAGE_VERSION="3.31.0+1-1"`,
+	}, "\n")
+	if err := os.WriteFile(paths.HailoContainerEnv, []byte(containerEnvironment), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	checkOutput := strings.Join([]string{
+		"HAILORT_VERSION=4.20.0-1",
+		"TAPPAS_VERSION=3.31.0+1-1",
+		"GSTREAMER_READY=true",
+		"PYTHON_READY=true",
+		"DEVICE_NODE_READY=true",
+		"DEVICE_READY=true",
+		"DEVICE_ARCHITECTURE=hailo-8l",
+		"FIRMWARE_VERSION=4.20.0",
+	}, "\n")
+	runner := &fakeRunner{results: map[string]CommandResult{
+		"lspci -Dnn": {Output: "0000:01:00.0 Co-processor [1e60:2864] Hailo Technologies"},
+		"test -c " + rootPath(paths.Root, "/dev/hailo0"):                             {},
+		"modinfo -F version hailo_pci":                                               {Output: "4.20.0"},
+		"dpkg-query -W -f=${Version} hailo-dkms":                                     {Output: "4.20.0-1"},
+		"dpkg-query -W -f=${Version} hailofw":                                        {Output: "4.20.0-1"},
+		"docker image inspect sha256:image":                                          {},
+		"docker inspect --format {{.State.Running}} atlas-hailo-adapter":             {Output: "true"},
+		"docker exec atlas-hailo-adapter /usr/local/bin/atlas-hailo-container-check": {Output: checkOutput},
+	}}
+
+	status := discoverHailo(context.Background(), runner, paths)
+	if !status.Ready() || status.RuntimeMode != AdapterModeContainer || status.Accelerator != "hailo-8l" {
+		t.Fatalf("status = %#v, want ready pinned container runtime", status)
+	}
+
+	runner.results["docker exec atlas-hailo-adapter /usr/local/bin/atlas-hailo-container-check"] = CommandResult{Output: strings.Replace(checkOutput, "HAILORT_VERSION=4.20.0-1", "HAILORT_VERSION=4.19.0-3", 1)}
+	status = discoverHailo(context.Background(), runner, paths)
+	if status.Ready() || status.VersionsCompatible || !strings.Contains(strings.Join(status.MissingComponents, ","), "matching host/container Hailo versions") {
+		t.Fatalf("status = %#v, want userspace version mismatch", status)
+	}
+}
+
+func TestContainerPerceptionEnablesContainerService(t *testing.T) {
+	config := DefaultInstallConfig(DefaultPaths("/"))
+	config.PerceptionEnabled = true
+	config.PerceptionAdapterMode = AdapterModeContainer
+	services := configuredServices(config)
+	if !slicesEqual(services, []string{"atlas-mavsdk.service", "atlas-agent.service", "atlas-hailo-adapter.service"}) {
+		t.Fatalf("services = %#v", services)
+	}
+}
+
+func TestDoctorContainerHailoValidatesHEFAccelerator(t *testing.T) {
+	model := filepath.Join(t.TempDir(), "objects.hef")
+	if err := os.WriteFile(model, []byte("hef"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	status := HailoStatus{
+		RuntimeMode:                   AdapterModeContainer,
+		DeviceNodeReady:               true,
+		RuntimeInstalled:              true,
+		GStreamerReady:                true,
+		PythonReady:                   true,
+		Accelerator:                   "hailo-8l",
+		ContainerImage:                "sha256:image",
+		ContainerName:                 "atlas-hailo-adapter",
+		HostDriverPackageVersion:      "4.20.0-1",
+		HostDriverVersion:             "4.20.0",
+		HostFirmwareVersion:           "4.20.0-1",
+		FirmwareVersion:               "4.20.0",
+		UserspaceVersion:              "4.20.0-1",
+		TAPPASVersion:                 "3.31.0+1-1",
+		ExpectedDriverVersion:         "4.20.0",
+		ExpectedDriverPackageVersion:  "4.20.0-1",
+		ExpectedFirmwareVersion:       "4.20.0-1",
+		ExpectedDeviceFirmwareVersion: "4.20.0",
+		ExpectedUserspaceVersion:      "4.20.0-1",
+		ExpectedTAPPASVersion:         "3.31.0+1-1",
+	}
+	configuration := map[string]string{
+		"ATLAS_PERCEPTION_MODEL_PATH": model,
+		"ATLAS_HAILO_ACCELERATOR":     "hailo-8l",
+	}
+	modelCheck := "MODEL_READY=true\nMODEL_ARCHITECTURE=hailo-8l\nMODEL_COMPATIBLE=true"
+	runner := &fakeRunner{results: map[string]CommandResult{
+		"systemctl is-active atlas-hailo-adapter.service":                                             {Output: "active"},
+		"docker inspect --format {{.State.Running}} atlas-hailo-adapter":                              {Output: "true"},
+		"docker exec atlas-hailo-adapter /usr/local/bin/atlas-hailo-container-check --model " + model: {Output: modelCheck},
+	}}
+	checks := doctorHailoContainer(context.Background(), runner, configuration, status)
+	if HasFailures(checks) {
+		t.Fatalf("checks = %#v, want all pass", checks)
+	}
+
+	configuration["ATLAS_HAILO_ACCELERATOR"] = "hailo-8"
+	checks = doctorHailoContainer(context.Background(), runner, configuration, status)
+	if !HasFailures(checks) {
+		t.Fatalf("checks = %#v, want HEF accelerator mismatch", checks)
+	}
+}
+
+func slicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestPackagedModelMustMatchDetectedAccelerator(t *testing.T) {
@@ -271,6 +392,45 @@ func TestPackagedSystemdUnitsUseDirectExecutables(t *testing.T) {
 		}
 		if !strings.Contains(unit, "EnvironmentFile=/etc/atlas-agent/atlas-agent.env") {
 			t.Fatalf("%s does not load the canonical Atlas configuration", name)
+		}
+	}
+}
+
+func TestHailoContainerServiceUsesLeastPrivilegeLauncher(t *testing.T) {
+	unitPath := filepath.Join("..", "..", "packaging", "systemd", "atlas-hailo-adapter.service")
+	raw, err := os.ReadFile(unitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := string(raw)
+	for _, expected := range []string{
+		"Requires=docker.service atlas-agent.service dev-hailo0.device",
+		"EnvironmentFile=/etc/atlas-agent/hailo-container.env",
+		"ExecStart=/usr/libexec/atlas-agent/atlas-hailo-container-run",
+		"PartOf=atlas-agent.service",
+	} {
+		if !strings.Contains(unit, expected) {
+			t.Fatalf("Hailo unit missing %q:\n%s", expected, unit)
+		}
+	}
+
+	launcherPath := filepath.Join("..", "..", "packaging", "hailo", "atlas-hailo-container-run")
+	raw, err = os.ReadFile(launcherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launcher := string(raw)
+	for _, expected := range []string{
+		"--network host",
+		"--device /dev/hailo0:/dev/hailo0",
+		"--user \"${agent_uid}:${agent_gid}\"",
+		"--group-add \"${device_gid}\"",
+		"--cap-drop ALL",
+		"--volume /run/atlas-agent:/run/atlas-agent:rw",
+		"--volume /usr/share/atlas-agent/models:/usr/share/atlas-agent/models:ro",
+	} {
+		if !strings.Contains(launcher, expected) {
+			t.Fatalf("Hailo launcher missing %q:\n%s", expected, launcher)
 		}
 	}
 }
