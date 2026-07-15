@@ -23,6 +23,9 @@ func TestLoadUsesExplicitAbsoluteStateDirectory(t *testing.T) {
 	if config.SIYICameraAddress != "192.168.144.25:37260" {
 		t.Fatalf("SIYICameraAddress = %q", config.SIYICameraAddress)
 	}
+	if config.CameraTransport != CameraTransportSIYIUDP || !config.CameraTransport.UsesSIYI() || config.CameraTransport.UsesMAVSDK() {
+		t.Fatalf("CameraTransport = %q, want SIYI-only", config.CameraTransport)
+	}
 	if config.PerceptionProvider != "disabled" || config.PerceptionEnabled() {
 		t.Fatalf("perception config = provider %q enabled %v", config.PerceptionProvider, config.PerceptionEnabled())
 	}
@@ -85,14 +88,23 @@ func TestLoadReadsGroundStationAndFlightControllerSettings(t *testing.T) {
 	t.Setenv("ATLAS_MAVLINK_SYSTEM_ID", "7")
 	t.Setenv("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50052")
 	t.Setenv("ATLAS_TELEMETRY_INTERVAL", "750ms")
+	t.Setenv("ATLAS_CAMERA_TRANSPORT", "HYBRID")
 	t.Setenv("ATLAS_SIYI_CAMERA_ADDR", "192.168.144.26:37260")
 
 	config, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if config.GroundStationAddress != "192.168.144.50:7555" || config.FlightControllerBaudRate != 57600 || config.MAVLinkSystemID != 7 || config.MAVSDKGRPCAddress != "127.0.0.1:50052" || config.SIYICameraAddress != "192.168.144.26:37260" || config.TelemetryInterval != 750*time.Millisecond {
+	if config.GroundStationAddress != "192.168.144.50:7555" || config.FlightControllerBaudRate != 57600 || config.MAVLinkSystemID != 7 || config.MAVSDKGRPCAddress != "127.0.0.1:50052" || config.CameraTransport != CameraTransportHybrid || !config.CameraTransport.UsesSIYI() || !config.CameraTransport.UsesMAVSDK() || config.SIYICameraAddress != "192.168.144.26:37260" || config.TelemetryInterval != 750*time.Millisecond {
 		t.Fatalf("config = %#v", config)
+	}
+}
+
+func TestLoadRejectsUnknownCameraTransport(t *testing.T) {
+	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
+	t.Setenv("ATLAS_CAMERA_TRANSPORT", "automatic")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want camera transport validation error")
 	}
 }
 

@@ -12,6 +12,37 @@ import (
 	"github.com/sunnyside/atlas/atlas-agent/internal/buildinfo"
 )
 
+type CameraTransport string
+
+const (
+	CameraTransportSIYIUDP CameraTransport = "siyi_udp"
+	CameraTransportMAVSDK  CameraTransport = "mavsdk"
+	CameraTransportHybrid  CameraTransport = "hybrid"
+)
+
+func ParseCameraTransport(value string) (CameraTransport, error) {
+	transport := CameraTransport(strings.ToLower(strings.TrimSpace(value)))
+	if transport == "" {
+		transport = CameraTransportSIYIUDP
+	}
+	if !transport.Valid() {
+		return "", errors.New("ATLAS_CAMERA_TRANSPORT must be one of: siyi_udp, mavsdk, hybrid")
+	}
+	return transport, nil
+}
+
+func (transport CameraTransport) Valid() bool {
+	return transport == CameraTransportSIYIUDP || transport == CameraTransportMAVSDK || transport == CameraTransportHybrid
+}
+
+func (transport CameraTransport) UsesSIYI() bool {
+	return transport == CameraTransportSIYIUDP || transport == CameraTransportHybrid
+}
+
+func (transport CameraTransport) UsesMAVSDK() bool {
+	return transport == CameraTransportMAVSDK || transport == CameraTransportHybrid
+}
+
 type Config struct {
 	StateDirectory            string
 	GroundStationAddress      string
@@ -21,6 +52,7 @@ type Config struct {
 	HeartbeatInterval         time.Duration
 	TelemetryInterval         time.Duration
 	MAVSDKGRPCAddress         string
+	CameraTransport           CameraTransport
 	SIYICameraAddress         string
 	PerceptionProvider        string
 	PerceptionSocketPath      string
@@ -79,6 +111,10 @@ func Load() (Config, error) {
 	if perceptionAdapterMode != "process" && perceptionAdapterMode != "container" {
 		return Config{}, errors.New("ATLAS_PERCEPTION_ADAPTER_MODE must be one of: process, container")
 	}
+	cameraTransport, err := ParseCameraTransport(os.Getenv("ATLAS_CAMERA_TRANSPORT"))
+	if err != nil {
+		return Config{}, err
+	}
 
 	return Config{
 		StateDirectory:            filepath.Clean(stateDirectory),
@@ -89,6 +125,7 @@ func Load() (Config, error) {
 		HeartbeatInterval:         5 * time.Second,
 		TelemetryInterval:         telemetryInterval,
 		MAVSDKGRPCAddress:         environmentOrDefault("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50051"),
+		CameraTransport:           cameraTransport,
 		SIYICameraAddress:         environmentOrDefault("ATLAS_SIYI_CAMERA_ADDR", "192.168.144.25:37260"),
 		PerceptionProvider:        perceptionProvider,
 		PerceptionSocketPath:      filepath.Clean(perceptionSocketPath),

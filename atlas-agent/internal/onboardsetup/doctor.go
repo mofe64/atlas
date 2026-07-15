@@ -2,6 +2,7 @@ package onboardsetup
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -30,10 +31,13 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 	if len(configuration) == 0 {
 		return nil, fmt.Errorf("Atlas is not configured; run sudo atlas-setup first")
 	}
+	release := readEnvironmentFile(paths.ReleaseManifest)
 	checks := []Check{
 		fileCheck("configuration", paths.ConfigFile, true),
+		fileCheck("release manifest", paths.ReleaseManifest, true),
 		fileCheck("atlas-agent binary", paths.AgentBinary, true),
 		fileCheck("mavsdk_server binary", paths.MAVSDKBinary, true),
+		checksumCheck("mavsdk_server package", paths.MAVSDKBinary, release["ATLAS_MAVSDK_SHA256"]),
 		serviceCheck(ctx, runner, "atlas-mavsdk.service"),
 		serviceCheck(ctx, runner, "atlas-agent.service"),
 	}
@@ -140,6 +144,27 @@ func fileCheck(name, path string, required bool) Check {
 		level = CheckFail
 	}
 	return Check{Name: name, Level: level, Message: path + " is missing"}
+}
+
+func checksumCheck(name, path, expected string) Check {
+	if expected == "" {
+		return Check{Name: name, Level: CheckFail, Message: "expected checksum is missing from release manifest"}
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return Check{Name: name, Level: CheckFail, Message: err.Error()}
+	}
+	defer file.Close()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return Check{Name: name, Level: CheckFail, Message: err.Error()}
+	}
+	actual := fmt.Sprintf("%x", hash.Sum(nil))
+	message := fmt.Sprintf("actual=%s expected=%s", actual, expected)
+	if actual == expected {
+		return Check{Name: name, Level: CheckPass, Message: message}
+	}
+	return Check{Name: name, Level: CheckFail, Message: message}
 }
 
 func serviceCheck(ctx context.Context, runner Runner, service string) Check {

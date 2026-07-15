@@ -62,31 +62,38 @@ type PayloadController struct {
 	camera     camerapb.CameraServiceClient
 	siyi       *SIYICamera
 
-	commandMu     sync.Mutex
-	mu            sync.Mutex
-	gimbalIDs     []int32
-	cameraIDs     []int32
-	siyiAvailable bool
-	runID         string
-	runState      string
-	plan          payloadMissionPlan
-	waypoint      uint32
-	manual        *manualPayloadSession
-	eventSink     func(PayloadEvent)
+	commandMu           sync.Mutex
+	mu                  sync.Mutex
+	gimbalIDs           []int32
+	cameraIDs           []int32
+	mavsdkCameraEnabled bool
+	siyiAvailable       bool
+	runID               string
+	runState            string
+	plan                payloadMissionPlan
+	waypoint            uint32
+	manual              *manualPayloadSession
+	eventSink           func(PayloadEvent)
 }
 
-// ConfigureSIYICamera enables the A8 Mini's native UDP zoom transport as a
-// fallback when MAVSDK Camera is unavailable or rejects range zoom. The A8
-// Mini is fixed-focus, so this adapter deliberately exposes zoom only.
-func (p *PayloadController) ConfigureSIYICamera(address string) {
+// ConfigureCameraTransports explicitly selects the camera drivers that may
+// perform discovery and zoom commands. A disabled MAVSDK camera transport must
+// never open CameraService streams because doing so activates MAVLink camera
+// polling in mavsdk_server. The A8 Mini is fixed-focus, so its SIYI adapter
+// deliberately exposes zoom only.
+func (p *PayloadController) ConfigureCameraTransports(mavsdkEnabled bool, siyiAddress string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if address == "" {
+	p.mavsdkCameraEnabled = mavsdkEnabled
+	if !mavsdkEnabled {
+		p.cameraIDs = nil
+	}
+	if siyiAddress == "" {
 		p.siyi = nil
 		p.siyiAvailable = false
 		return
 	}
-	p.siyi = NewSIYICamera(address)
+	p.siyi = NewSIYICamera(siyiAddress)
 	p.siyiAvailable = false
 }
 
@@ -491,19 +498,20 @@ func (p *PayloadController) setROI(ctx context.Context, input payloadCommand) (C
 
 func (p *PayloadController) setZoom(ctx context.Context, input payloadCommand) (CommandResult, error) {
 	cameraID := p.commandCameraID(input)
-	if cameraID > 0 {
+	p.mu.Lock()
+	mavsdkEnabled := p.mavsdkCameraEnabled
+	siyi := p.siyi
+	siyiAvailable := p.siyiAvailable
+	p.mu.Unlock()
+	if mavsdkEnabled && cameraID > 0 {
 		result, err := p.setMAVSDKZoom(ctx, cameraID, input.ZoomPercent)
 		if err == nil {
 			return result, nil
 		}
-		if result.Code != "" {
+		if result.Code != "" && siyiAvailable {
 			p.logger.Warn("MAVSDK camera zoom failed; trying SIYI fallback", "camera_component_id", cameraID, "result", result.Code, "error", err)
 		}
 	}
-	p.mu.Lock()
-	siyi := p.siyi
-	siyiAvailable := p.siyiAvailable
-	p.mu.Unlock()
 	if siyiAvailable && siyi != nil {
 		if err := siyi.SetZoom(ctx, input.ZoomPercent); err != nil {
 			return CommandResult{Code: "SIYI_ZOOM_FAILED", Message: err.Error()}, err
@@ -531,6 +539,7 @@ func (p *PayloadController) restoreMissionIntent(ctx context.Context) error {
 	}
 	gimbalID := p.primaryGimbalIDLocked()
 	cameraID := p.primaryCameraIDLocked()
+	mavsdkEnabled := p.mavsdkCameraEnabled
 	siyi := p.siyi
 	siyiAvailable := p.siyiAvailable
 	p.mu.Unlock()
@@ -548,8 +557,8 @@ func (p *PayloadController) restoreMissionIntent(ctx context.Context) error {
 			return fmt.Errorf("restore mission gimbal orientation: %w", err)
 		}
 	}
-	if intent.zoom != nil && (cameraID > 0 || siyiAvailable) {
-		if cameraID > 0 {
+	if intent.zoom != nil && (mavsdkEnabled && cameraID > 0 || siyiAvailable) {
+		if mavsdkEnabled && cameraID > 0 {
 			if _, err := p.setMAVSDKZoom(ctx, cameraID, *intent.zoom); err == nil {
 				return nil
 			} else if !siyiAvailable {
@@ -620,10 +629,22 @@ func (p *PayloadController) DiscoverGimbals(ctx context.Context) ([]int32, error
 }
 
 func (p *PayloadController) DiscoverCameras(ctx context.Context) ([]int32, error) {
-	ids, mavsdkErr := p.discoverMAVSDKCameras(ctx)
+	p.mu.Lock()
+	mavsdkEnabled := p.mavsdkCameraEnabled
+	siyi := p.siyi
+	p.siyiAvailable = false
+	p.mu.Unlock()
+	if !mavsdkEnabled && siyi == nil {
+		return nil, errors.New("no camera transport is configured")
+	}
+
+	var ids []int32
+	var mavsdkErr error
+	if mavsdkEnabled {
+		ids, mavsdkErr = p.discoverMAVSDKCameras(ctx)
+	}
 	p.mu.Lock()
 	p.cameraIDs = append([]int32(nil), ids...)
-	siyi := p.siyi
 	p.mu.Unlock()
 
 	var siyiErr error
@@ -638,10 +659,10 @@ func (p *PayloadController) DiscoverCameras(ctx context.Context) ([]int32, error
 	if len(ids) > 0 || siyiErr == nil && siyi != nil {
 		return ids, nil
 	}
-	if mavsdkErr != nil && siyiErr != nil {
+	if mavsdkEnabled && mavsdkErr != nil && siyiErr != nil {
 		return nil, fmt.Errorf("MAVSDK camera discovery: %v; SIYI camera discovery: %w", mavsdkErr, siyiErr)
 	}
-	if mavsdkErr != nil {
+	if mavsdkEnabled && mavsdkErr != nil {
 		return nil, mavsdkErr
 	}
 	if siyiErr != nil {
@@ -685,6 +706,9 @@ func (p *PayloadController) Capabilities() []string {
 		capabilities = append(capabilities, "camera:detected", "camera:zoom:range", "command:camera_set_zoom")
 		for _, id := range p.cameraIDs {
 			capabilities = append(capabilities, fmt.Sprintf("camera:component_id:%d", id))
+		}
+		if len(p.cameraIDs) > 0 {
+			capabilities = append(capabilities, "camera:transport:mavsdk")
 		}
 		if p.siyiAvailable {
 			capabilities = append(capabilities, "camera:transport:siyi_udp")

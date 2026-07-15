@@ -3,8 +3,10 @@ package onboardsetup
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,6 +205,21 @@ func TestDoctorContainerHailoValidatesHEFAccelerator(t *testing.T) {
 	}
 }
 
+func TestChecksumCheckRejectsMismatchedPackagedBinary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mavsdk_server")
+	content := []byte("pinned mavsdk server")
+	if err := os.WriteFile(path, content, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	expected := fmt.Sprintf("%x", sha256.Sum256(content))
+	if check := checksumCheck("mavsdk_server package", path, expected); check.Level != CheckPass {
+		t.Fatalf("matching checksum check = %#v", check)
+	}
+	if check := checksumCheck("mavsdk_server package", path, strings.Repeat("0", 64)); check.Level != CheckFail {
+		t.Fatalf("mismatched checksum check = %#v", check)
+	}
+}
+
 func slicesEqual(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
@@ -274,6 +291,7 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 		`ATLAS_DRONE_NAME="Survey \"One\""`,
 		`ATLAS_FLIGHT_CONTROLLER_ENDPOINT="/dev/serial/by-id/usb-pixhawk"`,
 		`ATLAS_MAVSDK_SYSTEM_ADDRESS="serial:///dev/serial/by-id/usb-pixhawk:921600"`,
+		`ATLAS_CAMERA_TRANSPORT="siyi_udp"`,
 		`ATLAS_PERCEPTION_PROVIDER="hailo"`,
 	} {
 		if !strings.Contains(rendered, expected) {

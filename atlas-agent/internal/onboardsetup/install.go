@@ -233,6 +233,7 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 		{"ATLAS_MAVSDK_GRPC_ADDR", DefaultMAVSDKAddr},
 		{"ATLAS_MAVSDK_GRPC_PORT", "50051"},
 		{"ATLAS_MAVSDK_SYSTEM_ADDRESS", "serial://" + config.SerialDevice + ":" + strconv.FormatUint(uint64(config.BaudRate), 10)},
+		{"ATLAS_CAMERA_TRANSPORT", string(config.CameraTransport)},
 		{"ATLAS_SIYI_CAMERA_ADDR", config.SIYICameraAddress},
 		{"ATLAS_PERCEPTION_PROVIDER", provider},
 		{"ATLAS_PERCEPTION_ADAPTER_MODE", config.PerceptionAdapterMode},

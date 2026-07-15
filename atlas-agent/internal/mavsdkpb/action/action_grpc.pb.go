@@ -42,7 +42,6 @@ const (
 	ActionService_SetReturnToLaunchAltitude_FullMethodName = "/mavsdk.rpc.action.ActionService/SetReturnToLaunchAltitude"
 	ActionService_SetCurrentSpeed_FullMethodName           = "/mavsdk.rpc.action.ActionService/SetCurrentSpeed"
 	ActionService_SetGpsGlobalOrigin_FullMethodName        = "/mavsdk.rpc.action.ActionService/SetGpsGlobalOrigin"
-	ActionService_SetHome_FullMethodName                   = "/mavsdk.rpc.action.ActionService/SetHome"
 )
 
 // ActionServiceClient is the client API for ActionService service.
@@ -161,10 +160,6 @@ type ActionServiceClient interface {
 	//
 	// Sets the GPS coordinates of the vehicle local origin (0,0,0) position.
 	SetGpsGlobalOrigin(ctx context.Context, in *SetGpsGlobalOriginRequest, opts ...grpc.CallOption) (*SetGpsGlobalOriginResponse, error)
-	// Set home.
-	//
-	// Sets the home position.
-	SetHome(ctx context.Context, in *SetHomeRequest, opts ...grpc.CallOption) (*SetHomeResponse, error)
 }
 
 type actionServiceClient struct {
@@ -405,16 +400,6 @@ func (c *actionServiceClient) SetGpsGlobalOrigin(ctx context.Context, in *SetGps
 	return out, nil
 }
 
-func (c *actionServiceClient) SetHome(ctx context.Context, in *SetHomeRequest, opts ...grpc.CallOption) (*SetHomeResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SetHomeResponse)
-	err := c.cc.Invoke(ctx, ActionService_SetHome_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // ActionServiceServer is the server API for ActionService service.
 // All implementations must embed UnimplementedActionServiceServer
 // for forward compatibility.
@@ -531,10 +516,6 @@ type ActionServiceServer interface {
 	//
 	// Sets the GPS coordinates of the vehicle local origin (0,0,0) position.
 	SetGpsGlobalOrigin(context.Context, *SetGpsGlobalOriginRequest) (*SetGpsGlobalOriginResponse, error)
-	// Set home.
-	//
-	// Sets the home position.
-	SetHome(context.Context, *SetHomeRequest) (*SetHomeResponse, error)
 	mustEmbedUnimplementedActionServiceServer()
 }
 
@@ -613,9 +594,6 @@ func (UnimplementedActionServiceServer) SetCurrentSpeed(context.Context, *SetCur
 }
 func (UnimplementedActionServiceServer) SetGpsGlobalOrigin(context.Context, *SetGpsGlobalOriginRequest) (*SetGpsGlobalOriginResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetGpsGlobalOrigin not implemented")
-}
-func (UnimplementedActionServiceServer) SetHome(context.Context, *SetHomeRequest) (*SetHomeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SetHome not implemented")
 }
 func (UnimplementedActionServiceServer) mustEmbedUnimplementedActionServiceServer() {}
 func (UnimplementedActionServiceServer) testEmbeddedByValue()                       {}
@@ -1052,24 +1030,6 @@ func _ActionService_SetGpsGlobalOrigin_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _ActionService_SetHome_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SetHomeRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(ActionServiceServer).SetHome(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: ActionService_SetHome_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(ActionServiceServer).SetHome(ctx, req.(*SetHomeRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // ActionService_ServiceDesc is the grpc.ServiceDesc for ActionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1168,10 +1128,6 @@ var ActionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetGpsGlobalOrigin",
 			Handler:    _ActionService_SetGpsGlobalOrigin_Handler,
-		},
-		{
-			MethodName: "SetHome",
-			Handler:    _ActionService_SetHome_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

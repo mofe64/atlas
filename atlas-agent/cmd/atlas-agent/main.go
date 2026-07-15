@@ -59,7 +59,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer payloadController.Close()
-	payloadController.ConfigureSIYICamera(cfg.SIYICameraAddress)
+	siyiCameraAddress := ""
+	if cfg.CameraTransport.UsesSIYI() {
+		siyiCameraAddress = cfg.SIYICameraAddress
+	}
+	payloadController.ConfigureCameraTransports(cfg.CameraTransport.UsesMAVSDK(), siyiCameraAddress)
 	actionExecutor, err := vehicle.NewActionExecutor(cfg.MAVSDKGRPCAddress, payloadController)
 	if err != nil {
 		logger.Error("start MAVSDK action executor", "error", err)
@@ -94,7 +98,7 @@ func main() {
 		logger.Info("camera discovery complete", "camera_component_ids", cameraIDs, "capabilities", actionExecutor.Capabilities())
 	}
 
-	logger.Info("atlas agent started", "state_directory", cfg.StateDirectory, "installation_id", localIdentity.InstallationID, "drone_id", localIdentity.DroneID, "mavsdk_grpc_address", cfg.MAVSDKGRPCAddress)
+	logger.Info("atlas agent started", "state_directory", cfg.StateDirectory, "installation_id", localIdentity.InstallationID, "drone_id", localIdentity.DroneID, "mavsdk_grpc_address", cfg.MAVSDKGRPCAddress, "camera_transport", cfg.CameraTransport)
 	go groundstation.Run(ctx, logger, cfg, localIdentity, telemetryOutputs.Snapshots, telemetryOutputs.StatusTexts, perceptionOutputs, actionExecutor, missionExecutor)
 	<-ctx.Done()
 	logger.Info("atlas agent stopped")

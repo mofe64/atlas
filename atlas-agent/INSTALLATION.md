@@ -13,6 +13,18 @@ Atlas Agent with systemd-managed MAVSDK and Hailo perception services.
 The commands use `0.1.0` as an example release. Replace that value with the
 release being deployed.
 
+## Camera transport contract
+
+The supported A8 installation uses `ATLAS_CAMERA_TRANSPORT=siyi_udp`. In this
+mode the Agent does not open MAVSDK Camera subscriptions, so `mavsdk_server`
+continues to provide flight, mission, action, and gimbal services without
+probing PX4 as though it were a camera. Use `mavsdk` only for a MAVLink camera,
+or `hybrid` when both transports are intentionally installed.
+
+An older configuration that does not contain `ATLAS_CAMERA_TRANSPORT` safely
+defaults to `siyi_udp`. Re-running `sudo atlas-setup` writes the choice
+explicitly into `/etc/atlas-agent/atlas-agent.env`.
+
 ## Initial installation overview
 
 An initial installation has five stages:
@@ -25,6 +37,11 @@ An initial installation has five stages:
 5. Validate the complete installation.
 
 ## 1. Build the Atlas package
+
+MAVSDK is pinned as one release contract in `packaging/mavsdk.env`: the
+official server version, server asset checksum, and protobuf submodule commit
+must move together. The build stops before producing a package when the
+checked-out protobuf source or generated Go client does not match that pin.
 
 Run these commands on a Linux development or build computer:
 
@@ -438,7 +455,9 @@ Confirm the installed Debian version and release manifest:
 ```sh
 dpkg-query -W -f='${Package} ${Version}\n' atlas-agent
 grep '^ATLAS_RELEASE_VERSION=' /usr/share/atlas-agent/release.env
+grep '^ATLAS_MAVSDK_' /usr/share/atlas-agent/release.env
 grep '^ATLAS_AGENT_VERSION=' /etc/atlas-agent/atlas-agent.env
+grep '^ATLAS_CAMERA_TRANSPORT=' /etc/atlas-agent/atlas-agent.env
 ```
 
 Verify that `/usr/bin/atlas-agent` exactly matches the binary from the
@@ -447,6 +466,16 @@ transferred package. This is mandatory for a same-version replacement:
 ```sh
 EXPECTED_AGENT_SHA256="$(cat "/tmp/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.binary.sha256")"
 printf '%s  %s\n' "$EXPECTED_AGENT_SHA256" /usr/bin/atlas-agent \
+  | sha256sum -c -
+```
+
+Verify that the installed MAVSDK server is the checksum-pinned binary paired
+with the generated Agent client:
+
+```sh
+. /usr/share/atlas-agent/release.env
+printf '%s  %s\n' "$ATLAS_MAVSDK_SHA256" \
+  /usr/libexec/atlas-agent/mavsdk_server \
   | sha256sum -c -
 ```
 

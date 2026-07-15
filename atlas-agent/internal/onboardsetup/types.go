@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	agentconfig "github.com/sunnyside/atlas/atlas-agent/internal/config"
 )
 
 const (
@@ -158,6 +160,7 @@ type InstallConfig struct {
 	MAVLinkSystemID       uint32
 	MAVLinkComponentID    uint32
 	A8RTSPURL             string
+	CameraTransport       agentconfig.CameraTransport
 	SIYICameraAddress     string
 	PerceptionEnabled     bool
 	PerceptionAdapterMode string
@@ -176,6 +179,7 @@ func DefaultInstallConfig(paths Paths) InstallConfig {
 		MAVLinkSystemID:       1,
 		MAVLinkComponentID:    1,
 		A8RTSPURL:             DefaultA8RTSPURL,
+		CameraTransport:       agentconfig.CameraTransportSIYIUDP,
 		SIYICameraAddress:     DefaultSIYIAddr,
 		PerceptionAdapterMode: AdapterModeProcess,
 		HailoAccelerator:      "hailo-8l",
@@ -201,6 +205,12 @@ func (config InstallConfig) Validate(paths Paths) error {
 	}
 	if config.MAVLinkSystemID > 255 || config.MAVLinkComponentID > 255 {
 		return fmt.Errorf("MAVLink system and component ids must be between 0 and 255")
+	}
+	if !config.CameraTransport.Valid() {
+		return fmt.Errorf("camera transport must be one of: siyi_udp, mavsdk, hybrid")
+	}
+	if config.CameraTransport.UsesSIYI() && strings.TrimSpace(config.SIYICameraAddress) == "" {
+		return fmt.Errorf("SIYI camera address is required for %s camera transport", config.CameraTransport)
 	}
 	if config.PerceptionEnabled {
 		if config.PerceptionAdapterMode != AdapterModeProcess && config.PerceptionAdapterMode != AdapterModeContainer {

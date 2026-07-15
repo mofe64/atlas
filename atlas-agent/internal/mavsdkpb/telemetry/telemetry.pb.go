@@ -456,7 +456,7 @@ func (x Odometry_MavFrame) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use Odometry_MavFrame.Descriptor instead.
 func (Odometry_MavFrame) EnumDescriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{137, 0}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{136, 0}
 }
 
 // Possible results returned for telemetry requests.
@@ -521,7 +521,7 @@ func (x TelemetryResult_Result) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TelemetryResult_Result.Descriptor instead.
 func (TelemetryResult_Result) EnumDescriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{152, 0}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{151, 0}
 }
 
 type SubscribePositionRequest struct {
@@ -642,7 +642,7 @@ func (*SubscribeHomeRequest) Descriptor() ([]byte, []int) {
 
 type HomeResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Home          *HomePosition          `protobuf:"bytes,1,opt,name=home,proto3" json:"home,omitempty"` // The next home position
+	Home          *Position              `protobuf:"bytes,1,opt,name=home,proto3" json:"home,omitempty"` // The next home position
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -677,7 +677,7 @@ func (*HomeResponse) Descriptor() ([]byte, []int) {
 	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *HomeResponse) GetHome() *HomePosition {
+func (x *HomeResponse) GetHome() *Position {
 	if x != nil {
 		return x.Home
 	}
@@ -5738,142 +5738,6 @@ func (x *Quaternion) GetTimestampUs() uint64 {
 	return 0
 }
 
-// Home position type.
-//
-// Includes the global GPS position, local NED position, surface quaternion,
-// and approach vector from the MAVLink HOME_POSITION message.
-type HomePosition struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	TimestampUs       uint64                 `protobuf:"varint,1,opt,name=timestamp_us,json=timestampUs,proto3" json:"timestamp_us,omitempty"`                      // Timestamp (UNIX Epoch or since system boot) in microseconds
-	LatitudeDeg       float64                `protobuf:"fixed64,2,opt,name=latitude_deg,json=latitudeDeg,proto3" json:"latitude_deg,omitempty"`                     // Latitude in degrees (range: -90 to +90)
-	LongitudeDeg      float64                `protobuf:"fixed64,3,opt,name=longitude_deg,json=longitudeDeg,proto3" json:"longitude_deg,omitempty"`                  // Longitude in degrees (range: -180 to +180)
-	AbsoluteAltitudeM float32                `protobuf:"fixed32,4,opt,name=absolute_altitude_m,json=absoluteAltitudeM,proto3" json:"absolute_altitude_m,omitempty"` // Altitude AMSL (above mean sea level) in metres
-	RelativeAltitudeM float32                `protobuf:"fixed32,5,opt,name=relative_altitude_m,json=relativeAltitudeM,proto3" json:"relative_altitude_m,omitempty"` // Altitude relative to takeoff altitude in metres
-	LocalNorthM       float32                `protobuf:"fixed32,6,opt,name=local_north_m,json=localNorthM,proto3" json:"local_north_m,omitempty"`                   // Local North position in NED frame (m)
-	LocalEastM        float32                `protobuf:"fixed32,7,opt,name=local_east_m,json=localEastM,proto3" json:"local_east_m,omitempty"`                      // Local East position in NED frame (m)
-	LocalDownM        float32                `protobuf:"fixed32,8,opt,name=local_down_m,json=localDownM,proto3" json:"local_down_m,omitempty"`                      // Local Down position in NED frame (m, positive down)
-	Q                 *Quaternion            `protobuf:"bytes,9,opt,name=q,proto3" json:"q,omitempty"`                                                              // Surface quaternion (world-to-surface-normal and heading)
-	ApproachNorthM    float32                `protobuf:"fixed32,10,opt,name=approach_north_m,json=approachNorthM,proto3" json:"approach_north_m,omitempty"`         // Local North position of the approach vector end in NED frame (m)
-	ApproachEastM     float32                `protobuf:"fixed32,11,opt,name=approach_east_m,json=approachEastM,proto3" json:"approach_east_m,omitempty"`            // Local East position of the approach vector end in NED frame (m)
-	ApproachDownM     float32                `protobuf:"fixed32,12,opt,name=approach_down_m,json=approachDownM,proto3" json:"approach_down_m,omitempty"`            // Local Down position of the approach vector end in NED frame (m)
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *HomePosition) Reset() {
-	*x = HomePosition{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[123]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *HomePosition) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*HomePosition) ProtoMessage() {}
-
-func (x *HomePosition) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[123]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use HomePosition.ProtoReflect.Descriptor instead.
-func (*HomePosition) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{123}
-}
-
-func (x *HomePosition) GetTimestampUs() uint64 {
-	if x != nil {
-		return x.TimestampUs
-	}
-	return 0
-}
-
-func (x *HomePosition) GetLatitudeDeg() float64 {
-	if x != nil {
-		return x.LatitudeDeg
-	}
-	return 0
-}
-
-func (x *HomePosition) GetLongitudeDeg() float64 {
-	if x != nil {
-		return x.LongitudeDeg
-	}
-	return 0
-}
-
-func (x *HomePosition) GetAbsoluteAltitudeM() float32 {
-	if x != nil {
-		return x.AbsoluteAltitudeM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetRelativeAltitudeM() float32 {
-	if x != nil {
-		return x.RelativeAltitudeM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetLocalNorthM() float32 {
-	if x != nil {
-		return x.LocalNorthM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetLocalEastM() float32 {
-	if x != nil {
-		return x.LocalEastM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetLocalDownM() float32 {
-	if x != nil {
-		return x.LocalDownM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetQ() *Quaternion {
-	if x != nil {
-		return x.Q
-	}
-	return nil
-}
-
-func (x *HomePosition) GetApproachNorthM() float32 {
-	if x != nil {
-		return x.ApproachNorthM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetApproachEastM() float32 {
-	if x != nil {
-		return x.ApproachEastM
-	}
-	return 0
-}
-
-func (x *HomePosition) GetApproachDownM() float32 {
-	if x != nil {
-		return x.ApproachDownM
-	}
-	return 0
-}
-
 // Euler angle type.
 //
 // All rotations and axis systems follow the right-hand rule.
@@ -5892,7 +5756,7 @@ type EulerAngle struct {
 
 func (x *EulerAngle) Reset() {
 	*x = EulerAngle{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[124]
+	mi := &file_telemetry_telemetry_proto_msgTypes[123]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5904,7 +5768,7 @@ func (x *EulerAngle) String() string {
 func (*EulerAngle) ProtoMessage() {}
 
 func (x *EulerAngle) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[124]
+	mi := &file_telemetry_telemetry_proto_msgTypes[123]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5917,7 +5781,7 @@ func (x *EulerAngle) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EulerAngle.ProtoReflect.Descriptor instead.
 func (*EulerAngle) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{124}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{123}
 }
 
 func (x *EulerAngle) GetRollDeg() float32 {
@@ -5960,7 +5824,7 @@ type AngularVelocityBody struct {
 
 func (x *AngularVelocityBody) Reset() {
 	*x = AngularVelocityBody{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[125]
+	mi := &file_telemetry_telemetry_proto_msgTypes[124]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5972,7 +5836,7 @@ func (x *AngularVelocityBody) String() string {
 func (*AngularVelocityBody) ProtoMessage() {}
 
 func (x *AngularVelocityBody) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[125]
+	mi := &file_telemetry_telemetry_proto_msgTypes[124]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5985,7 +5849,7 @@ func (x *AngularVelocityBody) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AngularVelocityBody.ProtoReflect.Descriptor instead.
 func (*AngularVelocityBody) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{125}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{124}
 }
 
 func (x *AngularVelocityBody) GetRollRadS() float32 {
@@ -6020,7 +5884,7 @@ type GpsInfo struct {
 
 func (x *GpsInfo) Reset() {
 	*x = GpsInfo{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[126]
+	mi := &file_telemetry_telemetry_proto_msgTypes[125]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6032,7 +5896,7 @@ func (x *GpsInfo) String() string {
 func (*GpsInfo) ProtoMessage() {}
 
 func (x *GpsInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[126]
+	mi := &file_telemetry_telemetry_proto_msgTypes[125]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6045,7 +5909,7 @@ func (x *GpsInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpsInfo.ProtoReflect.Descriptor instead.
 func (*GpsInfo) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{126}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{125}
 }
 
 func (x *GpsInfo) GetNumSatellites() int32 {
@@ -6088,7 +5952,7 @@ type RawGps struct {
 
 func (x *RawGps) Reset() {
 	*x = RawGps{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[127]
+	mi := &file_telemetry_telemetry_proto_msgTypes[126]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6100,7 +5964,7 @@ func (x *RawGps) String() string {
 func (*RawGps) ProtoMessage() {}
 
 func (x *RawGps) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[127]
+	mi := &file_telemetry_telemetry_proto_msgTypes[126]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6113,7 +5977,7 @@ func (x *RawGps) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RawGps.ProtoReflect.Descriptor instead.
 func (*RawGps) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{127}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{126}
 }
 
 func (x *RawGps) GetTimestampUs() uint64 {
@@ -6231,7 +6095,7 @@ type Battery struct {
 
 func (x *Battery) Reset() {
 	*x = Battery{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[128]
+	mi := &file_telemetry_telemetry_proto_msgTypes[127]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6243,7 +6107,7 @@ func (x *Battery) String() string {
 func (*Battery) ProtoMessage() {}
 
 func (x *Battery) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[128]
+	mi := &file_telemetry_telemetry_proto_msgTypes[127]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6256,7 +6120,7 @@ func (x *Battery) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Battery.ProtoReflect.Descriptor instead.
 func (*Battery) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{128}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{127}
 }
 
 func (x *Battery) GetId() uint32 {
@@ -6331,7 +6195,7 @@ type Health struct {
 
 func (x *Health) Reset() {
 	*x = Health{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[129]
+	mi := &file_telemetry_telemetry_proto_msgTypes[128]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6343,7 +6207,7 @@ func (x *Health) String() string {
 func (*Health) ProtoMessage() {}
 
 func (x *Health) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[129]
+	mi := &file_telemetry_telemetry_proto_msgTypes[128]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6356,7 +6220,7 @@ func (x *Health) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Health.ProtoReflect.Descriptor instead.
 func (*Health) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{129}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{128}
 }
 
 func (x *Health) GetIsGyrometerCalibrationOk() bool {
@@ -6420,7 +6284,7 @@ type RcStatus struct {
 
 func (x *RcStatus) Reset() {
 	*x = RcStatus{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[130]
+	mi := &file_telemetry_telemetry_proto_msgTypes[129]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6432,7 +6296,7 @@ func (x *RcStatus) String() string {
 func (*RcStatus) ProtoMessage() {}
 
 func (x *RcStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[130]
+	mi := &file_telemetry_telemetry_proto_msgTypes[129]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6445,7 +6309,7 @@ func (x *RcStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RcStatus.ProtoReflect.Descriptor instead.
 func (*RcStatus) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{130}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{129}
 }
 
 func (x *RcStatus) GetWasAvailableOnce() bool {
@@ -6480,7 +6344,7 @@ type StatusText struct {
 
 func (x *StatusText) Reset() {
 	*x = StatusText{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[131]
+	mi := &file_telemetry_telemetry_proto_msgTypes[130]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6492,7 +6356,7 @@ func (x *StatusText) String() string {
 func (*StatusText) ProtoMessage() {}
 
 func (x *StatusText) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[131]
+	mi := &file_telemetry_telemetry_proto_msgTypes[130]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6505,7 +6369,7 @@ func (x *StatusText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StatusText.ProtoReflect.Descriptor instead.
 func (*StatusText) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{131}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{130}
 }
 
 func (x *StatusText) GetType() StatusTextType {
@@ -6533,7 +6397,7 @@ type ActuatorControlTarget struct {
 
 func (x *ActuatorControlTarget) Reset() {
 	*x = ActuatorControlTarget{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[132]
+	mi := &file_telemetry_telemetry_proto_msgTypes[131]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6545,7 +6409,7 @@ func (x *ActuatorControlTarget) String() string {
 func (*ActuatorControlTarget) ProtoMessage() {}
 
 func (x *ActuatorControlTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[132]
+	mi := &file_telemetry_telemetry_proto_msgTypes[131]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6558,7 +6422,7 @@ func (x *ActuatorControlTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActuatorControlTarget.ProtoReflect.Descriptor instead.
 func (*ActuatorControlTarget) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{132}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{131}
 }
 
 func (x *ActuatorControlTarget) GetGroup() int32 {
@@ -6586,7 +6450,7 @@ type ActuatorOutputStatus struct {
 
 func (x *ActuatorOutputStatus) Reset() {
 	*x = ActuatorOutputStatus{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[133]
+	mi := &file_telemetry_telemetry_proto_msgTypes[132]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6598,7 +6462,7 @@ func (x *ActuatorOutputStatus) String() string {
 func (*ActuatorOutputStatus) ProtoMessage() {}
 
 func (x *ActuatorOutputStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[133]
+	mi := &file_telemetry_telemetry_proto_msgTypes[132]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6611,7 +6475,7 @@ func (x *ActuatorOutputStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActuatorOutputStatus.ProtoReflect.Descriptor instead.
 func (*ActuatorOutputStatus) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{133}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{132}
 }
 
 func (x *ActuatorOutputStatus) GetActive() uint32 {
@@ -6642,7 +6506,7 @@ type Covariance struct {
 
 func (x *Covariance) Reset() {
 	*x = Covariance{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[134]
+	mi := &file_telemetry_telemetry_proto_msgTypes[133]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6654,7 +6518,7 @@ func (x *Covariance) String() string {
 func (*Covariance) ProtoMessage() {}
 
 func (x *Covariance) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[134]
+	mi := &file_telemetry_telemetry_proto_msgTypes[133]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6667,7 +6531,7 @@ func (x *Covariance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Covariance.ProtoReflect.Descriptor instead.
 func (*Covariance) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{134}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{133}
 }
 
 func (x *Covariance) GetCovarianceMatrix() []float32 {
@@ -6689,7 +6553,7 @@ type VelocityBody struct {
 
 func (x *VelocityBody) Reset() {
 	*x = VelocityBody{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[135]
+	mi := &file_telemetry_telemetry_proto_msgTypes[134]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6701,7 +6565,7 @@ func (x *VelocityBody) String() string {
 func (*VelocityBody) ProtoMessage() {}
 
 func (x *VelocityBody) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[135]
+	mi := &file_telemetry_telemetry_proto_msgTypes[134]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6714,7 +6578,7 @@ func (x *VelocityBody) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VelocityBody.ProtoReflect.Descriptor instead.
 func (*VelocityBody) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{135}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{134}
 }
 
 func (x *VelocityBody) GetXMS() float32 {
@@ -6750,7 +6614,7 @@ type PositionBody struct {
 
 func (x *PositionBody) Reset() {
 	*x = PositionBody{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[136]
+	mi := &file_telemetry_telemetry_proto_msgTypes[135]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6762,7 +6626,7 @@ func (x *PositionBody) String() string {
 func (*PositionBody) ProtoMessage() {}
 
 func (x *PositionBody) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[136]
+	mi := &file_telemetry_telemetry_proto_msgTypes[135]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6775,7 +6639,7 @@ func (x *PositionBody) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PositionBody.ProtoReflect.Descriptor instead.
 func (*PositionBody) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{136}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{135}
 }
 
 func (x *PositionBody) GetXM() float32 {
@@ -6817,7 +6681,7 @@ type Odometry struct {
 
 func (x *Odometry) Reset() {
 	*x = Odometry{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[137]
+	mi := &file_telemetry_telemetry_proto_msgTypes[136]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6829,7 +6693,7 @@ func (x *Odometry) String() string {
 func (*Odometry) ProtoMessage() {}
 
 func (x *Odometry) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[137]
+	mi := &file_telemetry_telemetry_proto_msgTypes[136]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6842,7 +6706,7 @@ func (x *Odometry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Odometry.ProtoReflect.Descriptor instead.
 func (*Odometry) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{137}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{136}
 }
 
 func (x *Odometry) GetTimeUsec() uint64 {
@@ -6921,7 +6785,7 @@ type DistanceSensor struct {
 
 func (x *DistanceSensor) Reset() {
 	*x = DistanceSensor{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[138]
+	mi := &file_telemetry_telemetry_proto_msgTypes[137]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6933,7 +6797,7 @@ func (x *DistanceSensor) String() string {
 func (*DistanceSensor) ProtoMessage() {}
 
 func (x *DistanceSensor) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[138]
+	mi := &file_telemetry_telemetry_proto_msgTypes[137]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6946,7 +6810,7 @@ func (x *DistanceSensor) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DistanceSensor.ProtoReflect.Descriptor instead.
 func (*DistanceSensor) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{138}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{137}
 }
 
 func (x *DistanceSensor) GetMinimumDistanceM() float32 {
@@ -6991,7 +6855,7 @@ type ScaledPressure struct {
 
 func (x *ScaledPressure) Reset() {
 	*x = ScaledPressure{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[139]
+	mi := &file_telemetry_telemetry_proto_msgTypes[138]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7003,7 +6867,7 @@ func (x *ScaledPressure) String() string {
 func (*ScaledPressure) ProtoMessage() {}
 
 func (x *ScaledPressure) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[139]
+	mi := &file_telemetry_telemetry_proto_msgTypes[138]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7016,7 +6880,7 @@ func (x *ScaledPressure) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScaledPressure.ProtoReflect.Descriptor instead.
 func (*ScaledPressure) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{139}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{138}
 }
 
 func (x *ScaledPressure) GetTimestampUs() uint64 {
@@ -7066,7 +6930,7 @@ type PositionNed struct {
 
 func (x *PositionNed) Reset() {
 	*x = PositionNed{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[140]
+	mi := &file_telemetry_telemetry_proto_msgTypes[139]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7078,7 +6942,7 @@ func (x *PositionNed) String() string {
 func (*PositionNed) ProtoMessage() {}
 
 func (x *PositionNed) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[140]
+	mi := &file_telemetry_telemetry_proto_msgTypes[139]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7091,7 +6955,7 @@ func (x *PositionNed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PositionNed.ProtoReflect.Descriptor instead.
 func (*PositionNed) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{140}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{139}
 }
 
 func (x *PositionNed) GetNorthM() float32 {
@@ -7127,7 +6991,7 @@ type VelocityNed struct {
 
 func (x *VelocityNed) Reset() {
 	*x = VelocityNed{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[141]
+	mi := &file_telemetry_telemetry_proto_msgTypes[140]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7139,7 +7003,7 @@ func (x *VelocityNed) String() string {
 func (*VelocityNed) ProtoMessage() {}
 
 func (x *VelocityNed) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[141]
+	mi := &file_telemetry_telemetry_proto_msgTypes[140]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7152,7 +7016,7 @@ func (x *VelocityNed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VelocityNed.ProtoReflect.Descriptor instead.
 func (*VelocityNed) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{141}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{140}
 }
 
 func (x *VelocityNed) GetNorthMS() float32 {
@@ -7187,7 +7051,7 @@ type PositionVelocityNed struct {
 
 func (x *PositionVelocityNed) Reset() {
 	*x = PositionVelocityNed{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[142]
+	mi := &file_telemetry_telemetry_proto_msgTypes[141]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7199,7 +7063,7 @@ func (x *PositionVelocityNed) String() string {
 func (*PositionVelocityNed) ProtoMessage() {}
 
 func (x *PositionVelocityNed) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[142]
+	mi := &file_telemetry_telemetry_proto_msgTypes[141]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7212,7 +7076,7 @@ func (x *PositionVelocityNed) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PositionVelocityNed.ProtoReflect.Descriptor instead.
 func (*PositionVelocityNed) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{142}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{141}
 }
 
 func (x *PositionVelocityNed) GetPosition() *PositionNed {
@@ -7242,7 +7106,7 @@ type GroundTruth struct {
 
 func (x *GroundTruth) Reset() {
 	*x = GroundTruth{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[143]
+	mi := &file_telemetry_telemetry_proto_msgTypes[142]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7254,7 +7118,7 @@ func (x *GroundTruth) String() string {
 func (*GroundTruth) ProtoMessage() {}
 
 func (x *GroundTruth) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[143]
+	mi := &file_telemetry_telemetry_proto_msgTypes[142]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7267,7 +7131,7 @@ func (x *GroundTruth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GroundTruth.ProtoReflect.Descriptor instead.
 func (*GroundTruth) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{143}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{142}
 }
 
 func (x *GroundTruth) GetLatitudeDeg() float64 {
@@ -7313,7 +7177,7 @@ type FixedwingMetrics struct {
 
 func (x *FixedwingMetrics) Reset() {
 	*x = FixedwingMetrics{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[144]
+	mi := &file_telemetry_telemetry_proto_msgTypes[143]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7325,7 +7189,7 @@ func (x *FixedwingMetrics) String() string {
 func (*FixedwingMetrics) ProtoMessage() {}
 
 func (x *FixedwingMetrics) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[144]
+	mi := &file_telemetry_telemetry_proto_msgTypes[143]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7338,7 +7202,7 @@ func (x *FixedwingMetrics) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FixedwingMetrics.ProtoReflect.Descriptor instead.
 func (*FixedwingMetrics) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{144}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{143}
 }
 
 func (x *FixedwingMetrics) GetAirspeedMS() float32 {
@@ -7395,7 +7259,7 @@ type AccelerationFrd struct {
 
 func (x *AccelerationFrd) Reset() {
 	*x = AccelerationFrd{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[145]
+	mi := &file_telemetry_telemetry_proto_msgTypes[144]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7407,7 +7271,7 @@ func (x *AccelerationFrd) String() string {
 func (*AccelerationFrd) ProtoMessage() {}
 
 func (x *AccelerationFrd) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[145]
+	mi := &file_telemetry_telemetry_proto_msgTypes[144]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7420,7 +7284,7 @@ func (x *AccelerationFrd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccelerationFrd.ProtoReflect.Descriptor instead.
 func (*AccelerationFrd) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{145}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{144}
 }
 
 func (x *AccelerationFrd) GetForwardMS2() float32 {
@@ -7456,7 +7320,7 @@ type AngularVelocityFrd struct {
 
 func (x *AngularVelocityFrd) Reset() {
 	*x = AngularVelocityFrd{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[146]
+	mi := &file_telemetry_telemetry_proto_msgTypes[145]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7468,7 +7332,7 @@ func (x *AngularVelocityFrd) String() string {
 func (*AngularVelocityFrd) ProtoMessage() {}
 
 func (x *AngularVelocityFrd) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[146]
+	mi := &file_telemetry_telemetry_proto_msgTypes[145]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7481,7 +7345,7 @@ func (x *AngularVelocityFrd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AngularVelocityFrd.ProtoReflect.Descriptor instead.
 func (*AngularVelocityFrd) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{146}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{145}
 }
 
 func (x *AngularVelocityFrd) GetForwardRadS() float32 {
@@ -7517,7 +7381,7 @@ type MagneticFieldFrd struct {
 
 func (x *MagneticFieldFrd) Reset() {
 	*x = MagneticFieldFrd{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[147]
+	mi := &file_telemetry_telemetry_proto_msgTypes[146]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7529,7 +7393,7 @@ func (x *MagneticFieldFrd) String() string {
 func (*MagneticFieldFrd) ProtoMessage() {}
 
 func (x *MagneticFieldFrd) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[147]
+	mi := &file_telemetry_telemetry_proto_msgTypes[146]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7542,7 +7406,7 @@ func (x *MagneticFieldFrd) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MagneticFieldFrd.ProtoReflect.Descriptor instead.
 func (*MagneticFieldFrd) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{147}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{146}
 }
 
 func (x *MagneticFieldFrd) GetForwardGauss() float32 {
@@ -7580,7 +7444,7 @@ type Imu struct {
 
 func (x *Imu) Reset() {
 	*x = Imu{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[148]
+	mi := &file_telemetry_telemetry_proto_msgTypes[147]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7592,7 +7456,7 @@ func (x *Imu) String() string {
 func (*Imu) ProtoMessage() {}
 
 func (x *Imu) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[148]
+	mi := &file_telemetry_telemetry_proto_msgTypes[147]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7605,7 +7469,7 @@ func (x *Imu) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Imu.ProtoReflect.Descriptor instead.
 func (*Imu) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{148}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{147}
 }
 
 func (x *Imu) GetAccelerationFrd() *AccelerationFrd {
@@ -7655,7 +7519,7 @@ type GpsGlobalOrigin struct {
 
 func (x *GpsGlobalOrigin) Reset() {
 	*x = GpsGlobalOrigin{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[149]
+	mi := &file_telemetry_telemetry_proto_msgTypes[148]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7667,7 +7531,7 @@ func (x *GpsGlobalOrigin) String() string {
 func (*GpsGlobalOrigin) ProtoMessage() {}
 
 func (x *GpsGlobalOrigin) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[149]
+	mi := &file_telemetry_telemetry_proto_msgTypes[148]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7680,7 +7544,7 @@ func (x *GpsGlobalOrigin) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpsGlobalOrigin.ProtoReflect.Descriptor instead.
 func (*GpsGlobalOrigin) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{149}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{148}
 }
 
 func (x *GpsGlobalOrigin) GetLatitudeDeg() float64 {
@@ -7720,7 +7584,7 @@ type Altitude struct {
 
 func (x *Altitude) Reset() {
 	*x = Altitude{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[150]
+	mi := &file_telemetry_telemetry_proto_msgTypes[149]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7732,7 +7596,7 @@ func (x *Altitude) String() string {
 func (*Altitude) ProtoMessage() {}
 
 func (x *Altitude) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[150]
+	mi := &file_telemetry_telemetry_proto_msgTypes[149]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7745,7 +7609,7 @@ func (x *Altitude) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Altitude.ProtoReflect.Descriptor instead.
 func (*Altitude) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{150}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{149}
 }
 
 func (x *Altitude) GetAltitudeMonotonicM() float32 {
@@ -7814,7 +7678,7 @@ type Wind struct {
 
 func (x *Wind) Reset() {
 	*x = Wind{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[151]
+	mi := &file_telemetry_telemetry_proto_msgTypes[150]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7826,7 +7690,7 @@ func (x *Wind) String() string {
 func (*Wind) ProtoMessage() {}
 
 func (x *Wind) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[151]
+	mi := &file_telemetry_telemetry_proto_msgTypes[150]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7839,7 +7703,7 @@ func (x *Wind) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Wind.ProtoReflect.Descriptor instead.
 func (*Wind) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{151}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{150}
 }
 
 func (x *Wind) GetWindXNedMS() float32 {
@@ -7909,7 +7773,7 @@ type TelemetryResult struct {
 
 func (x *TelemetryResult) Reset() {
 	*x = TelemetryResult{}
-	mi := &file_telemetry_telemetry_proto_msgTypes[152]
+	mi := &file_telemetry_telemetry_proto_msgTypes[151]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7921,7 +7785,7 @@ func (x *TelemetryResult) String() string {
 func (*TelemetryResult) ProtoMessage() {}
 
 func (x *TelemetryResult) ProtoReflect() protoreflect.Message {
-	mi := &file_telemetry_telemetry_proto_msgTypes[152]
+	mi := &file_telemetry_telemetry_proto_msgTypes[151]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7934,7 +7798,7 @@ func (x *TelemetryResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TelemetryResult.ProtoReflect.Descriptor instead.
 func (*TelemetryResult) Descriptor() ([]byte, []int) {
-	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{152}
+	return file_telemetry_telemetry_proto_rawDescGZIP(), []int{151}
 }
 
 func (x *TelemetryResult) GetResult() TelemetryResult_Result {
@@ -7959,9 +7823,9 @@ const file_telemetry_telemetry_proto_rawDesc = "" +
 	"\x18SubscribePositionRequest\"N\n" +
 	"\x10PositionResponse\x12:\n" +
 	"\bposition\x18\x01 \x01(\v2\x1e.mavsdk.rpc.telemetry.PositionR\bposition\"\x16\n" +
-	"\x14SubscribeHomeRequest\"F\n" +
-	"\fHomeResponse\x126\n" +
-	"\x04home\x18\x01 \x01(\v2\".mavsdk.rpc.telemetry.HomePositionR\x04home\"\x17\n" +
+	"\x14SubscribeHomeRequest\"B\n" +
+	"\fHomeResponse\x122\n" +
+	"\x04home\x18\x01 \x01(\v2\x1e.mavsdk.rpc.telemetry.PositionR\x04home\"\x17\n" +
 	"\x15SubscribeInAirRequest\"+\n" +
 	"\rInAirResponse\x12\x1a\n" +
 	"\tis_in_air\x18\x01 \x01(\bR\aisInAir\"\x1d\n" +
@@ -8181,23 +8045,7 @@ const file_telemetry_telemetry_proto_rawDesc = "" +
 	"\x01x\x18\x02 \x01(\x02B\a\x82\xb5\x18\x03NaNR\x01x\x12\x15\n" +
 	"\x01y\x18\x03 \x01(\x02B\a\x82\xb5\x18\x03NaNR\x01y\x12\x15\n" +
 	"\x01z\x18\x04 \x01(\x02B\a\x82\xb5\x18\x03NaNR\x01z\x12!\n" +
-	"\ftimestamp_us\x18\x05 \x01(\x04R\vtimestampUs\"\xc5\x04\n" +
-	"\fHomePosition\x12!\n" +
-	"\ftimestamp_us\x18\x01 \x01(\x04R\vtimestampUs\x12*\n" +
-	"\flatitude_deg\x18\x02 \x01(\x01B\a\x82\xb5\x18\x03NaNR\vlatitudeDeg\x12,\n" +
-	"\rlongitude_deg\x18\x03 \x01(\x01B\a\x82\xb5\x18\x03NaNR\flongitudeDeg\x127\n" +
-	"\x13absolute_altitude_m\x18\x04 \x01(\x02B\a\x82\xb5\x18\x03NaNR\x11absoluteAltitudeM\x127\n" +
-	"\x13relative_altitude_m\x18\x05 \x01(\x02B\a\x82\xb5\x18\x03NaNR\x11relativeAltitudeM\x12+\n" +
-	"\rlocal_north_m\x18\x06 \x01(\x02B\a\x82\xb5\x18\x03NaNR\vlocalNorthM\x12)\n" +
-	"\flocal_east_m\x18\a \x01(\x02B\a\x82\xb5\x18\x03NaNR\n" +
-	"localEastM\x12)\n" +
-	"\flocal_down_m\x18\b \x01(\x02B\a\x82\xb5\x18\x03NaNR\n" +
-	"localDownM\x12.\n" +
-	"\x01q\x18\t \x01(\v2 .mavsdk.rpc.telemetry.QuaternionR\x01q\x121\n" +
-	"\x10approach_north_m\x18\n" +
-	" \x01(\x02B\a\x82\xb5\x18\x03NaNR\x0eapproachNorthM\x12/\n" +
-	"\x0fapproach_east_m\x18\v \x01(\x02B\a\x82\xb5\x18\x03NaNR\rapproachEastM\x12/\n" +
-	"\x0fapproach_down_m\x18\f \x01(\x02B\a\x82\xb5\x18\x03NaNR\rapproachDownM\"\x9b\x01\n" +
+	"\ftimestamp_us\x18\x05 \x01(\x04R\vtimestampUs\"\x9b\x01\n" +
 	"\n" +
 	"EulerAngle\x12\"\n" +
 	"\broll_deg\x18\x01 \x01(\x02B\a\x82\xb5\x18\x03NaNR\arollDeg\x12$\n" +
@@ -8513,7 +8361,7 @@ func file_telemetry_telemetry_proto_rawDescGZIP() []byte {
 }
 
 var file_telemetry_telemetry_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_telemetry_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 153)
+var file_telemetry_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 152)
 var file_telemetry_telemetry_proto_goTypes = []any{
 	(FixType)(0),                                        // 0: mavsdk.rpc.telemetry.FixType
 	(BatteryFunction)(0),                                // 1: mavsdk.rpc.telemetry.BatteryFunction
@@ -8646,237 +8494,235 @@ var file_telemetry_telemetry_proto_goTypes = []any{
 	(*Position)(nil),                                    // 128: mavsdk.rpc.telemetry.Position
 	(*Heading)(nil),                                     // 129: mavsdk.rpc.telemetry.Heading
 	(*Quaternion)(nil),                                  // 130: mavsdk.rpc.telemetry.Quaternion
-	(*HomePosition)(nil),                                // 131: mavsdk.rpc.telemetry.HomePosition
-	(*EulerAngle)(nil),                                  // 132: mavsdk.rpc.telemetry.EulerAngle
-	(*AngularVelocityBody)(nil),                         // 133: mavsdk.rpc.telemetry.AngularVelocityBody
-	(*GpsInfo)(nil),                                     // 134: mavsdk.rpc.telemetry.GpsInfo
-	(*RawGps)(nil),                                      // 135: mavsdk.rpc.telemetry.RawGps
-	(*Battery)(nil),                                     // 136: mavsdk.rpc.telemetry.Battery
-	(*Health)(nil),                                      // 137: mavsdk.rpc.telemetry.Health
-	(*RcStatus)(nil),                                    // 138: mavsdk.rpc.telemetry.RcStatus
-	(*StatusText)(nil),                                  // 139: mavsdk.rpc.telemetry.StatusText
-	(*ActuatorControlTarget)(nil),                       // 140: mavsdk.rpc.telemetry.ActuatorControlTarget
-	(*ActuatorOutputStatus)(nil),                        // 141: mavsdk.rpc.telemetry.ActuatorOutputStatus
-	(*Covariance)(nil),                                  // 142: mavsdk.rpc.telemetry.Covariance
-	(*VelocityBody)(nil),                                // 143: mavsdk.rpc.telemetry.VelocityBody
-	(*PositionBody)(nil),                                // 144: mavsdk.rpc.telemetry.PositionBody
-	(*Odometry)(nil),                                    // 145: mavsdk.rpc.telemetry.Odometry
-	(*DistanceSensor)(nil),                              // 146: mavsdk.rpc.telemetry.DistanceSensor
-	(*ScaledPressure)(nil),                              // 147: mavsdk.rpc.telemetry.ScaledPressure
-	(*PositionNed)(nil),                                 // 148: mavsdk.rpc.telemetry.PositionNed
-	(*VelocityNed)(nil),                                 // 149: mavsdk.rpc.telemetry.VelocityNed
-	(*PositionVelocityNed)(nil),                         // 150: mavsdk.rpc.telemetry.PositionVelocityNed
-	(*GroundTruth)(nil),                                 // 151: mavsdk.rpc.telemetry.GroundTruth
-	(*FixedwingMetrics)(nil),                            // 152: mavsdk.rpc.telemetry.FixedwingMetrics
-	(*AccelerationFrd)(nil),                             // 153: mavsdk.rpc.telemetry.AccelerationFrd
-	(*AngularVelocityFrd)(nil),                          // 154: mavsdk.rpc.telemetry.AngularVelocityFrd
-	(*MagneticFieldFrd)(nil),                            // 155: mavsdk.rpc.telemetry.MagneticFieldFrd
-	(*Imu)(nil),                                         // 156: mavsdk.rpc.telemetry.Imu
-	(*GpsGlobalOrigin)(nil),                             // 157: mavsdk.rpc.telemetry.GpsGlobalOrigin
-	(*Altitude)(nil),                                    // 158: mavsdk.rpc.telemetry.Altitude
-	(*Wind)(nil),                                        // 159: mavsdk.rpc.telemetry.Wind
-	(*TelemetryResult)(nil),                             // 160: mavsdk.rpc.telemetry.TelemetryResult
+	(*EulerAngle)(nil),                                  // 131: mavsdk.rpc.telemetry.EulerAngle
+	(*AngularVelocityBody)(nil),                         // 132: mavsdk.rpc.telemetry.AngularVelocityBody
+	(*GpsInfo)(nil),                                     // 133: mavsdk.rpc.telemetry.GpsInfo
+	(*RawGps)(nil),                                      // 134: mavsdk.rpc.telemetry.RawGps
+	(*Battery)(nil),                                     // 135: mavsdk.rpc.telemetry.Battery
+	(*Health)(nil),                                      // 136: mavsdk.rpc.telemetry.Health
+	(*RcStatus)(nil),                                    // 137: mavsdk.rpc.telemetry.RcStatus
+	(*StatusText)(nil),                                  // 138: mavsdk.rpc.telemetry.StatusText
+	(*ActuatorControlTarget)(nil),                       // 139: mavsdk.rpc.telemetry.ActuatorControlTarget
+	(*ActuatorOutputStatus)(nil),                        // 140: mavsdk.rpc.telemetry.ActuatorOutputStatus
+	(*Covariance)(nil),                                  // 141: mavsdk.rpc.telemetry.Covariance
+	(*VelocityBody)(nil),                                // 142: mavsdk.rpc.telemetry.VelocityBody
+	(*PositionBody)(nil),                                // 143: mavsdk.rpc.telemetry.PositionBody
+	(*Odometry)(nil),                                    // 144: mavsdk.rpc.telemetry.Odometry
+	(*DistanceSensor)(nil),                              // 145: mavsdk.rpc.telemetry.DistanceSensor
+	(*ScaledPressure)(nil),                              // 146: mavsdk.rpc.telemetry.ScaledPressure
+	(*PositionNed)(nil),                                 // 147: mavsdk.rpc.telemetry.PositionNed
+	(*VelocityNed)(nil),                                 // 148: mavsdk.rpc.telemetry.VelocityNed
+	(*PositionVelocityNed)(nil),                         // 149: mavsdk.rpc.telemetry.PositionVelocityNed
+	(*GroundTruth)(nil),                                 // 150: mavsdk.rpc.telemetry.GroundTruth
+	(*FixedwingMetrics)(nil),                            // 151: mavsdk.rpc.telemetry.FixedwingMetrics
+	(*AccelerationFrd)(nil),                             // 152: mavsdk.rpc.telemetry.AccelerationFrd
+	(*AngularVelocityFrd)(nil),                          // 153: mavsdk.rpc.telemetry.AngularVelocityFrd
+	(*MagneticFieldFrd)(nil),                            // 154: mavsdk.rpc.telemetry.MagneticFieldFrd
+	(*Imu)(nil),                                         // 155: mavsdk.rpc.telemetry.Imu
+	(*GpsGlobalOrigin)(nil),                             // 156: mavsdk.rpc.telemetry.GpsGlobalOrigin
+	(*Altitude)(nil),                                    // 157: mavsdk.rpc.telemetry.Altitude
+	(*Wind)(nil),                                        // 158: mavsdk.rpc.telemetry.Wind
+	(*TelemetryResult)(nil),                             // 159: mavsdk.rpc.telemetry.TelemetryResult
 }
 var file_telemetry_telemetry_proto_depIdxs = []int32{
 	128, // 0: mavsdk.rpc.telemetry.PositionResponse.position:type_name -> mavsdk.rpc.telemetry.Position
-	131, // 1: mavsdk.rpc.telemetry.HomeResponse.home:type_name -> mavsdk.rpc.telemetry.HomePosition
+	128, // 1: mavsdk.rpc.telemetry.HomeResponse.home:type_name -> mavsdk.rpc.telemetry.Position
 	4,   // 2: mavsdk.rpc.telemetry.LandedStateResponse.landed_state:type_name -> mavsdk.rpc.telemetry.LandedState
 	5,   // 3: mavsdk.rpc.telemetry.VtolStateResponse.vtol_state:type_name -> mavsdk.rpc.telemetry.VtolState
 	130, // 4: mavsdk.rpc.telemetry.AttitudeQuaternionResponse.attitude_quaternion:type_name -> mavsdk.rpc.telemetry.Quaternion
-	132, // 5: mavsdk.rpc.telemetry.AttitudeEulerResponse.attitude_euler:type_name -> mavsdk.rpc.telemetry.EulerAngle
-	133, // 6: mavsdk.rpc.telemetry.AttitudeAngularVelocityBodyResponse.attitude_angular_velocity_body:type_name -> mavsdk.rpc.telemetry.AngularVelocityBody
-	149, // 7: mavsdk.rpc.telemetry.VelocityNedResponse.velocity_ned:type_name -> mavsdk.rpc.telemetry.VelocityNed
-	134, // 8: mavsdk.rpc.telemetry.GpsInfoResponse.gps_info:type_name -> mavsdk.rpc.telemetry.GpsInfo
-	135, // 9: mavsdk.rpc.telemetry.RawGpsResponse.raw_gps:type_name -> mavsdk.rpc.telemetry.RawGps
-	136, // 10: mavsdk.rpc.telemetry.BatteryResponse.battery:type_name -> mavsdk.rpc.telemetry.Battery
+	131, // 5: mavsdk.rpc.telemetry.AttitudeEulerResponse.attitude_euler:type_name -> mavsdk.rpc.telemetry.EulerAngle
+	132, // 6: mavsdk.rpc.telemetry.AttitudeAngularVelocityBodyResponse.attitude_angular_velocity_body:type_name -> mavsdk.rpc.telemetry.AngularVelocityBody
+	148, // 7: mavsdk.rpc.telemetry.VelocityNedResponse.velocity_ned:type_name -> mavsdk.rpc.telemetry.VelocityNed
+	133, // 8: mavsdk.rpc.telemetry.GpsInfoResponse.gps_info:type_name -> mavsdk.rpc.telemetry.GpsInfo
+	134, // 9: mavsdk.rpc.telemetry.RawGpsResponse.raw_gps:type_name -> mavsdk.rpc.telemetry.RawGps
+	135, // 10: mavsdk.rpc.telemetry.BatteryResponse.battery:type_name -> mavsdk.rpc.telemetry.Battery
 	2,   // 11: mavsdk.rpc.telemetry.FlightModeResponse.flight_mode:type_name -> mavsdk.rpc.telemetry.FlightMode
-	137, // 12: mavsdk.rpc.telemetry.HealthResponse.health:type_name -> mavsdk.rpc.telemetry.Health
-	138, // 13: mavsdk.rpc.telemetry.RcStatusResponse.rc_status:type_name -> mavsdk.rpc.telemetry.RcStatus
-	139, // 14: mavsdk.rpc.telemetry.StatusTextResponse.status_text:type_name -> mavsdk.rpc.telemetry.StatusText
-	140, // 15: mavsdk.rpc.telemetry.ActuatorControlTargetResponse.actuator_control_target:type_name -> mavsdk.rpc.telemetry.ActuatorControlTarget
-	141, // 16: mavsdk.rpc.telemetry.ActuatorOutputStatusResponse.actuator_output_status:type_name -> mavsdk.rpc.telemetry.ActuatorOutputStatus
-	145, // 17: mavsdk.rpc.telemetry.OdometryResponse.odometry:type_name -> mavsdk.rpc.telemetry.Odometry
-	150, // 18: mavsdk.rpc.telemetry.PositionVelocityNedResponse.position_velocity_ned:type_name -> mavsdk.rpc.telemetry.PositionVelocityNed
-	151, // 19: mavsdk.rpc.telemetry.GroundTruthResponse.ground_truth:type_name -> mavsdk.rpc.telemetry.GroundTruth
-	152, // 20: mavsdk.rpc.telemetry.FixedwingMetricsResponse.fixedwing_metrics:type_name -> mavsdk.rpc.telemetry.FixedwingMetrics
-	156, // 21: mavsdk.rpc.telemetry.ImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
-	156, // 22: mavsdk.rpc.telemetry.ScaledImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
-	156, // 23: mavsdk.rpc.telemetry.RawImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
-	146, // 24: mavsdk.rpc.telemetry.DistanceSensorResponse.distance_sensor:type_name -> mavsdk.rpc.telemetry.DistanceSensor
-	147, // 25: mavsdk.rpc.telemetry.ScaledPressureResponse.scaled_pressure:type_name -> mavsdk.rpc.telemetry.ScaledPressure
+	136, // 12: mavsdk.rpc.telemetry.HealthResponse.health:type_name -> mavsdk.rpc.telemetry.Health
+	137, // 13: mavsdk.rpc.telemetry.RcStatusResponse.rc_status:type_name -> mavsdk.rpc.telemetry.RcStatus
+	138, // 14: mavsdk.rpc.telemetry.StatusTextResponse.status_text:type_name -> mavsdk.rpc.telemetry.StatusText
+	139, // 15: mavsdk.rpc.telemetry.ActuatorControlTargetResponse.actuator_control_target:type_name -> mavsdk.rpc.telemetry.ActuatorControlTarget
+	140, // 16: mavsdk.rpc.telemetry.ActuatorOutputStatusResponse.actuator_output_status:type_name -> mavsdk.rpc.telemetry.ActuatorOutputStatus
+	144, // 17: mavsdk.rpc.telemetry.OdometryResponse.odometry:type_name -> mavsdk.rpc.telemetry.Odometry
+	149, // 18: mavsdk.rpc.telemetry.PositionVelocityNedResponse.position_velocity_ned:type_name -> mavsdk.rpc.telemetry.PositionVelocityNed
+	150, // 19: mavsdk.rpc.telemetry.GroundTruthResponse.ground_truth:type_name -> mavsdk.rpc.telemetry.GroundTruth
+	151, // 20: mavsdk.rpc.telemetry.FixedwingMetricsResponse.fixedwing_metrics:type_name -> mavsdk.rpc.telemetry.FixedwingMetrics
+	155, // 21: mavsdk.rpc.telemetry.ImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
+	155, // 22: mavsdk.rpc.telemetry.ScaledImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
+	155, // 23: mavsdk.rpc.telemetry.RawImuResponse.imu:type_name -> mavsdk.rpc.telemetry.Imu
+	145, // 24: mavsdk.rpc.telemetry.DistanceSensorResponse.distance_sensor:type_name -> mavsdk.rpc.telemetry.DistanceSensor
+	146, // 25: mavsdk.rpc.telemetry.ScaledPressureResponse.scaled_pressure:type_name -> mavsdk.rpc.telemetry.ScaledPressure
 	129, // 26: mavsdk.rpc.telemetry.HeadingResponse.heading_deg:type_name -> mavsdk.rpc.telemetry.Heading
-	158, // 27: mavsdk.rpc.telemetry.AltitudeResponse.altitude:type_name -> mavsdk.rpc.telemetry.Altitude
-	159, // 28: mavsdk.rpc.telemetry.WindResponse.wind:type_name -> mavsdk.rpc.telemetry.Wind
-	160, // 29: mavsdk.rpc.telemetry.SetRatePositionResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 30: mavsdk.rpc.telemetry.SetRateHomeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 31: mavsdk.rpc.telemetry.SetRateInAirResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 32: mavsdk.rpc.telemetry.SetRateLandedStateResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 33: mavsdk.rpc.telemetry.SetRateVtolStateResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 34: mavsdk.rpc.telemetry.SetRateAttitudeEulerResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 35: mavsdk.rpc.telemetry.SetRateAttitudeQuaternionResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 36: mavsdk.rpc.telemetry.SetRateAttitudeAngularVelocityBodyResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 37: mavsdk.rpc.telemetry.SetRateVelocityNedResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 38: mavsdk.rpc.telemetry.SetRateGpsInfoResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 39: mavsdk.rpc.telemetry.SetRateRawGpsResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 40: mavsdk.rpc.telemetry.SetRateBatteryResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 41: mavsdk.rpc.telemetry.SetRateRcStatusResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 42: mavsdk.rpc.telemetry.SetRateActuatorControlTargetResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 43: mavsdk.rpc.telemetry.SetRateActuatorOutputStatusResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 44: mavsdk.rpc.telemetry.SetRateOdometryResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 45: mavsdk.rpc.telemetry.SetRatePositionVelocityNedResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 46: mavsdk.rpc.telemetry.SetRateGroundTruthResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 47: mavsdk.rpc.telemetry.SetRateFixedwingMetricsResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 48: mavsdk.rpc.telemetry.SetRateImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 49: mavsdk.rpc.telemetry.SetRateScaledImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 50: mavsdk.rpc.telemetry.SetRateRawImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 51: mavsdk.rpc.telemetry.SetRateUnixEpochTimeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 52: mavsdk.rpc.telemetry.SetRateDistanceSensorResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 53: mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	157, // 54: mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse.gps_global_origin:type_name -> mavsdk.rpc.telemetry.GpsGlobalOrigin
-	160, // 55: mavsdk.rpc.telemetry.SetRateAltitudeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	160, // 56: mavsdk.rpc.telemetry.SetRateHealthResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
-	130, // 57: mavsdk.rpc.telemetry.HomePosition.q:type_name -> mavsdk.rpc.telemetry.Quaternion
-	0,   // 58: mavsdk.rpc.telemetry.GpsInfo.fix_type:type_name -> mavsdk.rpc.telemetry.FixType
-	1,   // 59: mavsdk.rpc.telemetry.Battery.battery_function:type_name -> mavsdk.rpc.telemetry.BatteryFunction
-	3,   // 60: mavsdk.rpc.telemetry.StatusText.type:type_name -> mavsdk.rpc.telemetry.StatusTextType
-	6,   // 61: mavsdk.rpc.telemetry.Odometry.frame_id:type_name -> mavsdk.rpc.telemetry.Odometry.MavFrame
-	6,   // 62: mavsdk.rpc.telemetry.Odometry.child_frame_id:type_name -> mavsdk.rpc.telemetry.Odometry.MavFrame
-	144, // 63: mavsdk.rpc.telemetry.Odometry.position_body:type_name -> mavsdk.rpc.telemetry.PositionBody
-	130, // 64: mavsdk.rpc.telemetry.Odometry.q:type_name -> mavsdk.rpc.telemetry.Quaternion
-	143, // 65: mavsdk.rpc.telemetry.Odometry.velocity_body:type_name -> mavsdk.rpc.telemetry.VelocityBody
-	133, // 66: mavsdk.rpc.telemetry.Odometry.angular_velocity_body:type_name -> mavsdk.rpc.telemetry.AngularVelocityBody
-	142, // 67: mavsdk.rpc.telemetry.Odometry.pose_covariance:type_name -> mavsdk.rpc.telemetry.Covariance
-	142, // 68: mavsdk.rpc.telemetry.Odometry.velocity_covariance:type_name -> mavsdk.rpc.telemetry.Covariance
-	132, // 69: mavsdk.rpc.telemetry.DistanceSensor.orientation:type_name -> mavsdk.rpc.telemetry.EulerAngle
-	148, // 70: mavsdk.rpc.telemetry.PositionVelocityNed.position:type_name -> mavsdk.rpc.telemetry.PositionNed
-	149, // 71: mavsdk.rpc.telemetry.PositionVelocityNed.velocity:type_name -> mavsdk.rpc.telemetry.VelocityNed
-	153, // 72: mavsdk.rpc.telemetry.Imu.acceleration_frd:type_name -> mavsdk.rpc.telemetry.AccelerationFrd
-	154, // 73: mavsdk.rpc.telemetry.Imu.angular_velocity_frd:type_name -> mavsdk.rpc.telemetry.AngularVelocityFrd
-	155, // 74: mavsdk.rpc.telemetry.Imu.magnetic_field_frd:type_name -> mavsdk.rpc.telemetry.MagneticFieldFrd
-	7,   // 75: mavsdk.rpc.telemetry.TelemetryResult.result:type_name -> mavsdk.rpc.telemetry.TelemetryResult.Result
-	8,   // 76: mavsdk.rpc.telemetry.TelemetryService.SubscribePosition:input_type -> mavsdk.rpc.telemetry.SubscribePositionRequest
-	10,  // 77: mavsdk.rpc.telemetry.TelemetryService.SubscribeHome:input_type -> mavsdk.rpc.telemetry.SubscribeHomeRequest
-	12,  // 78: mavsdk.rpc.telemetry.TelemetryService.SubscribeInAir:input_type -> mavsdk.rpc.telemetry.SubscribeInAirRequest
-	14,  // 79: mavsdk.rpc.telemetry.TelemetryService.SubscribeLandedState:input_type -> mavsdk.rpc.telemetry.SubscribeLandedStateRequest
-	16,  // 80: mavsdk.rpc.telemetry.TelemetryService.SubscribeArmed:input_type -> mavsdk.rpc.telemetry.SubscribeArmedRequest
-	18,  // 81: mavsdk.rpc.telemetry.TelemetryService.SubscribeVtolState:input_type -> mavsdk.rpc.telemetry.SubscribeVtolStateRequest
-	20,  // 82: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeQuaternion:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeQuaternionRequest
-	22,  // 83: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeEuler:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeEulerRequest
-	24,  // 84: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeAngularVelocityBody:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeAngularVelocityBodyRequest
-	26,  // 85: mavsdk.rpc.telemetry.TelemetryService.SubscribeVelocityNed:input_type -> mavsdk.rpc.telemetry.SubscribeVelocityNedRequest
-	28,  // 86: mavsdk.rpc.telemetry.TelemetryService.SubscribeGpsInfo:input_type -> mavsdk.rpc.telemetry.SubscribeGpsInfoRequest
-	30,  // 87: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawGps:input_type -> mavsdk.rpc.telemetry.SubscribeRawGpsRequest
-	32,  // 88: mavsdk.rpc.telemetry.TelemetryService.SubscribeBattery:input_type -> mavsdk.rpc.telemetry.SubscribeBatteryRequest
-	34,  // 89: mavsdk.rpc.telemetry.TelemetryService.SubscribeFlightMode:input_type -> mavsdk.rpc.telemetry.SubscribeFlightModeRequest
-	36,  // 90: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealth:input_type -> mavsdk.rpc.telemetry.SubscribeHealthRequest
-	38,  // 91: mavsdk.rpc.telemetry.TelemetryService.SubscribeRcStatus:input_type -> mavsdk.rpc.telemetry.SubscribeRcStatusRequest
-	40,  // 92: mavsdk.rpc.telemetry.TelemetryService.SubscribeStatusText:input_type -> mavsdk.rpc.telemetry.SubscribeStatusTextRequest
-	42,  // 93: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorControlTarget:input_type -> mavsdk.rpc.telemetry.SubscribeActuatorControlTargetRequest
-	44,  // 94: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorOutputStatus:input_type -> mavsdk.rpc.telemetry.SubscribeActuatorOutputStatusRequest
-	46,  // 95: mavsdk.rpc.telemetry.TelemetryService.SubscribeOdometry:input_type -> mavsdk.rpc.telemetry.SubscribeOdometryRequest
-	48,  // 96: mavsdk.rpc.telemetry.TelemetryService.SubscribePositionVelocityNed:input_type -> mavsdk.rpc.telemetry.SubscribePositionVelocityNedRequest
-	50,  // 97: mavsdk.rpc.telemetry.TelemetryService.SubscribeGroundTruth:input_type -> mavsdk.rpc.telemetry.SubscribeGroundTruthRequest
-	52,  // 98: mavsdk.rpc.telemetry.TelemetryService.SubscribeFixedwingMetrics:input_type -> mavsdk.rpc.telemetry.SubscribeFixedwingMetricsRequest
-	54,  // 99: mavsdk.rpc.telemetry.TelemetryService.SubscribeImu:input_type -> mavsdk.rpc.telemetry.SubscribeImuRequest
-	56,  // 100: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledImu:input_type -> mavsdk.rpc.telemetry.SubscribeScaledImuRequest
-	58,  // 101: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawImu:input_type -> mavsdk.rpc.telemetry.SubscribeRawImuRequest
-	60,  // 102: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealthAllOk:input_type -> mavsdk.rpc.telemetry.SubscribeHealthAllOkRequest
-	62,  // 103: mavsdk.rpc.telemetry.TelemetryService.SubscribeUnixEpochTime:input_type -> mavsdk.rpc.telemetry.SubscribeUnixEpochTimeRequest
-	64,  // 104: mavsdk.rpc.telemetry.TelemetryService.SubscribeDistanceSensor:input_type -> mavsdk.rpc.telemetry.SubscribeDistanceSensorRequest
-	66,  // 105: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledPressure:input_type -> mavsdk.rpc.telemetry.SubscribeScaledPressureRequest
-	68,  // 106: mavsdk.rpc.telemetry.TelemetryService.SubscribeHeading:input_type -> mavsdk.rpc.telemetry.SubscribeHeadingRequest
-	70,  // 107: mavsdk.rpc.telemetry.TelemetryService.SubscribeAltitude:input_type -> mavsdk.rpc.telemetry.SubscribeAltitudeRequest
-	72,  // 108: mavsdk.rpc.telemetry.TelemetryService.SubscribeWind:input_type -> mavsdk.rpc.telemetry.SubscribeWindRequest
-	74,  // 109: mavsdk.rpc.telemetry.TelemetryService.SetRatePosition:input_type -> mavsdk.rpc.telemetry.SetRatePositionRequest
-	76,  // 110: mavsdk.rpc.telemetry.TelemetryService.SetRateHome:input_type -> mavsdk.rpc.telemetry.SetRateHomeRequest
-	78,  // 111: mavsdk.rpc.telemetry.TelemetryService.SetRateInAir:input_type -> mavsdk.rpc.telemetry.SetRateInAirRequest
-	80,  // 112: mavsdk.rpc.telemetry.TelemetryService.SetRateLandedState:input_type -> mavsdk.rpc.telemetry.SetRateLandedStateRequest
-	82,  // 113: mavsdk.rpc.telemetry.TelemetryService.SetRateVtolState:input_type -> mavsdk.rpc.telemetry.SetRateVtolStateRequest
-	86,  // 114: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeQuaternion:input_type -> mavsdk.rpc.telemetry.SetRateAttitudeQuaternionRequest
-	84,  // 115: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeEuler:input_type -> mavsdk.rpc.telemetry.SetRateAttitudeEulerRequest
-	90,  // 116: mavsdk.rpc.telemetry.TelemetryService.SetRateVelocityNed:input_type -> mavsdk.rpc.telemetry.SetRateVelocityNedRequest
-	92,  // 117: mavsdk.rpc.telemetry.TelemetryService.SetRateGpsInfo:input_type -> mavsdk.rpc.telemetry.SetRateGpsInfoRequest
-	94,  // 118: mavsdk.rpc.telemetry.TelemetryService.SetRateRawGps:input_type -> mavsdk.rpc.telemetry.SetRateRawGpsRequest
-	96,  // 119: mavsdk.rpc.telemetry.TelemetryService.SetRateBattery:input_type -> mavsdk.rpc.telemetry.SetRateBatteryRequest
-	98,  // 120: mavsdk.rpc.telemetry.TelemetryService.SetRateRcStatus:input_type -> mavsdk.rpc.telemetry.SetRateRcStatusRequest
-	100, // 121: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorControlTarget:input_type -> mavsdk.rpc.telemetry.SetRateActuatorControlTargetRequest
-	102, // 122: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorOutputStatus:input_type -> mavsdk.rpc.telemetry.SetRateActuatorOutputStatusRequest
-	104, // 123: mavsdk.rpc.telemetry.TelemetryService.SetRateOdometry:input_type -> mavsdk.rpc.telemetry.SetRateOdometryRequest
-	106, // 124: mavsdk.rpc.telemetry.TelemetryService.SetRatePositionVelocityNed:input_type -> mavsdk.rpc.telemetry.SetRatePositionVelocityNedRequest
-	108, // 125: mavsdk.rpc.telemetry.TelemetryService.SetRateGroundTruth:input_type -> mavsdk.rpc.telemetry.SetRateGroundTruthRequest
-	110, // 126: mavsdk.rpc.telemetry.TelemetryService.SetRateFixedwingMetrics:input_type -> mavsdk.rpc.telemetry.SetRateFixedwingMetricsRequest
-	112, // 127: mavsdk.rpc.telemetry.TelemetryService.SetRateImu:input_type -> mavsdk.rpc.telemetry.SetRateImuRequest
-	114, // 128: mavsdk.rpc.telemetry.TelemetryService.SetRateScaledImu:input_type -> mavsdk.rpc.telemetry.SetRateScaledImuRequest
-	116, // 129: mavsdk.rpc.telemetry.TelemetryService.SetRateRawImu:input_type -> mavsdk.rpc.telemetry.SetRateRawImuRequest
-	118, // 130: mavsdk.rpc.telemetry.TelemetryService.SetRateUnixEpochTime:input_type -> mavsdk.rpc.telemetry.SetRateUnixEpochTimeRequest
-	120, // 131: mavsdk.rpc.telemetry.TelemetryService.SetRateDistanceSensor:input_type -> mavsdk.rpc.telemetry.SetRateDistanceSensorRequest
-	124, // 132: mavsdk.rpc.telemetry.TelemetryService.SetRateAltitude:input_type -> mavsdk.rpc.telemetry.SetRateAltitudeRequest
-	126, // 133: mavsdk.rpc.telemetry.TelemetryService.SetRateHealth:input_type -> mavsdk.rpc.telemetry.SetRateHealthRequest
-	122, // 134: mavsdk.rpc.telemetry.TelemetryService.GetGpsGlobalOrigin:input_type -> mavsdk.rpc.telemetry.GetGpsGlobalOriginRequest
-	9,   // 135: mavsdk.rpc.telemetry.TelemetryService.SubscribePosition:output_type -> mavsdk.rpc.telemetry.PositionResponse
-	11,  // 136: mavsdk.rpc.telemetry.TelemetryService.SubscribeHome:output_type -> mavsdk.rpc.telemetry.HomeResponse
-	13,  // 137: mavsdk.rpc.telemetry.TelemetryService.SubscribeInAir:output_type -> mavsdk.rpc.telemetry.InAirResponse
-	15,  // 138: mavsdk.rpc.telemetry.TelemetryService.SubscribeLandedState:output_type -> mavsdk.rpc.telemetry.LandedStateResponse
-	17,  // 139: mavsdk.rpc.telemetry.TelemetryService.SubscribeArmed:output_type -> mavsdk.rpc.telemetry.ArmedResponse
-	19,  // 140: mavsdk.rpc.telemetry.TelemetryService.SubscribeVtolState:output_type -> mavsdk.rpc.telemetry.VtolStateResponse
-	21,  // 141: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeQuaternion:output_type -> mavsdk.rpc.telemetry.AttitudeQuaternionResponse
-	23,  // 142: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeEuler:output_type -> mavsdk.rpc.telemetry.AttitudeEulerResponse
-	25,  // 143: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeAngularVelocityBody:output_type -> mavsdk.rpc.telemetry.AttitudeAngularVelocityBodyResponse
-	27,  // 144: mavsdk.rpc.telemetry.TelemetryService.SubscribeVelocityNed:output_type -> mavsdk.rpc.telemetry.VelocityNedResponse
-	29,  // 145: mavsdk.rpc.telemetry.TelemetryService.SubscribeGpsInfo:output_type -> mavsdk.rpc.telemetry.GpsInfoResponse
-	31,  // 146: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawGps:output_type -> mavsdk.rpc.telemetry.RawGpsResponse
-	33,  // 147: mavsdk.rpc.telemetry.TelemetryService.SubscribeBattery:output_type -> mavsdk.rpc.telemetry.BatteryResponse
-	35,  // 148: mavsdk.rpc.telemetry.TelemetryService.SubscribeFlightMode:output_type -> mavsdk.rpc.telemetry.FlightModeResponse
-	37,  // 149: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealth:output_type -> mavsdk.rpc.telemetry.HealthResponse
-	39,  // 150: mavsdk.rpc.telemetry.TelemetryService.SubscribeRcStatus:output_type -> mavsdk.rpc.telemetry.RcStatusResponse
-	41,  // 151: mavsdk.rpc.telemetry.TelemetryService.SubscribeStatusText:output_type -> mavsdk.rpc.telemetry.StatusTextResponse
-	43,  // 152: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorControlTarget:output_type -> mavsdk.rpc.telemetry.ActuatorControlTargetResponse
-	45,  // 153: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorOutputStatus:output_type -> mavsdk.rpc.telemetry.ActuatorOutputStatusResponse
-	47,  // 154: mavsdk.rpc.telemetry.TelemetryService.SubscribeOdometry:output_type -> mavsdk.rpc.telemetry.OdometryResponse
-	49,  // 155: mavsdk.rpc.telemetry.TelemetryService.SubscribePositionVelocityNed:output_type -> mavsdk.rpc.telemetry.PositionVelocityNedResponse
-	51,  // 156: mavsdk.rpc.telemetry.TelemetryService.SubscribeGroundTruth:output_type -> mavsdk.rpc.telemetry.GroundTruthResponse
-	53,  // 157: mavsdk.rpc.telemetry.TelemetryService.SubscribeFixedwingMetrics:output_type -> mavsdk.rpc.telemetry.FixedwingMetricsResponse
-	55,  // 158: mavsdk.rpc.telemetry.TelemetryService.SubscribeImu:output_type -> mavsdk.rpc.telemetry.ImuResponse
-	57,  // 159: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledImu:output_type -> mavsdk.rpc.telemetry.ScaledImuResponse
-	59,  // 160: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawImu:output_type -> mavsdk.rpc.telemetry.RawImuResponse
-	61,  // 161: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealthAllOk:output_type -> mavsdk.rpc.telemetry.HealthAllOkResponse
-	63,  // 162: mavsdk.rpc.telemetry.TelemetryService.SubscribeUnixEpochTime:output_type -> mavsdk.rpc.telemetry.UnixEpochTimeResponse
-	65,  // 163: mavsdk.rpc.telemetry.TelemetryService.SubscribeDistanceSensor:output_type -> mavsdk.rpc.telemetry.DistanceSensorResponse
-	67,  // 164: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledPressure:output_type -> mavsdk.rpc.telemetry.ScaledPressureResponse
-	69,  // 165: mavsdk.rpc.telemetry.TelemetryService.SubscribeHeading:output_type -> mavsdk.rpc.telemetry.HeadingResponse
-	71,  // 166: mavsdk.rpc.telemetry.TelemetryService.SubscribeAltitude:output_type -> mavsdk.rpc.telemetry.AltitudeResponse
-	73,  // 167: mavsdk.rpc.telemetry.TelemetryService.SubscribeWind:output_type -> mavsdk.rpc.telemetry.WindResponse
-	75,  // 168: mavsdk.rpc.telemetry.TelemetryService.SetRatePosition:output_type -> mavsdk.rpc.telemetry.SetRatePositionResponse
-	77,  // 169: mavsdk.rpc.telemetry.TelemetryService.SetRateHome:output_type -> mavsdk.rpc.telemetry.SetRateHomeResponse
-	79,  // 170: mavsdk.rpc.telemetry.TelemetryService.SetRateInAir:output_type -> mavsdk.rpc.telemetry.SetRateInAirResponse
-	81,  // 171: mavsdk.rpc.telemetry.TelemetryService.SetRateLandedState:output_type -> mavsdk.rpc.telemetry.SetRateLandedStateResponse
-	83,  // 172: mavsdk.rpc.telemetry.TelemetryService.SetRateVtolState:output_type -> mavsdk.rpc.telemetry.SetRateVtolStateResponse
-	87,  // 173: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeQuaternion:output_type -> mavsdk.rpc.telemetry.SetRateAttitudeQuaternionResponse
-	85,  // 174: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeEuler:output_type -> mavsdk.rpc.telemetry.SetRateAttitudeEulerResponse
-	91,  // 175: mavsdk.rpc.telemetry.TelemetryService.SetRateVelocityNed:output_type -> mavsdk.rpc.telemetry.SetRateVelocityNedResponse
-	93,  // 176: mavsdk.rpc.telemetry.TelemetryService.SetRateGpsInfo:output_type -> mavsdk.rpc.telemetry.SetRateGpsInfoResponse
-	95,  // 177: mavsdk.rpc.telemetry.TelemetryService.SetRateRawGps:output_type -> mavsdk.rpc.telemetry.SetRateRawGpsResponse
-	97,  // 178: mavsdk.rpc.telemetry.TelemetryService.SetRateBattery:output_type -> mavsdk.rpc.telemetry.SetRateBatteryResponse
-	99,  // 179: mavsdk.rpc.telemetry.TelemetryService.SetRateRcStatus:output_type -> mavsdk.rpc.telemetry.SetRateRcStatusResponse
-	101, // 180: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorControlTarget:output_type -> mavsdk.rpc.telemetry.SetRateActuatorControlTargetResponse
-	103, // 181: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorOutputStatus:output_type -> mavsdk.rpc.telemetry.SetRateActuatorOutputStatusResponse
-	105, // 182: mavsdk.rpc.telemetry.TelemetryService.SetRateOdometry:output_type -> mavsdk.rpc.telemetry.SetRateOdometryResponse
-	107, // 183: mavsdk.rpc.telemetry.TelemetryService.SetRatePositionVelocityNed:output_type -> mavsdk.rpc.telemetry.SetRatePositionVelocityNedResponse
-	109, // 184: mavsdk.rpc.telemetry.TelemetryService.SetRateGroundTruth:output_type -> mavsdk.rpc.telemetry.SetRateGroundTruthResponse
-	111, // 185: mavsdk.rpc.telemetry.TelemetryService.SetRateFixedwingMetrics:output_type -> mavsdk.rpc.telemetry.SetRateFixedwingMetricsResponse
-	113, // 186: mavsdk.rpc.telemetry.TelemetryService.SetRateImu:output_type -> mavsdk.rpc.telemetry.SetRateImuResponse
-	115, // 187: mavsdk.rpc.telemetry.TelemetryService.SetRateScaledImu:output_type -> mavsdk.rpc.telemetry.SetRateScaledImuResponse
-	117, // 188: mavsdk.rpc.telemetry.TelemetryService.SetRateRawImu:output_type -> mavsdk.rpc.telemetry.SetRateRawImuResponse
-	119, // 189: mavsdk.rpc.telemetry.TelemetryService.SetRateUnixEpochTime:output_type -> mavsdk.rpc.telemetry.SetRateUnixEpochTimeResponse
-	121, // 190: mavsdk.rpc.telemetry.TelemetryService.SetRateDistanceSensor:output_type -> mavsdk.rpc.telemetry.SetRateDistanceSensorResponse
-	125, // 191: mavsdk.rpc.telemetry.TelemetryService.SetRateAltitude:output_type -> mavsdk.rpc.telemetry.SetRateAltitudeResponse
-	127, // 192: mavsdk.rpc.telemetry.TelemetryService.SetRateHealth:output_type -> mavsdk.rpc.telemetry.SetRateHealthResponse
-	123, // 193: mavsdk.rpc.telemetry.TelemetryService.GetGpsGlobalOrigin:output_type -> mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse
-	135, // [135:194] is the sub-list for method output_type
-	76,  // [76:135] is the sub-list for method input_type
-	76,  // [76:76] is the sub-list for extension type_name
-	76,  // [76:76] is the sub-list for extension extendee
-	0,   // [0:76] is the sub-list for field type_name
+	157, // 27: mavsdk.rpc.telemetry.AltitudeResponse.altitude:type_name -> mavsdk.rpc.telemetry.Altitude
+	158, // 28: mavsdk.rpc.telemetry.WindResponse.wind:type_name -> mavsdk.rpc.telemetry.Wind
+	159, // 29: mavsdk.rpc.telemetry.SetRatePositionResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 30: mavsdk.rpc.telemetry.SetRateHomeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 31: mavsdk.rpc.telemetry.SetRateInAirResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 32: mavsdk.rpc.telemetry.SetRateLandedStateResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 33: mavsdk.rpc.telemetry.SetRateVtolStateResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 34: mavsdk.rpc.telemetry.SetRateAttitudeEulerResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 35: mavsdk.rpc.telemetry.SetRateAttitudeQuaternionResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 36: mavsdk.rpc.telemetry.SetRateAttitudeAngularVelocityBodyResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 37: mavsdk.rpc.telemetry.SetRateVelocityNedResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 38: mavsdk.rpc.telemetry.SetRateGpsInfoResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 39: mavsdk.rpc.telemetry.SetRateRawGpsResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 40: mavsdk.rpc.telemetry.SetRateBatteryResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 41: mavsdk.rpc.telemetry.SetRateRcStatusResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 42: mavsdk.rpc.telemetry.SetRateActuatorControlTargetResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 43: mavsdk.rpc.telemetry.SetRateActuatorOutputStatusResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 44: mavsdk.rpc.telemetry.SetRateOdometryResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 45: mavsdk.rpc.telemetry.SetRatePositionVelocityNedResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 46: mavsdk.rpc.telemetry.SetRateGroundTruthResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 47: mavsdk.rpc.telemetry.SetRateFixedwingMetricsResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 48: mavsdk.rpc.telemetry.SetRateImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 49: mavsdk.rpc.telemetry.SetRateScaledImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 50: mavsdk.rpc.telemetry.SetRateRawImuResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 51: mavsdk.rpc.telemetry.SetRateUnixEpochTimeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 52: mavsdk.rpc.telemetry.SetRateDistanceSensorResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 53: mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	156, // 54: mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse.gps_global_origin:type_name -> mavsdk.rpc.telemetry.GpsGlobalOrigin
+	159, // 55: mavsdk.rpc.telemetry.SetRateAltitudeResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	159, // 56: mavsdk.rpc.telemetry.SetRateHealthResponse.telemetry_result:type_name -> mavsdk.rpc.telemetry.TelemetryResult
+	0,   // 57: mavsdk.rpc.telemetry.GpsInfo.fix_type:type_name -> mavsdk.rpc.telemetry.FixType
+	1,   // 58: mavsdk.rpc.telemetry.Battery.battery_function:type_name -> mavsdk.rpc.telemetry.BatteryFunction
+	3,   // 59: mavsdk.rpc.telemetry.StatusText.type:type_name -> mavsdk.rpc.telemetry.StatusTextType
+	6,   // 60: mavsdk.rpc.telemetry.Odometry.frame_id:type_name -> mavsdk.rpc.telemetry.Odometry.MavFrame
+	6,   // 61: mavsdk.rpc.telemetry.Odometry.child_frame_id:type_name -> mavsdk.rpc.telemetry.Odometry.MavFrame
+	143, // 62: mavsdk.rpc.telemetry.Odometry.position_body:type_name -> mavsdk.rpc.telemetry.PositionBody
+	130, // 63: mavsdk.rpc.telemetry.Odometry.q:type_name -> mavsdk.rpc.telemetry.Quaternion
+	142, // 64: mavsdk.rpc.telemetry.Odometry.velocity_body:type_name -> mavsdk.rpc.telemetry.VelocityBody
+	132, // 65: mavsdk.rpc.telemetry.Odometry.angular_velocity_body:type_name -> mavsdk.rpc.telemetry.AngularVelocityBody
+	141, // 66: mavsdk.rpc.telemetry.Odometry.pose_covariance:type_name -> mavsdk.rpc.telemetry.Covariance
+	141, // 67: mavsdk.rpc.telemetry.Odometry.velocity_covariance:type_name -> mavsdk.rpc.telemetry.Covariance
+	131, // 68: mavsdk.rpc.telemetry.DistanceSensor.orientation:type_name -> mavsdk.rpc.telemetry.EulerAngle
+	147, // 69: mavsdk.rpc.telemetry.PositionVelocityNed.position:type_name -> mavsdk.rpc.telemetry.PositionNed
+	148, // 70: mavsdk.rpc.telemetry.PositionVelocityNed.velocity:type_name -> mavsdk.rpc.telemetry.VelocityNed
+	152, // 71: mavsdk.rpc.telemetry.Imu.acceleration_frd:type_name -> mavsdk.rpc.telemetry.AccelerationFrd
+	153, // 72: mavsdk.rpc.telemetry.Imu.angular_velocity_frd:type_name -> mavsdk.rpc.telemetry.AngularVelocityFrd
+	154, // 73: mavsdk.rpc.telemetry.Imu.magnetic_field_frd:type_name -> mavsdk.rpc.telemetry.MagneticFieldFrd
+	7,   // 74: mavsdk.rpc.telemetry.TelemetryResult.result:type_name -> mavsdk.rpc.telemetry.TelemetryResult.Result
+	8,   // 75: mavsdk.rpc.telemetry.TelemetryService.SubscribePosition:input_type -> mavsdk.rpc.telemetry.SubscribePositionRequest
+	10,  // 76: mavsdk.rpc.telemetry.TelemetryService.SubscribeHome:input_type -> mavsdk.rpc.telemetry.SubscribeHomeRequest
+	12,  // 77: mavsdk.rpc.telemetry.TelemetryService.SubscribeInAir:input_type -> mavsdk.rpc.telemetry.SubscribeInAirRequest
+	14,  // 78: mavsdk.rpc.telemetry.TelemetryService.SubscribeLandedState:input_type -> mavsdk.rpc.telemetry.SubscribeLandedStateRequest
+	16,  // 79: mavsdk.rpc.telemetry.TelemetryService.SubscribeArmed:input_type -> mavsdk.rpc.telemetry.SubscribeArmedRequest
+	18,  // 80: mavsdk.rpc.telemetry.TelemetryService.SubscribeVtolState:input_type -> mavsdk.rpc.telemetry.SubscribeVtolStateRequest
+	20,  // 81: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeQuaternion:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeQuaternionRequest
+	22,  // 82: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeEuler:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeEulerRequest
+	24,  // 83: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeAngularVelocityBody:input_type -> mavsdk.rpc.telemetry.SubscribeAttitudeAngularVelocityBodyRequest
+	26,  // 84: mavsdk.rpc.telemetry.TelemetryService.SubscribeVelocityNed:input_type -> mavsdk.rpc.telemetry.SubscribeVelocityNedRequest
+	28,  // 85: mavsdk.rpc.telemetry.TelemetryService.SubscribeGpsInfo:input_type -> mavsdk.rpc.telemetry.SubscribeGpsInfoRequest
+	30,  // 86: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawGps:input_type -> mavsdk.rpc.telemetry.SubscribeRawGpsRequest
+	32,  // 87: mavsdk.rpc.telemetry.TelemetryService.SubscribeBattery:input_type -> mavsdk.rpc.telemetry.SubscribeBatteryRequest
+	34,  // 88: mavsdk.rpc.telemetry.TelemetryService.SubscribeFlightMode:input_type -> mavsdk.rpc.telemetry.SubscribeFlightModeRequest
+	36,  // 89: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealth:input_type -> mavsdk.rpc.telemetry.SubscribeHealthRequest
+	38,  // 90: mavsdk.rpc.telemetry.TelemetryService.SubscribeRcStatus:input_type -> mavsdk.rpc.telemetry.SubscribeRcStatusRequest
+	40,  // 91: mavsdk.rpc.telemetry.TelemetryService.SubscribeStatusText:input_type -> mavsdk.rpc.telemetry.SubscribeStatusTextRequest
+	42,  // 92: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorControlTarget:input_type -> mavsdk.rpc.telemetry.SubscribeActuatorControlTargetRequest
+	44,  // 93: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorOutputStatus:input_type -> mavsdk.rpc.telemetry.SubscribeActuatorOutputStatusRequest
+	46,  // 94: mavsdk.rpc.telemetry.TelemetryService.SubscribeOdometry:input_type -> mavsdk.rpc.telemetry.SubscribeOdometryRequest
+	48,  // 95: mavsdk.rpc.telemetry.TelemetryService.SubscribePositionVelocityNed:input_type -> mavsdk.rpc.telemetry.SubscribePositionVelocityNedRequest
+	50,  // 96: mavsdk.rpc.telemetry.TelemetryService.SubscribeGroundTruth:input_type -> mavsdk.rpc.telemetry.SubscribeGroundTruthRequest
+	52,  // 97: mavsdk.rpc.telemetry.TelemetryService.SubscribeFixedwingMetrics:input_type -> mavsdk.rpc.telemetry.SubscribeFixedwingMetricsRequest
+	54,  // 98: mavsdk.rpc.telemetry.TelemetryService.SubscribeImu:input_type -> mavsdk.rpc.telemetry.SubscribeImuRequest
+	56,  // 99: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledImu:input_type -> mavsdk.rpc.telemetry.SubscribeScaledImuRequest
+	58,  // 100: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawImu:input_type -> mavsdk.rpc.telemetry.SubscribeRawImuRequest
+	60,  // 101: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealthAllOk:input_type -> mavsdk.rpc.telemetry.SubscribeHealthAllOkRequest
+	62,  // 102: mavsdk.rpc.telemetry.TelemetryService.SubscribeUnixEpochTime:input_type -> mavsdk.rpc.telemetry.SubscribeUnixEpochTimeRequest
+	64,  // 103: mavsdk.rpc.telemetry.TelemetryService.SubscribeDistanceSensor:input_type -> mavsdk.rpc.telemetry.SubscribeDistanceSensorRequest
+	66,  // 104: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledPressure:input_type -> mavsdk.rpc.telemetry.SubscribeScaledPressureRequest
+	68,  // 105: mavsdk.rpc.telemetry.TelemetryService.SubscribeHeading:input_type -> mavsdk.rpc.telemetry.SubscribeHeadingRequest
+	70,  // 106: mavsdk.rpc.telemetry.TelemetryService.SubscribeAltitude:input_type -> mavsdk.rpc.telemetry.SubscribeAltitudeRequest
+	72,  // 107: mavsdk.rpc.telemetry.TelemetryService.SubscribeWind:input_type -> mavsdk.rpc.telemetry.SubscribeWindRequest
+	74,  // 108: mavsdk.rpc.telemetry.TelemetryService.SetRatePosition:input_type -> mavsdk.rpc.telemetry.SetRatePositionRequest
+	76,  // 109: mavsdk.rpc.telemetry.TelemetryService.SetRateHome:input_type -> mavsdk.rpc.telemetry.SetRateHomeRequest
+	78,  // 110: mavsdk.rpc.telemetry.TelemetryService.SetRateInAir:input_type -> mavsdk.rpc.telemetry.SetRateInAirRequest
+	80,  // 111: mavsdk.rpc.telemetry.TelemetryService.SetRateLandedState:input_type -> mavsdk.rpc.telemetry.SetRateLandedStateRequest
+	82,  // 112: mavsdk.rpc.telemetry.TelemetryService.SetRateVtolState:input_type -> mavsdk.rpc.telemetry.SetRateVtolStateRequest
+	86,  // 113: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeQuaternion:input_type -> mavsdk.rpc.telemetry.SetRateAttitudeQuaternionRequest
+	84,  // 114: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeEuler:input_type -> mavsdk.rpc.telemetry.SetRateAttitudeEulerRequest
+	90,  // 115: mavsdk.rpc.telemetry.TelemetryService.SetRateVelocityNed:input_type -> mavsdk.rpc.telemetry.SetRateVelocityNedRequest
+	92,  // 116: mavsdk.rpc.telemetry.TelemetryService.SetRateGpsInfo:input_type -> mavsdk.rpc.telemetry.SetRateGpsInfoRequest
+	94,  // 117: mavsdk.rpc.telemetry.TelemetryService.SetRateRawGps:input_type -> mavsdk.rpc.telemetry.SetRateRawGpsRequest
+	96,  // 118: mavsdk.rpc.telemetry.TelemetryService.SetRateBattery:input_type -> mavsdk.rpc.telemetry.SetRateBatteryRequest
+	98,  // 119: mavsdk.rpc.telemetry.TelemetryService.SetRateRcStatus:input_type -> mavsdk.rpc.telemetry.SetRateRcStatusRequest
+	100, // 120: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorControlTarget:input_type -> mavsdk.rpc.telemetry.SetRateActuatorControlTargetRequest
+	102, // 121: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorOutputStatus:input_type -> mavsdk.rpc.telemetry.SetRateActuatorOutputStatusRequest
+	104, // 122: mavsdk.rpc.telemetry.TelemetryService.SetRateOdometry:input_type -> mavsdk.rpc.telemetry.SetRateOdometryRequest
+	106, // 123: mavsdk.rpc.telemetry.TelemetryService.SetRatePositionVelocityNed:input_type -> mavsdk.rpc.telemetry.SetRatePositionVelocityNedRequest
+	108, // 124: mavsdk.rpc.telemetry.TelemetryService.SetRateGroundTruth:input_type -> mavsdk.rpc.telemetry.SetRateGroundTruthRequest
+	110, // 125: mavsdk.rpc.telemetry.TelemetryService.SetRateFixedwingMetrics:input_type -> mavsdk.rpc.telemetry.SetRateFixedwingMetricsRequest
+	112, // 126: mavsdk.rpc.telemetry.TelemetryService.SetRateImu:input_type -> mavsdk.rpc.telemetry.SetRateImuRequest
+	114, // 127: mavsdk.rpc.telemetry.TelemetryService.SetRateScaledImu:input_type -> mavsdk.rpc.telemetry.SetRateScaledImuRequest
+	116, // 128: mavsdk.rpc.telemetry.TelemetryService.SetRateRawImu:input_type -> mavsdk.rpc.telemetry.SetRateRawImuRequest
+	118, // 129: mavsdk.rpc.telemetry.TelemetryService.SetRateUnixEpochTime:input_type -> mavsdk.rpc.telemetry.SetRateUnixEpochTimeRequest
+	120, // 130: mavsdk.rpc.telemetry.TelemetryService.SetRateDistanceSensor:input_type -> mavsdk.rpc.telemetry.SetRateDistanceSensorRequest
+	124, // 131: mavsdk.rpc.telemetry.TelemetryService.SetRateAltitude:input_type -> mavsdk.rpc.telemetry.SetRateAltitudeRequest
+	126, // 132: mavsdk.rpc.telemetry.TelemetryService.SetRateHealth:input_type -> mavsdk.rpc.telemetry.SetRateHealthRequest
+	122, // 133: mavsdk.rpc.telemetry.TelemetryService.GetGpsGlobalOrigin:input_type -> mavsdk.rpc.telemetry.GetGpsGlobalOriginRequest
+	9,   // 134: mavsdk.rpc.telemetry.TelemetryService.SubscribePosition:output_type -> mavsdk.rpc.telemetry.PositionResponse
+	11,  // 135: mavsdk.rpc.telemetry.TelemetryService.SubscribeHome:output_type -> mavsdk.rpc.telemetry.HomeResponse
+	13,  // 136: mavsdk.rpc.telemetry.TelemetryService.SubscribeInAir:output_type -> mavsdk.rpc.telemetry.InAirResponse
+	15,  // 137: mavsdk.rpc.telemetry.TelemetryService.SubscribeLandedState:output_type -> mavsdk.rpc.telemetry.LandedStateResponse
+	17,  // 138: mavsdk.rpc.telemetry.TelemetryService.SubscribeArmed:output_type -> mavsdk.rpc.telemetry.ArmedResponse
+	19,  // 139: mavsdk.rpc.telemetry.TelemetryService.SubscribeVtolState:output_type -> mavsdk.rpc.telemetry.VtolStateResponse
+	21,  // 140: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeQuaternion:output_type -> mavsdk.rpc.telemetry.AttitudeQuaternionResponse
+	23,  // 141: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeEuler:output_type -> mavsdk.rpc.telemetry.AttitudeEulerResponse
+	25,  // 142: mavsdk.rpc.telemetry.TelemetryService.SubscribeAttitudeAngularVelocityBody:output_type -> mavsdk.rpc.telemetry.AttitudeAngularVelocityBodyResponse
+	27,  // 143: mavsdk.rpc.telemetry.TelemetryService.SubscribeVelocityNed:output_type -> mavsdk.rpc.telemetry.VelocityNedResponse
+	29,  // 144: mavsdk.rpc.telemetry.TelemetryService.SubscribeGpsInfo:output_type -> mavsdk.rpc.telemetry.GpsInfoResponse
+	31,  // 145: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawGps:output_type -> mavsdk.rpc.telemetry.RawGpsResponse
+	33,  // 146: mavsdk.rpc.telemetry.TelemetryService.SubscribeBattery:output_type -> mavsdk.rpc.telemetry.BatteryResponse
+	35,  // 147: mavsdk.rpc.telemetry.TelemetryService.SubscribeFlightMode:output_type -> mavsdk.rpc.telemetry.FlightModeResponse
+	37,  // 148: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealth:output_type -> mavsdk.rpc.telemetry.HealthResponse
+	39,  // 149: mavsdk.rpc.telemetry.TelemetryService.SubscribeRcStatus:output_type -> mavsdk.rpc.telemetry.RcStatusResponse
+	41,  // 150: mavsdk.rpc.telemetry.TelemetryService.SubscribeStatusText:output_type -> mavsdk.rpc.telemetry.StatusTextResponse
+	43,  // 151: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorControlTarget:output_type -> mavsdk.rpc.telemetry.ActuatorControlTargetResponse
+	45,  // 152: mavsdk.rpc.telemetry.TelemetryService.SubscribeActuatorOutputStatus:output_type -> mavsdk.rpc.telemetry.ActuatorOutputStatusResponse
+	47,  // 153: mavsdk.rpc.telemetry.TelemetryService.SubscribeOdometry:output_type -> mavsdk.rpc.telemetry.OdometryResponse
+	49,  // 154: mavsdk.rpc.telemetry.TelemetryService.SubscribePositionVelocityNed:output_type -> mavsdk.rpc.telemetry.PositionVelocityNedResponse
+	51,  // 155: mavsdk.rpc.telemetry.TelemetryService.SubscribeGroundTruth:output_type -> mavsdk.rpc.telemetry.GroundTruthResponse
+	53,  // 156: mavsdk.rpc.telemetry.TelemetryService.SubscribeFixedwingMetrics:output_type -> mavsdk.rpc.telemetry.FixedwingMetricsResponse
+	55,  // 157: mavsdk.rpc.telemetry.TelemetryService.SubscribeImu:output_type -> mavsdk.rpc.telemetry.ImuResponse
+	57,  // 158: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledImu:output_type -> mavsdk.rpc.telemetry.ScaledImuResponse
+	59,  // 159: mavsdk.rpc.telemetry.TelemetryService.SubscribeRawImu:output_type -> mavsdk.rpc.telemetry.RawImuResponse
+	61,  // 160: mavsdk.rpc.telemetry.TelemetryService.SubscribeHealthAllOk:output_type -> mavsdk.rpc.telemetry.HealthAllOkResponse
+	63,  // 161: mavsdk.rpc.telemetry.TelemetryService.SubscribeUnixEpochTime:output_type -> mavsdk.rpc.telemetry.UnixEpochTimeResponse
+	65,  // 162: mavsdk.rpc.telemetry.TelemetryService.SubscribeDistanceSensor:output_type -> mavsdk.rpc.telemetry.DistanceSensorResponse
+	67,  // 163: mavsdk.rpc.telemetry.TelemetryService.SubscribeScaledPressure:output_type -> mavsdk.rpc.telemetry.ScaledPressureResponse
+	69,  // 164: mavsdk.rpc.telemetry.TelemetryService.SubscribeHeading:output_type -> mavsdk.rpc.telemetry.HeadingResponse
+	71,  // 165: mavsdk.rpc.telemetry.TelemetryService.SubscribeAltitude:output_type -> mavsdk.rpc.telemetry.AltitudeResponse
+	73,  // 166: mavsdk.rpc.telemetry.TelemetryService.SubscribeWind:output_type -> mavsdk.rpc.telemetry.WindResponse
+	75,  // 167: mavsdk.rpc.telemetry.TelemetryService.SetRatePosition:output_type -> mavsdk.rpc.telemetry.SetRatePositionResponse
+	77,  // 168: mavsdk.rpc.telemetry.TelemetryService.SetRateHome:output_type -> mavsdk.rpc.telemetry.SetRateHomeResponse
+	79,  // 169: mavsdk.rpc.telemetry.TelemetryService.SetRateInAir:output_type -> mavsdk.rpc.telemetry.SetRateInAirResponse
+	81,  // 170: mavsdk.rpc.telemetry.TelemetryService.SetRateLandedState:output_type -> mavsdk.rpc.telemetry.SetRateLandedStateResponse
+	83,  // 171: mavsdk.rpc.telemetry.TelemetryService.SetRateVtolState:output_type -> mavsdk.rpc.telemetry.SetRateVtolStateResponse
+	87,  // 172: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeQuaternion:output_type -> mavsdk.rpc.telemetry.SetRateAttitudeQuaternionResponse
+	85,  // 173: mavsdk.rpc.telemetry.TelemetryService.SetRateAttitudeEuler:output_type -> mavsdk.rpc.telemetry.SetRateAttitudeEulerResponse
+	91,  // 174: mavsdk.rpc.telemetry.TelemetryService.SetRateVelocityNed:output_type -> mavsdk.rpc.telemetry.SetRateVelocityNedResponse
+	93,  // 175: mavsdk.rpc.telemetry.TelemetryService.SetRateGpsInfo:output_type -> mavsdk.rpc.telemetry.SetRateGpsInfoResponse
+	95,  // 176: mavsdk.rpc.telemetry.TelemetryService.SetRateRawGps:output_type -> mavsdk.rpc.telemetry.SetRateRawGpsResponse
+	97,  // 177: mavsdk.rpc.telemetry.TelemetryService.SetRateBattery:output_type -> mavsdk.rpc.telemetry.SetRateBatteryResponse
+	99,  // 178: mavsdk.rpc.telemetry.TelemetryService.SetRateRcStatus:output_type -> mavsdk.rpc.telemetry.SetRateRcStatusResponse
+	101, // 179: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorControlTarget:output_type -> mavsdk.rpc.telemetry.SetRateActuatorControlTargetResponse
+	103, // 180: mavsdk.rpc.telemetry.TelemetryService.SetRateActuatorOutputStatus:output_type -> mavsdk.rpc.telemetry.SetRateActuatorOutputStatusResponse
+	105, // 181: mavsdk.rpc.telemetry.TelemetryService.SetRateOdometry:output_type -> mavsdk.rpc.telemetry.SetRateOdometryResponse
+	107, // 182: mavsdk.rpc.telemetry.TelemetryService.SetRatePositionVelocityNed:output_type -> mavsdk.rpc.telemetry.SetRatePositionVelocityNedResponse
+	109, // 183: mavsdk.rpc.telemetry.TelemetryService.SetRateGroundTruth:output_type -> mavsdk.rpc.telemetry.SetRateGroundTruthResponse
+	111, // 184: mavsdk.rpc.telemetry.TelemetryService.SetRateFixedwingMetrics:output_type -> mavsdk.rpc.telemetry.SetRateFixedwingMetricsResponse
+	113, // 185: mavsdk.rpc.telemetry.TelemetryService.SetRateImu:output_type -> mavsdk.rpc.telemetry.SetRateImuResponse
+	115, // 186: mavsdk.rpc.telemetry.TelemetryService.SetRateScaledImu:output_type -> mavsdk.rpc.telemetry.SetRateScaledImuResponse
+	117, // 187: mavsdk.rpc.telemetry.TelemetryService.SetRateRawImu:output_type -> mavsdk.rpc.telemetry.SetRateRawImuResponse
+	119, // 188: mavsdk.rpc.telemetry.TelemetryService.SetRateUnixEpochTime:output_type -> mavsdk.rpc.telemetry.SetRateUnixEpochTimeResponse
+	121, // 189: mavsdk.rpc.telemetry.TelemetryService.SetRateDistanceSensor:output_type -> mavsdk.rpc.telemetry.SetRateDistanceSensorResponse
+	125, // 190: mavsdk.rpc.telemetry.TelemetryService.SetRateAltitude:output_type -> mavsdk.rpc.telemetry.SetRateAltitudeResponse
+	127, // 191: mavsdk.rpc.telemetry.TelemetryService.SetRateHealth:output_type -> mavsdk.rpc.telemetry.SetRateHealthResponse
+	123, // 192: mavsdk.rpc.telemetry.TelemetryService.GetGpsGlobalOrigin:output_type -> mavsdk.rpc.telemetry.GetGpsGlobalOriginResponse
+	134, // [134:193] is the sub-list for method output_type
+	75,  // [75:134] is the sub-list for method input_type
+	75,  // [75:75] is the sub-list for extension type_name
+	75,  // [75:75] is the sub-list for extension extendee
+	0,   // [0:75] is the sub-list for field type_name
 }
 
 func init() { file_telemetry_telemetry_proto_init() }
@@ -8890,7 +8736,7 @@ func file_telemetry_telemetry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_telemetry_telemetry_proto_rawDesc), len(file_telemetry_telemetry_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   153,
+			NumMessages:   152,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

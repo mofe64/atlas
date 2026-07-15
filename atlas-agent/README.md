@@ -14,7 +14,7 @@ load or create stable installation + drone ids
                 -> send heartbeat every five seconds
                 -> sample latest MAVSDK telemetry once per second
                 -> forward PX4 status text as discrete events
-                -> discover MAVSDK gimbals and MAVSDK/SIYI camera zoom
+                -> discover MAVSDK gimbals and the configured camera transport
                 -> run the supervised HailoRT/TAPPAS object-detection adapter
                     -> publish normalized frame metadata over a protected Unix socket
                     -> stream health continuously and detection frames on renewable demand
@@ -53,9 +53,12 @@ while at least one renewable Native consumer lease is active or the current
 mission is running/paused. Consumers have independent leases, so one view
 closing cannot stop frames required by another view or by a mission.
 
-Camera zoom prefers MAVSDK Camera when a camera component is discovered and
-falls back to the SIYI A8 Mini UDP SDK. The A8 Mini is treated as a fixed-focus
-camera: Atlas does not advertise or issue autofocus/focus commands.
+Camera zoom uses the explicit `ATLAS_CAMERA_TRANSPORT` policy. The default
+`siyi_udp` mode communicates only through the SIYI A8 Mini UDP SDK and never
+activates MAVSDK Camera discovery. `mavsdk` selects a MAVLink camera, while
+`hybrid` deliberately enables both and permits SIYI fallback. The A8 Mini is
+treated as a fixed-focus camera: Atlas does not advertise or issue
+autofocus/focus commands.
 
 Mission operations accept an immutable Atlas plan, translate navigation to
 MAVSDK Mission items, and support upload, start, pause, resume, cancel-to-hold,
@@ -295,7 +298,8 @@ detected Hailo-8 accelerator; build the package with the matching HEF instead.
 | `ATLAS_MAVLINK_SYSTEM_ID` | `1` | Expected MAVLink system ID |
 | `ATLAS_MAVLINK_COMPONENT_ID` | `1` | Expected MAVLink component ID |
 | `ATLAS_MAVSDK_GRPC_ADDR` | `127.0.0.1:50051` | Local `mavsdk_server` gRPC address |
-| `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI A8 Mini UDP SDK endpoint used for zoom discovery/fallback |
+| `ATLAS_CAMERA_TRANSPORT` | `siyi_udp` | Camera control policy: `siyi_udp`, `mavsdk`, or explicitly dual `hybrid` |
+| `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI A8 Mini UDP SDK endpoint used when the selected transport includes SIYI |
 | `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest-snapshot publish interval (minimum `100ms`) |
 | `ATLAS_PERCEPTION_PROVIDER` | `disabled` | Neutral runtime selector: `external`, `hailo`, `deepstream`, `tensorrt`, or `onnx` |
 | `ATLAS_PERCEPTION_ADAPTER_MODE` | `process` | `process` lets `atlas-agent` launch the adapter; `container` delegates it to the Hailo systemd unit |

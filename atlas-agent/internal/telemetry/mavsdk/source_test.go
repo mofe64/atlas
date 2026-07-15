@@ -70,7 +70,7 @@ func (fakeTelemetryServer) SubscribeRcStatus(_ *telemetrypb.SubscribeRcStatusReq
 }
 
 func (fakeTelemetryServer) SubscribeHome(_ *telemetrypb.SubscribeHomeRequest, stream grpc.ServerStreamingServer[telemetrypb.HomeResponse]) error {
-	return stream.Send(&telemetrypb.HomeResponse{Home: &telemetrypb.HomePosition{LatitudeDeg: 51.507, LongitudeDeg: -0.128, AbsoluteAltitudeM: 32.9}})
+	return stream.Send(&telemetrypb.HomeResponse{Home: &telemetrypb.Position{LatitudeDeg: 51.507, LongitudeDeg: -0.128, AbsoluteAltitudeM: 32.9}})
 }
 
 func (fakeTelemetryServer) SubscribeRawGps(_ *telemetrypb.SubscribeRawGpsRequest, stream grpc.ServerStreamingServer[telemetrypb.RawGpsResponse]) error {

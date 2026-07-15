@@ -23,6 +23,11 @@ command -v protoc-gen-go-grpc >/dev/null || {
   exit 1
 }
 
+command -v git >/dev/null || {
+  echo "git is required" >&2
+  exit 1
+}
+
 mkdir -p "${OUT_DIR}"
 rm -rf "${OUT_DIR}/action" "${OUT_DIR}/camera" "${OUT_DIR}/core" "${OUT_DIR}/gimbal" "${OUT_DIR}/mission" "${OUT_DIR}/telemetry" "${OUT_DIR}/mavsdk_options"
 rm -f "${OUT_DIR}/mavsdk_options.pb.go"
@@ -57,3 +62,4 @@ protoc \
 
 mkdir -p "${OUT_DIR}/mavsdk_options"
 mv "${OUT_DIR}/mavsdk_options.pb.go" "${OUT_DIR}/mavsdk_options/mavsdk_options.pb.go"
+git -C "${ROOT_DIR}/third_party/mavsdk-proto" rev-parse HEAD > "${OUT_DIR}/schema.commit"

@@ -208,7 +208,7 @@ func (x ActionResult_Result) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ActionResult_Result.Descriptor instead.
 func (ActionResult_Result) EnumDescriptor() ([]byte, []int) {
-	return file_action_action_proto_rawDescGZIP(), []int{48, 0}
+	return file_action_action_proto_rawDescGZIP(), []int{46, 0}
 }
 
 type ArmRequest struct {
@@ -2227,118 +2227,6 @@ func (x *SetGpsGlobalOriginResponse) GetActionResult() *ActionResult {
 	return nil
 }
 
-type SetHomeRequest struct {
-	state              protoimpl.MessageState `protogen:"open.v1"`
-	UseCurrentLocation bool                   `protobuf:"varint,1,opt,name=use_current_location,json=useCurrentLocation,proto3" json:"use_current_location,omitempty"` // Use current location
-	LatitudeDeg        float64                `protobuf:"fixed64,2,opt,name=latitude_deg,json=latitudeDeg,proto3" json:"latitude_deg,omitempty"`                       // Latitude (in degrees)
-	LongitudeDeg       float64                `protobuf:"fixed64,3,opt,name=longitude_deg,json=longitudeDeg,proto3" json:"longitude_deg,omitempty"`                    // Longitude (in degrees)
-	AbsoluteAltitudeM  float32                `protobuf:"fixed32,4,opt,name=absolute_altitude_m,json=absoluteAltitudeM,proto3" json:"absolute_altitude_m,omitempty"`   // Altitude AMSL (in meters)
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
-}
-
-func (x *SetHomeRequest) Reset() {
-	*x = SetHomeRequest{}
-	mi := &file_action_action_proto_msgTypes[46]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetHomeRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetHomeRequest) ProtoMessage() {}
-
-func (x *SetHomeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_action_action_proto_msgTypes[46]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetHomeRequest.ProtoReflect.Descriptor instead.
-func (*SetHomeRequest) Descriptor() ([]byte, []int) {
-	return file_action_action_proto_rawDescGZIP(), []int{46}
-}
-
-func (x *SetHomeRequest) GetUseCurrentLocation() bool {
-	if x != nil {
-		return x.UseCurrentLocation
-	}
-	return false
-}
-
-func (x *SetHomeRequest) GetLatitudeDeg() float64 {
-	if x != nil {
-		return x.LatitudeDeg
-	}
-	return 0
-}
-
-func (x *SetHomeRequest) GetLongitudeDeg() float64 {
-	if x != nil {
-		return x.LongitudeDeg
-	}
-	return 0
-}
-
-func (x *SetHomeRequest) GetAbsoluteAltitudeM() float32 {
-	if x != nil {
-		return x.AbsoluteAltitudeM
-	}
-	return 0
-}
-
-type SetHomeResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ActionResult  *ActionResult          `protobuf:"bytes,1,opt,name=action_result,json=actionResult,proto3" json:"action_result,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SetHomeResponse) Reset() {
-	*x = SetHomeResponse{}
-	mi := &file_action_action_proto_msgTypes[47]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SetHomeResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SetHomeResponse) ProtoMessage() {}
-
-func (x *SetHomeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_action_action_proto_msgTypes[47]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SetHomeResponse.ProtoReflect.Descriptor instead.
-func (*SetHomeResponse) Descriptor() ([]byte, []int) {
-	return file_action_action_proto_rawDescGZIP(), []int{47}
-}
-
-func (x *SetHomeResponse) GetActionResult() *ActionResult {
-	if x != nil {
-		return x.ActionResult
-	}
-	return nil
-}
-
 // Result type.
 type ActionResult struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2350,7 +2238,7 @@ type ActionResult struct {
 
 func (x *ActionResult) Reset() {
 	*x = ActionResult{}
-	mi := &file_action_action_proto_msgTypes[48]
+	mi := &file_action_action_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2362,7 +2250,7 @@ func (x *ActionResult) String() string {
 func (*ActionResult) ProtoMessage() {}
 
 func (x *ActionResult) ProtoReflect() protoreflect.Message {
-	mi := &file_action_action_proto_msgTypes[48]
+	mi := &file_action_action_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2375,7 +2263,7 @@ func (x *ActionResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActionResult.ProtoReflect.Descriptor instead.
 func (*ActionResult) Descriptor() ([]byte, []int) {
-	return file_action_action_proto_rawDescGZIP(), []int{48}
+	return file_action_action_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *ActionResult) GetResult() ActionResult_Result {
@@ -2489,13 +2377,6 @@ const file_action_action_proto_rawDesc = "" +
 	"\rlongitude_deg\x18\x02 \x01(\x01R\flongitudeDeg\x12.\n" +
 	"\x13absolute_altitude_m\x18\x03 \x01(\x02R\x11absoluteAltitudeM\"b\n" +
 	"\x1aSetGpsGlobalOriginResponse\x12D\n" +
-	"\raction_result\x18\x01 \x01(\v2\x1f.mavsdk.rpc.action.ActionResultR\factionResult\"\xba\x01\n" +
-	"\x0eSetHomeRequest\x120\n" +
-	"\x14use_current_location\x18\x01 \x01(\bR\x12useCurrentLocation\x12!\n" +
-	"\flatitude_deg\x18\x02 \x01(\x01R\vlatitudeDeg\x12#\n" +
-	"\rlongitude_deg\x18\x03 \x01(\x01R\flongitudeDeg\x12.\n" +
-	"\x13absolute_altitude_m\x18\x04 \x01(\x02R\x11absoluteAltitudeM\"W\n" +
-	"\x0fSetHomeResponse\x12D\n" +
 	"\raction_result\x18\x01 \x01(\v2\x1f.mavsdk.rpc.action.ActionResultR\factionResult\"\xa0\x04\n" +
 	"\fActionResult\x12>\n" +
 	"\x06result\x18\x01 \x01(\x0e2&.mavsdk.rpc.action.ActionResult.ResultR\x06result\x12\x1d\n" +
@@ -2526,7 +2407,7 @@ const file_action_action_proto_rawDesc = "" +
 	" ORBIT_YAW_BEHAVIOR_RC_CONTROLLED\x10\x04*;\n" +
 	"\fRelayCommand\x12\x14\n" +
 	"\x10RELAY_COMMAND_ON\x10\x00\x12\x15\n" +
-	"\x11RELAY_COMMAND_OFF\x10\x012\xcd\x12\n" +
+	"\x11RELAY_COMMAND_OFF\x10\x012\xf5\x11\n" +
 	"\rActionService\x12F\n" +
 	"\x03Arm\x12\x1d.mavsdk.rpc.action.ArmRequest\x1a\x1e.mavsdk.rpc.action.ArmResponse\"\x00\x12U\n" +
 	"\bArmForce\x12\".mavsdk.rpc.action.ArmForceRequest\x1a#.mavsdk.rpc.action.ArmForceResponse\"\x00\x12O\n" +
@@ -2550,8 +2431,7 @@ const file_action_action_proto_rawDesc = "" +
 	"\x19GetReturnToLaunchAltitude\x123.mavsdk.rpc.action.GetReturnToLaunchAltitudeRequest\x1a4.mavsdk.rpc.action.GetReturnToLaunchAltitudeResponse\"\x00\x12\x88\x01\n" +
 	"\x19SetReturnToLaunchAltitude\x123.mavsdk.rpc.action.SetReturnToLaunchAltitudeRequest\x1a4.mavsdk.rpc.action.SetReturnToLaunchAltitudeResponse\"\x00\x12j\n" +
 	"\x0fSetCurrentSpeed\x12).mavsdk.rpc.action.SetCurrentSpeedRequest\x1a*.mavsdk.rpc.action.SetCurrentSpeedResponse\"\x00\x12w\n" +
-	"\x12SetGpsGlobalOrigin\x12,.mavsdk.rpc.action.SetGpsGlobalOriginRequest\x1a-.mavsdk.rpc.action.SetGpsGlobalOriginResponse\"\x04\x80\xb5\x18\x01\x12V\n" +
-	"\aSetHome\x12!.mavsdk.rpc.action.SetHomeRequest\x1a\".mavsdk.rpc.action.SetHomeResponse\"\x04\x80\xb5\x18\x01B\x1f\n" +
+	"\x12SetGpsGlobalOrigin\x12,.mavsdk.rpc.action.SetGpsGlobalOriginRequest\x1a-.mavsdk.rpc.action.SetGpsGlobalOriginResponse\"\x04\x80\xb5\x18\x01B\x1f\n" +
 	"\x10io.mavsdk.actionB\vActionProtob\x06proto3"
 
 var (
@@ -2567,7 +2447,7 @@ func file_action_action_proto_rawDescGZIP() []byte {
 }
 
 var file_action_action_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_action_action_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_action_action_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_action_action_proto_goTypes = []any{
 	(OrbitYawBehavior)(0),                     // 0: mavsdk.rpc.action.OrbitYawBehavior
 	(RelayCommand)(0),                         // 1: mavsdk.rpc.action.RelayCommand
@@ -2618,91 +2498,86 @@ var file_action_action_proto_goTypes = []any{
 	(*SetCurrentSpeedResponse)(nil),           // 46: mavsdk.rpc.action.SetCurrentSpeedResponse
 	(*SetGpsGlobalOriginRequest)(nil),         // 47: mavsdk.rpc.action.SetGpsGlobalOriginRequest
 	(*SetGpsGlobalOriginResponse)(nil),        // 48: mavsdk.rpc.action.SetGpsGlobalOriginResponse
-	(*SetHomeRequest)(nil),                    // 49: mavsdk.rpc.action.SetHomeRequest
-	(*SetHomeResponse)(nil),                   // 50: mavsdk.rpc.action.SetHomeResponse
-	(*ActionResult)(nil),                      // 51: mavsdk.rpc.action.ActionResult
+	(*ActionResult)(nil),                      // 49: mavsdk.rpc.action.ActionResult
 }
 var file_action_action_proto_depIdxs = []int32{
-	51, // 0: mavsdk.rpc.action.ArmResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 1: mavsdk.rpc.action.ArmForceResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 2: mavsdk.rpc.action.DisarmResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 3: mavsdk.rpc.action.TakeoffResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 4: mavsdk.rpc.action.LandResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 5: mavsdk.rpc.action.RebootResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 6: mavsdk.rpc.action.ShutdownResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 7: mavsdk.rpc.action.TerminateResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 8: mavsdk.rpc.action.KillResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 9: mavsdk.rpc.action.ReturnToLaunchResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 10: mavsdk.rpc.action.GotoLocationResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 0: mavsdk.rpc.action.ArmResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 1: mavsdk.rpc.action.ArmForceResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 2: mavsdk.rpc.action.DisarmResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 3: mavsdk.rpc.action.TakeoffResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 4: mavsdk.rpc.action.LandResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 5: mavsdk.rpc.action.RebootResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 6: mavsdk.rpc.action.ShutdownResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 7: mavsdk.rpc.action.TerminateResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 8: mavsdk.rpc.action.KillResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 9: mavsdk.rpc.action.ReturnToLaunchResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 10: mavsdk.rpc.action.GotoLocationResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
 	0,  // 11: mavsdk.rpc.action.DoOrbitRequest.yaw_behavior:type_name -> mavsdk.rpc.action.OrbitYawBehavior
-	51, // 12: mavsdk.rpc.action.DoOrbitResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 13: mavsdk.rpc.action.HoldResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 14: mavsdk.rpc.action.SetActuatorResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 12: mavsdk.rpc.action.DoOrbitResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 13: mavsdk.rpc.action.HoldResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 14: mavsdk.rpc.action.SetActuatorResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
 	1,  // 15: mavsdk.rpc.action.SetRelayRequest.setting:type_name -> mavsdk.rpc.action.RelayCommand
-	51, // 16: mavsdk.rpc.action.SetRelayResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 17: mavsdk.rpc.action.TransitionToFixedwingResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 18: mavsdk.rpc.action.TransitionToMulticopterResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 19: mavsdk.rpc.action.GetTakeoffAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 20: mavsdk.rpc.action.SetTakeoffAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 21: mavsdk.rpc.action.GetReturnToLaunchAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 22: mavsdk.rpc.action.SetReturnToLaunchAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 23: mavsdk.rpc.action.SetCurrentSpeedResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 24: mavsdk.rpc.action.SetGpsGlobalOriginResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	51, // 25: mavsdk.rpc.action.SetHomeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
-	2,  // 26: mavsdk.rpc.action.ActionResult.result:type_name -> mavsdk.rpc.action.ActionResult.Result
-	3,  // 27: mavsdk.rpc.action.ActionService.Arm:input_type -> mavsdk.rpc.action.ArmRequest
-	5,  // 28: mavsdk.rpc.action.ActionService.ArmForce:input_type -> mavsdk.rpc.action.ArmForceRequest
-	7,  // 29: mavsdk.rpc.action.ActionService.Disarm:input_type -> mavsdk.rpc.action.DisarmRequest
-	9,  // 30: mavsdk.rpc.action.ActionService.Takeoff:input_type -> mavsdk.rpc.action.TakeoffRequest
-	11, // 31: mavsdk.rpc.action.ActionService.Land:input_type -> mavsdk.rpc.action.LandRequest
-	13, // 32: mavsdk.rpc.action.ActionService.Reboot:input_type -> mavsdk.rpc.action.RebootRequest
-	15, // 33: mavsdk.rpc.action.ActionService.Shutdown:input_type -> mavsdk.rpc.action.ShutdownRequest
-	17, // 34: mavsdk.rpc.action.ActionService.Terminate:input_type -> mavsdk.rpc.action.TerminateRequest
-	19, // 35: mavsdk.rpc.action.ActionService.Kill:input_type -> mavsdk.rpc.action.KillRequest
-	21, // 36: mavsdk.rpc.action.ActionService.ReturnToLaunch:input_type -> mavsdk.rpc.action.ReturnToLaunchRequest
-	23, // 37: mavsdk.rpc.action.ActionService.GotoLocation:input_type -> mavsdk.rpc.action.GotoLocationRequest
-	25, // 38: mavsdk.rpc.action.ActionService.DoOrbit:input_type -> mavsdk.rpc.action.DoOrbitRequest
-	27, // 39: mavsdk.rpc.action.ActionService.Hold:input_type -> mavsdk.rpc.action.HoldRequest
-	29, // 40: mavsdk.rpc.action.ActionService.SetActuator:input_type -> mavsdk.rpc.action.SetActuatorRequest
-	31, // 41: mavsdk.rpc.action.ActionService.SetRelay:input_type -> mavsdk.rpc.action.SetRelayRequest
-	33, // 42: mavsdk.rpc.action.ActionService.TransitionToFixedwing:input_type -> mavsdk.rpc.action.TransitionToFixedwingRequest
-	35, // 43: mavsdk.rpc.action.ActionService.TransitionToMulticopter:input_type -> mavsdk.rpc.action.TransitionToMulticopterRequest
-	37, // 44: mavsdk.rpc.action.ActionService.GetTakeoffAltitude:input_type -> mavsdk.rpc.action.GetTakeoffAltitudeRequest
-	39, // 45: mavsdk.rpc.action.ActionService.SetTakeoffAltitude:input_type -> mavsdk.rpc.action.SetTakeoffAltitudeRequest
-	41, // 46: mavsdk.rpc.action.ActionService.GetReturnToLaunchAltitude:input_type -> mavsdk.rpc.action.GetReturnToLaunchAltitudeRequest
-	43, // 47: mavsdk.rpc.action.ActionService.SetReturnToLaunchAltitude:input_type -> mavsdk.rpc.action.SetReturnToLaunchAltitudeRequest
-	45, // 48: mavsdk.rpc.action.ActionService.SetCurrentSpeed:input_type -> mavsdk.rpc.action.SetCurrentSpeedRequest
-	47, // 49: mavsdk.rpc.action.ActionService.SetGpsGlobalOrigin:input_type -> mavsdk.rpc.action.SetGpsGlobalOriginRequest
-	49, // 50: mavsdk.rpc.action.ActionService.SetHome:input_type -> mavsdk.rpc.action.SetHomeRequest
-	4,  // 51: mavsdk.rpc.action.ActionService.Arm:output_type -> mavsdk.rpc.action.ArmResponse
-	6,  // 52: mavsdk.rpc.action.ActionService.ArmForce:output_type -> mavsdk.rpc.action.ArmForceResponse
-	8,  // 53: mavsdk.rpc.action.ActionService.Disarm:output_type -> mavsdk.rpc.action.DisarmResponse
-	10, // 54: mavsdk.rpc.action.ActionService.Takeoff:output_type -> mavsdk.rpc.action.TakeoffResponse
-	12, // 55: mavsdk.rpc.action.ActionService.Land:output_type -> mavsdk.rpc.action.LandResponse
-	14, // 56: mavsdk.rpc.action.ActionService.Reboot:output_type -> mavsdk.rpc.action.RebootResponse
-	16, // 57: mavsdk.rpc.action.ActionService.Shutdown:output_type -> mavsdk.rpc.action.ShutdownResponse
-	18, // 58: mavsdk.rpc.action.ActionService.Terminate:output_type -> mavsdk.rpc.action.TerminateResponse
-	20, // 59: mavsdk.rpc.action.ActionService.Kill:output_type -> mavsdk.rpc.action.KillResponse
-	22, // 60: mavsdk.rpc.action.ActionService.ReturnToLaunch:output_type -> mavsdk.rpc.action.ReturnToLaunchResponse
-	24, // 61: mavsdk.rpc.action.ActionService.GotoLocation:output_type -> mavsdk.rpc.action.GotoLocationResponse
-	26, // 62: mavsdk.rpc.action.ActionService.DoOrbit:output_type -> mavsdk.rpc.action.DoOrbitResponse
-	28, // 63: mavsdk.rpc.action.ActionService.Hold:output_type -> mavsdk.rpc.action.HoldResponse
-	30, // 64: mavsdk.rpc.action.ActionService.SetActuator:output_type -> mavsdk.rpc.action.SetActuatorResponse
-	32, // 65: mavsdk.rpc.action.ActionService.SetRelay:output_type -> mavsdk.rpc.action.SetRelayResponse
-	34, // 66: mavsdk.rpc.action.ActionService.TransitionToFixedwing:output_type -> mavsdk.rpc.action.TransitionToFixedwingResponse
-	36, // 67: mavsdk.rpc.action.ActionService.TransitionToMulticopter:output_type -> mavsdk.rpc.action.TransitionToMulticopterResponse
-	38, // 68: mavsdk.rpc.action.ActionService.GetTakeoffAltitude:output_type -> mavsdk.rpc.action.GetTakeoffAltitudeResponse
-	40, // 69: mavsdk.rpc.action.ActionService.SetTakeoffAltitude:output_type -> mavsdk.rpc.action.SetTakeoffAltitudeResponse
-	42, // 70: mavsdk.rpc.action.ActionService.GetReturnToLaunchAltitude:output_type -> mavsdk.rpc.action.GetReturnToLaunchAltitudeResponse
-	44, // 71: mavsdk.rpc.action.ActionService.SetReturnToLaunchAltitude:output_type -> mavsdk.rpc.action.SetReturnToLaunchAltitudeResponse
-	46, // 72: mavsdk.rpc.action.ActionService.SetCurrentSpeed:output_type -> mavsdk.rpc.action.SetCurrentSpeedResponse
-	48, // 73: mavsdk.rpc.action.ActionService.SetGpsGlobalOrigin:output_type -> mavsdk.rpc.action.SetGpsGlobalOriginResponse
-	50, // 74: mavsdk.rpc.action.ActionService.SetHome:output_type -> mavsdk.rpc.action.SetHomeResponse
-	51, // [51:75] is the sub-list for method output_type
-	27, // [27:51] is the sub-list for method input_type
-	27, // [27:27] is the sub-list for extension type_name
-	27, // [27:27] is the sub-list for extension extendee
-	0,  // [0:27] is the sub-list for field type_name
+	49, // 16: mavsdk.rpc.action.SetRelayResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 17: mavsdk.rpc.action.TransitionToFixedwingResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 18: mavsdk.rpc.action.TransitionToMulticopterResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 19: mavsdk.rpc.action.GetTakeoffAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 20: mavsdk.rpc.action.SetTakeoffAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 21: mavsdk.rpc.action.GetReturnToLaunchAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 22: mavsdk.rpc.action.SetReturnToLaunchAltitudeResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 23: mavsdk.rpc.action.SetCurrentSpeedResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	49, // 24: mavsdk.rpc.action.SetGpsGlobalOriginResponse.action_result:type_name -> mavsdk.rpc.action.ActionResult
+	2,  // 25: mavsdk.rpc.action.ActionResult.result:type_name -> mavsdk.rpc.action.ActionResult.Result
+	3,  // 26: mavsdk.rpc.action.ActionService.Arm:input_type -> mavsdk.rpc.action.ArmRequest
+	5,  // 27: mavsdk.rpc.action.ActionService.ArmForce:input_type -> mavsdk.rpc.action.ArmForceRequest
+	7,  // 28: mavsdk.rpc.action.ActionService.Disarm:input_type -> mavsdk.rpc.action.DisarmRequest
+	9,  // 29: mavsdk.rpc.action.ActionService.Takeoff:input_type -> mavsdk.rpc.action.TakeoffRequest
+	11, // 30: mavsdk.rpc.action.ActionService.Land:input_type -> mavsdk.rpc.action.LandRequest
+	13, // 31: mavsdk.rpc.action.ActionService.Reboot:input_type -> mavsdk.rpc.action.RebootRequest
+	15, // 32: mavsdk.rpc.action.ActionService.Shutdown:input_type -> mavsdk.rpc.action.ShutdownRequest
+	17, // 33: mavsdk.rpc.action.ActionService.Terminate:input_type -> mavsdk.rpc.action.TerminateRequest
+	19, // 34: mavsdk.rpc.action.ActionService.Kill:input_type -> mavsdk.rpc.action.KillRequest
+	21, // 35: mavsdk.rpc.action.ActionService.ReturnToLaunch:input_type -> mavsdk.rpc.action.ReturnToLaunchRequest
+	23, // 36: mavsdk.rpc.action.ActionService.GotoLocation:input_type -> mavsdk.rpc.action.GotoLocationRequest
+	25, // 37: mavsdk.rpc.action.ActionService.DoOrbit:input_type -> mavsdk.rpc.action.DoOrbitRequest
+	27, // 38: mavsdk.rpc.action.ActionService.Hold:input_type -> mavsdk.rpc.action.HoldRequest
+	29, // 39: mavsdk.rpc.action.ActionService.SetActuator:input_type -> mavsdk.rpc.action.SetActuatorRequest
+	31, // 40: mavsdk.rpc.action.ActionService.SetRelay:input_type -> mavsdk.rpc.action.SetRelayRequest
+	33, // 41: mavsdk.rpc.action.ActionService.TransitionToFixedwing:input_type -> mavsdk.rpc.action.TransitionToFixedwingRequest
+	35, // 42: mavsdk.rpc.action.ActionService.TransitionToMulticopter:input_type -> mavsdk.rpc.action.TransitionToMulticopterRequest
+	37, // 43: mavsdk.rpc.action.ActionService.GetTakeoffAltitude:input_type -> mavsdk.rpc.action.GetTakeoffAltitudeRequest
+	39, // 44: mavsdk.rpc.action.ActionService.SetTakeoffAltitude:input_type -> mavsdk.rpc.action.SetTakeoffAltitudeRequest
+	41, // 45: mavsdk.rpc.action.ActionService.GetReturnToLaunchAltitude:input_type -> mavsdk.rpc.action.GetReturnToLaunchAltitudeRequest
+	43, // 46: mavsdk.rpc.action.ActionService.SetReturnToLaunchAltitude:input_type -> mavsdk.rpc.action.SetReturnToLaunchAltitudeRequest
+	45, // 47: mavsdk.rpc.action.ActionService.SetCurrentSpeed:input_type -> mavsdk.rpc.action.SetCurrentSpeedRequest
+	47, // 48: mavsdk.rpc.action.ActionService.SetGpsGlobalOrigin:input_type -> mavsdk.rpc.action.SetGpsGlobalOriginRequest
+	4,  // 49: mavsdk.rpc.action.ActionService.Arm:output_type -> mavsdk.rpc.action.ArmResponse
+	6,  // 50: mavsdk.rpc.action.ActionService.ArmForce:output_type -> mavsdk.rpc.action.ArmForceResponse
+	8,  // 51: mavsdk.rpc.action.ActionService.Disarm:output_type -> mavsdk.rpc.action.DisarmResponse
+	10, // 52: mavsdk.rpc.action.ActionService.Takeoff:output_type -> mavsdk.rpc.action.TakeoffResponse
+	12, // 53: mavsdk.rpc.action.ActionService.Land:output_type -> mavsdk.rpc.action.LandResponse
+	14, // 54: mavsdk.rpc.action.ActionService.Reboot:output_type -> mavsdk.rpc.action.RebootResponse
+	16, // 55: mavsdk.rpc.action.ActionService.Shutdown:output_type -> mavsdk.rpc.action.ShutdownResponse
+	18, // 56: mavsdk.rpc.action.ActionService.Terminate:output_type -> mavsdk.rpc.action.TerminateResponse
+	20, // 57: mavsdk.rpc.action.ActionService.Kill:output_type -> mavsdk.rpc.action.KillResponse
+	22, // 58: mavsdk.rpc.action.ActionService.ReturnToLaunch:output_type -> mavsdk.rpc.action.ReturnToLaunchResponse
+	24, // 59: mavsdk.rpc.action.ActionService.GotoLocation:output_type -> mavsdk.rpc.action.GotoLocationResponse
+	26, // 60: mavsdk.rpc.action.ActionService.DoOrbit:output_type -> mavsdk.rpc.action.DoOrbitResponse
+	28, // 61: mavsdk.rpc.action.ActionService.Hold:output_type -> mavsdk.rpc.action.HoldResponse
+	30, // 62: mavsdk.rpc.action.ActionService.SetActuator:output_type -> mavsdk.rpc.action.SetActuatorResponse
+	32, // 63: mavsdk.rpc.action.ActionService.SetRelay:output_type -> mavsdk.rpc.action.SetRelayResponse
+	34, // 64: mavsdk.rpc.action.ActionService.TransitionToFixedwing:output_type -> mavsdk.rpc.action.TransitionToFixedwingResponse
+	36, // 65: mavsdk.rpc.action.ActionService.TransitionToMulticopter:output_type -> mavsdk.rpc.action.TransitionToMulticopterResponse
+	38, // 66: mavsdk.rpc.action.ActionService.GetTakeoffAltitude:output_type -> mavsdk.rpc.action.GetTakeoffAltitudeResponse
+	40, // 67: mavsdk.rpc.action.ActionService.SetTakeoffAltitude:output_type -> mavsdk.rpc.action.SetTakeoffAltitudeResponse
+	42, // 68: mavsdk.rpc.action.ActionService.GetReturnToLaunchAltitude:output_type -> mavsdk.rpc.action.GetReturnToLaunchAltitudeResponse
+	44, // 69: mavsdk.rpc.action.ActionService.SetReturnToLaunchAltitude:output_type -> mavsdk.rpc.action.SetReturnToLaunchAltitudeResponse
+	46, // 70: mavsdk.rpc.action.ActionService.SetCurrentSpeed:output_type -> mavsdk.rpc.action.SetCurrentSpeedResponse
+	48, // 71: mavsdk.rpc.action.ActionService.SetGpsGlobalOrigin:output_type -> mavsdk.rpc.action.SetGpsGlobalOriginResponse
+	49, // [49:72] is the sub-list for method output_type
+	26, // [26:49] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_action_action_proto_init() }
@@ -2716,7 +2591,7 @@ func file_action_action_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_action_action_proto_rawDesc), len(file_action_action_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   49,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

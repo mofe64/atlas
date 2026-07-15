@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	agentconfig "github.com/sunnyside/atlas/atlas-agent/internal/config"
 )
 
 func Discover(ctx context.Context, runner Runner, options Options) (Discovery, error) {
@@ -421,6 +423,9 @@ func applyExistingConfig(config *InstallConfig, values map[string]string) {
 	}
 	if value := values["ATLAS_A8_RTSP_URL"]; value != "" {
 		config.A8RTSPURL = value
+	}
+	if value := values["ATLAS_CAMERA_TRANSPORT"]; value != "" {
+		config.CameraTransport = agentconfig.CameraTransport(strings.ToLower(strings.TrimSpace(value)))
 	}
 	if value := values["ATLAS_SIYI_CAMERA_ADDR"]; value != "" {
 		config.SIYICameraAddress = value

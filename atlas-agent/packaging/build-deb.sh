@@ -3,13 +3,24 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+MAVSDK_PIN_FILE="${SCRIPT_DIR}/mavsdk.env"
+
+[[ -r "${MAVSDK_PIN_FILE}" ]] || {
+  printf 'MAVSDK release contract is missing: %s\n' "${MAVSDK_PIN_FILE}" >&2
+  exit 1
+}
+# shellcheck source=mavsdk.env
+source "${MAVSDK_PIN_FILE}"
+: "${ATLAS_MAVSDK_VERSION:?mavsdk.env must define ATLAS_MAVSDK_VERSION}"
+: "${ATLAS_MAVSDK_SHA256:?mavsdk.env must define ATLAS_MAVSDK_SHA256}"
+: "${ATLAS_MAVSDK_PROTO_COMMIT:?mavsdk.env must define ATLAS_MAVSDK_PROTO_COMMIT}"
 
 VERSION="${ATLAS_RELEASE_VERSION:-0.1.0-dev}"
 OUTPUT_DIR="${ATLAS_PACKAGE_OUTPUT_DIR:-${AGENT_DIR}/dist}"
 CACHE_DIR="${ATLAS_PACKAGE_CACHE_DIR:-${HOME}/.cache/atlas-packaging}"
-MAVSDK_VERSION="${ATLAS_MAVSDK_VERSION:-v3.17.1}"
+MAVSDK_VERSION="${ATLAS_MAVSDK_VERSION}"
 MAVSDK_ASSET="mavsdk_server_linux-arm64-musl"
-MAVSDK_SHA256="${ATLAS_MAVSDK_SHA256:-dea8b9b30cbc2bbe35550b46244625c42c380ddfce9cbd47cd19d4cae66e2f2b}"
+MAVSDK_SHA256="${ATLAS_MAVSDK_SHA256}"
 MAVSDK_URL="https://github.com/mavlink/MAVSDK/releases/download/${MAVSDK_VERSION}/${MAVSDK_ASSET}"
 MODEL_SOURCE="${ATLAS_HEF_MODEL_PATH:-}"
 MODEL_ACCELERATOR="${ATLAS_MODEL_ACCELERATOR:-hailo-8l}"
@@ -40,12 +51,31 @@ case "${MODEL_ACCELERATOR}" in
     ;;
 esac
 
-for command in go dpkg-deb curl install sed sha256sum; do
+for command in go git dpkg-deb curl install sed sha256sum; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'missing required build command: %s\n' "$command" >&2
     exit 1
   }
 done
+
+MAVSDK_PROTO_DIR="${AGENT_DIR}/../third_party/mavsdk-proto"
+MAVSDK_SCHEMA_MARKER="${AGENT_DIR}/internal/mavsdkpb/schema.commit"
+ACTUAL_PROTO_COMMIT="$(git -C "${MAVSDK_PROTO_DIR}" rev-parse HEAD)"
+if [[ "${ACTUAL_PROTO_COMMIT}" != "${ATLAS_MAVSDK_PROTO_COMMIT}" ]]; then
+  printf 'MAVSDK schema mismatch: %s requires proto %s, checkout has %s\n' \
+    "${MAVSDK_VERSION}" "${ATLAS_MAVSDK_PROTO_COMMIT}" "${ACTUAL_PROTO_COMMIT}" >&2
+  exit 1
+fi
+[[ -r "${MAVSDK_SCHEMA_MARKER}" ]] || {
+  printf 'generated MAVSDK schema marker is missing; run scripts/generate-mavsdk-go.sh\n' >&2
+  exit 1
+}
+IFS= read -r GENERATED_PROTO_COMMIT < "${MAVSDK_SCHEMA_MARKER}"
+if [[ "${GENERATED_PROTO_COMMIT}" != "${ATLAS_MAVSDK_PROTO_COMMIT}" ]]; then
+  printf 'generated MAVSDK client uses proto %s; expected %s; run scripts/generate-mavsdk-go.sh\n' \
+    "${GENERATED_PROTO_COMMIT}" "${ATLAS_MAVSDK_PROTO_COMMIT}" >&2
+  exit 1
+fi
 
 BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "${BUILD_DIR}"' EXIT
@@ -116,6 +146,7 @@ sed "s/@VERSION@/${VERSION}/g" "${SCRIPT_DIR}/debian/control.in" > "${PACKAGE_RO
   printf 'ATLAS_RELEASE_VERSION="%s"\n' "${VERSION}"
   printf 'ATLAS_MAVSDK_VERSION="%s"\n' "${MAVSDK_VERSION}"
   printf 'ATLAS_MAVSDK_SHA256="%s"\n' "${MAVSDK_SHA256}"
+  printf 'ATLAS_MAVSDK_PROTO_COMMIT="%s"\n' "${ATLAS_MAVSDK_PROTO_COMMIT}"
   printf 'ATLAS_MODEL_ACCELERATOR="%s"\n' "${MODEL_ACCELERATOR}"
   printf 'ATLAS_MODEL_SHA256="%s"\n' "${MODEL_SHA256}"
 } > "${PACKAGE_ROOT}/usr/share/atlas-agent/release.env"

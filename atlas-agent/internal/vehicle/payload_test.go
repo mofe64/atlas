@@ -5,12 +5,140 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	camerapb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/camera"
 	gimbalpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/gimbal"
 	"google.golang.org/grpc"
 )
+
+type recordingCameraServer struct {
+	camerapb.UnimplementedCameraServiceServer
+	subscriptions atomic.Int32
+	zoomCalls     atomic.Int32
+}
+
+func (server *recordingCameraServer) SubscribeCameraList(_ *camerapb.SubscribeCameraListRequest, stream grpc.ServerStreamingServer[camerapb.CameraListResponse]) error {
+	server.subscriptions.Add(1)
+	return stream.Send(&camerapb.CameraListResponse{CameraList: &camerapb.CameraList{Cameras: []*camerapb.Information{{ComponentId: 100}}}})
+}
+
+func (server *recordingCameraServer) ZoomRange(context.Context, *camerapb.ZoomRangeRequest) (*camerapb.ZoomRangeResponse, error) {
+	server.zoomCalls.Add(1)
+	return &camerapb.ZoomRangeResponse{CameraResult: &camerapb.CameraResult{Result: camerapb.CameraResult_RESULT_SUCCESS}}, nil
+}
+
+func TestSIYICameraTransportNeverActivatesMAVSDKCamera(t *testing.T) {
+	grpcListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen gRPC: %v", err)
+	}
+	grpcServer := grpc.NewServer()
+	cameraRecorder := &recordingCameraServer{}
+	camerapb.RegisterCameraServiceServer(grpcServer, cameraRecorder)
+	go func() { _ = grpcServer.Serve(grpcListener) }()
+	t.Cleanup(grpcServer.Stop)
+
+	siyiConnection, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
+	if err != nil {
+		t.Fatalf("listen SIYI UDP: %v", err)
+	}
+	t.Cleanup(func() { _ = siyiConnection.Close() })
+	siyiRequests := make(chan byte, 2)
+	go func() {
+		for _, response := range [][]byte{
+			siyiFrame(0, siyiMaximumZoomCommand, []byte{6, 0}),
+			siyiFrame(1, siyiAbsoluteZoomCommand, []byte{1}),
+		} {
+			buffer := make([]byte, 256)
+			length, client, readErr := siyiConnection.ReadFromUDP(buffer)
+			if readErr != nil {
+				return
+			}
+			command, _, decodeErr := decodeSIYIFrame(buffer[:length])
+			if decodeErr != nil {
+				return
+			}
+			siyiRequests <- command
+			if _, writeErr := siyiConnection.WriteToUDP(response, client); writeErr != nil {
+				return
+			}
+		}
+	}()
+
+	controller, err := NewPayloadController(grpcListener.Addr().String(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new payload controller: %v", err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	controller.ConfigureCameraTransports(false, siyiConnection.LocalAddr().String())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ids, err := controller.DiscoverCameras(ctx)
+	if err != nil {
+		t.Fatalf("discover SIYI camera: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Fatalf("MAVSDK camera ids = %v, want none", ids)
+	}
+	result, err := controller.setZoom(ctx, payloadCommand{CameraComponentID: 100, ZoomPercent: 50})
+	if err != nil || result.Code != "SIYI_ZOOM_SET" {
+		t.Fatalf("SIYI zoom result = %#v, error = %v", result, err)
+	}
+	if cameraRecorder.subscriptions.Load() != 0 || cameraRecorder.zoomCalls.Load() != 0 {
+		t.Fatalf("MAVSDK camera calls = subscriptions %d zoom %d, want zero", cameraRecorder.subscriptions.Load(), cameraRecorder.zoomCalls.Load())
+	}
+	if first, second := <-siyiRequests, <-siyiRequests; first != siyiMaximumZoomCommand || second != siyiAbsoluteZoomCommand {
+		t.Fatalf("SIYI commands = [%x %x]", first, second)
+	}
+	if !containsCapability(controller.Capabilities(), "camera:transport:siyi_udp") {
+		t.Fatalf("capabilities = %v, want SIYI transport", controller.Capabilities())
+	}
+}
+
+func TestMAVSDKCameraTransportDiscoversThroughCameraService(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen gRPC: %v", err)
+	}
+	server := grpc.NewServer()
+	recorder := &recordingCameraServer{}
+	camerapb.RegisterCameraServiceServer(server, recorder)
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	controller, err := NewPayloadController(listener.Addr().String(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("new payload controller: %v", err)
+	}
+	t.Cleanup(func() { _ = controller.Close() })
+	controller.ConfigureCameraTransports(true, "")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	ids, err := controller.DiscoverCameras(ctx)
+	if err != nil {
+		t.Fatalf("discover MAVSDK camera: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != 100 || recorder.subscriptions.Load() != 1 {
+		t.Fatalf("MAVSDK discovery ids = %v subscriptions = %d", ids, recorder.subscriptions.Load())
+	}
+	if !containsCapability(controller.Capabilities(), "camera:transport:mavsdk") {
+		t.Fatalf("capabilities = %v, want MAVSDK transport", controller.Capabilities())
+	}
+}
+
+func containsCapability(capabilities []string, wanted string) bool {
+	for _, capability := range capabilities {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
+}
 
 func TestPayloadManualOverrideRestoresCurrentWaypointIntent(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
