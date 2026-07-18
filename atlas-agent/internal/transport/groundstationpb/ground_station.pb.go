@@ -299,6 +299,9 @@ const (
 	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED   MissionRunUpdateType = 14
 	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED MissionRunUpdateType = 15
 	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED   MissionRunUpdateType = 16
+	// Runtime mission actions are reported through the mission stream so their
+	// acknowledgement remains ordered with flight progress for the same run.
+	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED MissionRunUpdateType = 17
 )
 
 // Enum value maps for MissionRunUpdateType.
@@ -321,6 +324,7 @@ var (
 		14: "MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED",
 		15: "MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED",
 		16: "MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED",
+		17: "MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED",
 	}
 	MissionRunUpdateType_value = map[string]int32{
 		"MISSION_RUN_UPDATE_TYPE_UNSPECIFIED":              0,
@@ -340,6 +344,7 @@ var (
 		"MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED":   14,
 		"MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED": 15,
 		"MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED":   16,
+		"MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED":     17,
 	}
 )
 
@@ -368,6 +373,67 @@ func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
 // Deprecated: Use MissionRunUpdateType.Descriptor instead.
 func (MissionRunUpdateType) EnumDescriptor() ([]byte, []int) {
 	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+}
+
+type MissionActionState int32
+
+const (
+	MissionActionState_MISSION_ACTION_STATE_UNSPECIFIED    MissionActionState = 0
+	MissionActionState_MISSION_ACTION_STATE_REQUESTED      MissionActionState = 1
+	MissionActionState_MISSION_ACTION_STATE_RUNNING        MissionActionState = 2
+	MissionActionState_MISSION_ACTION_STATE_RETRYING       MissionActionState = 3
+	MissionActionState_MISSION_ACTION_STATE_SUCCEEDED      MissionActionState = 4
+	MissionActionState_MISSION_ACTION_STATE_FAILED         MissionActionState = 5
+	MissionActionState_MISSION_ACTION_STATE_POLICY_APPLIED MissionActionState = 6
+)
+
+// Enum value maps for MissionActionState.
+var (
+	MissionActionState_name = map[int32]string{
+		0: "MISSION_ACTION_STATE_UNSPECIFIED",
+		1: "MISSION_ACTION_STATE_REQUESTED",
+		2: "MISSION_ACTION_STATE_RUNNING",
+		3: "MISSION_ACTION_STATE_RETRYING",
+		4: "MISSION_ACTION_STATE_SUCCEEDED",
+		5: "MISSION_ACTION_STATE_FAILED",
+		6: "MISSION_ACTION_STATE_POLICY_APPLIED",
+	}
+	MissionActionState_value = map[string]int32{
+		"MISSION_ACTION_STATE_UNSPECIFIED":    0,
+		"MISSION_ACTION_STATE_REQUESTED":      1,
+		"MISSION_ACTION_STATE_RUNNING":        2,
+		"MISSION_ACTION_STATE_RETRYING":       3,
+		"MISSION_ACTION_STATE_SUCCEEDED":      4,
+		"MISSION_ACTION_STATE_FAILED":         5,
+		"MISSION_ACTION_STATE_POLICY_APPLIED": 6,
+	}
+)
+
+func (x MissionActionState) Enum() *MissionActionState {
+	p := new(MissionActionState)
+	*p = x
+	return p
+}
+
+func (x MissionActionState) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (MissionActionState) Descriptor() protoreflect.EnumDescriptor {
+	return file_atlas_ground_station_proto_enumTypes[5].Descriptor()
+}
+
+func (MissionActionState) Type() protoreflect.EnumType {
+	return &file_atlas_ground_station_proto_enumTypes[5]
+}
+
+func (x MissionActionState) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use MissionActionState.Descriptor instead.
+func (MissionActionState) EnumDescriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
 }
 
 type AgentToGroundStation struct {
@@ -3066,14 +3132,19 @@ type MissionRunUpdate struct {
 	UpdateType   MissionRunUpdateType   `protobuf:"varint,4,opt,name=update_type,json=updateType,proto3,enum=atlas.groundstation.v1.MissionRunUpdateType" json:"update_type,omitempty"`
 	// Agent-reported run state allows a failed control operation to preserve an
 	// otherwise healthy READY, RUNNING, or PAUSED run.
-	RunState         string   `protobuf:"bytes,5,opt,name=run_state,json=runState,proto3" json:"run_state,omitempty"`
-	ObservedAtUnixMs int64    `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	ProgressPercent  *float64 `protobuf:"fixed64,7,opt,name=progress_percent,json=progressPercent,proto3,oneof" json:"progress_percent,omitempty"`
-	CurrentWaypoint  *uint32  `protobuf:"varint,8,opt,name=current_waypoint,json=currentWaypoint,proto3,oneof" json:"current_waypoint,omitempty"`
-	TotalWaypoints   *uint32  `protobuf:"varint,9,opt,name=total_waypoints,json=totalWaypoints,proto3,oneof" json:"total_waypoints,omitempty"`
-	ErrorCode        string   `protobuf:"bytes,10,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
-	Message          string   `protobuf:"bytes,11,opt,name=message,proto3" json:"message,omitempty"`
-	EvidenceJson     string   `protobuf:"bytes,12,opt,name=evidence_json,json=evidenceJson,proto3" json:"evidence_json,omitempty"`
+	RunState         string             `protobuf:"bytes,5,opt,name=run_state,json=runState,proto3" json:"run_state,omitempty"`
+	ObservedAtUnixMs int64              `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	ProgressPercent  *float64           `protobuf:"fixed64,7,opt,name=progress_percent,json=progressPercent,proto3,oneof" json:"progress_percent,omitempty"`
+	CurrentWaypoint  *uint32            `protobuf:"varint,8,opt,name=current_waypoint,json=currentWaypoint,proto3,oneof" json:"current_waypoint,omitempty"`
+	TotalWaypoints   *uint32            `protobuf:"varint,9,opt,name=total_waypoints,json=totalWaypoints,proto3,oneof" json:"total_waypoints,omitempty"`
+	ErrorCode        string             `protobuf:"bytes,10,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
+	Message          string             `protobuf:"bytes,11,opt,name=message,proto3" json:"message,omitempty"`
+	EvidenceJson     string             `protobuf:"bytes,12,opt,name=evidence_json,json=evidenceJson,proto3" json:"evidence_json,omitempty"`
+	ActionSequence   *uint32            `protobuf:"varint,13,opt,name=action_sequence,json=actionSequence,proto3,oneof" json:"action_sequence,omitempty"`
+	ActionType       string             `protobuf:"bytes,14,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
+	ActionState      MissionActionState `protobuf:"varint,15,opt,name=action_state,json=actionState,proto3,enum=atlas.groundstation.v1.MissionActionState" json:"action_state,omitempty"`
+	ActionAttempt    uint32             `protobuf:"varint,16,opt,name=action_attempt,json=actionAttempt,proto3" json:"action_attempt,omitempty"`
+	FailurePolicy    string             `protobuf:"bytes,17,opt,name=failure_policy,json=failurePolicy,proto3" json:"failure_policy,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3188,6 +3259,41 @@ func (x *MissionRunUpdate) GetMessage() string {
 func (x *MissionRunUpdate) GetEvidenceJson() string {
 	if x != nil {
 		return x.EvidenceJson
+	}
+	return ""
+}
+
+func (x *MissionRunUpdate) GetActionSequence() uint32 {
+	if x != nil && x.ActionSequence != nil {
+		return *x.ActionSequence
+	}
+	return 0
+}
+
+func (x *MissionRunUpdate) GetActionType() string {
+	if x != nil {
+		return x.ActionType
+	}
+	return ""
+}
+
+func (x *MissionRunUpdate) GetActionState() MissionActionState {
+	if x != nil {
+		return x.ActionState
+	}
+	return MissionActionState_MISSION_ACTION_STATE_UNSPECIFIED
+}
+
+func (x *MissionRunUpdate) GetActionAttempt() uint32 {
+	if x != nil {
+		return x.ActionAttempt
+	}
+	return 0
+}
+
+func (x *MissionRunUpdate) GetFailurePolicy() string {
+	if x != nil {
+		return x.FailurePolicy
 	}
 	return ""
 }
@@ -3481,7 +3587,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x0eoperation_type\x18\x04 \x01(\x0e2,.atlas.groundstation.v1.MissionOperationTypeR\roperationType\x12*\n" +
 	"\x11mission_plan_json\x18\x05 \x01(\tR\x0fmissionPlanJson\x12/\n" +
 	"\x14requested_at_unix_ms\x18\x06 \x01(\x03R\x11requestedAtUnixMs\x12-\n" +
-	"\x13deadline_at_unix_ms\x18\a \x01(\x03R\x10deadlineAtUnixMs\"\xbb\x04\n" +
+	"\x13deadline_at_unix_ms\x18\a \x01(\x03R\x10deadlineAtUnixMs\"\xbb\x06\n" +
 	"\x10MissionRunUpdate\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12$\n" +
@@ -3497,10 +3603,17 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"error_code\x18\n" +
 	" \x01(\tR\terrorCode\x12\x18\n" +
 	"\amessage\x18\v \x01(\tR\amessage\x12#\n" +
-	"\revidence_json\x18\f \x01(\tR\fevidenceJsonB\x13\n" +
+	"\revidence_json\x18\f \x01(\tR\fevidenceJson\x12,\n" +
+	"\x0faction_sequence\x18\r \x01(\rH\x03R\x0eactionSequence\x88\x01\x01\x12\x1f\n" +
+	"\vaction_type\x18\x0e \x01(\tR\n" +
+	"actionType\x12M\n" +
+	"\faction_state\x18\x0f \x01(\x0e2*.atlas.groundstation.v1.MissionActionStateR\vactionState\x12%\n" +
+	"\x0eaction_attempt\x18\x10 \x01(\rR\ractionAttempt\x12%\n" +
+	"\x0efailure_policy\x18\x11 \x01(\tR\rfailurePolicyB\x13\n" +
 	"\x11_progress_percentB\x13\n" +
 	"\x11_current_waypointB\x12\n" +
-	"\x10_total_waypoints*\xc1\x01\n" +
+	"\x10_total_waypointsB\x12\n" +
+	"\x10_action_sequence*\xc1\x01\n" +
 	"!PerceptionFrameSubscriptionAction\x124\n" +
 	"0PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x127\n" +
 	"3PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW\x10\x01\x12-\n" +
@@ -3537,7 +3650,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x1cMISSION_OPERATION_TYPE_PAUSE\x10\x03\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_RESUME\x10\x04\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_CANCEL\x10\x05\x12+\n" +
-	"'MISSION_OPERATION_TYPE_RETURN_TO_LAUNCH\x10\x06*\xe0\x05\n" +
+	"'MISSION_OPERATION_TYPE_RETURN_TO_LAUNCH\x10\x06*\x92\x06\n" +
 	"\x14MissionRunUpdateType\x12'\n" +
 	"#MISSION_RUN_UPDATE_TYPE_UNSPECIFIED\x10\x00\x12.\n" +
 	"*MISSION_RUN_UPDATE_TYPE_OPERATION_ACCEPTED\x10\x01\x12+\n" +
@@ -3556,7 +3669,16 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x1dMISSION_RUN_UPDATE_TYPE_ARMED\x10\r\x122\n" +
 	".MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED\x10\x0e\x124\n" +
 	"0MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED\x10\x0f\x122\n" +
-	".MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED\x10\x102\xfb\x01\n" +
+	".MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED\x10\x10\x120\n" +
+	",MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED\x10\x11*\x91\x02\n" +
+	"\x12MissionActionState\x12$\n" +
+	" MISSION_ACTION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
+	"\x1eMISSION_ACTION_STATE_REQUESTED\x10\x01\x12 \n" +
+	"\x1cMISSION_ACTION_STATE_RUNNING\x10\x02\x12!\n" +
+	"\x1dMISSION_ACTION_STATE_RETRYING\x10\x03\x12\"\n" +
+	"\x1eMISSION_ACTION_STATE_SUCCEEDED\x10\x04\x12\x1f\n" +
+	"\x1bMISSION_ACTION_STATE_FAILED\x10\x05\x12'\n" +
+	"#MISSION_ACTION_STATE_POLICY_APPLIED\x10\x062\xfb\x01\n" +
 	"\x14GroundStationService\x12m\n" +
 	"\vOpenSession\x12,.atlas.groundstation.v1.AgentToGroundStation\x1a,.atlas.groundstation.v1.GroundStationToAgent(\x010\x01\x12t\n" +
 	"\x14OpenPerceptionStream\x12'.atlas.groundstation.v1.AgentPerception\x1a/.atlas.groundstation.v1.GroundStationPerception(\x010\x01B[ZYgithub.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb;groundstationpbb\x06proto3"
@@ -3573,7 +3695,7 @@ func file_atlas_ground_station_proto_rawDescGZIP() []byte {
 	return file_atlas_ground_station_proto_rawDescData
 }
 
-var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
 var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_atlas_ground_station_proto_goTypes = []any{
 	(PerceptionFrameSubscriptionAction)(0), // 0: atlas.groundstation.v1.PerceptionFrameSubscriptionAction
@@ -3581,79 +3703,81 @@ var file_atlas_ground_station_proto_goTypes = []any{
 	(VehicleCommandUpdateType)(0),          // 2: atlas.groundstation.v1.VehicleCommandUpdateType
 	(MissionOperationType)(0),              // 3: atlas.groundstation.v1.MissionOperationType
 	(MissionRunUpdateType)(0),              // 4: atlas.groundstation.v1.MissionRunUpdateType
-	(*AgentToGroundStation)(nil),           // 5: atlas.groundstation.v1.AgentToGroundStation
-	(*GroundStationToAgent)(nil),           // 6: atlas.groundstation.v1.GroundStationToAgent
-	(*AgentPerception)(nil),                // 7: atlas.groundstation.v1.AgentPerception
-	(*GroundStationPerception)(nil),        // 8: atlas.groundstation.v1.GroundStationPerception
-	(*PerceptionFrameSubscription)(nil),    // 9: atlas.groundstation.v1.PerceptionFrameSubscription
-	(*PerceptionStreamRegistration)(nil),   // 10: atlas.groundstation.v1.PerceptionStreamRegistration
-	(*PerceptionStreamAccepted)(nil),       // 11: atlas.groundstation.v1.PerceptionStreamAccepted
-	(*PerceptionFrame)(nil),                // 12: atlas.groundstation.v1.PerceptionFrame
-	(*PerceptionModelIdentity)(nil),        // 13: atlas.groundstation.v1.PerceptionModelIdentity
-	(*PerceptionDetection)(nil),            // 14: atlas.groundstation.v1.PerceptionDetection
-	(*NormalizedBoundingBox)(nil),          // 15: atlas.groundstation.v1.NormalizedBoundingBox
-	(*PerceptionHealth)(nil),               // 16: atlas.groundstation.v1.PerceptionHealth
-	(*AgentRegistration)(nil),              // 17: atlas.groundstation.v1.AgentRegistration
-	(*DeviceProfile)(nil),                  // 18: atlas.groundstation.v1.DeviceProfile
-	(*DroneProfile)(nil),                   // 19: atlas.groundstation.v1.DroneProfile
-	(*FlightControllerAttachment)(nil),     // 20: atlas.groundstation.v1.FlightControllerAttachment
-	(*AgentHeartbeat)(nil),                 // 21: atlas.groundstation.v1.AgentHeartbeat
-	(*AircraftTelemetry)(nil),              // 22: atlas.groundstation.v1.AircraftTelemetry
-	(*BatteryTelemetry)(nil),               // 23: atlas.groundstation.v1.BatteryTelemetry
-	(*VehicleHealth)(nil),                  // 24: atlas.groundstation.v1.VehicleHealth
-	(*RcStatus)(nil),                       // 25: atlas.groundstation.v1.RcStatus
-	(*HomePosition)(nil),                   // 26: atlas.groundstation.v1.HomePosition
-	(*GpsQuality)(nil),                     // 27: atlas.groundstation.v1.GpsQuality
-	(*AgentStatusText)(nil),                // 28: atlas.groundstation.v1.AgentStatusText
-	(*RegistrationAccepted)(nil),           // 29: atlas.groundstation.v1.RegistrationAccepted
-	(*VehicleCommandRequest)(nil),          // 30: atlas.groundstation.v1.VehicleCommandRequest
-	(*VehicleCommandCancellation)(nil),     // 31: atlas.groundstation.v1.VehicleCommandCancellation
-	(*VehicleCommandUpdate)(nil),           // 32: atlas.groundstation.v1.VehicleCommandUpdate
-	(*MissionOperationRequest)(nil),        // 33: atlas.groundstation.v1.MissionOperationRequest
-	(*MissionRunUpdate)(nil),               // 34: atlas.groundstation.v1.MissionRunUpdate
+	(MissionActionState)(0),                // 5: atlas.groundstation.v1.MissionActionState
+	(*AgentToGroundStation)(nil),           // 6: atlas.groundstation.v1.AgentToGroundStation
+	(*GroundStationToAgent)(nil),           // 7: atlas.groundstation.v1.GroundStationToAgent
+	(*AgentPerception)(nil),                // 8: atlas.groundstation.v1.AgentPerception
+	(*GroundStationPerception)(nil),        // 9: atlas.groundstation.v1.GroundStationPerception
+	(*PerceptionFrameSubscription)(nil),    // 10: atlas.groundstation.v1.PerceptionFrameSubscription
+	(*PerceptionStreamRegistration)(nil),   // 11: atlas.groundstation.v1.PerceptionStreamRegistration
+	(*PerceptionStreamAccepted)(nil),       // 12: atlas.groundstation.v1.PerceptionStreamAccepted
+	(*PerceptionFrame)(nil),                // 13: atlas.groundstation.v1.PerceptionFrame
+	(*PerceptionModelIdentity)(nil),        // 14: atlas.groundstation.v1.PerceptionModelIdentity
+	(*PerceptionDetection)(nil),            // 15: atlas.groundstation.v1.PerceptionDetection
+	(*NormalizedBoundingBox)(nil),          // 16: atlas.groundstation.v1.NormalizedBoundingBox
+	(*PerceptionHealth)(nil),               // 17: atlas.groundstation.v1.PerceptionHealth
+	(*AgentRegistration)(nil),              // 18: atlas.groundstation.v1.AgentRegistration
+	(*DeviceProfile)(nil),                  // 19: atlas.groundstation.v1.DeviceProfile
+	(*DroneProfile)(nil),                   // 20: atlas.groundstation.v1.DroneProfile
+	(*FlightControllerAttachment)(nil),     // 21: atlas.groundstation.v1.FlightControllerAttachment
+	(*AgentHeartbeat)(nil),                 // 22: atlas.groundstation.v1.AgentHeartbeat
+	(*AircraftTelemetry)(nil),              // 23: atlas.groundstation.v1.AircraftTelemetry
+	(*BatteryTelemetry)(nil),               // 24: atlas.groundstation.v1.BatteryTelemetry
+	(*VehicleHealth)(nil),                  // 25: atlas.groundstation.v1.VehicleHealth
+	(*RcStatus)(nil),                       // 26: atlas.groundstation.v1.RcStatus
+	(*HomePosition)(nil),                   // 27: atlas.groundstation.v1.HomePosition
+	(*GpsQuality)(nil),                     // 28: atlas.groundstation.v1.GpsQuality
+	(*AgentStatusText)(nil),                // 29: atlas.groundstation.v1.AgentStatusText
+	(*RegistrationAccepted)(nil),           // 30: atlas.groundstation.v1.RegistrationAccepted
+	(*VehicleCommandRequest)(nil),          // 31: atlas.groundstation.v1.VehicleCommandRequest
+	(*VehicleCommandCancellation)(nil),     // 32: atlas.groundstation.v1.VehicleCommandCancellation
+	(*VehicleCommandUpdate)(nil),           // 33: atlas.groundstation.v1.VehicleCommandUpdate
+	(*MissionOperationRequest)(nil),        // 34: atlas.groundstation.v1.MissionOperationRequest
+	(*MissionRunUpdate)(nil),               // 35: atlas.groundstation.v1.MissionRunUpdate
 }
 var file_atlas_ground_station_proto_depIdxs = []int32{
-	17, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
-	21, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
-	22, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
-	28, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
-	32, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
-	34, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
-	29, // 6: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
-	30, // 7: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
-	31, // 8: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
-	33, // 9: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
-	10, // 10: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
-	12, // 11: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
-	16, // 12: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
-	11, // 13: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
-	9,  // 14: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
+	18, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
+	22, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
+	23, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
+	29, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
+	33, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
+	35, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
+	30, // 6: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
+	31, // 7: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
+	32, // 8: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
+	34, // 9: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
+	11, // 10: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
+	13, // 11: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
+	17, // 12: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
+	12, // 13: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
+	10, // 14: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
 	0,  // 15: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
-	13, // 16: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	14, // 17: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
-	15, // 18: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	13, // 19: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	18, // 20: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
-	19, // 21: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
-	20, // 22: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
-	23, // 23: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
-	24, // 24: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
-	25, // 25: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
-	26, // 26: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
-	27, // 27: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
+	14, // 16: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	15, // 17: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
+	16, // 18: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	14, // 19: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	19, // 20: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
+	20, // 21: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
+	21, // 22: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
+	24, // 23: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
+	25, // 24: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
+	26, // 25: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
+	27, // 26: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
+	28, // 27: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
 	1,  // 28: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
 	2,  // 29: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
 	3,  // 30: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
 	4,  // 31: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
-	5,  // 32: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
-	7,  // 33: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
-	6,  // 34: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
-	8,  // 35: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
-	34, // [34:36] is the sub-list for method output_type
-	32, // [32:34] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	5,  // 32: atlas.groundstation.v1.MissionRunUpdate.action_state:type_name -> atlas.groundstation.v1.MissionActionState
+	6,  // 33: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
+	8,  // 34: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
+	7,  // 35: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
+	9,  // 36: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
+	35, // [35:37] is the sub-list for method output_type
+	33, // [33:35] is the sub-list for method input_type
+	33, // [33:33] is the sub-list for extension type_name
+	33, // [33:33] is the sub-list for extension extendee
+	0,  // [0:33] is the sub-list for field type_name
 }
 
 func init() { file_atlas_ground_station_proto_init() }
@@ -3696,7 +3820,7 @@ func file_atlas_ground_station_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_ground_station_proto_rawDesc), len(file_atlas_ground_station_proto_rawDesc)),
-			NumEnums:      5,
+			NumEnums:      6,
 			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,

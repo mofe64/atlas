@@ -2,6 +2,7 @@ export type MissionTemplateType = "WAYPOINT" | "AREA_SCAN" | "ROUTE_SCAN";
 export type CameraMode = "FORWARD_OBLIQUE" | "DOWNWARD_SCAN" | "DOWNWARD_OBLIQUE_SCAN" | "LOOK_AT_POINT" | "FIXED_ANGLE";
 export type GimbalYawMode = "FOLLOW_DRONE_HEADING" | "FOLLOW_LANE_DIRECTION" | "FOLLOW_ROUTE_BEARING" | "LOCKED_TO_ROUTE" | "LOOK_AT_POINT" | "FIXED_ANGLE";
 export type AltitudeMode = "HOME_RELATIVE" | "TERRAIN_CLEARANCE";
+export type MissionActionExecutionState = "REQUESTED" | "RUNNING" | "RETRYING" | "SUCCEEDED" | "FAILED" | "POLICY_APPLIED";
 
 export type MissionTemplate = {
   id: string;
@@ -76,6 +77,21 @@ export type MissionPlan = {
     sampleSpacingMeters?: number;
     altitudeMode?: AltitudeMode;
     basePlanId?: string;
+    incidentResponse?: {
+      incidentId: string;
+      incidentRevision: number;
+      locationRevision: number;
+      incidentLatitude: number;
+      incidentLongitude: number;
+      stagingLatitude: number;
+      stagingLongitude: number;
+      altitudeMeters: number;
+      speedMps: number;
+      arrivalFailurePolicy: "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION";
+      pointGimbalAtIncident: boolean;
+      incidentTargetAltitudeAmslMeters?: number | null;
+      reviewedAtUnixMs: number;
+    };
     terrainProfile?: {
       datasetId?: string;
       displayName?: string;
@@ -140,7 +156,40 @@ export type MissionRun = {
   completedAtUnixMs?: number;
   errorCode: string;
   errorMessage: string;
+  actions: MissionActionExecution[];
   events: MissionRunEvent[];
+};
+
+export type MissionActionExecutionEvent = {
+  id: string;
+  sequence: number;
+  state: MissionActionExecutionState;
+  attempt: number;
+  source: "atlas_native" | "atlas_agent" | string;
+  occurredAtUnixMs: number;
+  errorCode: string;
+  message: string;
+  evidenceJson?: string;
+};
+
+export type MissionActionExecution = {
+  id: string;
+  missionRunId: string;
+  missionPlanId: string;
+  actionSequence: number;
+  actionType: "HOLD_AT_ARRIVAL" | "POINT_GIMBAL_AT_INCIDENT" | string;
+  state: MissionActionExecutionState;
+  attempt: number;
+  maxAttempts: number;
+  failurePolicy: "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION";
+  requestedAtUnixMs: number;
+  updatedAtUnixMs: number;
+  startedAtUnixMs?: number;
+  completedAtUnixMs?: number;
+  errorCode: string;
+  errorMessage: string;
+  evidenceJson?: string;
+  events: MissionActionExecutionEvent[];
 };
 
 export type MissionSettings = {

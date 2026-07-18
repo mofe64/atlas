@@ -174,6 +174,53 @@ pub(crate) fn history_overview(
 }
 
 #[tauri::command]
+pub(crate) fn incident_list(
+    state: State<'_, AppState>,
+    include_closed: Option<bool>,
+    limit: Option<usize>,
+) -> Result<Vec<database::IncidentSnapshot>, String> {
+    state
+        .database
+        .incidents(include_closed.unwrap_or(false), limit.unwrap_or(100))
+}
+
+#[tauri::command]
+pub(crate) fn incident_detail(
+    state: State<'_, AppState>,
+    incident_id: String,
+) -> Result<database::IncidentDetailSnapshot, String> {
+    state.database.incident(&incident_id)
+}
+
+#[tauri::command]
+pub(crate) fn create_incident(
+    state: State<'_, AppState>,
+    input: database::CreateIncidentInput,
+) -> Result<database::IncidentDetailSnapshot, String> {
+    state.database.create_incident(&input)
+}
+
+#[tauri::command]
+pub(crate) fn update_incident(
+    state: State<'_, AppState>,
+    incident_id: String,
+    input: database::UpdateIncidentInput,
+) -> Result<database::IncidentDetailSnapshot, String> {
+    state.database.update_incident(&incident_id, &input)
+}
+
+#[tauri::command]
+pub(crate) fn prepare_incident_response(
+    state: State<'_, AppState>,
+    incident_id: String,
+    input: database::PrepareIncidentResponseInput,
+) -> Result<database::PreparedIncidentResponse, String> {
+    state
+        .database
+        .prepare_incident_response(&incident_id, &input)
+}
+
+#[tauri::command]
 pub(crate) fn mission_templates() -> Vec<database::MissionTemplate> {
     database::mission_templates()
 }

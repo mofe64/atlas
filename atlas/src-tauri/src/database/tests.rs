@@ -8,9 +8,11 @@ use std::{
 use rusqlite::Connection;
 
 use super::{
-    explicit_database_path, BatteryTelemetry, GpsQuality, HomePosition, LocalDatabase, RcStatus,
-    RegistrationInput, StatusEventInput, TelemetryHistoryQuery, TelemetryInput,
-    VehicleCommandUpdateInput, VehicleHealth,
+    explicit_database_path, BatteryTelemetry, CreateIncidentInput, CreateMissionInput, GpsQuality,
+    HomePosition, LocalDatabase, MissionActionUpdateInput, MissionRunUpdateInput,
+    PrepareIncidentResponseInput, RcStatus, RegistrationInput, StatusEventInput,
+    TelemetryHistoryQuery, TelemetryInput, UpdateIncidentInput, VehicleCommandUpdateInput,
+    VehicleHealth,
 };
 
 static TEST_DATABASE_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -38,7 +40,7 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read schema version");
-    assert_eq!(version, 12);
+    assert_eq!(version, 14);
     let cached_identity_tables: i64 = connection
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cached_identity'",
@@ -55,6 +57,14 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
         )
         .expect("inspect command lifecycle tables");
     assert_eq!(command_tables, 2);
+    let incident_and_action_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('incidents', 'incident_events', 'incident_assignments', 'mission_action_executions', 'mission_action_execution_events')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect incident operation tables");
+    assert_eq!(incident_and_action_tables, 5);
     drop(connection);
     drop(database);
     remove_sqlite_files(&path);
@@ -99,7 +109,7 @@ fn migration_upgrades_existing_v3_telemetry_database_to_vehicle_tables() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read upgraded schema version");
-    assert_eq!(version, 12);
+    assert_eq!(version, 14);
     let new_columns: i64 = connection
         .query_row(
             "SELECT count(*) FROM pragma_table_info('vehicle_telemetry_current') WHERE name IN ('batteries_json', 'health_json', 'rc_status_json', 'gps_quality_json')",
@@ -918,6 +928,893 @@ fn archive_is_safe_idempotent_and_blocks_registration_until_restore() {
 
     drop(database);
     remove_sqlite_files(&path);
+}
+
+#[test]
+fn manual_incident_creation_sets_source_identity_and_initial_event() {
+    let (database, path) = test_database();
+    let created = database
+        .create_incident(&sample_incident_input())
+        .expect("create manual incident");
+
+    assert_eq!(created.incident.source_type, "MANUAL");
+    assert_eq!(created.incident.source_system, "ATLAS_NATIVE");
+    assert_eq!(created.incident.external_id, None);
+    assert_eq!(created.incident.priority, "HIGH");
+    assert_eq!(created.incident.status, "OPEN");
+    assert_eq!(created.incident.revision, 1);
+    assert_eq!(created.incident.location_revision, 1);
+    assert_eq!(created.incident.source_payload, None);
+    assert_eq!(created.events.len(), 1);
+    assert_eq!(created.events[0].sequence, 0);
+    assert_eq!(created.events[0].event_type, "created");
+    assert_eq!(created.events[0].state, "OPEN");
+    assert_eq!(created.events[0].source, "atlas_native");
+    assert_eq!(created.events[0].details["revision"], 1);
+
+    let open_incidents = database.incidents(false, 100).expect("list open incidents");
+    assert_eq!(open_incidents.len(), 1);
+    assert_eq!(open_incidents[0].id, created.incident.id);
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn manual_incident_survives_native_restart_without_backend_or_internet() {
+    let path = test_database_path();
+    let incident_id = {
+        let database = LocalDatabase::open_path(path.clone()).expect("open local database");
+        database
+            .create_incident(&sample_incident_input())
+            .expect("create local manual incident")
+            .incident
+            .id
+    };
+
+    let reopened = LocalDatabase::open_path(path.clone()).expect("reopen native database");
+    let detail = reopened
+        .incident(&incident_id)
+        .expect("manual incident must survive restart");
+    assert_eq!(detail.incident.source_type, "MANUAL");
+    assert_eq!(detail.incident.revision, 1);
+    assert_eq!(detail.events.len(), 1);
+    assert_eq!(detail.events[0].event_type, "created");
+
+    drop(reopened);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_updates_atomically_append_events_and_track_location_revision() {
+    let (database, path) = test_database();
+    let created = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+    let moved = database
+        .update_incident(
+            &created.incident.id,
+            &UpdateIncidentInput {
+                expected_revision: 1,
+                incident_type: "Missing person".into(),
+                priority: "critical".into(),
+                status: "active".into(),
+                summary: "Search requested near the north trail".into(),
+                description: "Last observed beside the wooded trail.".into(),
+                latitude: Some(51.501),
+                longitude: Some(-0.142),
+                address: "North trail entrance".into(),
+                area: "North sector".into(),
+                occurred_at_unix_ms: Some(1_700_000_000_000),
+            },
+        )
+        .expect("update incident location");
+
+    assert_eq!(moved.incident.revision, 2);
+    assert_eq!(moved.incident.location_revision, 2);
+    assert_eq!(moved.incident.status, "ACTIVE");
+    assert_eq!(moved.incident.priority, "CRITICAL");
+    assert_eq!(moved.events.len(), 2);
+    assert_eq!(moved.events[1].sequence, 1);
+    assert_eq!(moved.events[1].event_type, "updated");
+    assert_eq!(moved.events[1].details["previousRevision"], 1);
+    assert_eq!(moved.events[1].details["locationRevision"], 2);
+    assert!(moved.events[1].details["changedFields"]
+        .as_array()
+        .expect("changed fields array")
+        .iter()
+        .any(|field| field == "latitude"));
+
+    let resolved = database
+        .update_incident(
+            &created.incident.id,
+            &UpdateIncidentInput {
+                expected_revision: 2,
+                incident_type: moved.incident.incident_type.clone(),
+                priority: moved.incident.priority.clone(),
+                status: "RESOLVED".into(),
+                summary: moved.incident.summary.clone(),
+                description: moved.incident.description.clone(),
+                latitude: moved.incident.latitude,
+                longitude: moved.incident.longitude,
+                address: moved.incident.address.clone(),
+                area: moved.incident.area.clone(),
+                occurred_at_unix_ms: moved.incident.occurred_at_unix_ms,
+            },
+        )
+        .expect("resolve incident");
+    assert_eq!(resolved.incident.revision, 3);
+    assert_eq!(resolved.incident.location_revision, 2);
+    assert_eq!(resolved.events.len(), 3);
+    assert_eq!(resolved.events[2].event_type, "status_changed");
+    assert_eq!(resolved.events[2].state, "RESOLVED");
+
+    assert!(database
+        .incidents(false, 100)
+        .expect("list active incidents")
+        .is_empty());
+    assert_eq!(
+        database
+            .incidents(true, 100)
+            .expect("list all incidents")
+            .len(),
+        1
+    );
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_update_rejects_stale_revision_without_partial_changes() {
+    let (database, path) = test_database();
+    let created = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+    let input = UpdateIncidentInput {
+        expected_revision: 1,
+        incident_type: created.incident.incident_type.clone(),
+        priority: created.incident.priority.clone(),
+        status: "ACTIVE".into(),
+        summary: created.incident.summary.clone(),
+        description: created.incident.description.clone(),
+        latitude: created.incident.latitude,
+        longitude: created.incident.longitude,
+        address: created.incident.address.clone(),
+        area: created.incident.area.clone(),
+        occurred_at_unix_ms: created.incident.occurred_at_unix_ms,
+    };
+    database
+        .update_incident(&created.incident.id, &input)
+        .expect("activate incident");
+
+    let error = database
+        .update_incident(
+            &created.incident.id,
+            &UpdateIncidentInput {
+                summary: "Stale summary must not be written".into(),
+                ..input
+            },
+        )
+        .expect_err("stale update must fail");
+    assert!(
+        error.contains("expected revision 1, current revision 2"),
+        "{error}"
+    );
+
+    let unchanged = database
+        .incident(&created.incident.id)
+        .expect("read incident after rejected update");
+    assert_eq!(unchanged.incident.revision, 2);
+    assert_eq!(unchanged.incident.summary, created.incident.summary);
+    assert_eq!(unchanged.events.len(), 2);
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_validation_requires_complete_coordinates_before_writing() {
+    let (database, path) = test_database();
+    let error = database
+        .create_incident(&CreateIncidentInput {
+            longitude: None,
+            ..sample_incident_input()
+        })
+        .expect_err("partial coordinates must fail");
+    assert_eq!(error, "latitude and longitude must be provided together");
+    assert!(database
+        .incidents(true, 100)
+        .expect("list incidents after rejected create")
+        .is_empty());
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_response_preparation_atomically_creates_plan_assignment_and_event() {
+    let (database, path) = test_database();
+    insert_test_aircraft(&database, "response-drone-1", "Response One", "active");
+    insert_test_aircraft(&database, "response-drone-2", "Response Two", "active");
+    let incident = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+
+    let prepared = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                drone_id: "response-drone-1".into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: true,
+                incident_target_altitude_amsl_meters: Some(42.0),
+            },
+        )
+        .expect("prepare incident response");
+
+    assert_eq!(prepared.incident.id, incident.incident.id);
+    assert_eq!(prepared.assignment.status, "PREPARED");
+    assert_eq!(prepared.assignment.drone_id, "response-drone-1");
+    assert_eq!(prepared.mission.status, "READY");
+    assert_eq!(
+        prepared.mission.generated_plan_id,
+        Some(prepared.plan.id.clone())
+    );
+    assert_eq!(prepared.plan.status, "READY");
+    assert_eq!(prepared.plan.generated_waypoints.len(), 1);
+    assert_eq!(prepared.plan.generated_waypoints[0].latitude, 51.501);
+    assert_eq!(prepared.plan.generated_waypoints[0].altitude_meters, 35.0);
+    assert_eq!(prepared.plan.generated_waypoints[0].speed_mps, Some(6.0));
+    let runtime_actions: Vec<_> = prepared
+        .plan
+        .actions
+        .iter()
+        .filter(|action| {
+            matches!(
+                action.action_type.as_str(),
+                "HOLD_AT_ARRIVAL" | "POINT_GIMBAL_AT_INCIDENT"
+            )
+        })
+        .collect();
+    assert_eq!(runtime_actions.len(), 2);
+    assert_eq!(runtime_actions[0].action_type, "HOLD_AT_ARRIVAL");
+    assert_eq!(runtime_actions[0].params["maxAttempts"], 3);
+    assert_eq!(
+        runtime_actions[0].params["failurePolicy"],
+        "RETURN_TO_LAUNCH"
+    );
+    assert_eq!(runtime_actions[1].action_type, "POINT_GIMBAL_AT_INCIDENT");
+    assert_eq!(
+        prepared.plan.metadata["incidentResponse"]["incidentRevision"],
+        incident.incident.revision
+    );
+
+    let detail = database
+        .incident(&incident.incident.id)
+        .expect("read prepared incident");
+    assert_eq!(detail.assignments.len(), 1);
+    assert_eq!(
+        detail.events.last().unwrap().event_type,
+        "response_prepared"
+    );
+
+    let wrong_aircraft_error = database
+        .create_mission_run(
+            &prepared.mission.id,
+            "response-drone-2",
+            Some(&prepared.plan.id),
+        )
+        .expect_err("response plan must remain bound to reviewed aircraft");
+    assert!(wrong_aircraft_error.contains("assigned to aircraft response-drone-1"));
+
+    let dispatch = database
+        .create_mission_run(
+            &prepared.mission.id,
+            "response-drone-1",
+            Some(&prepared.plan.id),
+        )
+        .expect("create assigned response run");
+    assert_eq!(dispatch.run.actions.len(), 2);
+    assert!(dispatch
+        .run
+        .actions
+        .iter()
+        .all(|action| action.state == "REQUESTED" && action.events.len() == 1));
+    let linked = database
+        .incident(&incident.incident.id)
+        .expect("read linked incident");
+    assert_eq!(linked.assignments[0].status, "UPLOADING");
+    assert_eq!(
+        linked.assignments[0].mission_run_id.as_deref(),
+        Some(dispatch.run.id.as_str())
+    );
+    let close_error = database
+        .update_incident(
+            &incident.incident.id,
+            &UpdateIncidentInput {
+                expected_revision: incident.incident.revision,
+                incident_type: incident.incident.incident_type.clone(),
+                priority: incident.incident.priority.clone(),
+                status: "RESOLVED".into(),
+                summary: incident.incident.summary.clone(),
+                description: incident.incident.description.clone(),
+                latitude: incident.incident.latitude,
+                longitude: incident.incident.longitude,
+                address: incident.incident.address.clone(),
+                area: incident.incident.area.clone(),
+                occurred_at_unix_ms: incident.incident.occurred_at_unix_ms,
+            },
+        )
+        .expect_err("unfinished response run must block incident closure");
+    assert!(close_error.contains("response mission run is unfinished"));
+
+    database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: "response-upload-failed".into(),
+            operation_id: dispatch.operation_id,
+            mission_run_id: dispatch.run.id,
+            event_type: "delivery_failed".into(),
+            run_state: "FAILED".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: None,
+            current_waypoint: None,
+            total_waypoints: Some(1),
+            error_code: "TEST_FAILURE".into(),
+            message: "Forced upload failure".into(),
+            evidence_json: None,
+        })
+        .expect("finish response run");
+    let finished = database
+        .incident(&incident.incident.id)
+        .expect("read finished assignment");
+    assert_eq!(finished.assignments[0].status, "FAILED");
+    assert!(finished.assignments[0].ended_at_unix_ms.is_some());
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_edit_expires_prepared_response_and_releases_aircraft() {
+    let (database, path) = test_database();
+    insert_test_aircraft(
+        &database,
+        "stale-response-drone",
+        "Stale Response",
+        "active",
+    );
+    let incident = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+    let prepared = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                drone_id: "stale-response-drone".into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect("prepare incident response");
+
+    let revised = database
+        .update_incident(
+            &incident.incident.id,
+            &UpdateIncidentInput {
+                expected_revision: incident.incident.revision,
+                incident_type: incident.incident.incident_type.clone(),
+                priority: incident.incident.priority.clone(),
+                status: incident.incident.status.clone(),
+                summary: "Updated incident context".into(),
+                description: incident.incident.description.clone(),
+                latitude: Some(51.505),
+                longitude: incident.incident.longitude,
+                address: incident.incident.address.clone(),
+                area: incident.incident.area.clone(),
+                occurred_at_unix_ms: incident.incident.occurred_at_unix_ms,
+            },
+        )
+        .expect("revise incident");
+    assert_eq!(revised.assignments[0].status, "STALE");
+    assert_eq!(revised.incident.location_revision, 2);
+    assert!(revised.assignments[0].ended_at_unix_ms.is_some());
+    assert_eq!(
+        revised.events.last().unwrap().details["stalePreparedAssignments"],
+        1
+    );
+
+    let upload_error = database
+        .create_mission_run(
+            &prepared.mission.id,
+            "stale-response-drone",
+            Some(&prepared.plan.id),
+        )
+        .expect_err("expired response must not upload");
+    assert!(upload_error.contains("assignment has ended"));
+
+    database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: revised.incident.revision,
+                drone_id: "stale-response-drone".into(),
+                staging_latitude: 51.502,
+                staging_longitude: -0.142,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect("released aircraft can receive a replacement response");
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_response_rejects_stale_or_invalid_context_without_partial_writes() {
+    let (database, path) = test_database();
+    insert_test_aircraft(&database, "response-drone", "Response", "active");
+    let incident = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+    let input = PrepareIncidentResponseInput {
+        expected_incident_revision: incident.incident.revision + 1,
+        drone_id: "response-drone".into(),
+        staging_latitude: 51.501,
+        staging_longitude: -0.141,
+        altitude_meters: 35.0,
+        speed_mps: 6.0,
+        arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+        point_gimbal_at_incident: false,
+        incident_target_altitude_amsl_meters: None,
+    };
+
+    let stale_error = database
+        .prepare_incident_response(&incident.incident.id, &input)
+        .expect_err("stale incident revision must fail");
+    assert!(stale_error.contains("expected revision 2, current revision 1"));
+
+    let invalid_error = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                altitude_meters: 121.0,
+                ..input
+            },
+        )
+        .expect_err("unsafe altitude must fail");
+    assert!(
+        invalid_error.contains("altitudeMeters must be between 2 and 120"),
+        "{invalid_error}"
+    );
+
+    let connection = database.connection.lock().expect("lock database");
+    let counts: (i64, i64, i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM missions), (SELECT count(*) FROM mission_plans), (SELECT count(*) FROM incident_assignments), (SELECT count(*) FROM incident_events)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .expect("read response table counts");
+    assert_eq!(counts, (0, 0, 0, 1));
+    drop(connection);
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn incident_response_rolls_back_mission_and_plan_when_assignment_insert_fails() {
+    let (database, path) = test_database();
+    insert_test_aircraft(&database, "rollback-drone", "Rollback", "active");
+    let incident = database
+        .create_incident(&sample_incident_input())
+        .expect("create incident");
+    database
+        .connection
+        .lock()
+        .expect("lock database")
+        .execute_batch(
+            "CREATE TRIGGER reject_test_assignment BEFORE INSERT ON incident_assignments BEGIN SELECT RAISE(ABORT, 'forced assignment failure'); END;",
+        )
+        .expect("install failure trigger");
+
+    let error = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                drone_id: "rollback-drone".into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect_err("assignment failure must abort response preparation");
+    assert!(error.contains("forced assignment failure"));
+
+    let connection = database.connection.lock().expect("lock database");
+    let counts: (i64, i64, i64, i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT count(*) FROM missions), (SELECT count(*) FROM mission_plans), (SELECT count(*) FROM mission_items), (SELECT count(*) FROM incident_assignments), (SELECT count(*) FROM incident_events)",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .expect("read rolled-back response counts");
+    assert_eq!(counts, (0, 0, 0, 0, 1));
+    drop(connection);
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn arrival_hold_lifecycle_requires_acknowledgement_before_on_scene() {
+    let (database, path) = test_database();
+    let (incident_id, run_id, action_sequence) =
+        prepare_running_response(&database, "arrival-drone", "RETURN_TO_LAUNCH");
+
+    let before_hold = database
+        .incident(&incident_id)
+        .expect("read arrived response");
+    assert_eq!(before_hold.assignments[0].status, "RUNNING");
+    assert_eq!(before_hold.assignments[0].on_scene_at_unix_ms, None);
+    assert!(!before_hold
+        .events
+        .iter()
+        .any(|event| event.event_type == "response_on_scene"));
+
+    for (event_id, state, attempt, error_code, message) in [
+        ("hold-running-1", "RUNNING", 1, "", "Executing Hold"),
+        (
+            "hold-retrying-1",
+            "RETRYING",
+            1,
+            "ARRIVAL_HOLD_FAILED",
+            "Hold rejected; retrying",
+        ),
+        ("hold-running-2", "RUNNING", 2, "", "Retrying Hold"),
+        ("hold-succeeded-2", "SUCCEEDED", 2, "", "Hold acknowledged"),
+    ] {
+        database
+            .apply_mission_action_update(&MissionActionUpdateInput {
+                event_id: event_id.into(),
+                mission_run_id: run_id.clone(),
+                action_sequence,
+                action_type: "HOLD_AT_ARRIVAL".into(),
+                state: state.into(),
+                attempt,
+                failure_policy: "RETURN_TO_LAUNCH".into(),
+                occurred_at_unix_ms: unix_time_ms(),
+                error_code: error_code.into(),
+                message: message.into(),
+                evidence_json: (state == "SUCCEEDED").then_some(r#"{"acknowledged":true}"#.into()),
+            })
+            .expect("persist Hold action update");
+    }
+
+    let on_scene = database
+        .incident(&incident_id)
+        .expect("read acknowledged response");
+    assert_eq!(on_scene.assignments[0].status, "ON_SCENE");
+    assert!(on_scene.assignments[0].on_scene_at_unix_ms.is_some());
+    let on_scene_event = on_scene
+        .events
+        .iter()
+        .find(|event| event.event_type == "response_on_scene")
+        .expect("durable on-scene event");
+    assert_eq!(on_scene_event.details["acknowledged"], true);
+
+    let run = database
+        .mission_run(&run_id)
+        .expect("read action lifecycle");
+    assert_eq!(run.status, "RUNNING");
+    assert_eq!(run.actions[0].state, "SUCCEEDED");
+    assert_eq!(run.actions[0].attempt, 2);
+    assert_eq!(
+        run.actions[0]
+            .events
+            .iter()
+            .map(|event| event.state.as_str())
+            .collect::<Vec<_>>(),
+        vec!["REQUESTED", "RUNNING", "RETRYING", "RUNNING", "SUCCEEDED"]
+    );
+
+    database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: "arrival-completed-after-hold".into(),
+            operation_id: String::new(),
+            mission_run_id: run_id,
+            event_type: "completed".into(),
+            run_state: "COMPLETED".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: Some(100.0),
+            current_waypoint: Some(1),
+            total_waypoints: Some(1),
+            error_code: String::new(),
+            message: "Arrival actions completed".into(),
+            evidence_json: None,
+        })
+        .expect("complete response after Hold acknowledgement");
+    let completed = database
+        .incident(&incident_id)
+        .expect("read completed response");
+    assert_eq!(completed.assignments[0].status, "COMPLETED");
+    assert!(completed.assignments[0].ended_at_unix_ms.is_some());
+    assert!(completed.assignments[0].on_scene_at_unix_ms.is_some());
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn aircraft_rejects_conflicting_incident_assignments_and_mission_runs() {
+    let (database, path) = test_database();
+    insert_test_aircraft(&database, "conflict-drone", "Conflict Test", "active");
+    let first = database
+        .create_incident(&sample_incident_input())
+        .expect("create first incident");
+    let prepared = database
+        .prepare_incident_response(
+            &first.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: first.incident.revision,
+                drone_id: "conflict-drone".into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect("prepare first assignment");
+    let second = database
+        .create_incident(&CreateIncidentInput {
+            summary: "Second incident for conflict test".into(),
+            ..sample_incident_input()
+        })
+        .expect("create second incident");
+    let assignment_error = database
+        .prepare_incident_response(
+            &second.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: second.incident.revision,
+                drone_id: "conflict-drone".into(),
+                staging_latitude: 51.502,
+                staging_longitude: -0.142,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "OPERATOR_INTERVENTION".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect_err("active assignment must block a second assignment");
+    assert!(assignment_error.contains("active incident assignment"));
+
+    let unrelated = database
+        .create_mission(&CreateMissionInput {
+            template_type: "WAYPOINT".into(),
+            name: "Unrelated mission".into(),
+            description: String::new(),
+            selected_pattern: None,
+            params: serde_json::json!({
+                "defaultAltitudeMeters": 25,
+                "waypoints": [{"latitude": 51.501, "longitude": -0.141}]
+            }),
+        })
+        .expect("create unrelated mission");
+    let unrelated_plan = database
+        .plan_mission(&unrelated.id)
+        .expect("plan unrelated mission");
+    let mission_error = database
+        .create_mission_run(&unrelated.id, "conflict-drone", Some(&unrelated_plan.id))
+        .expect_err("active assignment must block unrelated run");
+    assert!(mission_error.contains("active incident assignment"));
+
+    let response_run = database
+        .create_mission_run(
+            &prepared.mission.id,
+            "conflict-drone",
+            Some(&prepared.plan.id),
+        )
+        .expect("assigned response may create its run");
+    let second_run_error = database
+        .create_mission_run(&unrelated.id, "conflict-drone", Some(&unrelated_plan.id))
+        .expect_err("unfinished run must block another run");
+    assert!(second_run_error.contains("unfinished mission run"));
+    assert_eq!(response_run.run.drone_id, "conflict-drone");
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+#[test]
+fn failed_arrival_action_persists_reviewed_policy_without_claiming_on_scene() {
+    let (database, path) = test_database();
+    let (incident_id, run_id, action_sequence) =
+        prepare_running_response(&database, "policy-drone", "OPERATOR_INTERVENTION");
+
+    for (event_id, state, attempt) in [
+        ("policy-running-1", "RUNNING", 1),
+        ("policy-retrying-1", "RETRYING", 1),
+        ("policy-running-2", "RUNNING", 2),
+        ("policy-retrying-2", "RETRYING", 2),
+        ("policy-running-3", "RUNNING", 3),
+        ("policy-failed-3", "FAILED", 3),
+        ("policy-applied-3", "POLICY_APPLIED", 3),
+    ] {
+        let failed = matches!(state, "RETRYING" | "FAILED" | "POLICY_APPLIED");
+        database
+            .apply_mission_action_update(&MissionActionUpdateInput {
+                event_id: event_id.into(),
+                mission_run_id: run_id.clone(),
+                action_sequence,
+                action_type: "HOLD_AT_ARRIVAL".into(),
+                state: state.into(),
+                attempt,
+                failure_policy: "OPERATOR_INTERVENTION".into(),
+                occurred_at_unix_ms: unix_time_ms(),
+                error_code: if failed { "ARRIVAL_HOLD_FAILED" } else { "" }.into(),
+                message: if state == "POLICY_APPLIED" {
+                    "Operator intervention required"
+                } else {
+                    "Hold was not acknowledged"
+                }
+                .into(),
+                evidence_json: (state == "POLICY_APPLIED").then_some(
+                    r#"{"policy":"OPERATOR_INTERVENTION","automaticVehicleCommand":false}"#.into(),
+                ),
+            })
+            .expect("persist failed Hold policy lifecycle");
+    }
+
+    let run = database.mission_run(&run_id).expect("read failed action");
+    assert_eq!(run.status, "RUNNING");
+    assert_eq!(run.actions[0].state, "POLICY_APPLIED");
+    assert_eq!(run.actions[0].failure_policy, "OPERATOR_INTERVENTION");
+    let incident = database
+        .incident(&incident_id)
+        .expect("read incident without Hold acknowledgement");
+    assert_eq!(incident.assignments[0].on_scene_at_unix_ms, None);
+    assert!(!incident
+        .events
+        .iter()
+        .any(|event| event.event_type == "response_on_scene"));
+
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
+fn prepare_running_response(
+    database: &LocalDatabase,
+    drone_id: &str,
+    failure_policy: &str,
+) -> (String, String, u32) {
+    insert_test_aircraft(database, drone_id, "Arrival Test", "active");
+    let incident = database
+        .create_incident(&sample_incident_input())
+        .expect("create response incident");
+    let prepared = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                drone_id: drone_id.into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: failure_policy.into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect("prepare response with arrival Hold");
+    let dispatch = database
+        .create_mission_run(&prepared.mission.id, drone_id, Some(&prepared.plan.id))
+        .expect("create response run");
+    let action_sequence = dispatch.run.actions[0].action_sequence;
+    let ready = database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: format!("{drone_id}-uploaded"),
+            operation_id: dispatch.operation_id,
+            mission_run_id: dispatch.run.id.clone(),
+            event_type: "uploaded".into(),
+            run_state: "READY".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: Some(100.0),
+            current_waypoint: None,
+            total_waypoints: Some(1),
+            error_code: String::new(),
+            message: "Uploaded".into(),
+            evidence_json: None,
+        })
+        .expect("mark response uploaded");
+    let start = database
+        .record_mission_operation_requested(&ready.id, "start")
+        .expect("request response start");
+    database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: format!("{drone_id}-started"),
+            operation_id: start.operation_id,
+            mission_run_id: ready.id.clone(),
+            event_type: "started".into(),
+            run_state: "RUNNING".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: Some(0.0),
+            current_waypoint: Some(0),
+            total_waypoints: Some(1),
+            error_code: String::new(),
+            message: "Started".into(),
+            evidence_json: None,
+        })
+        .expect("start response run");
+    database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: format!("{drone_id}-final-waypoint"),
+            operation_id: String::new(),
+            mission_run_id: ready.id.clone(),
+            event_type: "progress".into(),
+            run_state: "RUNNING".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: Some(100.0),
+            current_waypoint: Some(1),
+            total_waypoints: Some(1),
+            error_code: String::new(),
+            message: "Final waypoint reached; awaiting Hold".into(),
+            evidence_json: None,
+        })
+        .expect("record final waypoint without completion");
+    (incident.incident.id, ready.id, action_sequence)
+}
+
+fn insert_test_aircraft(database: &LocalDatabase, id: &str, name: &str, status: &str) {
+    database
+        .connection
+        .lock()
+        .expect("lock database")
+        .execute(
+            "INSERT INTO drones (id, name, vehicle_type, status, created_at_unix_ms, updated_at_unix_ms) VALUES (?1, ?2, 'multicopter', ?3, 1, 1)",
+            rusqlite::params![id, name, status],
+        )
+        .expect("insert test aircraft");
+}
+
+fn sample_incident_input() -> CreateIncidentInput {
+    CreateIncidentInput {
+        incident_type: "Missing person".into(),
+        priority: "high".into(),
+        summary: "Search requested near the south trail".into(),
+        description: "Last observed beside the wooded trail.".into(),
+        latitude: Some(51.5),
+        longitude: Some(-0.14),
+        address: "South trail entrance".into(),
+        area: "South sector".into(),
+        occurred_at_unix_ms: Some(1_700_000_000_000),
+    }
 }
 
 fn test_database() -> (LocalDatabase, PathBuf) {

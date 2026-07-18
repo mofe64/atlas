@@ -5,14 +5,11 @@ import maplibregl, {
   type LngLatBoundsLike,
   type Map as MapLibreMap,
   type MapMouseEvent,
-  type StyleSpecification,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
+import { atlasMapStyle, ATLAS_MAP_INITIAL_CENTER } from "../maps/atlasMapStyle";
 import type { MissionPoint, MissionTemplateType, MissionWaypoint } from "./missionTypes";
-import { sampleTerrainElevation, terrainSource, type TerrainSource } from "./terrain";
-
-const DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const INITIAL_CENTER: [number, number] = [-0.1278, 51.5074];
+import { sampleTerrainElevation, terrainSource } from "./terrain";
 
 type MapStatus = "loading" | "ready" | "degraded";
 
@@ -93,12 +90,11 @@ export function OperationalMissionMap({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const tileURL = import.meta.env.VITE_ATLAS_MAP_TILE_URL || DEFAULT_TILE_URL;
     const demSource = terrainSource();
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: rasterStyle(tileURL, demSource),
-      center: planningFocus ? [planningFocus.longitude, planningFocus.latitude] : INITIAL_CENTER,
+      style: atlasMapStyle(demSource),
+      center: planningFocus ? [planningFocus.longitude, planningFocus.latitude] : ATLAS_MAP_INITIAL_CENTER,
       zoom: planningFocus ? 15 : 12,
       minZoom: 2,
       maxZoom: 19,
@@ -239,44 +235,6 @@ export function OperationalMissionMap({
       )}
     </section>
   );
-}
-
-function rasterStyle(tileURL: string, dem: TerrainSource): StyleSpecification {
-  return {
-    version: 8,
-    sources: {
-      "atlas-basemap": {
-        type: "raster",
-        tiles: [tileURL],
-        tileSize: 256,
-        maxzoom: 19,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a>',
-      },
-      "atlas-terrain": {
-        type: "raster-dem",
-        tiles: [dem.tileTemplate],
-        tileSize: dem.tileSize,
-        maxzoom: dem.zoom,
-        encoding: dem.encoding,
-        attribution: dem.attribution,
-      },
-    },
-    terrain: { source: "atlas-terrain", exaggeration: 1 },
-    layers: [
-      { id: "atlas-basemap", type: "raster", source: "atlas-basemap" },
-      {
-        id: "atlas-terrain-hillshade",
-        type: "hillshade",
-        source: "atlas-terrain",
-        paint: {
-          "hillshade-shadow-color": "#28352b",
-          "hillshade-highlight-color": "#f4f0e5",
-          "hillshade-accent-color": "#6e7e68",
-          "hillshade-exaggeration": 0.22,
-        },
-      },
-    ],
-  };
 }
 
 function addMissionSourcesAndLayers(map: MapLibreMap) {

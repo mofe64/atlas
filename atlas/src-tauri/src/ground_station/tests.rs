@@ -10,7 +10,7 @@ use std::{
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::database::LocalDatabase;
+use crate::database::{CreateIncidentInput, LocalDatabase, PrepareIncidentResponseInput};
 
 use super::{
     proto::pb::{
@@ -184,6 +184,74 @@ async fn grpc_registration_creates_and_closes_local_link() {
     assert!(telemetry.health.expect("vehicle health").armable);
     assert_eq!(connected.status_events.len(), 1);
     assert_eq!(connected.status_events[0].severity, "WARNING");
+
+    let incident = database
+        .create_incident(&CreateIncidentInput {
+            incident_type: "Missing person".into(),
+            priority: "high".into(),
+            summary: "Search requested near the south trail".into(),
+            description: "Last observed beside the wooded trail.".into(),
+            latitude: Some(51.5),
+            longitude: Some(-0.14),
+            address: "South trail entrance".into(),
+            area: "South sector".into(),
+            occurred_at_unix_ms: Some(1_700_000_000_000),
+        })
+        .expect("create response incident");
+    let prepared = database
+        .prepare_incident_response(
+            &incident.incident.id,
+            &PrepareIncidentResponseInput {
+                expected_incident_revision: incident.incident.revision,
+                drone_id: "drone-1".into(),
+                staging_latitude: 51.501,
+                staging_longitude: -0.141,
+                altitude_meters: 35.0,
+                speed_mps: 6.0,
+                arrival_failure_policy: "RETURN_TO_LAUNCH".into(),
+                point_gimbal_at_incident: false,
+                incident_target_altitude_amsl_meters: None,
+            },
+        )
+        .expect("prepare response action");
+    let dispatch = database
+        .create_mission_run(&prepared.mission.id, "drone-1", Some(&prepared.plan.id))
+        .expect("create response run");
+    outbound
+        .send(AgentToGroundStation {
+            session_id: "session-1".into(),
+            payload: Some(agent_to_ground_station::Payload::MissionRunUpdate(
+                pb::MissionRunUpdate {
+                    event_id: "hold-running-over-grpc".into(),
+                    mission_run_id: dispatch.run.id.clone(),
+                    update_type: pb::MissionRunUpdateType::ActionStateChanged as i32,
+                    run_state: "UPLOADING".into(),
+                    observed_at_unix_ms: unix_time_ms(),
+                    action_sequence: Some(dispatch.run.actions[0].action_sequence),
+                    action_type: "HOLD_AT_ARRIVAL".into(),
+                    action_state: pb::MissionActionState::Running as i32,
+                    action_attempt: 1,
+                    failure_policy: "RETURN_TO_LAUNCH".into(),
+                    message: "Executing reviewed arrival Hold".into(),
+                    ..Default::default()
+                },
+            )),
+        })
+        .await
+        .expect("send mission action state");
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            let run = database
+                .mission_run(&dispatch.run.id)
+                .expect("read response action");
+            if run.actions[0].state == "RUNNING" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("mission action state should cross the gRPC boundary");
 
     let (perception_outbound, perception_requests) = mpsc::channel(4);
     let perception_response = client

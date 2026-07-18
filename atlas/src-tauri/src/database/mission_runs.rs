@@ -1,7 +1,14 @@
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::Serialize;
 
-use super::{unix_time_ms, LocalDatabase};
+use super::{
+    incidents::{
+        link_incident_assignment_run, sync_incident_assignment_run_state,
+        validate_incident_assignment_upload,
+    },
+    mission_actions::{create_mission_action_executions, read_mission_action_executions},
+    unix_time_ms, LocalDatabase, MissionActionExecutionSnapshot,
+};
 
 const TERMINAL_STATES: &[&str] = &["COMPLETED", "FAILED", "CANCELLED", "RTL"];
 
@@ -29,6 +36,7 @@ pub(crate) struct MissionRunSnapshot {
     pub completed_at_unix_ms: Option<i64>,
     pub error_code: String,
     pub error_message: String,
+    pub actions: Vec<MissionActionExecutionSnapshot>,
     pub events: Vec<MissionRunEventSnapshot>,
 }
 
@@ -130,6 +138,22 @@ impl LocalDatabase {
         if active_run {
             return Err("drone already has an unfinished mission run".to_string());
         }
+        let incident_assignment = validate_incident_assignment_upload(&tx, mission_id, drone_id)?;
+        if incident_assignment.is_none() {
+            let active_incident: Option<String> = tx
+                .query_row(
+                    "SELECT incident_id FROM incident_assignments WHERE drone_id = ?1 AND ended_at_unix_ms IS NULL",
+                    [drone_id],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|error| format!("check active incident assignment before mission run: {error}"))?;
+            if let Some(incident_id) = active_incident {
+                return Err(format!(
+                    "drone has an active incident assignment for {incident_id}; execute that reviewed response or release the assignment first"
+                ));
+            }
+        }
         let total_waypoints: u32 = tx
             .query_row(
                 "SELECT count(*) FROM mission_items WHERE mission_plan_id = ?1",
@@ -161,6 +185,10 @@ impl LocalDatabase {
             "Mission upload requested",
             None,
         )?;
+        create_mission_action_executions(&tx, &run_id, &plan_id, now)?;
+        if let Some(assignment) = incident_assignment.as_ref() {
+            link_incident_assignment_run(&tx, assignment, &run_id, now)?;
+        }
         tx.commit()
             .map_err(|error| format!("commit mission run: {error}"))?;
         drop(connection);
@@ -361,6 +389,13 @@ impl LocalDatabase {
             params![input.mission_run_id, input.run_state, input.current_waypoint, input.total_waypoints, upload_progress, execution_progress, input.occurred_at_unix_ms, terminal, input.error_code, input.message, clear_error],
         )
         .map_err(|error| format!("update mission run: {error}"))?;
+        sync_incident_assignment_run_state(
+            &tx,
+            &input.mission_run_id,
+            &input.run_state,
+            terminal,
+            input.occurred_at_unix_ms,
+        )?;
         insert_event(
             &tx,
             &input.event_id,
@@ -416,6 +451,7 @@ fn read_run(connection: &rusqlite::Connection, run_id: &str) -> Result<MissionRu
                     completed_at_unix_ms: row.get(18)?,
                     error_code: row.get(19)?,
                     error_message: row.get(20)?,
+                    actions: Vec::new(),
                     events: Vec::new(),
                 })
             },
@@ -447,6 +483,7 @@ fn read_run(connection: &rusqlite::Connection, run_id: &str) -> Result<MissionRu
         .map_err(|error| format!("query mission run events: {error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("read mission run events: {error}"))?;
+    run.actions = read_mission_action_executions(connection, run_id)?;
     Ok(run)
 }
 

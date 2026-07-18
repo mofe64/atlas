@@ -2,7 +2,9 @@ mod commands;
 mod drones;
 mod events;
 mod history;
+mod incidents;
 mod migrations;
+mod mission_actions;
 mod mission_runs;
 mod missions;
 mod registration;
@@ -15,6 +17,11 @@ pub(crate) use history::{
     HistoryOverview, TelemetryChartSeries, TelemetryHistoryCursor, TelemetryHistoryPage,
     TelemetryHistoryQuery,
 };
+pub(crate) use incidents::{
+    CreateIncidentInput, IncidentDetailSnapshot, IncidentSnapshot, PrepareIncidentResponseInput,
+    PreparedIncidentResponse, UpdateIncidentInput,
+};
+pub(crate) use mission_actions::{MissionActionExecutionSnapshot, MissionActionUpdateInput};
 pub(crate) use mission_runs::{MissionRunSnapshot, MissionRunUpdateInput};
 #[cfg(test)]
 pub(crate) use missions::MissionWaypoint;

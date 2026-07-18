@@ -222,6 +222,41 @@ func (p *PayloadController) EndMission(ctx context.Context, runID string) {
 	}
 }
 
+// PointAtLocation executes an acknowledged mission-owned geographic ROI
+// setpoint. It deliberately bypasses the manual-override lease while retaining
+// the same single payload authority and refusing to race an active operator.
+func (p *PayloadController) PointAtLocation(ctx context.Context, runID string, latitude, longitude float64, altitudeAMSL float32) error {
+	p.commandMu.Lock()
+	defer p.commandMu.Unlock()
+	p.mu.Lock()
+	if p.runID != runID || !matchesActiveMissionState(p.runState) {
+		p.mu.Unlock()
+		return errors.New("incident gimbal action requires the active mission run")
+	}
+	if p.manual != nil {
+		p.mu.Unlock()
+		return errors.New("incident gimbal action is blocked by active operator payload control")
+	}
+	gimbalID := p.primaryGimbalIDLocked()
+	p.mu.Unlock()
+	if gimbalID <= 0 {
+		return errors.New("no discovered gimbal is available for the incident target")
+	}
+	if _, err := p.takeGimbalControl(ctx, gimbalID); err != nil {
+		return fmt.Errorf("acquire gimbal control for incident target: %w", err)
+	}
+	response, err := p.gimbal.SetRoiLocation(ctx, &gimbalpb.SetRoiLocationRequest{
+		GimbalId:     gimbalID,
+		LatitudeDeg:  latitude,
+		LongitudeDeg: longitude,
+		AltitudeM:    altitudeAMSL,
+	})
+	if _, err = gimbalResponse(response.GetGimbalResult(), err); err != nil {
+		return fmt.Errorf("point gimbal at incident: %w", err)
+	}
+	return nil
+}
+
 func (p *PayloadController) Execute(ctx context.Context, commandType, parametersJSON string) (CommandResult, error) {
 	p.commandMu.Lock()
 	defer p.commandMu.Unlock()

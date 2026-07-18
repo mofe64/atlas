@@ -17,13 +17,39 @@ import (
 
 type recordingActionClient struct {
 	actionpb.ActionServiceClient
-	order     *[]string
-	armResult actionpb.ActionResult_Result
+	order       *[]string
+	armResult   actionpb.ActionResult_Result
+	holdResults []actionpb.ActionResult_Result
+	holdCalls   int
+	rtlResult   actionpb.ActionResult_Result
 }
 
 func (client *recordingActionClient) Arm(context.Context, *actionpb.ArmRequest, ...grpc.CallOption) (*actionpb.ArmResponse, error) {
 	*client.order = append(*client.order, "arm")
 	return &actionpb.ArmResponse{ActionResult: &actionpb.ActionResult{Result: client.armResult}}, nil
+}
+
+func (client *recordingActionClient) Hold(context.Context, *actionpb.HoldRequest, ...grpc.CallOption) (*actionpb.HoldResponse, error) {
+	if client.order != nil {
+		*client.order = append(*client.order, "hold")
+	}
+	result := actionpb.ActionResult_RESULT_SUCCESS
+	if client.holdCalls < len(client.holdResults) {
+		result = client.holdResults[client.holdCalls]
+	}
+	client.holdCalls++
+	return &actionpb.HoldResponse{ActionResult: &actionpb.ActionResult{Result: result}}, nil
+}
+
+func (client *recordingActionClient) ReturnToLaunch(context.Context, *actionpb.ReturnToLaunchRequest, ...grpc.CallOption) (*actionpb.ReturnToLaunchResponse, error) {
+	if client.order != nil {
+		*client.order = append(*client.order, "rtl")
+	}
+	result := client.rtlResult
+	if result == actionpb.ActionResult_RESULT_UNKNOWN {
+		result = actionpb.ActionResult_RESULT_SUCCESS
+	}
+	return &actionpb.ReturnToLaunchResponse{ActionResult: &actionpb.ActionResult{Result: result}}, nil
 }
 
 type recordingMissionClient struct {
@@ -97,6 +123,96 @@ func TestMissionStartStopsWhenArmingIsRejected(t *testing.T) {
 	}
 	if len(order) != 1 || order[0] != "arm" {
 		t.Fatalf("mission start must not be sent after rejected arm, got %v", order)
+	}
+}
+
+func TestArrivalHoldRetriesAndCompletesOnlyAfterAcknowledgement(t *testing.T) {
+	actions := &recordingActionClient{holdResults: []actionpb.ActionResult_Result{
+		actionpb.ActionResult_RESULT_COMMAND_DENIED,
+		actionpb.ActionResult_RESULT_SUCCESS,
+	}}
+	executor := &MissionExecutor{
+		logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		action:            actions,
+		updates:           make(chan MissionUpdate, 16),
+		uploadedRunID:     "arrival-run",
+		state:             "RUNNING",
+		arrivalRetryDelay: -1,
+	}
+	arrival := runtimeMissionAction{
+		sequence:      7,
+		actionType:    "HOLD_AT_ARRIVAL",
+		maxAttempts:   3,
+		failurePolicy: "RETURN_TO_LAUNCH",
+	}
+
+	outcome := executor.executeArrivalActions(context.Background(), "arrival-run", []runtimeMissionAction{arrival})
+	if !outcome.completed || outcome.policyRunState != "" {
+		t.Fatalf("expected acknowledged Hold to complete arrival actions, got %#v", outcome)
+	}
+	if actions.holdCalls != 2 {
+		t.Fatalf("expected two Hold attempts, got %d", actions.holdCalls)
+	}
+	states := []string{}
+	for len(executor.updates) > 0 {
+		update := <-executor.updates
+		if update.Type == "action_state_changed" {
+			states = append(states, update.ActionState)
+		}
+	}
+	want := []string{"RUNNING", "RETRYING", "RUNNING", "SUCCEEDED"}
+	if len(states) != len(want) {
+		t.Fatalf("expected action states %v, got %v", want, states)
+	}
+	for index := range want {
+		if states[index] != want[index] {
+			t.Fatalf("expected action states %v, got %v", want, states)
+		}
+	}
+}
+
+func TestArrivalHoldFailureAppliesReviewedRTLPolicy(t *testing.T) {
+	order := []string{}
+	actions := &recordingActionClient{
+		order: &order,
+		holdResults: []actionpb.ActionResult_Result{
+			actionpb.ActionResult_RESULT_COMMAND_DENIED,
+			actionpb.ActionResult_RESULT_COMMAND_DENIED,
+			actionpb.ActionResult_RESULT_COMMAND_DENIED,
+		},
+		rtlResult: actionpb.ActionResult_RESULT_SUCCESS,
+	}
+	executor := &MissionExecutor{
+		logger:            slog.New(slog.NewTextHandler(io.Discard, nil)),
+		action:            actions,
+		updates:           make(chan MissionUpdate, 24),
+		uploadedRunID:     "policy-run",
+		state:             "RUNNING",
+		arrivalRetryDelay: -1,
+	}
+	arrival := runtimeMissionAction{
+		sequence:      9,
+		actionType:    "HOLD_AT_ARRIVAL",
+		maxAttempts:   3,
+		failurePolicy: "RETURN_TO_LAUNCH",
+	}
+
+	outcome := executor.executeArrivalActions(context.Background(), "policy-run", []runtimeMissionAction{arrival})
+	if outcome.completed || outcome.policyRunState != "RTL" {
+		t.Fatalf("expected reviewed RTL policy, got %#v", outcome)
+	}
+	if len(order) != 4 || order[3] != "rtl" {
+		t.Fatalf("expected three Hold attempts followed by RTL, got %v", order)
+	}
+	states := []string{}
+	for len(executor.updates) > 0 {
+		update := <-executor.updates
+		if update.Type == "action_state_changed" {
+			states = append(states, update.ActionState)
+		}
+	}
+	if states[len(states)-2] != "FAILED" || states[len(states)-1] != "POLICY_APPLIED" {
+		t.Fatalf("expected failed then policy applied, got %v", states)
 	}
 }
 
@@ -218,6 +334,28 @@ func TestTranslateMissionPlanReportsUnexecutedPerception(t *testing.T) {
 	}
 	if len(translated.warnings) != 1 {
 		t.Fatalf("expected one translation warning, got %v", translated.warnings)
+	}
+}
+
+func TestTranslateMissionPlanRetainsReviewedArrivalActions(t *testing.T) {
+	translated, err := translateMissionPlan(`{
+        "generatedWaypoints":[{"sequence":0,"latitude":51,"longitude":-0.1,"altitudeMeters":25}],
+        "actions":[
+          {"sequence":5,"actionType":"HOLD_AT_ARRIVAL","params":{"maxAttempts":3,"failurePolicy":"RETURN_TO_LAUNCH"}},
+          {"sequence":6,"actionType":"POINT_GIMBAL_AT_INCIDENT","params":{"maxAttempts":3,"failurePolicy":"RETURN_TO_LAUNCH","latitude":51.001,"longitude":-0.101,"altitudeAmslMeters":42}}
+        ]
+      }`)
+	if err != nil {
+		t.Fatalf("translate arrival actions: %v", err)
+	}
+	if len(translated.arrivalActions) != 2 {
+		t.Fatalf("expected two acknowledged arrival actions, got %#v", translated.arrivalActions)
+	}
+	if translated.arrivalActions[0].sequence != 5 || translated.arrivalActions[0].actionType != "HOLD_AT_ARRIVAL" {
+		t.Fatalf("Hold action identity was not retained: %#v", translated.arrivalActions[0])
+	}
+	if translated.arrivalActions[1].altitudeAMSL != 42 {
+		t.Fatalf("gimbal target evidence was not retained: %#v", translated.arrivalActions[1])
 	}
 }
 

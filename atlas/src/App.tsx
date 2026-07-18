@@ -10,8 +10,9 @@ import "./App.css";
 
 const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
 const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
+const OperationsPage = lazy(() => import("./operations/OperationsPage").then((module) => ({ default: module.OperationsPage })));
 
-type WorkspaceView = "fleet" | "aircraft" | "missions" | "mission-execution" | "history";
+type WorkspaceView = "operations" | "fleet" | "aircraft" | "missions" | "mission-execution" | "history";
 type AircraftSection = "overview" | "live" | "missions" | "settings";
 
 type GroundStationSnapshot = {
@@ -137,9 +138,10 @@ function App() {
   const [snapshot, setSnapshot] = useState<GroundStationSnapshot>(emptySnapshot);
   const [fleet, setFleet] = useState<FleetSnapshot>({ generatedAtUnixMs: 0, aircraft: [] });
   const [nativeState, setNativeState] = useState<NativeState>("starting");
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("fleet");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("operations");
   const [selectedDroneId, setSelectedDroneId] = useState<string>();
   const [selectedMissionId, setSelectedMissionId] = useState<string>();
+  const [missionOrigin, setMissionOrigin] = useState<"missions" | "operations">("missions");
   const [aircraftSection, setAircraftSection] = useState<AircraftSection>("overview");
   const [showArchived, setShowArchived] = useState(false);
 
@@ -210,6 +212,17 @@ function App() {
         <nav className="workspace-nav" aria-label="Atlas workspace">
           <button
             type="button"
+            className={workspaceView === "operations" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "operations" ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("operations");
+            }}
+          >
+            Operations
+          </button>
+          <button
+            type="button"
             className={workspaceView === "fleet" || workspaceView === "aircraft" ? "workspace-nav__active" : undefined}
             aria-current={workspaceView === "fleet" || workspaceView === "aircraft" ? "page" : undefined}
             onClick={() => setWorkspaceView("fleet")}
@@ -251,7 +264,25 @@ function App() {
         </div>
       </header>
 
-      {workspaceView === "fleet" ? (
+      {workspaceView === "operations" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading operational map…</p></main>}>
+          <OperationsPage
+            nativeAvailable={nativeState === "available"}
+            fleet={{ ...fleet, aircraft: operationalAircraft }}
+            onOpenAircraft={(droneId) => {
+              setSelectedDroneId(droneId);
+              setAircraftSection("overview");
+              setWorkspaceView("aircraft");
+            }}
+            onConfirmResponse={(missionId, droneId) => {
+              setSelectedMissionId(missionId);
+              setSelectedDroneId(droneId);
+              setMissionOrigin("operations");
+              setWorkspaceView("mission-execution");
+            }}
+          />
+        </Suspense>
+      ) : workspaceView === "fleet" ? (
         <FleetPage
           aircraft={visibleAircraft}
           generatedAtUnixMs={fleet.generatedAtUnixMs}
@@ -281,6 +312,7 @@ function App() {
             preferredDroneId={selectedDroneId}
             onMissionReady={(missionId) => {
               setSelectedMissionId(missionId);
+              setMissionOrigin("missions");
               setWorkspaceView("mission-execution");
             }}
           />
@@ -290,7 +322,10 @@ function App() {
           <MissionExecutionPage
             nativeAvailable={nativeState === "available"}
             missionId={selectedMissionId}
-            onBack={() => setWorkspaceView("missions")}
+            preferredDroneId={selectedDroneId}
+            lockedDroneId={missionOrigin === "operations" ? selectedDroneId : undefined}
+            backLabel={missionOrigin === "operations" ? "Operations" : "Mission planner"}
+            onBack={() => setWorkspaceView(missionOrigin)}
           />
         </Suspense>
       ) : workspaceView === "history" ? (

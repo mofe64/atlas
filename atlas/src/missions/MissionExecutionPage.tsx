@@ -13,6 +13,9 @@ import "./MissionExecutionPage.css";
 type MissionExecutionPageProps = {
   nativeAvailable: boolean;
   missionId: string;
+  preferredDroneId?: string;
+  lockedDroneId?: string;
+  backLabel?: string;
   onBack: () => void;
 };
 
@@ -28,12 +31,12 @@ type TelemetryHistoryPage = {
   }>;
 };
 
-export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: MissionExecutionPageProps) {
+export function MissionExecutionPage({ nativeAvailable, missionId, preferredDroneId, lockedDroneId, backLabel = "Mission planner", onBack }: MissionExecutionPageProps) {
   const [mission, setMission] = useState<Mission>();
   const [plan, setPlan] = useState<MissionPlan>();
   const [fleet, setFleet] = useState<FleetSnapshot>();
   const [runs, setRuns] = useState<MissionRun[]>([]);
-  const [selectedDroneId, setSelectedDroneId] = useState("");
+  const [selectedDroneId, setSelectedDroneId] = useState(preferredDroneId ?? "");
   const [selectedRunId, setSelectedRunId] = useState<string>();
   const [pendingOperation, setPendingOperation] = useState<string>();
   const [error, setError] = useState<string>();
@@ -72,7 +75,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
         const preferredRun = missionRuns.find((run) => !terminalStates.has(run.status)) ?? missionRuns[0];
         const connected = nextFleet.aircraft.find((candidate) => candidate.connectionStatus === "connected" && candidate.droneId)?.droneId;
         setSelectedRunId((current) => current && nextRuns.some((run) => run.id === current) ? current : preferredRun?.id);
-        setSelectedDroneId((current) => current || preferredRun?.droneId || connected || "");
+        setSelectedDroneId((current) => current || preferredDroneId || preferredRun?.droneId || connected || "");
       } catch (reason) {
         if (active) setError(messageFrom(reason));
       } finally {
@@ -85,7 +88,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
       active = false;
       window.clearInterval(interval);
     };
-  }, [missionId, nativeAvailable]);
+  }, [missionId, nativeAvailable, preferredDroneId]);
 
   const missionRuns = useMemo(() => runs.filter((run) => run.missionId === missionId), [missionId, runs]);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? missionRuns[0];
@@ -93,6 +96,9 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
   const targetDroneId = selectedRun?.droneId || selectedDroneId;
   const targetAircraft = fleet?.aircraft.find((candidate) => candidate.droneId === targetDroneId);
   const connectedAircraft = fleet?.aircraft.filter((candidate) => candidate.connectionStatus === "connected" && candidate.droneId) ?? [];
+  const deploymentAircraftOptions = lockedDroneId
+    ? fleet?.aircraft.filter((candidate) => candidate.droneId === lockedDroneId) ?? []
+    : connectedAircraft;
   const targetActiveRun = runs.find((run) => run.droneId === selectedDroneId && !terminalStates.has(run.status));
   const deploymentAircraft = fleet?.aircraft.find((candidate) => candidate.droneId === selectedDroneId);
   const uploadDistance = selectedDroneId ? missionDistanceStatus(plan?.generatedWaypoints[0], deploymentAircraft) : undefined;
@@ -184,7 +190,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
   if (!mission || !plan) {
     return (
       <main className="execution-workspace execution-workspace--loading" id="main-content">
-        <button type="button" className="execution-back" onClick={onBack}>← Mission planner</button>
+        <button type="button" className="execution-back" onClick={onBack}>← {backLabel}</button>
         <p>{nativeAvailable ? error || "Loading mission execution…" : "Atlas Native must be running to execute missions."}</p>
       </main>
     );
@@ -194,17 +200,20 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
   const progressStyle = { "--mission-progress": `${Math.max(0, Math.min(100, progress))}%` } as CSSProperties;
   const warnings = translationWarnings(selectedRun);
   const latestEvent = selectedRun?.events[selectedRun.events.length - 1];
+  const arrivalHold = selectedRun?.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
+  const onSceneAcknowledged = arrivalHold?.state === "SUCCEEDED";
+  const displayedRunState = onSceneAcknowledged && selectedRun && !terminalStates.has(selectedRun.status) ? "ON SCENE" : selectedRun?.status ?? "NOT UPLOADED";
 
   return (
     <main className="execution-workspace" id="main-content">
       <header className="execution-header">
         <div>
-          <button type="button" className="execution-back" onClick={onBack}>← Mission planner</button>
+          <button type="button" className="execution-back" onClick={onBack}>← {backLabel}</button>
           <p className="eyebrow">Live mission execution</p>
           <h1>{mission.name}</h1>
           <p>{mission.templateType.replace(/_/g, " ")} · {plan.patternType.replace(/_/g, " ")} · {plan.generatedWaypoints.length} waypoints</p>
         </div>
-        <span className={selectedRun ? `run-state run-state--${selectedRun.status.toLowerCase()}` : "run-state"}>{selectedRun?.status ?? "NOT UPLOADED"}</span>
+        <span className={selectedRun ? `run-state run-state--${selectedRun.status.toLowerCase()}` : "run-state"}>{displayedRunState}</span>
       </header>
 
       <section className="execution-live-grid" aria-label="Live mission operation">
@@ -258,11 +267,12 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
             <section className="execution-card">
               <div className="execution-card__title"><span>01</span><strong>Deploy plan</strong></div>
               <label className="execution-target">Target aircraft
-                <select value={selectedDroneId} onChange={(event) => setSelectedDroneId(event.target.value)}>
+                <select value={selectedDroneId} onChange={(event) => setSelectedDroneId(event.target.value)} disabled={Boolean(lockedDroneId)}>
                   <option value="">Select connected aircraft</option>
-                  {connectedAircraft.map((candidate) => <option key={candidate.droneId!} value={candidate.droneId!}>{candidate.droneName || candidate.droneId}</option>)}
+                  {deploymentAircraftOptions.map((candidate) => <option key={candidate.droneId!} value={candidate.droneId!}>{candidate.droneName || candidate.droneId}</option>)}
                 </select>
               </label>
+              {lockedDroneId && <p className="execution-command-note">Aircraft selection is locked to the operator-reviewed incident assignment.</p>}
               {uploadDistance && !uploadDistance.ok && <div className="mission-distance-warning" role="alert"><strong>Mission distance check</strong><span>{uploadDistance.message}</span></div>}
               {uploadDistance?.ok && uploadDistance.distanceMeters !== undefined && <p className="mission-distance-ready">First waypoint · {formatDistance(uploadDistance.distanceMeters)} from {uploadDistance.reference?.source} position</p>}
               <button type="button" className="execution-primary-action" disabled={!canUpload} onClick={() => void upload()}>{pendingOperation === "upload" ? "Uploading to PX4…" : "Upload mission to aircraft"}</button>
@@ -293,6 +303,8 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
                 {selectedRun.status === "CANCELLED" && <p className="execution-command-note">Mission cleared. The aircraft remains in HOLD.</p>}
                 {selectedRun.status === "RTL" && <p className="execution-command-note">PX4 accepted RTL. Monitor until landed and disarmed.</p>}
               </section>
+
+              {selectedRun.actions.length > 0 && <ArrivalActionRuntime run={selectedRun} />}
 
               <MissionPayloadControl
                 key={selectedRun.id}
@@ -337,6 +349,35 @@ export function MissionExecutionPage({ nativeAvailable, missionId, onBack }: Mis
 
 function Metric({ label, value, tone }: { label: string; value: string; tone?: "warning" }) {
   return <div className={tone ? `execution-metric execution-metric--${tone}` : "execution-metric"}><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function ArrivalActionRuntime({ run }: { run: MissionRun }) {
+  const hold = run.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
+  const onScene = hold?.state === "SUCCEEDED";
+  const failed = run.actions.some((action) => action.state === "FAILED" || action.state === "POLICY_APPLIED");
+  return (
+    <section className={onScene ? "execution-card arrival-runtime arrival-runtime--on-scene" : failed ? "execution-card arrival-runtime arrival-runtime--failed" : "execution-card arrival-runtime"}>
+      <div className="execution-card__title"><span>02</span><strong>Arrival acknowledgement</strong></div>
+      <header className="arrival-runtime__status">
+        <span>{onScene ? "Hold acknowledged" : failed ? "Arrival action unresolved" : "Not yet on scene"}</span>
+        <strong>{onScene ? "ON SCENE" : hold ? displayActionState(hold.state) : "WAITING"}</strong>
+      </header>
+      <ol className="arrival-runtime__actions">
+        {run.actions.map((action) => (
+          <li key={action.id} className={`arrival-runtime__action arrival-runtime__action--${action.state.toLowerCase()}`}>
+            <span aria-hidden="true">{action.state === "SUCCEEDED" ? "✓" : action.state === "FAILED" || action.state === "POLICY_APPLIED" ? "!" : String(action.actionSequence + 1).padStart(2, "0")}</span>
+            <div>
+              <strong>{actionLabel(action.actionType)}</strong>
+              <small>{actionStateDetail(action.state, action.attempt, action.maxAttempts)}</small>
+              {action.errorMessage && <small className="arrival-runtime__error">{action.errorMessage}</small>}
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p><span>Reviewed failure policy</span><strong>{failurePolicyLabel(hold?.failurePolicy)}</strong></p>
+      <small className="arrival-runtime__boundary">Final-waypoint progress cannot set ON SCENE. Only the durable Hold acknowledgement can.</small>
+    </section>
+  );
 }
 
 function trackedPosition(aircraft?: FleetAircraft): TrackedAircraft | undefined {
@@ -414,4 +455,25 @@ function translationWarnings(run?: MissionRun) {
   } catch {
     return [];
   }
+}
+
+function actionLabel(actionType: string) {
+  return actionType === "HOLD_AT_ARRIVAL" ? "Hold at arrival" : actionType === "POINT_GIMBAL_AT_INCIDENT" ? "Point gimbal at incident" : actionType.replace(/_/g, " ");
+}
+
+function displayActionState(state: string) {
+  return state.replace(/_/g, " ");
+}
+
+function actionStateDetail(state: string, attempt: number, maximum: number) {
+  if (state === "REQUESTED") return "Requested from immutable plan · waiting for final waypoint";
+  if (state === "RUNNING") return `Running attempt ${attempt} of ${maximum}`;
+  if (state === "RETRYING") return `Retrying after attempt ${attempt} of ${maximum}`;
+  if (state === "SUCCEEDED") return `Acknowledged on attempt ${attempt}`;
+  if (state === "FAILED") return `Failed after attempt ${attempt} of ${maximum}`;
+  return "Reviewed failure policy applied";
+}
+
+function failurePolicyLabel(policy?: string) {
+  return policy === "RETURN_TO_LAUNCH" ? "Return to launch" : policy === "OPERATOR_INTERVENTION" ? "Operator intervention" : "—";
 }

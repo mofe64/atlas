@@ -6,7 +6,7 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
     let current_version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|error| format!("read local database schema version: {error}"))?;
-    if current_version > 12 {
+    if current_version > 14 {
         return Err(format!(
             "local database schema version {current_version} is newer than this Atlas build"
         ));
@@ -629,6 +629,152 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
                 "#,
             )
             .map_err(|error| format!("apply local database migration 12: {error}"))?;
+    }
+    if current_version < 13 {
+        connection
+            .execute_batch(
+                r#"
+                BEGIN IMMEDIATE;
+
+                CREATE TABLE incidents (
+                    id TEXT PRIMARY KEY,
+                    source_type TEXT NOT NULL,
+                    source_system TEXT NOT NULL,
+                    external_id TEXT,
+                    incident_type TEXT NOT NULL,
+                    priority TEXT NOT NULL
+                        CHECK (priority IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+                    status TEXT NOT NULL
+                        CHECK (status IN ('OPEN', 'ACTIVE', 'RESOLVED', 'CANCELLED')),
+                    summary TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    latitude REAL,
+                    longitude REAL,
+                    address TEXT NOT NULL DEFAULT '',
+                    area TEXT NOT NULL DEFAULT '',
+                    occurred_at_unix_ms INTEGER,
+                    received_at_unix_ms INTEGER NOT NULL,
+                    created_at_unix_ms INTEGER NOT NULL,
+                    updated_at_unix_ms INTEGER NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision >= 1),
+                    location_revision INTEGER NOT NULL DEFAULT 1
+                        CHECK (location_revision >= 1),
+                    source_payload_json TEXT,
+                    CHECK ((latitude IS NULL AND longitude IS NULL)
+                        OR (latitude IS NOT NULL AND longitude IS NOT NULL)),
+                    CHECK (latitude IS NULL OR (latitude >= -90 AND latitude <= 90)),
+                    CHECK (longitude IS NULL OR (longitude >= -180 AND longitude <= 180))
+                );
+                CREATE UNIQUE INDEX incidents_external_identity
+                    ON incidents(source_system, external_id)
+                    WHERE external_id IS NOT NULL;
+                CREATE INDEX incidents_status_priority_updated
+                    ON incidents(status, priority, updated_at_unix_ms DESC);
+
+                CREATE TABLE incident_events (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+                    sequence INTEGER NOT NULL,
+                    event_type TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    message TEXT NOT NULL DEFAULT '',
+                    details_json TEXT NOT NULL DEFAULT '{}',
+                    occurred_at_unix_ms INTEGER NOT NULL,
+                    received_at_unix_ms INTEGER NOT NULL,
+                    UNIQUE(incident_id, sequence)
+                );
+                CREATE INDEX incident_events_incident_sequence
+                    ON incident_events(incident_id, sequence);
+
+                CREATE TABLE incident_assignments (
+                    id TEXT PRIMARY KEY,
+                    incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE RESTRICT,
+                    drone_id TEXT NOT NULL REFERENCES drones(id) ON DELETE RESTRICT,
+                    mission_id TEXT REFERENCES missions(id) ON DELETE RESTRICT,
+                    mission_run_id TEXT REFERENCES mission_runs(id) ON DELETE RESTRICT,
+                    operator_id TEXT,
+                    status TEXT NOT NULL,
+                    assigned_at_unix_ms INTEGER NOT NULL,
+                    ended_at_unix_ms INTEGER
+                );
+                CREATE INDEX incident_assignments_incident_assigned
+                    ON incident_assignments(incident_id, assigned_at_unix_ms DESC);
+                CREATE UNIQUE INDEX incident_assignments_one_active_per_drone
+                    ON incident_assignments(drone_id)
+                    WHERE ended_at_unix_ms IS NULL;
+                CREATE UNIQUE INDEX incident_assignments_mission
+                    ON incident_assignments(mission_id)
+                    WHERE mission_id IS NOT NULL;
+                CREATE UNIQUE INDEX incident_assignments_mission_run
+                    ON incident_assignments(mission_run_id)
+                    WHERE mission_run_id IS NOT NULL;
+
+                PRAGMA user_version = 13;
+                COMMIT;
+                "#,
+            )
+            .map_err(|error| format!("apply local database migration 13: {error}"))?;
+    }
+    if current_version < 14 {
+        connection
+            .execute_batch(
+                r#"
+                BEGIN IMMEDIATE;
+
+                ALTER TABLE incident_assignments ADD COLUMN on_scene_at_unix_ms INTEGER;
+
+                CREATE TABLE mission_action_executions (
+                    id TEXT PRIMARY KEY,
+                    mission_run_id TEXT NOT NULL REFERENCES mission_runs(id) ON DELETE CASCADE,
+                    mission_plan_id TEXT NOT NULL REFERENCES mission_plans(id) ON DELETE RESTRICT,
+                    action_sequence INTEGER NOT NULL,
+                    action_type TEXT NOT NULL,
+                    state TEXT NOT NULL
+                        CHECK (state IN ('REQUESTED', 'RUNNING', 'RETRYING',
+                                         'SUCCEEDED', 'FAILED', 'POLICY_APPLIED')),
+                    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+                    max_attempts INTEGER NOT NULL CHECK (max_attempts >= 1),
+                    failure_policy TEXT NOT NULL
+                        CHECK (failure_policy IN ('RETURN_TO_LAUNCH', 'OPERATOR_INTERVENTION')),
+                    requested_at_unix_ms INTEGER NOT NULL,
+                    updated_at_unix_ms INTEGER NOT NULL,
+                    started_at_unix_ms INTEGER,
+                    completed_at_unix_ms INTEGER,
+                    error_code TEXT NOT NULL DEFAULT '',
+                    error_message TEXT NOT NULL DEFAULT '',
+                    evidence_json TEXT,
+                    UNIQUE(mission_run_id, action_sequence),
+                    FOREIGN KEY (mission_plan_id, action_sequence)
+                        REFERENCES mission_actions(mission_plan_id, sequence) ON DELETE RESTRICT
+                );
+                CREATE INDEX mission_action_executions_run_sequence
+                    ON mission_action_executions(mission_run_id, action_sequence);
+
+                CREATE TABLE mission_action_execution_events (
+                    id TEXT PRIMARY KEY,
+                    mission_action_execution_id TEXT NOT NULL
+                        REFERENCES mission_action_executions(id) ON DELETE CASCADE,
+                    sequence INTEGER NOT NULL,
+                    state TEXT NOT NULL
+                        CHECK (state IN ('REQUESTED', 'RUNNING', 'RETRYING',
+                                         'SUCCEEDED', 'FAILED', 'POLICY_APPLIED')),
+                    attempt INTEGER NOT NULL DEFAULT 0 CHECK (attempt >= 0),
+                    source TEXT NOT NULL,
+                    occurred_at_unix_ms INTEGER NOT NULL,
+                    error_code TEXT NOT NULL DEFAULT '',
+                    message TEXT NOT NULL DEFAULT '',
+                    evidence_json TEXT,
+                    UNIQUE(mission_action_execution_id, sequence)
+                );
+                CREATE INDEX mission_action_execution_events_action_sequence
+                    ON mission_action_execution_events(mission_action_execution_id, sequence);
+
+                PRAGMA user_version = 14;
+                COMMIT;
+                "#,
+            )
+            .map_err(|error| format!("apply local database migration 14: {error}"))?;
     }
     Ok(())
 }

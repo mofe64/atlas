@@ -1,4 +1,4 @@
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -221,7 +221,7 @@ const ROUTE_VIEW_DEFAULTS: ViewDefaults = ViewDefaults {
 };
 
 #[derive(Debug)]
-struct PlannedMission {
+pub(super) struct PlannedMission {
     waypoints: Vec<MissionWaypoint>,
     actions: Vec<MissionAction>,
     metadata: Value,
@@ -310,7 +310,7 @@ impl LocalDatabase {
         &self,
         input: &CreateMissionInput,
     ) -> Result<MissionSnapshot, String> {
-        let (template, name, pattern) = validate_mission_input(input)?;
+        let (template, name, pattern, _) = validate_mission_input(input)?;
         let now = unix_time_ms();
         let connection = self
             .connection
@@ -331,7 +331,7 @@ impl LocalDatabase {
         mission_id: &str,
         input: &CreateMissionInput,
     ) -> Result<MissionSnapshot, String> {
-        let (template, name, pattern) = validate_mission_input(input)?;
+        let (template, name, pattern, _) = validate_mission_input(input)?;
         let now = unix_time_ms();
         let connection = self
             .connection
@@ -346,6 +346,19 @@ impl LocalDatabase {
             .map_err(|error| format!("check mission execution lock: {error}"))?;
         if unfinished_run {
             return Err("mission definition cannot change while a run is unfinished".to_string());
+        }
+        let incident_response_mission: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM incident_assignments WHERE mission_id = ?1)",
+                [mission_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("check incident response mission lock: {error}"))?;
+        if incident_response_mission {
+            return Err(
+                "incident response mission definitions are immutable; prepare a new response instead"
+                    .to_string(),
+            );
         }
         let changed = connection.execute(
             "UPDATE missions SET template_id = ?2, template_type = ?3, name = ?4, description = ?5, status = 'DRAFT', params_json = ?6, selected_pattern = ?7, generated_plan_id = NULL, updated_at_unix_ms = ?8 WHERE id = ?1",
@@ -456,6 +469,43 @@ fn persist_planned_mission(
     let tx = connection
         .transaction()
         .map_err(|error| format!("begin mission planning transaction: {error}"))?;
+    let plan_id = persist_planned_mission_in_transaction(&tx, mission, planned, now)?;
+    tx.commit()
+        .map_err(|error| format!("commit mission plan: {error}"))?;
+    Ok(plan_id)
+}
+
+pub(super) fn create_ready_mission_in_transaction(
+    tx: &Transaction<'_>,
+    input: &CreateMissionInput,
+    now: i64,
+) -> Result<(MissionSnapshot, MissionPlanSnapshot), String> {
+    let (template, name, pattern, mut planned) = validate_mission_input(input)?;
+    if let Some(evidence) = input.params.get("incidentResponse") {
+        planned.metadata["incidentResponse"] = evidence.clone();
+    }
+    if let Some(altitude_mode) = input.params.get("altitudeMode") {
+        planned.metadata["altitudeMode"] = altitude_mode.clone();
+    }
+    let mission_id: String = tx
+        .query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
+        .map_err(|error| format!("generate mission identifier: {error}"))?;
+    tx.execute(
+        "INSERT INTO missions (id, template_id, template_type, name, description, status, params_json, selected_pattern, created_at_unix_ms, updated_at_unix_ms) VALUES (?1, ?2, ?3, ?4, ?5, 'DRAFT', ?6, ?7, ?8, ?8)",
+        params![mission_id, template.id, template.template_type, name, input.description.trim(), input.params.to_string(), pattern, now],
+    )
+    .map_err(|error| format!("insert incident response mission: {error}"))?;
+    let mission = read_mission(tx, &mission_id)?;
+    let plan_id = persist_planned_mission_in_transaction(tx, &mission, &planned, now)?;
+    Ok((read_mission(tx, &mission_id)?, read_plan(tx, &plan_id)?))
+}
+
+fn persist_planned_mission_in_transaction(
+    tx: &Transaction<'_>,
+    mission: &MissionSnapshot,
+    planned: &PlannedMission,
+    now: i64,
+) -> Result<String, String> {
     let plan_id: String = tx
         .query_row("SELECT lower(hex(randomblob(16)))", [], |row| row.get(0))
         .map_err(|error| format!("generate plan identifier: {error}"))?;
@@ -470,8 +520,6 @@ fn persist_planned_mission(
         tx.execute("INSERT INTO mission_actions (mission_plan_id, sequence, action_type, params_json) VALUES (?1, ?2, ?3, ?4)", params![plan_id, action.sequence, action.action_type, action.params.to_string()]).map_err(|error| format!("insert mission action: {error}"))?;
     }
     tx.execute("UPDATE missions SET status = 'READY', generated_plan_id = ?2, updated_at_unix_ms = ?3 WHERE id = ?1", params![mission.id, plan_id, now]).map_err(|error| format!("link generated mission plan: {error}"))?;
-    tx.commit()
-        .map_err(|error| format!("commit mission plan: {error}"))?;
     Ok(plan_id)
 }
 
@@ -539,7 +587,7 @@ fn template_for(template_type: &str) -> Result<MissionTemplate, String> {
 
 fn validate_mission_input(
     input: &CreateMissionInput,
-) -> Result<(MissionTemplate, String, String), String> {
+) -> Result<(MissionTemplate, String, String, PlannedMission), String> {
     let template = template_for(&input.template_type)?;
     let name = input.name.trim();
     if name.is_empty() || name.len() > 120 {
@@ -551,8 +599,8 @@ fn validate_mission_input(
         .unwrap_or(template.default_pattern);
     validate_pattern(&template, pattern)?;
     // Planning before persistence makes invalid input a side-effect-free failure.
-    plan_mission(template.template_type, pattern, &input.params)?;
-    Ok((template, name.to_string(), pattern.to_string()))
+    let planned = plan_mission(template.template_type, pattern, &input.params)?;
+    Ok((template, name.to_string(), pattern.to_string(), planned))
 }
 
 fn validate_pattern(template: &MissionTemplate, pattern: &str) -> Result<(), String> {
@@ -1337,6 +1385,7 @@ fn common_actions(
     if record {
         push("STOP_RECORDING", json!({}));
     }
+    append_runtime_arrival_actions(params, &mut push)?;
     if params
         .get("returnToLaunch")
         .and_then(Value::as_bool)
@@ -1345,6 +1394,112 @@ fn common_actions(
         push("RETURN_TO_LAUNCH", json!({}));
     }
     Ok(actions)
+}
+
+fn append_runtime_arrival_actions(
+    params: &Value,
+    push: &mut impl FnMut(&str, Value),
+) -> Result<(), String> {
+    let Some(value) = params.get("arrivalActions") else {
+        return Ok(());
+    };
+    let actions = value
+        .as_array()
+        .ok_or_else(|| "arrivalActions must be an array".to_string())?;
+    if actions.is_empty() || actions.len() > 2 {
+        return Err(
+            "arrivalActions must contain HOLD_AT_ARRIVAL and at most one optional gimbal action"
+                .to_string(),
+        );
+    }
+    if params
+        .get("returnToLaunch")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Err(
+            "returnToLaunch cannot be combined with acknowledged arrival actions; choose an explicit arrival failure policy instead"
+                .to_string(),
+        );
+    }
+
+    let mut saw_hold = false;
+    let mut saw_gimbal = false;
+    for (index, value) in actions.iter().enumerate() {
+        let object = value
+            .as_object()
+            .ok_or_else(|| format!("arrivalActions[{index}] must be an object"))?;
+        let action_type = object
+            .get("actionType")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("arrivalActions[{index}].actionType is required"))?;
+        let failure_policy = object
+            .get("failurePolicy")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("arrivalActions[{index}].failurePolicy is required"))?;
+        if !matches!(failure_policy, "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION") {
+            return Err(format!(
+                "arrivalActions[{index}].failurePolicy must be RETURN_TO_LAUNCH or OPERATOR_INTERVENTION"
+            ));
+        }
+        let max_attempts = object
+            .get("maxAttempts")
+            .and_then(Value::as_u64)
+            .filter(|attempts| (1..=5).contains(attempts))
+            .ok_or_else(|| {
+                format!("arrivalActions[{index}].maxAttempts must be between 1 and 5")
+            })?;
+        match action_type {
+            "HOLD_AT_ARRIVAL" if index == 0 && !saw_hold => saw_hold = true,
+            "HOLD_AT_ARRIVAL" => {
+                return Err(
+                    "HOLD_AT_ARRIVAL must be the first and only Hold arrival action".to_string(),
+                )
+            }
+            "POINT_GIMBAL_AT_INCIDENT" if saw_hold && !saw_gimbal => {
+                saw_gimbal = true;
+                let latitude = object
+                    .get("latitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| format!("arrivalActions[{index}].latitude is required"))?;
+                let longitude = object
+                    .get("longitude")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| format!("arrivalActions[{index}].longitude is required"))?;
+                let altitude = object
+                    .get("altitudeAmslMeters")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| {
+                        format!("arrivalActions[{index}].altitudeAmslMeters is required")
+                    })?;
+                validate_coordinate(coordinate(latitude, longitude))?;
+                if !altitude.is_finite() || !(-500.0..=9_000.0).contains(&altitude) {
+                    return Err(format!(
+                        "arrivalActions[{index}].altitudeAmslMeters must be between -500 and 9000"
+                    ));
+                }
+            }
+            "POINT_GIMBAL_AT_INCIDENT" => {
+                return Err(
+                    "POINT_GIMBAL_AT_INCIDENT must follow HOLD_AT_ARRIVAL and appear once"
+                        .to_string(),
+                )
+            }
+            _ => {
+                return Err(format!(
+                    "unsupported acknowledged arrival action {action_type}"
+                ))
+            }
+        }
+        let mut action_params = object.clone();
+        action_params.remove("actionType");
+        action_params.insert("maxAttempts".to_string(), json!(max_attempts));
+        push(action_type, Value::Object(action_params));
+    }
+    if !saw_hold {
+        return Err("arrivalActions must begin with HOLD_AT_ARRIVAL".to_string());
+    }
+    Ok(())
 }
 
 fn selected_camera_mode<'a>(params: &'a Value, default: &'a str) -> Result<&'a str, String> {

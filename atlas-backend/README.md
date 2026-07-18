@@ -4,6 +4,11 @@ Atlas Backend is a Go 1.25 + Gin service with PostgreSQL-backed organization,
 user, and session authentication. It is independently deployable and is not on
 the current direct Atlas Native-to-Agent flight-control path.
 
+For the system-wide boundary and newcomer reading path, see
+[`../docs/README.md`](../docs/README.md). Backend architecture and its current
+integration limits are documented in
+[`../docs/atlas-backend.md`](../docs/atlas-backend.md).
+
 ## Start the complete local stack
 
 Docker Compose starts PostgreSQL, applies migrations once, builds the API image,

@@ -10,7 +10,7 @@ use super::{
     command_router::CommandRouter,
     proto::pb::{
         agent_to_ground_station, ground_station_to_agent, AgentToGroundStation,
-        GroundStationToAgent, MissionRunUpdateType, VehicleCommandUpdateType,
+        GroundStationToAgent, MissionActionState, MissionRunUpdateType, VehicleCommandUpdateType,
     },
     registration, status_text, telemetry, unix_time_ms,
 };
@@ -197,6 +197,44 @@ pub(super) async fn open(
                                         "mission update does not target this agent drone",
                                     ))
                                 }
+                                Ok(_)
+                                    if message.update_type()
+                                        == MissionRunUpdateType::ActionStateChanged =>
+                                {
+                                    match (
+                                        message.action_sequence,
+                                        mission_action_state(message.action_state()),
+                                    ) {
+                                        (Some(action_sequence), Some(action_state)) => database
+                                            .apply_mission_action_update(
+                                                &crate::database::MissionActionUpdateInput {
+                                                    event_id: message.event_id,
+                                                    mission_run_id: message.mission_run_id,
+                                                    action_sequence,
+                                                    action_type: message.action_type,
+                                                    state: action_state.to_string(),
+                                                    attempt: message.action_attempt,
+                                                    failure_policy: message.failure_policy,
+                                                    occurred_at_unix_ms: message
+                                                        .observed_at_unix_ms,
+                                                    error_code: message.error_code,
+                                                    message: message.message,
+                                                    evidence_json: (!message
+                                                        .evidence_json
+                                                        .is_empty())
+                                                    .then_some(message.evidence_json),
+                                                },
+                                            )
+                                            .map(|_| None)
+                                            .map_err(Status::failed_precondition),
+                                        (None, _) => Err(Status::invalid_argument(
+                                            "mission action update is missing action_sequence",
+                                        )),
+                                        (_, None) => Err(Status::invalid_argument(
+                                            "mission action update has an unspecified state",
+                                        )),
+                                    }
+                                }
                                 Ok(_) => {
                                     let event_type =
                                         mission_update_event(message.update_type()).to_string();
@@ -288,7 +326,20 @@ fn mission_update_event(update: MissionRunUpdateType) -> &'static str {
         MissionRunUpdateType::PayloadManualStarted => "payload_manual_started",
         MissionRunUpdateType::PayloadMissionRestored => "payload_mission_restored",
         MissionRunUpdateType::PayloadRestoreFailed => "payload_restore_failed",
+        MissionRunUpdateType::ActionStateChanged => "action_state_changed",
         MissionRunUpdateType::Unspecified => "unspecified",
+    }
+}
+
+fn mission_action_state(state: MissionActionState) -> Option<&'static str> {
+    match state {
+        MissionActionState::Requested => Some("REQUESTED"),
+        MissionActionState::Running => Some("RUNNING"),
+        MissionActionState::Retrying => Some("RETRYING"),
+        MissionActionState::Succeeded => Some("SUCCEEDED"),
+        MissionActionState::Failed => Some("FAILED"),
+        MissionActionState::PolicyApplied => Some("POLICY_APPLIED"),
+        MissionActionState::Unspecified => None,
     }
 }
 

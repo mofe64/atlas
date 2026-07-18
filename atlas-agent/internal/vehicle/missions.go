@@ -38,22 +38,29 @@ type MissionUpdate struct {
 	ErrorCode       string
 	Message         string
 	EvidenceJSON    string
+	ActionSequence  *uint32
+	ActionType      string
+	ActionState     string
+	ActionAttempt   uint32
+	FailurePolicy   string
 }
 
 type MissionExecutor struct {
-	connection    *grpc.ClientConn
-	logger        *slog.Logger
-	mission       missionpb.MissionServiceClient
-	action        actionpb.ActionServiceClient
-	payload       *PayloadController
-	ownsPayload   bool
-	updates       chan MissionUpdate
-	operationMu   sync.Mutex
-	mu            sync.Mutex
-	uploadedRunID string
-	activeRunID   string
-	state         string
-	watchCancel   context.CancelFunc
+	connection        *grpc.ClientConn
+	logger            *slog.Logger
+	mission           missionpb.MissionServiceClient
+	action            actionpb.ActionServiceClient
+	payload           *PayloadController
+	ownsPayload       bool
+	updates           chan MissionUpdate
+	operationMu       sync.Mutex
+	mu                sync.Mutex
+	uploadedRunID     string
+	activeRunID       string
+	state             string
+	watchCancel       context.CancelFunc
+	arrivalActions    []runtimeMissionAction
+	arrivalRetryDelay time.Duration
 }
 
 func NewMissionExecutor(address string, logger *slog.Logger, sharedPayload ...*PayloadController) (*MissionExecutor, error) {
@@ -107,7 +114,7 @@ func (e *MissionExecutor) Close() error {
 func (e *MissionExecutor) Updates() <-chan MissionUpdate { return e.updates }
 
 func (e *MissionExecutor) Capabilities() []string {
-	return []string{"mission:upload", "mission:start", "mission:auto_arm", "mission:pause", "mission:resume", "mission:cancel", "mission:return_to_launch", "mission:progress"}
+	return []string{"mission:upload", "mission:start", "mission:auto_arm", "mission:pause", "mission:resume", "mission:cancel", "mission:return_to_launch", "mission:progress", "mission:actions:v1", "mission:action:hold_at_arrival", "mission:action:point_gimbal_at_incident"}
 }
 
 func (e *MissionExecutor) Execute(ctx context.Context, operation MissionOperation) {
@@ -164,6 +171,9 @@ func (e *MissionExecutor) upload(ctx context.Context, operation MissionOperation
 		return fmt.Errorf("translate Atlas mission plan: %w", err)
 	}
 	e.stopWatcher()
+	e.mu.Lock()
+	e.arrivalActions = append([]runtimeMissionAction(nil), translated.arrivalActions...)
+	e.mu.Unlock()
 	if e.payload != nil {
 		e.payload.ConfigureMission(operation.RunID, translated.payload)
 	}
@@ -391,12 +401,27 @@ func (e *MissionExecutor) startWatcher(ctx context.Context, runID string) {
 				percent = math.Min(100, float64(current)/float64(total)*100)
 			}
 			if current >= total && total > 0 {
-				e.setState(runID, "COMPLETED")
-				if e.payload != nil {
-					e.payload.EndMission(watchContext, runID)
+				actions := e.arrivalActionsForRun(runID)
+				if len(actions) == 0 {
+					e.completeRun(watchContext, runID, percent, current, total, "Mission completed")
+					return
 				}
-				e.emitForRun(watchContext, runID, "completed", "COMPLETED", &percent, &current, &total, "", "Mission completed")
-				e.stopWatcherFromWatcher()
+				e.emitForRun(watchContext, runID, "progress", "RUNNING", &percent, &current, &total, "", "Final waypoint reached; awaiting acknowledged arrival actions")
+				outcome := e.executeArrivalActions(watchContext, runID, actions)
+				switch {
+				case outcome.completed:
+					e.completeRun(watchContext, runID, percent, current, total, "Arrival Hold acknowledged; mission actions completed")
+				case outcome.policyRunState == "RTL":
+					e.setState(runID, "RTL")
+					if e.payload != nil {
+						e.payload.EndMission(watchContext, runID)
+					}
+					e.emitForRun(watchContext, runID, "rtl_started", "RTL", &percent, &current, &total, outcome.errorCode, outcome.message)
+					e.stopWatcherFromWatcher()
+				default:
+					e.emitForRun(watchContext, runID, "operation_failed", "RUNNING", &percent, &current, &total, outcome.errorCode, outcome.message)
+					e.stopWatcherFromWatcher()
+				}
 				return
 			}
 			if e.payload != nil {
@@ -405,6 +430,169 @@ func (e *MissionExecutor) startWatcher(ctx context.Context, runID string) {
 			e.emitForRun(watchContext, runID, "progress", e.currentState("progress"), &percent, &current, &total, "", "Mission progress updated")
 		}
 	}()
+}
+
+func (e *MissionExecutor) arrivalActionsForRun(runID string) []runtimeMissionAction {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.uploadedRunID != runID {
+		return nil
+	}
+	return append([]runtimeMissionAction(nil), e.arrivalActions...)
+}
+
+func (e *MissionExecutor) completeRun(ctx context.Context, runID string, percent float64, current, total uint32, message string) {
+	e.setState(runID, "COMPLETED")
+	if e.payload != nil {
+		e.payload.EndMission(ctx, runID)
+	}
+	e.emitForRun(ctx, runID, "completed", "COMPLETED", &percent, &current, &total, "", message)
+	e.stopWatcherFromWatcher()
+}
+
+func (e *MissionExecutor) executeArrivalActions(ctx context.Context, runID string, actions []runtimeMissionAction) arrivalActionOutcome {
+	for _, action := range actions {
+		var lastErr error
+		for attempt := uint32(1); attempt <= action.maxAttempts; attempt++ {
+			e.emitActionUpdate(ctx, runID, action, "RUNNING", attempt, "", fmt.Sprintf("Executing %s through the acknowledged Agent runtime", actionLabel(action.actionType)), "")
+			actionContext, cancel := context.WithTimeout(ctx, 20*time.Second)
+			lastErr = e.executeRuntimeAction(actionContext, runID, action)
+			cancel()
+			if lastErr == nil {
+				e.emitActionUpdate(ctx, runID, action, "SUCCEEDED", attempt, "", fmt.Sprintf("%s acknowledged", actionLabel(action.actionType)), `{"acknowledged":true}`)
+				break
+			}
+			errorCode := runtimeActionErrorCode(action.actionType)
+			if attempt < action.maxAttempts {
+				e.emitActionUpdate(ctx, runID, action, "RETRYING", attempt, errorCode, fmt.Sprintf("%s was not acknowledged; retrying", actionLabel(action.actionType)), "")
+				if !waitForRetry(ctx, e.retryDelay()) {
+					lastErr = ctx.Err()
+					e.emitActionUpdate(ctx, runID, action, "FAILED", attempt, errorCode, "Arrival action retry was interrupted", "")
+					break
+				}
+				continue
+			}
+			e.emitActionUpdate(ctx, runID, action, "FAILED", attempt, errorCode, lastErr.Error(), "")
+		}
+		if lastErr != nil {
+			return e.applyArrivalFailurePolicy(ctx, runID, action, lastErr)
+		}
+	}
+	return arrivalActionOutcome{completed: true}
+}
+
+func (e *MissionExecutor) executeRuntimeAction(ctx context.Context, runID string, action runtimeMissionAction) error {
+	switch action.actionType {
+	case "HOLD_AT_ARRIVAL":
+		response, err := e.action.Hold(ctx, &actionpb.HoldRequest{})
+		if err != nil {
+			return fmt.Errorf("request operational Hold: %w", err)
+		}
+		if err := actionResultError(response.GetActionResult()); err != nil {
+			return fmt.Errorf("operational Hold rejected: %w", err)
+		}
+		return nil
+	case "POINT_GIMBAL_AT_INCIDENT":
+		if e.payload == nil {
+			return errors.New("payload controller is unavailable")
+		}
+		return e.payload.PointAtLocation(ctx, runID, action.latitude, action.longitude, action.altitudeAMSL)
+	default:
+		return fmt.Errorf("unsupported runtime mission action %q", action.actionType)
+	}
+}
+
+func (e *MissionExecutor) applyArrivalFailurePolicy(ctx context.Context, runID string, action runtimeMissionAction, actionErr error) arrivalActionOutcome {
+	errorCode := runtimeActionErrorCode(action.actionType)
+	switch action.failurePolicy {
+	case "RETURN_TO_LAUNCH":
+		policyContext, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		response, err := e.action.ReturnToLaunch(policyContext, &actionpb.ReturnToLaunchRequest{})
+		if err == nil {
+			err = actionResultError(response.GetActionResult())
+		}
+		if err != nil {
+			return arrivalActionOutcome{
+				errorCode: "ARRIVAL_FAILURE_POLICY_FAILED",
+				message:   fmt.Sprintf("%s failed and reviewed RTL policy was not acknowledged: %v; operator intervention required", actionLabel(action.actionType), err),
+			}
+		}
+		e.emitActionUpdate(ctx, runID, action, "POLICY_APPLIED", action.maxAttempts, errorCode, "Arrival action failed; reviewed Return to launch policy acknowledged", `{"policy":"RETURN_TO_LAUNCH","acknowledged":true}`)
+		return arrivalActionOutcome{
+			policyRunState: "RTL",
+			errorCode:      errorCode,
+			message:        fmt.Sprintf("%s failed; reviewed Return to launch policy acknowledged", actionLabel(action.actionType)),
+		}
+	case "OPERATOR_INTERVENTION":
+		e.emitActionUpdate(ctx, runID, action, "POLICY_APPLIED", action.maxAttempts, errorCode, "Arrival action failed; reviewed operator intervention policy is active", `{"policy":"OPERATOR_INTERVENTION","automaticVehicleCommand":false}`)
+		return arrivalActionOutcome{
+			errorCode: errorCode,
+			message:   fmt.Sprintf("%s failed after %d attempts: %v; operator intervention required", actionLabel(action.actionType), action.maxAttempts, actionErr),
+		}
+	default:
+		return arrivalActionOutcome{
+			errorCode: "ARRIVAL_FAILURE_POLICY_INVALID",
+			message:   "Arrival action failed without a supported reviewed policy; operator intervention required",
+		}
+	}
+}
+
+func (e *MissionExecutor) emitActionUpdate(ctx context.Context, runID string, action runtimeMissionAction, state string, attempt uint32, errorCode, message, evidence string) {
+	sequence := action.sequence
+	e.emitUpdate(ctx, MissionUpdate{
+		EventID:        identity.NewID(),
+		RunID:          runID,
+		Type:           "action_state_changed",
+		State:          e.currentState("arrival_action"),
+		ObservedAt:     time.Now().UTC(),
+		ErrorCode:      errorCode,
+		Message:        message,
+		EvidenceJSON:   evidence,
+		ActionSequence: &sequence,
+		ActionType:     action.actionType,
+		ActionState:    state,
+		ActionAttempt:  attempt,
+		FailurePolicy:  action.failurePolicy,
+	})
+}
+
+func (e *MissionExecutor) retryDelay() time.Duration {
+	if e.arrivalRetryDelay < 0 {
+		return 0
+	}
+	if e.arrivalRetryDelay == 0 {
+		return 500 * time.Millisecond
+	}
+	return e.arrivalRetryDelay
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func runtimeActionErrorCode(actionType string) string {
+	if actionType == "HOLD_AT_ARRIVAL" {
+		return "ARRIVAL_HOLD_FAILED"
+	}
+	return "ARRIVAL_GIMBAL_FAILED"
+}
+
+func actionLabel(actionType string) string {
+	if actionType == "HOLD_AT_ARRIVAL" {
+		return "Hold at arrival"
+	}
+	return "Point gimbal at incident"
 }
 
 func (e *MissionExecutor) stopWatcher() {
@@ -506,8 +694,9 @@ type atlasWaypoint struct {
 }
 
 type atlasAction struct {
-	Type   string         `json:"actionType"`
-	Params map[string]any `json:"params"`
+	Sequence uint32         `json:"sequence"`
+	Type     string         `json:"actionType"`
+	Params   map[string]any `json:"params"`
 }
 
 type translatedMission struct {
@@ -515,6 +704,24 @@ type translatedMission struct {
 	payload        payloadMissionPlan
 	returnToLaunch bool
 	warnings       []string
+	arrivalActions []runtimeMissionAction
+}
+
+type runtimeMissionAction struct {
+	sequence      uint32
+	actionType    string
+	maxAttempts   uint32
+	failurePolicy string
+	latitude      float64
+	longitude     float64
+	altitudeAMSL  float32
+}
+
+type arrivalActionOutcome struct {
+	completed      bool
+	policyRunState string
+	errorCode      string
+	message        string
 }
 
 type gimbalIntent struct {
@@ -542,6 +749,7 @@ func translateMissionPlan(value string) (translatedMission, error) {
 	land := false
 	returnToLaunch := false
 	warnings := []string{}
+	arrivalActions := []runtimeMissionAction{}
 	for _, action := range source.Actions {
 		switch action.Type {
 		case "SET_SPEED":
@@ -565,6 +773,23 @@ func translateMissionPlan(value string) (translatedMission, error) {
 			land = true
 		case "START_PERCEPTION", "STOP_PERCEPTION":
 			warnings = appendUnique(warnings, "Perception actions remain onboard-agent structured events and are not executed by MAVSDK Mission v1")
+		case "HOLD_AT_ARRIVAL", "POINT_GIMBAL_AT_INCIDENT":
+			runtimeAction, err := parseRuntimeMissionAction(action)
+			if err != nil {
+				return translatedMission{}, err
+			}
+			arrivalActions = append(arrivalActions, runtimeAction)
+		}
+	}
+	if len(arrivalActions) > 0 {
+		if arrivalActions[0].actionType != "HOLD_AT_ARRIVAL" {
+			return translatedMission{}, errors.New("acknowledged arrival actions must begin with HOLD_AT_ARRIVAL")
+		}
+		if len(arrivalActions) > 2 || (len(arrivalActions) == 2 && arrivalActions[1].actionType != "POINT_GIMBAL_AT_INCIDENT") {
+			return translatedMission{}, errors.New("acknowledged arrival actions support one Hold and one optional incident gimbal target")
+		}
+		if returnToLaunch {
+			return translatedMission{}, errors.New("MAVSDK RTL-after-mission cannot be combined with acknowledged arrival actions")
 		}
 	}
 	items := make([]*missionpb.MissionItem, 0, len(source.GeneratedWaypoints))
@@ -616,7 +841,36 @@ func translateMissionPlan(value string) (translatedMission, error) {
 	if land {
 		items[len(items)-1].VehicleAction = missionpb.MissionItem_VEHICLE_ACTION_LAND
 	}
-	return translatedMission{plan: &missionpb.MissionPlan{MissionItems: items}, payload: missionPayloadPlan(source.Actions), returnToLaunch: returnToLaunch, warnings: warnings}, nil
+	return translatedMission{plan: &missionpb.MissionPlan{MissionItems: items}, payload: missionPayloadPlan(source.Actions), returnToLaunch: returnToLaunch, warnings: warnings, arrivalActions: arrivalActions}, nil
+}
+
+func parseRuntimeMissionAction(action atlasAction) (runtimeMissionAction, error) {
+	failurePolicy := stringParam(action.Params, "failurePolicy")
+	if failurePolicy != "RETURN_TO_LAUNCH" && failurePolicy != "OPERATOR_INTERVENTION" {
+		return runtimeMissionAction{}, fmt.Errorf("%s requires an explicit supported failurePolicy", action.Type)
+	}
+	attempts, ok := numberParam(action.Params, "maxAttempts")
+	if !ok || attempts < 1 || attempts > 5 || attempts != math.Trunc(attempts) {
+		return runtimeMissionAction{}, fmt.Errorf("%s maxAttempts must be an integer between 1 and 5", action.Type)
+	}
+	runtimeAction := runtimeMissionAction{
+		sequence:      action.Sequence,
+		actionType:    action.Type,
+		maxAttempts:   uint32(attempts),
+		failurePolicy: failurePolicy,
+	}
+	if action.Type == "POINT_GIMBAL_AT_INCIDENT" {
+		latitude, latitudeOK := numberParam(action.Params, "latitude")
+		longitude, longitudeOK := numberParam(action.Params, "longitude")
+		altitude, altitudeOK := numberParam(action.Params, "altitudeAmslMeters")
+		if !latitudeOK || !longitudeOK || !altitudeOK || math.IsNaN(latitude) || math.IsNaN(longitude) || math.IsNaN(altitude) || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180 || altitude < -500 || altitude > 9000 {
+			return runtimeMissionAction{}, errors.New("POINT_GIMBAL_AT_INCIDENT requires valid latitude, longitude, and AMSL altitude")
+		}
+		runtimeAction.latitude = latitude
+		runtimeAction.longitude = longitude
+		runtimeAction.altitudeAMSL = float32(altitude)
+	}
+	return runtimeAction, nil
 }
 
 func parseGimbalIntent(params map[string]any) gimbalIntent {

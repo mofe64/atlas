@@ -361,6 +361,19 @@ enum MissionRunUpdateType {
   MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED = 14;
   MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED = 15;
   MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED = 16;
+  // Runtime mission actions are reported through the mission stream so their
+  // acknowledgement remains ordered with flight progress for the same run.
+  MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED = 17;
+}
+
+enum MissionActionState {
+  MISSION_ACTION_STATE_UNSPECIFIED = 0;
+  MISSION_ACTION_STATE_REQUESTED = 1;
+  MISSION_ACTION_STATE_RUNNING = 2;
+  MISSION_ACTION_STATE_RETRYING = 3;
+  MISSION_ACTION_STATE_SUCCEEDED = 4;
+  MISSION_ACTION_STATE_FAILED = 5;
+  MISSION_ACTION_STATE_POLICY_APPLIED = 6;
 }
 
 message MissionOperationRequest {
@@ -389,4 +402,9 @@ message MissionRunUpdate {
   string error_code = 10;
   string message = 11;
   string evidence_json = 12;
+  optional uint32 action_sequence = 13;
+  string action_type = 14;
+  MissionActionState action_state = 15;
+  uint32 action_attempt = 16;
+  string failure_policy = 17;
 }

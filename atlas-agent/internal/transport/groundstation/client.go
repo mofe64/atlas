@@ -245,6 +245,11 @@ func sendMissionUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, 
 			ErrorCode:        update.ErrorCode,
 			Message:          update.Message,
 			EvidenceJson:     update.EvidenceJSON,
+			ActionSequence:   update.ActionSequence,
+			ActionType:       update.ActionType,
+			ActionState:      missionActionState(update.ActionState),
+			ActionAttempt:    update.ActionAttempt,
+			FailurePolicy:    update.FailurePolicy,
 		}},
 	})
 }
@@ -396,8 +401,29 @@ func missionUpdateType(value string) pb.MissionRunUpdateType {
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED
 	case "payload_restore_failed":
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED
+	case "action_state_changed":
+		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED
 	default:
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_UNSPECIFIED
+	}
+}
+
+func missionActionState(value string) pb.MissionActionState {
+	switch value {
+	case "REQUESTED":
+		return pb.MissionActionState_MISSION_ACTION_STATE_REQUESTED
+	case "RUNNING":
+		return pb.MissionActionState_MISSION_ACTION_STATE_RUNNING
+	case "RETRYING":
+		return pb.MissionActionState_MISSION_ACTION_STATE_RETRYING
+	case "SUCCEEDED":
+		return pb.MissionActionState_MISSION_ACTION_STATE_SUCCEEDED
+	case "FAILED":
+		return pb.MissionActionState_MISSION_ACTION_STATE_FAILED
+	case "POLICY_APPLIED":
+		return pb.MissionActionState_MISSION_ACTION_STATE_POLICY_APPLIED
+	default:
+		return pb.MissionActionState_MISSION_ACTION_STATE_UNSPECIFIED
 	}
 }
 

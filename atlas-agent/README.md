@@ -4,6 +4,12 @@ Atlas Agent is the supported Go 1.25 onboard runtime. It initiates and maintains
 the direct HM30/local-network session to Atlas Native; it does not connect to
 the Atlas Backend.
 
+For the full system mental model and code-linked onboarding path, start with
+[`../docs/README.md`](../docs/README.md). Agent internals are documented in
+[`../docs/atlas-agent.md`](../docs/atlas-agent.md), and the shared transport is
+documented in
+[`../docs/native-agent-protocol.md`](../docs/native-agent-protocol.md).
+
 ## Current flow
 
 ```text
@@ -62,12 +68,20 @@ autofocus/focus commands.
 
 Mission operations accept an immutable Atlas plan, translate navigation to
 MAVSDK Mission items, and support upload, start, pause, resume, cancel-to-hold,
-and Return-to-Launch. Mission progress is streamed back to Atlas Native. Camera
-and gimbal actions remain in the Agent payload plan instead of being embedded in
-PX4 mission items, preventing automatic waypoint setpoints from racing a manual
-override. RTL-after-completion is configured before upload. An initial Start
-runs native preflight gates, commands MAVSDK Action Arm, then enters PX4 mission
-mode; Resume only resumes a paused mission.
+and Return-to-Launch. Incident-response plans retain a separate acknowledged
+arrival-action chain. After the final waypoint, Agent executes
+`HOLD_AT_ARRIVAL` and optional `POINT_GIMBAL_AT_INCIDENT`, reports every
+running/retrying/succeeded/failed/policy-applied transition to Native, and does
+not complete the run until all actions succeed. Exhausted retries use the
+reviewed plan policy: request Return to Launch or preserve the run for operator
+intervention.
+
+Mission progress is streamed back to Atlas Native. Camera and gimbal actions
+remain in the Agent payload plan instead of being embedded in PX4 mission
+items, preventing automatic waypoint setpoints from racing a manual override.
+RTL-after-completion is configured before upload. An initial Start runs native
+preflight gates, commands MAVSDK Action Arm, then enters PX4 mission mode;
+Resume only resumes a paused mission.
 If mission start fails after arming, the agent commands HOLD and reports the
 failure. The v1 perception actions are reported as translation warnings rather
 than silently claimed as executed.

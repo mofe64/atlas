@@ -7,6 +7,11 @@ vehicle policy, mission execution records, and video/perception alignment.
 There is currently no backend dependency, organization, user login, enrollment
 token, or operator authentication.
 
+For the system-wide newcomer path, component boundaries, state machines, and
+code map, start with
+[`../docs/README.md`](../docs/README.md). The Native-specific architecture is
+documented in [`../docs/atlas-native.md`](../docs/atlas-native.md).
+
 ## Runtime topology
 
 ```text
@@ -141,6 +146,15 @@ slice contains registration, heartbeat, telemetry, PX4 status events, durable
 Hold/RTL/Land commands, and acknowledged gimbal angle/rate/centre commands.
 Mission plans can be uploaded and controlled through the same agent-initiated
 session, with agent/MAVSDK progress written back to durable mission runs.
+
+Incident-response plans also carry an operator-reviewed arrival action chain.
+Native creates durable action executions with requested, running, retrying,
+succeeded, failed, and policy-applied states when the run is created. The first
+supported actions are `HOLD_AT_ARRIVAL` and optional
+`POINT_GIMBAL_AT_INCIDENT`. Reaching the final waypoint is transit progress;
+the assignment becomes `ON_SCENE` only after Agent reports an acknowledged
+arrival Hold. Each plan explicitly selects either Return to Launch or operator
+intervention as its exhausted-retry policy.
 
 ## Embedded SQLite
 

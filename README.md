@@ -43,6 +43,24 @@ This separation is intentional:
 | `docs/aircraft-operations-implementation.md` | Shipped aircraft workspace contracts and safety invariants |
 | `third_party/mavsdk-proto/` | Pinned MAVSDK protobuf submodule used for code generation |
 
+## Developer documentation
+
+Start with [`docs/README.md`](docs/README.md) for the newcomer reading path and
+repository map. The detailed architecture set covers:
+
+- [System architecture and component boundaries](docs/architecture-overview.md)
+- [Atlas Native internals](docs/atlas-native.md)
+- [Atlas Agent internals](docs/atlas-agent.md)
+- [The Native-Agent protocol](docs/native-agent-protocol.md)
+- [Aircraft operations, missions, commands, and safety](docs/aircraft-operations-implementation.md)
+- [Video and perception](docs/video-perception.md)
+- [The separate Atlas Backend](docs/atlas-backend.md)
+- [Development, validation, and debugging workflows](docs/development-guide.md)
+
+The architecture documents describe shipped behavior. Product proposals and
+future direction remain separate in
+[`docs/feature-gap-assessment.md`](docs/feature-gap-assessment.md).
+
 ## What the current application supports
 
 - Stable local drone and Agent identities with direct registration.
