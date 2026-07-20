@@ -14,3 +14,8 @@ __pycache__/
 *.pyc
 atlas-agent/dist/
 sampleVids/
+
+# ROS 2 generated workspaces
+atlas-spatial-runtime/ros2_ws/build/
+atlas-spatial-runtime/ros2_ws/install/
+atlas-spatial-runtime/ros2_ws/log/

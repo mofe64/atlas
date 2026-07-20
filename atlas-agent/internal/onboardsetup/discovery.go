@@ -31,6 +31,7 @@ func Discover(ctx context.Context, runner Runner, options Options) (Discovery, e
 		architecture = "unknown"
 	}
 	existingConfig := readEnvironmentFile(paths.ConfigFile)
+	existingSpatialConfig := readEnvironmentFile(paths.SpatialConfigFile)
 	cameraURL := existingConfig["ATLAS_A8_RTSP_URL"]
 	if cameraURL == "" {
 		cameraURL = DefaultA8RTSPURL
@@ -40,16 +41,73 @@ func Discover(ctx context.Context, runner Runner, options Options) (Discovery, e
 		groundAddress = DefaultGroundAddr
 	}
 	discovery := Discovery{
-		OS:              release,
-		Architecture:    architecture,
-		BoardModel:      readBoardModel(rootPath(paths.Root, "/proc/device-tree/model")),
-		Serial:          discoverSerial(paths.Root),
-		Hailo:           discoverHailo(ctx, runner, paths),
-		Camera:          probeRTSP(ctx, runner, cameraURL),
-		GroundReachable: probeTCP(groundAddress, 800*time.Millisecond),
-		ExistingConfig:  existingConfig,
+		OS:                    release,
+		Architecture:          architecture,
+		BoardModel:            readBoardModel(rootPath(paths.Root, "/proc/device-tree/model")),
+		Serial:                discoverSerial(paths.Root),
+		Hailo:                 discoverHailo(ctx, runner, paths),
+		Spatial:               discoverSpatial(ctx, runner, paths, existingSpatialConfig),
+		Camera:                probeRTSP(ctx, runner, cameraURL),
+		GroundReachable:       probeTCP(groundAddress, 800*time.Millisecond),
+		ExistingConfig:        existingConfig,
+		ExistingSpatialConfig: existingSpatialConfig,
 	}
 	return discovery, nil
+}
+
+func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configuration map[string]string) SpatialStatus {
+	releaseImage := readEnvironmentFile(paths.ReleaseManifest)["ATLAS_SPATIAL_CONTAINER_IMAGE"]
+	status := SpatialStatus{
+		Configured:     strings.EqualFold(configuration["ATLAS_SPATIAL_ENABLED"], "true"),
+		Provider:       configuration["ATLAS_SPATIAL_PROVIDER"],
+		DeviceID:       configuration["ATLAS_SPATIAL_DEVICE_ID"],
+		Model:          configuration["ATLAS_SPATIAL_MODEL"],
+		USBTransport:   fallback(configuration["ATLAS_SPATIAL_USB_TRANSPORT"], "unknown"),
+		ContainerImage: configuration["ATLAS_SPATIAL_CONTAINER_IMAGE"],
+		SourceID:       fallback(configuration["ATLAS_SPATIAL_SOURCE_ID"], DefaultSpatialSource),
+	}
+	if releaseImage != "" {
+		// A package upgrade moves the desired image. Existing spatial.env may
+		// contain the immutable ID resolved for the previous release.
+		status.ContainerImage = releaseImage
+	}
+	if status.ContainerImage == "" {
+		status.ContainerImage = DefaultSpatialImage
+	}
+	if fileExists(paths.SpatialCheck) {
+		arguments := []string{"--discover", "--sysfs-root", rootPath(paths.Root, "/sys")}
+		if status.DeviceID != "" {
+			arguments = append(arguments, "--device-id", status.DeviceID)
+		}
+		result := runner.Run(ctx, paths.SpatialCheck, arguments...)
+		values := parseKeyValueOutput(result.Output)
+		status.DevicePresent = strings.EqualFold(values["DEVICE_PRESENT"], "true")
+		if status.DevicePresent {
+			status.Provider = fallback(values["PROVIDER"], status.Provider)
+			status.DeviceID = fallback(values["DEVICE_ID"], status.DeviceID)
+			status.Model = fallback(values["MODEL"], status.Model)
+			status.USBTransport = fallback(values["USB_TRANSPORT"], status.USBTransport)
+			status.USBSpeedMbps, _ = strconv.Atoi(values["USB_SPEED_MBPS"])
+		}
+	}
+	if status.ContainerImage != "" && commandSucceeds(ctx, runner, "docker", "image", "inspect", status.ContainerImage) {
+		status.RuntimeInstalled = true
+	}
+	service := runner.Run(ctx, "systemctl", "is-active", "atlas-spatial-runtime.service")
+	status.ServiceRunning = service.Err == nil && strings.TrimSpace(service.Output) == "active"
+	if status.ServiceRunning && fileExists(paths.SpatialCheck) {
+		socketPath := fallback(configuration["ATLAS_SPATIAL_SOCKET_PATH"], filepath.Join(paths.RuntimeDirectory, "spatial.sock"))
+		result := runner.Run(ctx, paths.SpatialCheck, "--socket", socketPath)
+		values := parseKeyValueOutput(result.Output)
+		status.Ready = result.Err == nil && strings.EqualFold(values["READY"], "true")
+		status.Status = values["STATUS"]
+		status.ColorFPS = values["COLOR_FPS"]
+		status.DepthFPS = values["DEPTH_FPS"]
+		status.SyncSkewMS = values["SYNC_SKEW_MS"]
+		status.CalibrationHash = values["CALIBRATION_HASH"]
+		status.LastError = values["LAST_ERROR"]
+	}
+	return status
 }
 
 func rootPath(root, path string) string {
@@ -402,10 +460,43 @@ func installConfigFromDiscovery(discovery Discovery, paths Paths) InstallConfig 
 	postprocessReady := fileExists(paths.DefaultPostprocessSO) || config.PerceptionAdapterMode == AdapterModeContainer
 	config.PerceptionEnabled = discovery.Hailo.Ready() && fileExists(paths.DefaultModel) && postprocessReady
 	applyExistingConfig(&config, discovery.ExistingConfig)
+	applySpatialDiscovery(&config, discovery)
 	if discovery.Hailo.RuntimeMode == AdapterModeContainer {
 		config.PerceptionAdapterMode = AdapterModeContainer
 	}
 	return config
+}
+
+func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
+	status := discovery.Spatial
+	config.SpatialProvider = status.Provider
+	config.SpatialSourceID = fallback(status.SourceID, DefaultSpatialSource)
+	config.SpatialDeviceID = status.DeviceID
+	config.SpatialModel = status.Model
+	config.SpatialUSBTransport = fallback(status.USBTransport, "unknown")
+	config.SpatialContainerImage = status.ContainerImage
+	if value, exists := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_ENABLED"]; exists {
+		config.SpatialEnabled = strings.EqualFold(value, "true")
+	} else {
+		config.SpatialEnabled = status.DevicePresent
+	}
+	if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_SOURCE_ID"]; value != "" {
+		config.SpatialSourceID = value
+	}
+	if !status.DevicePresent {
+		if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_PROVIDER"]; value != "" {
+			config.SpatialProvider = value
+		}
+		if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_DEVICE_ID"]; value != "" {
+			config.SpatialDeviceID = value
+		}
+		if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_MODEL"]; value != "" {
+			config.SpatialModel = value
+		}
+		if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_USB_TRANSPORT"]; value != "" {
+			config.SpatialUSBTransport = value
+		}
+	}
 }
 
 func applyExistingConfig(config *InstallConfig, values map[string]string) {

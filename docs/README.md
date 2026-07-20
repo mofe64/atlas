@@ -19,6 +19,8 @@ flowchart LR
     Camera["SIYI A8 camera"] -->|"clean RTSP"| Host
     Camera --> Inference["Hailo inference runtime"]
     Inference -->|"normalized metadata"| Agent
+    DepthCamera["USB depth camera"] --> Spatial["Atlas Spatial Runtime"]
+    Spatial -. "local RGB-D contract; Native transport is a later slice" .-> Agent
     Backend["Atlas Backend"] -. "future coordinated services; not flight control" .-> Host
 ```
 
@@ -41,8 +43,9 @@ and Agent.
 | 7 | [Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md) | How do detections become tracks and coordinates, and how do camera and aircraft follow differ? |
 | 8 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the general command, lifecycle, safety, and failure-state rules? |
 | 9 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, rendered, and retained? |
-| 10 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
-| 11 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
+| 10 | [Spatial camera runtime](spatial-runtime.md) | How is USB RGB-D hardware installed behind a vendor-neutral Pi boundary? |
+| 11 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
+| 12 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
 
 The [feature gap assessment](feature-gap-assessment.md) is a product-direction
 document. It describes possible future work and must not be treated as shipped
@@ -54,6 +57,7 @@ architecture.
 | --- | --- | --- |
 | [`atlas/`](../atlas/) | Tauri v2 desktop ground station: React UI plus Rust operational host | [`src/App.tsx`](../atlas/src/App.tsx), [`src-tauri/src/lib.rs`](../atlas/src-tauri/src/lib.rs) |
 | [`atlas-agent/`](../atlas-agent/) | Go onboard runtime, setup tooling, package, and services | [`cmd/atlas-agent/main.go`](../atlas-agent/cmd/atlas-agent/main.go), [`cmd/atlas-setup/main.go`](../atlas-agent/cmd/atlas-setup/main.go) |
+| [`atlas-spatial-runtime/`](../atlas-spatial-runtime/) | Vendor-neutral ROS 2 RGB-D runtime and container | [`launch/spatial_runtime.launch.py`](../atlas-spatial-runtime/ros2_ws/src/atlas_spatial_runtime/launch/spatial_runtime.launch.py), [`health_node.py`](../atlas-spatial-runtime/ros2_ws/src/atlas_spatial_runtime/atlas_spatial_runtime/health_node.py) |
 | [`atlas-backend/`](../atlas-backend/) | Independent Go/Gin/PostgreSQL identity and coordinated-services foundation | [`cmd/atlas-backend/main.go`](../atlas-backend/cmd/atlas-backend/main.go) |
 | [`proto/atlas/ground_station.proto`](../proto/atlas/ground_station.proto) | Shared Native-Agent wire contract | Generated into Rust at build time and committed as Go code |
 | [`scripts/`](../scripts/) | SITL, isolated Native development, database reset, and code generation | [`start-sitl.sh`](../scripts/start-sitl.sh) |

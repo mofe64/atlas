@@ -1,0 +1,3 @@
+# DepthAI USB bootloader/runtime devices. The runtime container runs as the
+# atlas-agent account, so device access remains unprivileged.
+SUBSYSTEM=="usb", ATTR{idVendor}=="03e7", MODE="0660", GROUP="atlas-agent", TAG+="uaccess"

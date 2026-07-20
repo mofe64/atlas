@@ -1,0 +1,59 @@
+#!/bin/sh
+set -eu
+
+: "${ATLAS_SPATIAL_CONTAINER_IMAGE:?ATLAS_SPATIAL_CONTAINER_IMAGE is required}"
+: "${ATLAS_SPATIAL_CONTAINER_NAME:?ATLAS_SPATIAL_CONTAINER_NAME is required}"
+: "${ATLAS_SPATIAL_PROVIDER:?ATLAS_SPATIAL_PROVIDER is required}"
+
+if [ "${ATLAS_SPATIAL_ENABLED:-false}" != true ]; then
+    printf '%s\n' 'spatial runtime is disabled in /etc/atlas-agent/spatial.env' >&2
+    exit 1
+fi
+
+case "${ATLAS_SPATIAL_PROVIDER}" in
+    synthetic|depthai)
+        ;;
+    *)
+        printf 'unsupported spatial provider: %s\n' "${ATLAS_SPATIAL_PROVIDER}" >&2
+        exit 1
+        ;;
+esac
+
+if [ "${ATLAS_SPATIAL_PROVIDER}" = depthai ] && [ ! -d /dev/bus/usb ]; then
+    printf '%s\n' 'USB device bus is unavailable; retrying through systemd' >&2
+    exit 1
+fi
+
+agent_uid="$(id -u atlas-agent)"
+agent_gid="$(id -g atlas-agent)"
+
+# /run is cleared on reboot. The spatial service owns recreating its side of
+# the shared Atlas runtime path so it does not depend on atlas-agent.service
+# having started first.
+/usr/bin/install -d -m 0750 -o atlas-agent -g atlas-agent \
+    /run/atlas-agent \
+    /var/lib/atlas-agent/spatial \
+    /var/lib/atlas-agent/spatial/log
+
+set -- \
+    run --rm \
+    --name "${ATLAS_SPATIAL_CONTAINER_NAME}" \
+    --network none \
+    --user "${agent_uid}:${agent_gid}" \
+    --env-file /etc/atlas-agent/spatial.env \
+    --env HOME=/var/lib/atlas-agent/spatial \
+    --env ROS_LOG_DIR=/var/lib/atlas-agent/spatial/log \
+    --read-only \
+    --cap-drop ALL \
+    --security-opt no-new-privileges \
+    --tmpfs /tmp:rw,noexec,nosuid,size=128m \
+    --volume /run/atlas-agent:/run/atlas-agent:rw \
+    --volume /var/lib/atlas-agent/spatial:/var/lib/atlas-agent/spatial:rw
+
+if [ "${ATLAS_SPATIAL_PROVIDER}" = depthai ]; then
+    set -- "$@" \
+        --device-cgroup-rule 'c 189:* rmw' \
+        --volume /dev/bus/usb:/dev/bus/usb:rw
+fi
+
+exec /usr/bin/docker "$@" "${ATLAS_SPATIAL_CONTAINER_IMAGE}"

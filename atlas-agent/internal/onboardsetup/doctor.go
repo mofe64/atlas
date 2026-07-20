@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -71,10 +72,57 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 		}
 	}
 
+	spatialConfiguration := readEnvironmentFile(paths.SpatialConfigFile)
+	if strings.EqualFold(spatialConfiguration["ATLAS_SPATIAL_ENABLED"], "true") {
+		checks = append(checks, doctorSpatial(ctx, runner, paths, spatialConfiguration)...)
+	}
+
 	for _, check := range checks {
 		_, _ = fmt.Fprintf(output, "[%s] %-24s %s\n", check.Level, check.Name, check.Message)
 	}
 	return checks, nil
+}
+
+func doctorSpatial(ctx context.Context, runner Runner, paths Paths, configuration map[string]string) []Check {
+	image := configuration["ATLAS_SPATIAL_CONTAINER_IMAGE"]
+	checks := []Check{
+		fileCheck("spatial configuration", paths.SpatialConfigFile, true),
+		fileCheck("spatial runtime check", paths.SpatialCheck, true),
+		serviceCheck(ctx, runner, "atlas-spatial-runtime.service"),
+	}
+	imageResult := runner.Run(ctx, "docker", "image", "inspect", image)
+	checks = append(checks, booleanCheck("spatial container image", image != "" && imageResult.Err == nil, fallback(image, "not configured")))
+
+	provider := configuration["ATLAS_SPATIAL_PROVIDER"]
+	if provider == SpatialProviderDepthAI {
+		arguments := []string{"--discover", "--sysfs-root", rootPath(paths.Root, "/sys")}
+		if deviceID := configuration["ATLAS_SPATIAL_DEVICE_ID"]; deviceID != "" {
+			arguments = append(arguments, "--device-id", deviceID)
+		}
+		discoveryResult := runner.Run(ctx, paths.SpatialCheck, arguments...)
+		device := parseKeyValueOutput(discoveryResult.Output)
+		present := discoveryResult.Err == nil && strings.EqualFold(device["DEVICE_PRESENT"], "true")
+		message := fmt.Sprintf("%s id=%s transport=%s", fallback(device["MODEL"], "DepthAI camera"), fallback(device["DEVICE_ID"], "unknown"), fallback(device["USB_TRANSPORT"], "unknown"))
+		checks = append(checks, booleanCheck("spatial USB camera", present, message))
+		if present && device["USB_TRANSPORT"] == "usb2" {
+			checks = append(checks, Check{Name: "spatial USB transport", Level: CheckWarn, Message: "USB 2 limits RGB-D throughput; use a USB 3 port/cable"})
+		} else if present && device["USB_TRANSPORT"] == "usb2-or-unbooted" {
+			checks = append(checks, Check{Name: "spatial USB transport", Level: CheckWarn, Message: "480 Mb/s or device not booted; re-check while the runtime is active"})
+		} else if present {
+			checks = append(checks, Check{Name: "spatial USB transport", Level: CheckPass, Message: fallback(device["USB_TRANSPORT"], "unknown")})
+		}
+	}
+
+	socketPath := fallback(configuration["ATLAS_SPATIAL_SOCKET_PATH"], filepath.Join(paths.RuntimeDirectory, "spatial.sock"))
+	probeResult := runner.Run(ctx, paths.SpatialCheck, "--socket", socketPath)
+	probe := parseKeyValueOutput(probeResult.Output)
+	ready := probeResult.Err == nil && strings.EqualFold(probe["READY"], "true")
+	message := fmt.Sprintf("status=%s color=%sfps depth=%sfps skew=%sms calibration=%s", fallback(probe["STATUS"], "unknown"), fallback(probe["COLOR_FPS"], "0"), fallback(probe["DEPTH_FPS"], "0"), fallback(probe["SYNC_SKEW_MS"], "unknown"), fallback(probe["CALIBRATION_HASH"], "missing"))
+	if probe["LAST_ERROR"] != "" {
+		message += " error=" + probe["LAST_ERROR"]
+	}
+	checks = append(checks, booleanCheck("spatial RGB-D contract", ready, message))
+	return checks
 }
 
 func doctorHailoContainer(ctx context.Context, runner Runner, configuration map[string]string, hailo HailoStatus) []Check {

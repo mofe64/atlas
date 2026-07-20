@@ -128,6 +128,26 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 			}
 		}
 	}
+
+	if discovery.Spatial.DevicePresent {
+		if discovery.Spatial.USBTransport == "usb2" {
+			_, _ = fmt.Fprintf(options.Output, "\nSpatial camera %s is connected over USB 2; RGB-D frame rate may be limited.\n", fallback(discovery.Spatial.Model, discovery.Spatial.DeviceID))
+		} else if discovery.Spatial.USBTransport == "usb2-or-unbooted" {
+			_, _ = fmt.Fprintln(options.Output, "\nSpatial camera USB 3 transport will be verified after its firmware starts.")
+		}
+		config.SpatialEnabled, err = prompt.confirm("Enable the front spatial camera", config.SpatialEnabled)
+		if err != nil {
+			return InstallPlan{}, err
+		}
+	} else if config.SpatialEnabled {
+		_, _ = fmt.Fprintln(options.Output, "\nThe configured spatial camera is not currently visible. Its service can still be installed and will retry independently.")
+		config.SpatialEnabled, err = prompt.confirm("Keep the front spatial camera enabled", true)
+		if err != nil {
+			return InstallPlan{}, err
+		}
+	} else {
+		_, _ = fmt.Fprintln(options.Output, "\nSpatial camera: no supported USB device detected; leaving the optional runtime disabled.")
+	}
 	plan.Config = config
 	if config.PerceptionEnabled && !fileExists(config.ModelPath) {
 		return InstallPlan{}, fmt.Errorf("Hailo HEF model does not exist: %s", config.ModelPath)
@@ -164,6 +184,13 @@ func printDiscovery(output io.Writer, discovery Discovery) {
 	} else {
 		_, _ = fmt.Fprintf(output, "  Hailo:    incomplete (%s)\n", strings.Join(discovery.Hailo.MissingComponents, ", "))
 	}
+	if discovery.Spatial.DevicePresent {
+		_, _ = fmt.Fprintf(output, "  Spatial: ready to configure (%s, %s, %s)\n", fallback(discovery.Spatial.Model, "depth camera"), discovery.Spatial.Provider, discovery.Spatial.USBTransport)
+	} else if discovery.Spatial.Configured {
+		_, _ = fmt.Fprintf(output, "  Spatial: configured but device not visible (%s)\n", fallback(discovery.Spatial.Provider, "unknown provider"))
+	} else {
+		_, _ = fmt.Fprintln(output, "  Spatial: no supported USB camera detected")
+	}
 	if discovery.GroundReachable {
 		_, _ = fmt.Fprintln(output, "  Native:   reachable")
 	} else {
@@ -181,6 +208,11 @@ func printPlan(output io.Writer, plan InstallPlan, paths Paths) {
 	_, _ = fmt.Fprintf(output, "  Native:      %s\n", plan.Config.GroundStationAddress)
 	_, _ = fmt.Fprintf(output, "  TELEM2:      %s at %d baud\n", plan.Config.SerialDevice, plan.Config.BaudRate)
 	_, _ = fmt.Fprintf(output, "  Perception:  %s (%s)\n", provider, plan.Config.PerceptionAdapterMode)
+	spatial := "disabled"
+	if plan.Config.SpatialEnabled {
+		spatial = fmt.Sprintf("%s as %s", plan.Config.SpatialProvider, plan.Config.SpatialSourceID)
+	}
+	_, _ = fmt.Fprintf(output, "  Spatial:     %s\n", spatial)
 	_, _ = fmt.Fprintf(output, "  Config:      %s\n", paths.ConfigFile)
 	_, _ = fmt.Fprintf(output, "  Services:    %s\n", strings.Join(configuredServices(plan.Config), ", "))
 }

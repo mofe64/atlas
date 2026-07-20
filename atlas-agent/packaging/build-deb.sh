@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SPATIAL_RUNTIME_DIR="$(cd "${AGENT_DIR}/../atlas-spatial-runtime" && pwd)"
 MAVSDK_PIN_FILE="${SCRIPT_DIR}/mavsdk.env"
 
 [[ -r "${MAVSDK_PIN_FILE}" ]] || {
@@ -27,12 +28,13 @@ MODEL_ACCELERATOR="${ATLAS_MODEL_ACCELERATOR:-hailo-8l}"
 MODEL_PACKAGE_URL="${ATLAS_MODEL_PACKAGE_URL:-https://archive.raspberrypi.com/debian/pool/main/r/rpicam-apps/rpicam-apps-hailo-postprocess_1.9.0-1~bpo12+1_arm64.deb}"
 MODEL_PACKAGE_SHA256="${ATLAS_MODEL_PACKAGE_SHA256:-a255a8fd7cb7237fcc9c3e067bda892b45db57c066456edd75f332ebe783711a}"
 BYTETRACK_WORKER_BIN="${ATLAS_BYTETRACK_WORKER_BIN:-}"
+SPATIAL_IMAGE="${ATLAS_SPATIAL_CONTAINER_IMAGE:-atlas-spatial-runtime:${VERSION}}"
 
 usage() {
   printf '%s\n' 'Usage: packaging/build-deb.sh'
-  printf '%s\n' 'Builds atlas-agent_<version>_arm64.deb with pinned MAVSDK and Hailo-8L model artifacts.'
+  printf '%s\n' 'Builds atlas-agent_<version>_arm64.deb with MAVSDK, Hailo, and spatial-runtime artifacts.'
   printf '%s\n' 'Environment: ATLAS_RELEASE_VERSION, ATLAS_PACKAGE_OUTPUT_DIR, ATLAS_HEF_MODEL_PATH'
-  printf '%s\n' 'Optional override: ATLAS_BYTETRACK_WORKER_BIN'
+  printf '%s\n' 'Optional overrides: ATLAS_BYTETRACK_WORKER_BIN, ATLAS_SPATIAL_CONTAINER_IMAGE'
 }
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
@@ -53,7 +55,7 @@ case "${MODEL_ACCELERATOR}" in
     ;;
 esac
 
-for command in go git dpkg-deb curl file grep install sed sha256sum uname; do
+for command in go git dpkg-deb curl cp file find grep install sed sha256sum uname; do
   command -v "$command" >/dev/null 2>&1 || {
     printf 'missing required build command: %s\n' "$command" >&2
     exit 1
@@ -178,7 +180,9 @@ mkdir -p \
   "${PACKAGE_ROOT}/usr/sbin" \
   "${PACKAGE_ROOT}/usr/libexec/atlas-agent" \
   "${PACKAGE_ROOT}/usr/lib/systemd/system" \
+  "${PACKAGE_ROOT}/usr/lib/udev/rules.d" \
   "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container" \
+  "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime" \
   "${PACKAGE_ROOT}/usr/share/atlas-agent/models" \
   "${PACKAGE_ROOT}/usr/share/doc/atlas-agent/third-party/bytetrack" \
   "${CACHE_DIR}" \
@@ -229,13 +233,25 @@ printf '[atlas-package] included FoundationVision ByteTrack worker with Atlas CM
 install -m 0644 "${AGENT_DIR}/third_party/bytetrack/LICENSE" "${PACKAGE_ROOT}/usr/share/doc/atlas-agent/third-party/bytetrack/LICENSE"
 install -m 0644 "${AGENT_DIR}/third_party/bytetrack/README.atlas.md" "${PACKAGE_ROOT}/usr/share/doc/atlas-agent/third-party/bytetrack/README.atlas.md"
 install -m 0755 "${AGENT_DIR}/scripts/setup-hailo-ubuntu.sh" "${PACKAGE_ROOT}/usr/sbin/atlas-hailo-setup"
+install -m 0755 "${AGENT_DIR}/scripts/setup-spatial-ubuntu.sh" "${PACKAGE_ROOT}/usr/sbin/atlas-spatial-setup"
 install -m 0644 "${SCRIPT_DIR}/hailo/Dockerfile" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/Dockerfile"
 install -m 0755 "${SCRIPT_DIR}/hailo/atlas-hailo-container-check" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/atlas-hailo-container-check"
 install -m 0755 "${SCRIPT_DIR}/hailo/atlas-hailo-container-run" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-hailo-container-run"
+install -m 0755 "${SCRIPT_DIR}/spatial/atlas-spatial-container-run" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-spatial-container-run"
+install -m 0755 "${SCRIPT_DIR}/spatial/atlas-spatial-runtime-check" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-spatial-runtime-check"
+install -m 0644 "${SCRIPT_DIR}/spatial/99-atlas-depth-camera.rules" "${PACKAGE_ROOT}/usr/lib/udev/rules.d/99-atlas-depth-camera.rules"
+mkdir -p "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws"
+install -m 0644 "${SPATIAL_RUNTIME_DIR}/README.md" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/README.md"
+install -m 0644 "${SPATIAL_RUNTIME_DIR}/spatial-runtime.env" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/spatial-runtime.env"
+install -m 0644 "${SPATIAL_RUNTIME_DIR}/packaging/Dockerfile" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/Dockerfile"
+install -m 0755 "${SPATIAL_RUNTIME_DIR}/packaging/entrypoint.sh" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/entrypoint.sh"
+cp -a "${SPATIAL_RUNTIME_DIR}/ros2_ws/src" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws/src"
+find "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws/src" -type d -name __pycache__ -prune -exec rm -rf {} +
 install -m 0755 "${AGENT_DIR}/scripts/atlas-hailort-adapter.py" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/atlas-hailort-adapter.py"
 install -m 0644 "${SCRIPT_DIR}/systemd/atlas-agent.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-agent.service"
 install -m 0644 "${SCRIPT_DIR}/systemd/atlas-hailo-adapter.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-hailo-adapter.service"
 install -m 0644 "${SCRIPT_DIR}/systemd/atlas-mavsdk.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-mavsdk.service"
+install -m 0644 "${SCRIPT_DIR}/systemd/atlas-spatial-runtime.service" "${PACKAGE_ROOT}/usr/lib/systemd/system/atlas-spatial-runtime.service"
 install -m 0755 "${SCRIPT_DIR}/debian/postinst" "${PACKAGE_ROOT}/DEBIAN/postinst"
 install -m 0755 "${SCRIPT_DIR}/debian/prerm" "${PACKAGE_ROOT}/DEBIAN/prerm"
 install -m 0755 "${SCRIPT_DIR}/debian/postrm" "${PACKAGE_ROOT}/DEBIAN/postrm"
@@ -248,6 +264,8 @@ sed "s/@VERSION@/${VERSION}/g" "${SCRIPT_DIR}/debian/control.in" > "${PACKAGE_RO
   printf 'ATLAS_MAVSDK_PROTO_COMMIT="%s"\n' "${ATLAS_MAVSDK_PROTO_COMMIT}"
   printf 'ATLAS_MODEL_ACCELERATOR="%s"\n' "${MODEL_ACCELERATOR}"
   printf 'ATLAS_MODEL_SHA256="%s"\n' "${MODEL_SHA256}"
+  printf 'ATLAS_SPATIAL_CONTAINER_IMAGE="%s"\n' "${SPATIAL_IMAGE}"
+  printf 'ATLAS_SPATIAL_CONTRACT_VERSION="1"\n'
 } > "${PACKAGE_ROOT}/usr/share/atlas-agent/release.env"
 chmod 0644 "${PACKAGE_ROOT}/usr/share/atlas-agent/release.env"
 

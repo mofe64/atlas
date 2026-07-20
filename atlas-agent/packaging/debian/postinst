@@ -4,7 +4,7 @@ set -eu
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
 	if [ -f /etc/atlas-agent/atlas-agent.env ]; then
-		systemctl try-restart atlas-mavsdk.service atlas-agent.service atlas-hailo-adapter.service || true
+		systemctl try-restart atlas-mavsdk.service atlas-agent.service atlas-hailo-adapter.service atlas-spatial-runtime.service || true
 	fi
 fi
 

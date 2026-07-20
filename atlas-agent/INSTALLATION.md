@@ -1,7 +1,8 @@
 # Atlas Agent Installation Guide
 
 This guide covers both a clean installation and an upgrade of the packaged
-Atlas Agent with systemd-managed MAVSDK and Hailo perception services.
+Atlas Agent with systemd-managed MAVSDK, Hailo perception, and optional spatial
+camera services.
 
 ## Supported onboard computer
 
@@ -9,6 +10,7 @@ Atlas Agent with systemd-managed MAVSDK and Hailo perception services.
 - Raspberry Pi AI HAT+ with Hailo-8L
 - SIYI A8 camera reachable over its onboard Ethernet network
 - PX4 flight controller connected through a stable serial device
+- Optional DepthAI USB depth camera connected to a Pi USB 3 port
 
 The commands use `0.1.0` as an example release. Replace that value with the
 release being deployed.
@@ -103,10 +105,11 @@ sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
 sudo apt install "./atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb"
 ```
 
-The package installs `atlas-agent`, `atlas-setup`, `atlas-hailo-setup`, the
-pinned Hailo container build context, MAVSDK, the compatible HEF model, and the
-systemd unit files. It does not enable the services until `atlas-setup` has
-written a valid configuration.
+The package installs `atlas-agent`, `atlas-setup`, `atlas-hailo-setup`,
+`atlas-spatial-setup`, the Hailo and spatial container build contexts, MAVSDK,
+the compatible HEF model, USB permissions, host diagnostics, and the systemd
+unit files. It does not enable the services until `atlas-setup` has written a
+valid configuration.
 
 ## 3. Configure Hailo
 
@@ -168,14 +171,21 @@ sudo atlas-setup
 
 The installer will:
 
-1. Verify Ubuntu, Raspberry Pi, camera, and Hailo discovery.
+1. Verify Ubuntu, Raspberry Pi, A8 camera, Hailo, and USB depth-camera discovery.
 2. List detected serial devices, preferring `/dev/serial/by-id/...` paths.
 3. Ask for the TELEM2 device and baud rate.
 4. Passively verify a checksum-valid MAVLink heartbeat when MAVSDK is not
    already running.
 5. Ask for the Atlas Native ground-station address.
 6. Offer to enable Hailo object detection when the runtime and model match.
-7. Show the final configuration and services before applying changes.
+7. Offer to enable the logical `front-depth` spatial camera when supported USB
+   hardware is detected.
+8. Show the final configuration and services before applying changes.
+
+When spatial support is selected, setup checks for the release-versioned
+container image. This first implementation builds the bundled ROS 2 Jazzy
+context on the Pi when no preloaded image is available, so the first run needs
+internet access and can take several minutes. Later runs reuse the image.
 
 For the pinned Hailo profile, confirm that the installation plan shows
 `hailo (container)` perception and these services:
@@ -184,12 +194,14 @@ For the pinned Hailo profile, confirm that the installation plan shows
 atlas-mavsdk.service
 atlas-agent.service
 atlas-hailo-adapter.service
+atlas-spatial-runtime.service  # when the front spatial camera is enabled
 ```
 
 The generated configuration is stored at:
 
 ```text
 /etc/atlas-agent/atlas-agent.env
+/etc/atlas-agent/spatial.env
 ```
 
 ## 5. Validate the installation
@@ -209,6 +221,9 @@ For container-backed Hailo, the doctor verifies:
 - Hailo GStreamer elements and Python bindings;
 - packaged HEF parsing and Hailo-8/Hailo-8L compatibility;
 - Atlas, MAVSDK, Hailo, camera, and flight-controller connectivity.
+- spatial container/image state, USB device and USB 2/3 transport;
+- fresh synchronized color/depth frames, metre depth encoding, and calibration
+  identity.
 
 Inspect all service states:
 
@@ -216,7 +231,8 @@ Inspect all service states:
 systemctl --no-pager --full status \
   atlas-mavsdk.service \
   atlas-agent.service \
-  atlas-hailo-adapter.service
+  atlas-hailo-adapter.service \
+  atlas-spatial-runtime.service
 ```
 
 Follow Atlas Agent logs:

@@ -25,6 +25,9 @@ load or create stable installation + drone ids
                     -> remain READY with inference inactive until an explicit claim
                     -> publish normalized frame metadata over a protected Unix socket
                     -> stream health continuously and detection frames on renewable demand
+                -> supervise an independent, optional spatial-camera container
+                    -> normalize provider RGB-D to the logical front-depth contract
+                    -> expose synchronized-frame and calibration health locally
                 -> execute idempotent Hold, RTL, Land, and payload commands
                 -> upload and control MAVSDK missions
                     -> report upload progress, current item, completion, and errors
@@ -261,14 +264,17 @@ packages, but retains/reinstalls the pinned host driver and firmware; changing
 a loaded PCIe driver requires a reboot.
 
 With no arguments, `atlas-setup` is interactive. It verifies Ubuntu, the Pi,
-the camera, and Hailo; lists stable `/dev/serial/by-id` devices; and passively
+the A8 camera, Hailo, and an optional USB depth camera; lists stable `/dev/serial/by-id` devices; and passively
 listens for a checksum-valid MAVLink heartbeat before configuring TELEM2. It
-then writes `/etc/atlas-agent/atlas-agent.env` and enables:
+then writes `/etc/atlas-agent/atlas-agent.env`, writes the independent
+`/etc/atlas-agent/spatial.env` contract, and enables:
 
 ```text
 atlas-mavsdk.service -> atlas-agent.service
                             |
                             +-> atlas-hailo-adapter.service (container mode only)
+
+atlas-spatial-runtime.service (optional; independent of flight services)
 ```
 
 In native/process mode the Hailo adapter remains supervised by `atlas-agent`.
@@ -282,6 +288,7 @@ Run the field diagnostic at any time:
 sudo atlas-setup doctor
 sudo atlas-hailo-setup status
 journalctl -u atlas-hailo-adapter.service -f
+journalctl -u atlas-spatial-runtime.service -f
 ```
 
 For fleet automation, the discovery defaults can be applied without prompts:

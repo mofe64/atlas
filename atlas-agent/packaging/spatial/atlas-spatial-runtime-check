@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Discover USB depth cameras and probe the vendor-neutral runtime contract."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import socket
+import sys
+
+
+DEPTHAI_VENDOR_ID = "03e7"
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return ""
+
+
+def discover(sysfs_root: Path, preferred_device_id: str = "") -> dict[str, object]:
+    devices = sysfs_root / "bus" / "usb" / "devices"
+    found = []
+    for candidate in sorted(devices.glob("*")):
+        if _read(candidate / "idVendor").lower() != DEPTHAI_VENDOR_ID:
+            continue
+        speed_text = _read(candidate / "speed")
+        try:
+            speed_mbps = int(float(speed_text))
+        except ValueError:
+            speed_mbps = 0
+        transport = "unknown"
+        if speed_mbps >= 5000:
+            transport = "usb3"
+        elif speed_mbps >= 480:
+            # An unbooted DepthAI device can report 480 Mb/s even on a USB 3
+            # link. Re-check after the runtime has uploaded its firmware.
+            transport = "usb2-or-unbooted"
+        elif speed_mbps > 0:
+            transport = "low-speed"
+        found.append({
+            "DEVICE_PRESENT": True,
+            "PROVIDER": "depthai",
+            "DEVICE_ID": _read(candidate / "serial"),
+            "MODEL": _read(candidate / "product") or "DepthAI camera",
+            "USB_TRANSPORT": transport,
+            "USB_SPEED_MBPS": speed_mbps,
+        })
+    if preferred_device_id:
+        for device in found:
+            if device["DEVICE_ID"] == preferred_device_id:
+                return device
+        return {
+            "DEVICE_PRESENT": False,
+            "OTHER_DEVICE_PRESENT": bool(found),
+            "PROVIDER": "depthai",
+            "DEVICE_ID": preferred_device_id,
+            "MODEL": "",
+            "USB_TRANSPORT": "unknown",
+            "USB_SPEED_MBPS": 0,
+        }
+    if found:
+        return found[0]
+    return {
+        "DEVICE_PRESENT": False,
+        "OTHER_DEVICE_PRESENT": False,
+        "PROVIDER": "",
+        "DEVICE_ID": "",
+        "MODEL": "",
+        "USB_TRANSPORT": "unknown",
+        "USB_SPEED_MBPS": 0,
+    }
+
+
+def probe(socket_path: str, timeout: float) -> dict[str, object]:
+    request = b'{"protocolVersion":"1","type":"probe"}\n'
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(timeout)
+        connection.connect(socket_path)
+        connection.sendall(request)
+        response = b""
+        while not response.endswith(b"\n") and len(response) <= 65536:
+            chunk = connection.recv(4096)
+            if not chunk:
+                break
+            response += chunk
+    if len(response) > 65536:
+        raise RuntimeError("spatial health response exceeded 64 KiB")
+    if not response.endswith(b"\n"):
+        raise RuntimeError("spatial health response was incomplete")
+    payload = json.loads(response)
+    if not isinstance(payload, dict):
+        raise RuntimeError("spatial health response must be an object")
+    if payload.get("protocolVersion") != "1":
+        raise RuntimeError("unsupported spatial health protocol")
+    return payload
+
+
+def _flat_probe(payload: dict[str, object]) -> dict[str, object]:
+    streams = payload.get("streams") if isinstance(payload.get("streams"), dict) else {}
+    color = streams.get("color") if isinstance(streams.get("color"), dict) else {}
+    depth = streams.get("depth") if isinstance(streams.get("depth"), dict) else {}
+    device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
+    return {
+        "READY": bool(payload.get("ready")),
+        "STATUS": payload.get("status", "unknown"),
+        "PROTOCOL_VERSION": payload.get("protocolVersion", ""),
+        "PROVIDER": payload.get("provider", ""),
+        "SOURCE_ID": payload.get("sourceId", ""),
+        "DEVICE_ID": device.get("id", ""),
+        "MODEL": device.get("model", ""),
+        "USB_TRANSPORT": device.get("connection", "unknown"),
+        "COLOR_FPS": color.get("fps", 0),
+        "DEPTH_FPS": depth.get("fps", 0),
+        "SYNC_SKEW_MS": payload.get("syncSkewMs", 0),
+        "CALIBRATION_HASH": payload.get("calibrationHash", ""),
+        "LAST_ERROR": payload.get("lastError", ""),
+    }
+
+
+def _print_values(values: dict[str, object]) -> None:
+    for key, value in values.items():
+        if isinstance(value, bool):
+            rendered = str(value).lower()
+        else:
+            rendered = str(value).replace("\n", " ").replace("\r", " ")
+        print(f"{key}={rendered}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--discover", action="store_true")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--socket", default="/run/atlas-agent/spatial.sock")
+    parser.add_argument("--timeout", type=float, default=2.0)
+    parser.add_argument("--sysfs-root", default=os.environ.get("ATLAS_SYSFS_ROOT", "/sys"))
+    parser.add_argument("--device-id", default="")
+    args = parser.parse_args()
+    try:
+        values = discover(Path(args.sysfs_root), args.device_id) if args.discover else probe(args.socket, args.timeout)
+        if args.json:
+            print(json.dumps(values, separators=(",", ":")))
+        else:
+            _print_values(values if args.discover else _flat_probe(values))
+        if not args.discover and not bool(values.get("ready")):
+            return 1
+        return 0
+    except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as error:
+        if args.json:
+            print(json.dumps({"ready": False, "status": "error", "lastError": str(error)}))
+        else:
+            _print_values({"READY": False, "STATUS": "error", "LAST_ERROR": str(error)})
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

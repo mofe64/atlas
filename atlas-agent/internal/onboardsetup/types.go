@@ -13,15 +13,19 @@ import (
 )
 
 const (
-	SupportedOSID        = "ubuntu"
-	SupportedOSVersion   = "24.04"
-	DefaultBaudRate      = 921600
-	DefaultGroundAddr    = "192.168.144.50:7443"
-	DefaultA8RTSPURL     = "rtsp://192.168.144.25:8554/main.264"
-	DefaultSIYIAddr      = "192.168.144.25:37260"
-	DefaultMAVSDKAddr    = "127.0.0.1:50051"
-	AdapterModeProcess   = "process"
-	AdapterModeContainer = "container"
+	SupportedOSID            = "ubuntu"
+	SupportedOSVersion       = "24.04"
+	DefaultBaudRate          = 921600
+	DefaultGroundAddr        = "192.168.144.50:7443"
+	DefaultA8RTSPURL         = "rtsp://192.168.144.25:8554/main.264"
+	DefaultSIYIAddr          = "192.168.144.25:37260"
+	DefaultMAVSDKAddr        = "127.0.0.1:50051"
+	AdapterModeProcess       = "process"
+	AdapterModeContainer     = "container"
+	DefaultSpatialSource     = "front-depth"
+	DefaultSpatialImage      = "atlas-spatial-runtime:0.1.0-dev"
+	SpatialProviderDepthAI   = "depthai"
+	SpatialProviderSynthetic = "synthetic"
 )
 
 type Paths struct {
@@ -37,6 +41,13 @@ type Paths struct {
 	HailoSetupBinary      string
 	HailoContainerEnv     string
 	HailoContainerService string
+	SpatialConfigFile     string
+	SpatialSetupBinary    string
+	SpatialContainerRun   string
+	SpatialCheck          string
+	SpatialService        string
+	SpatialContext        string
+	SpatialStateDirectory string
 	ReleaseManifest       string
 	AgentService          string
 	MAVSDKService         string
@@ -64,6 +75,13 @@ func DefaultPaths(root string) Paths {
 		HailoSetupBinary:      rooted("/usr/sbin/atlas-hailo-setup"),
 		HailoContainerEnv:     rooted("/etc/atlas-agent/hailo-container.env"),
 		HailoContainerService: rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),
+		SpatialConfigFile:     rooted("/etc/atlas-agent/spatial.env"),
+		SpatialSetupBinary:    rooted("/usr/sbin/atlas-spatial-setup"),
+		SpatialContainerRun:   rooted("/usr/libexec/atlas-agent/atlas-spatial-container-run"),
+		SpatialCheck:          rooted("/usr/libexec/atlas-agent/atlas-spatial-runtime-check"),
+		SpatialService:        rooted("/usr/lib/systemd/system/atlas-spatial-runtime.service"),
+		SpatialContext:        rooted("/usr/share/atlas-agent/spatial-runtime"),
+		SpatialStateDirectory: rooted("/var/lib/atlas-agent/spatial"),
 		ReleaseManifest:       rooted("/usr/share/atlas-agent/release.env"),
 		AgentService:          rooted("/usr/lib/systemd/system/atlas-agent.service"),
 		MAVSDKService:         rooted("/usr/lib/systemd/system/atlas-mavsdk.service"),
@@ -139,15 +157,38 @@ type RTSPStatus struct {
 	Error     string
 }
 
+type SpatialStatus struct {
+	Configured       bool
+	DevicePresent    bool
+	Provider         string
+	DeviceID         string
+	Model            string
+	USBTransport     string
+	USBSpeedMbps     int
+	ContainerImage   string
+	RuntimeInstalled bool
+	ServiceRunning   bool
+	Ready            bool
+	Status           string
+	SourceID         string
+	ColorFPS         string
+	DepthFPS         string
+	SyncSkewMS       string
+	CalibrationHash  string
+	LastError        string
+}
+
 type Discovery struct {
-	OS              OSRelease
-	Architecture    string
-	BoardModel      string
-	Serial          []SerialCandidate
-	Hailo           HailoStatus
-	Camera          RTSPStatus
-	GroundReachable bool
-	ExistingConfig  map[string]string
+	OS                    OSRelease
+	Architecture          string
+	BoardModel            string
+	Serial                []SerialCandidate
+	Hailo                 HailoStatus
+	Camera                RTSPStatus
+	Spatial               SpatialStatus
+	GroundReachable       bool
+	ExistingConfig        map[string]string
+	ExistingSpatialConfig map[string]string
 }
 
 func (discovery Discovery) PlatformSupported() bool {
@@ -170,6 +211,13 @@ type InstallConfig struct {
 	ModelPath             string
 	PostprocessSO         string
 	PostprocessFunction   string
+	SpatialEnabled        bool
+	SpatialProvider       string
+	SpatialSourceID       string
+	SpatialDeviceID       string
+	SpatialModel          string
+	SpatialUSBTransport   string
+	SpatialContainerImage string
 	AgentVersion          string
 }
 
@@ -188,6 +236,9 @@ func DefaultInstallConfig(paths Paths) InstallConfig {
 		ModelPath:             paths.DefaultModel,
 		PostprocessSO:         paths.DefaultPostprocessSO,
 		PostprocessFunction:   "filter",
+		SpatialSourceID:       DefaultSpatialSource,
+		SpatialUSBTransport:   "unknown",
+		SpatialContainerImage: DefaultSpatialImage,
 		AgentVersion:          "unknown",
 	}
 }
@@ -223,6 +274,17 @@ func (config InstallConfig) Validate(paths Paths) error {
 		}
 		if !filepath.IsAbs(paths.HailoAdapter) {
 			return fmt.Errorf("Hailo adapter path must be absolute")
+		}
+	}
+	if config.SpatialEnabled {
+		if config.SpatialProvider != SpatialProviderDepthAI && config.SpatialProvider != SpatialProviderSynthetic {
+			return fmt.Errorf("spatial provider must be depthai or synthetic")
+		}
+		if strings.TrimSpace(config.SpatialSourceID) == "" {
+			return fmt.Errorf("spatial source id is required")
+		}
+		if strings.TrimSpace(config.SpatialContainerImage) == "" {
+			return fmt.Errorf("spatial container image is required")
 		}
 	}
 	return nil

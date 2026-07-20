@@ -357,18 +357,24 @@ while runtime ownership is implemented in
 
 ## Packaged runtime
 
-The supported package installs three systemd units:
+The supported package installs four systemd units:
 
 ```text
 atlas-mavsdk.service
     -> atlas-agent.service
         -> atlas-hailo-adapter.service (container mode)
+
+atlas-spatial-runtime.service (optional, independent camera/ROS lifecycle)
 ```
 
 - MAVSDK owns the serial/MAVLink connection.
 - Agent requires MAVSDK.
 - The container-backed Hailo adapter is part of the Agent lifecycle and uses the
   Agent-owned runtime socket.
+- The spatial runtime requires Docker but not Agent or MAVSDK. Camera/ROS
+  failure therefore cannot stop flight telemetry or commands. Its current
+  versioned socket exposes local RGB-D health; Native data transport is a later
+  slice.
 
 See the unit files in
 [`atlas-agent/packaging/systemd/`](../atlas-agent/packaging/systemd/) and the
