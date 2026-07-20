@@ -29,7 +29,7 @@ command -v git >/dev/null || {
 }
 
 mkdir -p "${OUT_DIR}"
-rm -rf "${OUT_DIR}/action" "${OUT_DIR}/camera" "${OUT_DIR}/core" "${OUT_DIR}/gimbal" "${OUT_DIR}/mission" "${OUT_DIR}/telemetry" "${OUT_DIR}/mavsdk_options"
+rm -rf "${OUT_DIR}/action" "${OUT_DIR}/camera" "${OUT_DIR}/core" "${OUT_DIR}/gimbal" "${OUT_DIR}/mission" "${OUT_DIR}/offboard" "${OUT_DIR}/telemetry" "${OUT_DIR}/mavsdk_options"
 rm -f "${OUT_DIR}/mavsdk_options.pb.go"
 
 protoc \
@@ -42,6 +42,7 @@ protoc \
   --go_opt=Mcamera/camera.proto="${MODULE}/camera" \
   --go_opt=Mgimbal/gimbal.proto="${MODULE}/gimbal" \
   --go_opt=Mmission/mission.proto="${MODULE}/mission" \
+  --go_opt=Moffboard/offboard.proto="${MODULE}/offboard" \
   --go_opt=Mtelemetry/telemetry.proto="${MODULE}/telemetry" \
   --go-grpc_out="${OUT_DIR}" \
   --go-grpc_opt=paths=source_relative \
@@ -51,6 +52,7 @@ protoc \
   --go-grpc_opt=Mcamera/camera.proto="${MODULE}/camera" \
   --go-grpc_opt=Mgimbal/gimbal.proto="${MODULE}/gimbal" \
   --go-grpc_opt=Mmission/mission.proto="${MODULE}/mission" \
+  --go-grpc_opt=Moffboard/offboard.proto="${MODULE}/offboard" \
   --go-grpc_opt=Mtelemetry/telemetry.proto="${MODULE}/telemetry" \
   "${PROTO_DIR}/mavsdk_options.proto" \
   "${PROTO_DIR}/core/core.proto" \
@@ -58,6 +60,7 @@ protoc \
   "${PROTO_DIR}/camera/camera.proto" \
   "${PROTO_DIR}/gimbal/gimbal.proto" \
   "${PROTO_DIR}/mission/mission.proto" \
+  "${PROTO_DIR}/offboard/offboard.proto" \
   "${PROTO_DIR}/telemetry/telemetry.proto"
 
 mkdir -p "${OUT_DIR}/mavsdk_options"

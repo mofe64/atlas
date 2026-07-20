@@ -87,6 +87,80 @@ Video configuration:
 | `ATLAS_VIDEO_ALIGNMENT_TOLERANCE_MS` | `180` | Maximum timing difference accepted for an overlay |
 | `ATLAS_VIDEO_OVERLAY_OFFSET_MS` | `0` | Calibration offset for asymmetric RTSP/gRPC latency |
 
+Local evidence recording reads the same source RTSP directly through a separate
+FFmpeg process; it never records WebView canvases and does not use the A8
+MicroSD. Evidence storage configuration:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ATLAS_EVIDENCE_ROOT` | `<Atlas app data>/evidence` | Absolute local root containing recording `objects/`, reviewable `assets/`, recoverable `trash/`, and `temporary/` staging |
+| `ATLAS_EVIDENCE_SEGMENT_SECONDS` | `30` | Closed-source segment target, from 2 to 600 seconds |
+| `ATLAS_EVIDENCE_WARNING_FREE_BYTES` | `5368709120` | Free-space threshold that raises a warning |
+| `ATLAS_EVIDENCE_STOP_FREE_BYTES` | `2147483648` | Reserved free-space boundary that safely stops/refuses recording |
+
+Every published segment is first written below `temporary/`, hashed with
+SHA-256, entered into SQLite as `FINALIZING`, atomically renamed below
+`objects/`, verified again, and only then marked `LOCAL_VERIFIED`. SQLite
+rejects successful session completion while any segment remains `FINALIZING`,
+and recorder setup failures after `REQUESTED` become durable failed sessions so
+the source reservation is released.
+
+The Evidence workspace treats stills and event clips as first-class assets.
+Stills are captured from the latest clean Native-decoded frame; when a track is
+selected, its session-scoped track identity is retained on the asset. A track
+evidence marker queues a pre/post-roll event clip and Atlas publishes it only
+after verified recording segments cover the requested window. Both media types
+receive a generated JPEG thumbnail and local integrity metadata before their
+state changes from `PENDING` to `READY`.
+
+Review state, notes, tags, and retention changes are append-only events. The
+default retention policy keeps standard assets for 30 days, extended assets for
+365 days, and recoverable trash for 7 days; operators can edit those intervals.
+`LEGAL_HOLD` removes the expiry and blocks deletion. Deletion first moves the
+asset directory atomically from `assets/` to `trash/`; only the hourly policy
+worker can purge it after the recorded grace deadline. External export packages,
+export manifests, and export checksum workflows are intentionally not included
+in this slice.
+
+Expanded incident-response planning can assess a local, reproducible
+known-building snapshot without depending on internet availability:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `ATLAS_KNOWN_BUILDINGS_GEOJSON` | unset | Absolute path to an OS-derived GeoJSON `FeatureCollection`; unset means assessment status is `DATA_UNAVAILABLE` and preparation requires an operator override reason |
+
+The collection must include an `atlasProvenance` object alongside `features`:
+
+```json
+{
+  "type": "FeatureCollection",
+  "atlasProvenance": {
+    "provider": "Ordnance Survey",
+    "product": "OS NGD Buildings + Building Height Attribute",
+    "datasetId": "local-export-2026-07",
+    "schemaVersion": "4.0",
+    "release": "2026-07",
+    "retrievedAtUnixMs": 1784332800000,
+    "coverageBbox": [-0.20, 50.90, 0.10, 51.20]
+  },
+  "features": []
+}
+```
+
+Polygon and MultiPolygon features are supported. Atlas reads current OS NGD
+building fields such as `height_absolutemin_m`, `height_absolutemax_m`,
+`height_relativemax_m`, `height_confidencelevel`, and `height_evidencedate`.
+It also accepts joined legacy Building Height Attribute fields `AbsHMin`,
+`AbsHMax`, `RelHMax`, `BHA_Conf`, and `BHA_ProcessDate`, using a feature `id`,
+`osid`, `OS_TOPO_TOID`, or `toid` as evidence identity. A missing height,
+aircraft home altitude, or route coverage remains explicit incomplete evidence.
+The assessment checks only known building volumes in this snapshot; it is not
+obstacle avoidance and never establishes an obstacle-free or safe route.
+The immutable assessment records its departure point and home-altitude datum;
+expanded-response upload requires fresh matching departure evidence or forces a
+new review. A lone waypoint is checked as a point even when no departure was
+available during preparation.
+
 Native sends each clean JPEG and its matched detection metadata as one binary
 IPC packet. A dedicated video canvas always receives unannotated pixels while a
 second transparent canvas owns the boxes; “Clean feed” hides only that overlay.
@@ -147,14 +221,49 @@ Hold/RTL/Land commands, and acknowledged gimbal angle/rate/centre commands.
 Mission plans can be uploaded and controlled through the same agent-initiated
 session, with agent/MAVSDK progress written back to durable mission runs.
 
+The Operations response selector is backed by a Native suitability assessment,
+not UI-only ordering. It excludes reserved or unfinished-run aircraft and
+applies link, telemetry, position, PX4 health, battery, and response-capability
+checks. Eligible aircraft are ranked by estimated arrival and battery, with
+blockers and considerations returned for operator review. Upload and start
+repeat their own authoritative checks because fleet state may change after a
+recommendation is displayed.
+
 Incident-response plans also carry an operator-reviewed arrival action chain.
 Native creates durable action executions with requested, running, retrying,
-succeeded, failed, and policy-applied states when the run is created. The first
-supported actions are `HOLD_AT_ARRIVAL` and optional
-`POINT_GIMBAL_AT_INCIDENT`. Reaching the final waypoint is transit progress;
-the assignment becomes `ON_SCENE` only after Agent reports an acknowledged
-arrival Hold. Each plan explicitly selects either Return to Launch or operator
-intervention as its exhausted-retry policy.
+succeeded, failed, and policy-applied states when the run is created. The
+supported actions are `HOLD_AT_ARRIVAL`, optional
+`POINT_GIMBAL_AT_INCIDENT`, and `RESUME_AFTER_ARRIVAL` for continuing patterns.
+Area Scan and Orbit trigger this chain after their first generated waypoint and
+resume only after acknowledgement. Reaching a waypoint is progress; the
+assignment becomes `ON_SCENE` only for an observation pattern after Agent
+reports an acknowledged arrival Hold. `HOLD_AT_STAGING` instead carries a
+Hold-only `waitForOperatorDecision` action: Agent leaves the run `PAUSED` and
+Native leaves the assignment `STAGED`, without setting the incident as on
+scene or targeting the incident with the gimbal. Each plan explicitly selects
+either Return to Launch or operator intervention as its exhausted-retry policy.
+
+The separate **Follow** workspace authorizes bounded aircraft translation from
+a validated world-space selected track. It requires a terrain-converged
+coordinate, filtered target velocity, accepted uncertainty, fresh in-flight
+telemetry, a reviewed standoff/altitude/speed/duration/geographic envelope, and
+both boresight and aircraft-follow commissioning evidence. Native persists the
+state machine and renews a four-second operator lease only while new exact-track
+world state remains valid. Agent owns the PX4 Offboard setpoint loop and enters
+explicit Hold on lease, target, link, telemetry, battery, position, altitude,
+geofence, duration, or Offboard loss. This authority is independent of the
+image-space gimbal-follow control; enabling one never enables the other.
+
+Real translation is disabled by default. An Agent remains visibly
+`UNVERIFIED` until configuration references accepted aircraft-follow validation
+and physical camera/gimbal boresight alignment evidence. Code and simulated
+controller tests do not by themselves satisfy HIL or controlled-flight
+acceptance.
+
+See [Incident dispatch](../docs/incident-dispatch.md) for the complete response
+workflow and pattern semantics, and
+[Inference, tracking, geolocation, and follow](../docs/inference-tracking-and-follow.md)
+for the distinction between camera and aircraft follow.
 
 ## Embedded SQLite
 
@@ -177,21 +286,23 @@ For ordinary native development, prefer the repeatable isolated shortcut:
 npm run tauri:dev:isolated
 ```
 
-Schema version 12 contains:
+The current schema version is 24. It contains durable records for:
 
-- `drones`
-- `vehicle_agents`
-- `vehicle_agent_bindings`
-- `communication_links`
-- `vehicle_telemetry_current` (one latest-value row per drone)
-- `vehicle_telemetry_snapshots` (sampled historical telemetry)
-- `vehicle_status_events` (the newest 200 PX4 messages per drone)
-- `vehicle_commands` (durable command intent and current lifecycle state)
-- `vehicle_command_events` (append-only delivery, acknowledgement, and result history)
-- `missions` (reusable operator definitions and template parameters)
-- `mission_plans`, `mission_items`, `mission_actions` (immutable generated outputs)
-- `mission_runs`, `mission_run_events` (durable upload, execution, error, and history lifecycle)
-- `drone_lifecycle_events` (archive, restore, and rejected archived reconnect audit)
+- aircraft/Agent identity, bindings, communication links, lifecycle, telemetry,
+  PX4 events, and command history;
+- reusable mission definitions, immutable plans/items/actions, mission runs,
+  and run events;
+- incidents, revisioned audit events, aircraft assignments, arrival-action
+  executions, and operational alerts;
+- evidence recording sessions/segments/gaps, reviewable assets, annotations,
+  events, and retention policy;
+- perception sessions/tracks/events/samples, selections, annotations, counting,
+  and selected-track geolocation;
+- aircraft-follow sessions, target updates, and lifecycle events.
+
+[`src-tauri/src/database/migrations.rs`](src-tauri/src/database/migrations.rs)
+is the authoritative table and migration definition. A database newer than the
+running binary is rejected rather than interpreted optimistically.
 
 Mission definitions and executions are separate on purpose. Regenerating a plan
 adds a new plan row. Every upload creates a new run rather than mutating an
@@ -214,11 +325,15 @@ post-planning command. The v1 defaults are:
 
 Operators can override these defaults for the whole definition. Waypoint
 definitions can also override the view at an individual point, including a
-`LOOK_AT_POINT` target. Generated plans emit `SET_CAMERA_MODE` and
-`SET_GIMBAL_ORIENTATION` actions before navigation, plus point-scoped actions
-after the applicable `NAVIGATE_TO` item. The first executor should translate
-the semantic yaw modes by steering aircraft yaw and keeping gimbal yaw centred;
-independent gimbal-yaw tracking is deliberately left for a later capability.
+`LOOK_AT_POINT` target. Generated plans emit semantic camera intent plus gimbal
+and zoom actions before navigation, with point-scoped overrides on the relevant
+waypoint. Agent translates supported vehicle yaw, gimbal, zoom, and recording
+behavior. `SET_CAMERA_MODE` itself remains semantic intent rather than a promise
+that every payload exposes an identical physical mode.
+
+The complete geometry algorithms, action order, terrain model, and run-state
+contract are documented in
+[Mission types and flight patterns](../docs/mission-types-and-flight-patterns.md).
 
 The native command boundary accepts `create_mission`, `update_mission`,
 `mission_list`, `mission_detail`, `generate_mission_plan`, `mission_plan`,
@@ -300,10 +415,13 @@ the Atlas run after PX4 accepts Return-to-Launch; the operator must continue
 monitoring until landing and disarm. `Arm & start mission` first requires a
 connected aircraft with live telemetry, PX4 armable health, global and home
 position readiness, and at least 15% battery when battery data is reported. The
-agent then arms and starts the already-uploaded mission. If start fails after
-arming, it commands HOLD. Resume never repeats the arm step. Perception actions
-are retained as plan intent and reported as translation warnings because the v1
-agent does not yet host the perception executor.
+agent first acknowledges any required `START_PERCEPTION` action from a fresh
+onboard inference frame, then arms and starts the already-uploaded mission. If
+perception cannot start, the aircraft remains unarmed. If mission start fails
+after arming, Agent commands HOLD and releases the mission perception claim.
+Resume never repeats the arm or perception-start step. `STOP_PERCEPTION` is
+acknowledged at normal completion, while cancel and RTL always perform bounded
+claim cleanup without delaying the safer flight action.
 
 The execution workspace keeps the planned route, a fixed home marker, a moving
 aircraft marker, and the flown telemetry trail on one map. Live marker movement
@@ -352,6 +470,7 @@ Data Registry, using Terrarium encoding at zoom 12:
 VITE_ATLAS_TERRAIN_TILE_URL=https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png
 VITE_ATLAS_TERRAIN_ENCODING=terrarium
 VITE_ATLAS_TERRAIN_ZOOM=12
+VITE_ATLAS_TERRAIN_VERTICAL_UNCERTAINTY_METERS=10
 ```
 
 Map clicks used for geographic ROI now resolve DEM ground AMSL; the operator
@@ -360,6 +479,14 @@ Atlas exposes an explicit manual AMSL fallback. Custom DEM origins must also be
 allowed in Tauri's `connect-src` and `img-src` policy. Raster DEM uncertainty,
 surface changes, vegetation, structures, and tile availability still require an
 operational safety margin and operator review.
+
+Selected-track geolocation uses this same configured DEM automatically. For
+the calibration-free MVP it samples ground AMSL at the aircraft position and
+projects the centred track onto that horizontal plane. If the DEM is
+temporarily unavailable, Atlas falls back to the autopilot home-altitude plane
+derived from absolute minus relative altitude with a conservative 25-metre
+vertical uncertainty. Both paths store their source and assumptions; neither
+is a claim of target-area terrain intersection or surveyed accuracy.
 
 The current and historical telemetry rows include battery and power detail,
 preflight health, altitudes, NED velocity and climb rate, landed state, RC

@@ -6,6 +6,13 @@ This document explains the shipped aircraft-operation contracts: fleet
 lifecycle, freshness, commands, mission planning and execution, payload
 ownership, safety gates, state transitions, and failure handling.
 
+For the pattern-generation algorithms and terrain model, continue with
+[Mission types and flight patterns](mission-types-and-flight-patterns.md). For
+the dispatch workflow and its four response modes, see
+[Incident dispatch](incident-dispatch.md). Perception, camera follow, and
+aircraft Follow from standoff are described end to end in
+[Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md).
+
 The central rule is:
 
 > React proposes an operation, Native authorizes and records it, Agent executes
@@ -246,8 +253,11 @@ Plans contain ordered actions such as:
 
 Navigation is translated to MAVSDK Mission items. Payload actions are translated
 into a separate Agent payload plan. Recording maps to MAVSDK mission camera
-actions where the plan shape permits it; perception start/stop is currently
-reported as a translation warning rather than falsely claimed as executed.
+actions where the plan shape permits it. Perception actions are executed by the
+Agent's inference runtime rather than MAVSDK: required `START_PERCEPTION` claims
+must produce a fresh acknowledgement before arming, and `STOP_PERCEPTION`
+releases the mission claim during normal or terminal cleanup. Only semantic
+actions that have no supported executor remain translation warnings.
 
 ## Terrain-aware planning
 
@@ -304,7 +314,7 @@ Agent:
 2. Configures mission RTL behavior.
 3. Uploads with MAVSDK progress.
 4. Stores the payload plan in memory for the run.
-5. Reports translation warnings as evidence.
+5. Retains any remaining translation warnings as evidence.
 6. Moves the run to `READY`.
 
 Only one unfinished run per drone is permitted.
@@ -331,14 +341,17 @@ The gate deliberately allows an already armed aircraft even if the current
 For a new start, Agent:
 
 1. Verifies this run was uploaded.
-2. Reports arming.
-3. Calls MAVSDK Action Arm.
-4. Reports armed.
-5. Calls MAVSDK Mission Start.
-6. Activates mission payload intent.
-7. Starts mission-progress monitoring.
+2. Executes required `START_PERCEPTION` and waits for a fresh acknowledged
+   inference frame.
+3. Reports arming.
+4. Calls MAVSDK Action Arm.
+5. Reports armed.
+6. Calls MAVSDK Mission Start.
+7. Activates mission payload intent.
+8. Starts mission-progress monitoring.
 
-If step 5 fails after arming, Agent requests Hold.
+If perception fails, Agent does not arm. If Mission Start fails after arming,
+Agent requests Hold and releases the mission perception claim.
 
 Resume requires the loaded run to be `PAUSED` and calls Mission Start without
 arming again.
@@ -394,6 +407,37 @@ waypoint's mission view, not the view from when manual control began.
 
 The Agent lease is the final fail-safe when UI cleanup or the network fails.
 
+## Follow from standoff
+
+The Follow workspace is a supervised dynamic-navigation workflow, separate
+from missions and image-space gimbal following. Native accepts a request only
+for the exact active operator selection when the latest coordinate is terrain
+`CONVERGED`, motion is `FILTERED`, uncertainty/confidence fit the reviewed
+limits, aircraft telemetry is fresh and flight-ready, and both physical
+boresight and aircraft-follow commissioning evidence are advertised.
+
+The operator reviews a fixed standoff, relative-altitude target and band,
+groundspeed, acceleration, maximum duration, circular geographic boundary,
+battery reserve, position/velocity uncertainty, confidence, and a written
+reason. Native persists these values and the commissioning references before
+requesting control. A unique non-ended follow session prevents two authorities
+for one aircraft, and unfinished mission runs block entry.
+
+During follow, the UI repeatedly reacquires the exact track coordinate, samples
+terrain at the estimated target point, iteratively refines the same immutable
+observation ray, and renews a four-second lease only after world velocity and
+quality pass again. Native also runs a 250 ms watchdog. Agent runs the 10 Hz
+PX4 Offboard controller and its independent onboard watchdog. Loss of the UI,
+Native delivery, or the ground link therefore stops renewal; the onboard lease
+causes Hold without depending on a final network message.
+
+`REQUESTED -> VALIDATING -> ACQUIRING -> FOLLOWING` is durable. Any watchdog
+can move the session to `DEGRADED_HOLD` with a reason, after which the operator
+explicitly ends it. Stop sends zero velocity, stops Offboard, and requests PX4
+Hold; it never implies RTL or Land. Real translation remains disabled by
+default and must not be marked verified until the referenced simulation, HIL,
+and controlled-flight record has actually been accepted.
+
 ## Failure modes and operator meaning
 
 | State or event | Meaning |
@@ -406,6 +450,7 @@ The Agent lease is the final fail-safe when UI cleanup or the network fails.
 | Mission `RTL` | Atlas mission execution ended because RTL was accepted; continue monitoring PX4 and telemetry |
 | `payload_restore_failed` | Manual ownership ended, but Agent could not confirm restoration of mission intent |
 | Stale link or telemetry | Current data is not fresh enough for new operations, even if the last value remains displayed |
+| Follow `DEGRADED_HOLD` | A lease, target, link, battery, position, altitude, geofence, duration, or PX4 Offboard watchdog stopped translation; inspect the durable exit reason |
 
 ## Where to modify behavior
 
@@ -420,3 +465,7 @@ The Agent lease is the final fail-safe when UI cleanup or the network fails.
 | MAVSDK mission execution | [`atlas-agent/internal/vehicle/missions.go`](../atlas-agent/internal/vehicle/missions.go) |
 | Payload arbitration | [`atlas-agent/internal/vehicle/payload.go`](../atlas-agent/internal/vehicle/payload.go) |
 | Operator mission workflows | [`atlas/src/missions/`](../atlas/src/missions/) |
+| Follow persistence and policy | [`database/aircraft_follow.rs`](../atlas/src-tauri/src/database/aircraft_follow.rs) |
+| Follow protocol delivery | [`ground_station/command_router.rs`](../atlas/src-tauri/src/ground_station/command_router.rs) |
+| Onboard Offboard controller | [`atlas-agent/internal/vehicle/aircraft_follow.go`](../atlas-agent/internal/vehicle/aircraft_follow.go) |
+| Follow operator workflow | [`atlas/src/follow/`](../atlas/src/follow/) |

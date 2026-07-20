@@ -22,6 +22,7 @@ load or create stable installation + drone ids
                 -> forward PX4 status text as discrete events
                 -> discover MAVSDK gimbals and the configured camera transport
                 -> run the supervised HailoRT/TAPPAS object-detection adapter
+                    -> remain READY with inference inactive until an explicit claim
                     -> publish normalized frame metadata over a protected Unix socket
                     -> stream health continuously and detection frames on renewable demand
                 -> execute idempotent Hold, RTL, Land, and payload commands
@@ -54,10 +55,37 @@ manual session declares exactly one context and renews a short lease:
 Mission activation is rejected while an inspection session owns the payload,
 so autonomous mission intent cannot race manual inspection movement.
 
-Perception health is always forwarded. Detection frames are forwarded only
-while at least one renewable Native consumer lease is active or the current
-mission is running/paused. Consumers have independent leases, so one view
-closing cannot stop frames required by another view or by a mission.
+Perception health is always forwarded, including the intentional `INACTIVE`
+state. The Hailo pipeline starts in `READY` and enters `PLAYING` only while an
+explicit claim exists. Live views use renewable 3–30 second claims; missions
+use durable run-scoped claims created by acknowledged `START_PERCEPTION` and
+released by `STOP_PERCEPTION` or terminal cleanup. Claims are reference-counted,
+so one view closing cannot stop inference required by another view or mission.
+
+Every normalized detection frame then crosses an Atlas-owned tracking stage.
+Provider `trackId` values are preserved only as upstream provenance; Native sees
+an ID only when an Atlas tracker backend assigns it. The foundation stage owns
+session IDs, resets on source/model/stream/timestamp discontinuities, exposes
+tracking health, and degrades to untracked detections on backend failure.
+`byte_track` is the production default and selects the original MIT-licensed
+FoundationVision ByteTrack C++
+deployment core, pinned at commit
+`d1bf0191adff59bc8fcfeaa0b33d3d1642552a99`. Agent supervises it as a bounded
+worker process and still owns continuity resets and operator-visible IDs.
+ByteTrack is class-isolated and has ReID disabled. `byte_track_cmc` uses the
+same worker and association algorithm, but warps the predicted Kalman state
+with Atlas's confidence-gated sparse-optical-flow camera transform before IoU
+matching. Missing or low-confidence motion falls back to identity and is
+reported as degraded CMC health without stopping detections.
+
+Agent also owns the bounded
+`TENTATIVE -> ACTIVE -> TEMPORARILY_OCCLUDED -> LOST -> CLOSED` lifecycle,
+high-frequency active history, decaying image-space prediction, current-visible
+and session-unique totals, and source-specific line/polygon rule evaluation.
+Counts are produced only by confirmed observations and reset with the tracker
+session. Native supplies the revisioned rule set and persists only state
+changes, periodic/significant samples, count events, and operator actions; it
+does not persist every box.
 
 Camera zoom uses the explicit `ATLAS_CAMERA_TRANSPORT` policy. The default
 `siyi_udp` mode communicates only through the SIYI A8 Mini UDP SDK and never
@@ -69,12 +97,16 @@ autofocus/focus commands.
 Mission operations accept an immutable Atlas plan, translate navigation to
 MAVSDK Mission items, and support upload, start, pause, resume, cancel-to-hold,
 and Return-to-Launch. Incident-response plans retain a separate acknowledged
-arrival-action chain. After the final waypoint, Agent executes
-`HOLD_AT_ARRIVAL` and optional `POINT_GIMBAL_AT_INCIDENT`, reports every
-running/retrying/succeeded/failed/policy-applied transition to Native, and does
-not complete the run until all actions succeed. Exhausted retries use the
-reviewed plan policy: request Return to Launch or preserve the run for operator
-intervention.
+arrival-action chain. Hold at Staging and one-point Offset Observe trigger at
+their final waypoint. Bounded Area Scan and Bounded Orbit trigger after generated
+waypoint zero, acknowledge arrival, and then Resume through the remaining
+pattern. Agent executes `HOLD_AT_ARRIVAL` first, optional
+`POINT_GIMBAL_AT_INCIDENT` second, and `RESUME_AFTER_ARRIVAL` last when the
+reviewed pattern continues. It reports every
+running/retrying/succeeded/failed/policy-applied transition to Native. Exhausted
+retries use the reviewed plan policy: request Return to Launch or preserve the
+run for operator intervention. Staging is the special operator-decision mode:
+successful Hold pauses the run and waits for explicit Resume, RTL, or Cancel.
 
 Mission progress is streamed back to Atlas Native. Camera and gimbal actions
 remain in the Agent payload plan instead of being embedded in PX4 mission
@@ -82,9 +114,12 @@ items, preventing automatic waypoint setpoints from racing a manual override.
 RTL-after-completion is configured before upload. An initial Start runs native
 preflight gates, commands MAVSDK Action Arm, then enters PX4 mission mode;
 Resume only resumes a paused mission.
-If mission start fails after arming, the agent commands HOLD and reports the
-failure. The v1 perception actions are reported as translation warnings rather
-than silently claimed as executed.
+Required mission perception is acknowledged from a fresh post-activation frame
+before Agent arms. If perception cannot start, the mission remains unarmed and
+the durable action applies its reviewed operator-intervention policy. If mission
+start fails after arming, the agent commands HOLD and releases the mission's
+perception claim. Stop failure is reported but cannot block cancellation, RTL,
+or normal terminal cleanup.
 
 `mavsdk_server` runs beside Atlas Agent and owns the MAVLink connection to PX4.
 Atlas Agent consumes its local gRPC API; it does not access the serial device
@@ -330,14 +365,88 @@ detected Hailo-8 accelerator; build the package with the matching HEF instead.
 | `ATLAS_PERCEPTION_POSTPROCESS_FUNCTION` | `filter` | Postprocess entry point |
 | `ATLAS_PERCEPTION_POSTPROCESS_CONFIG` | Empty | Optional postprocess labels/configuration file |
 | `ATLAS_PERCEPTION_WIDTH` / `ATLAS_PERCEPTION_HEIGHT` | `640` / `640` | Hailo inference input size |
+| `ATLAS_TRACKER_ALGORITHM` | `byte_track` | Atlas tracker: production-default `byte_track`, aerial candidate `byte_track_cmc`, or explicit `disabled` |
+| `ATLAS_TRACKER_MAX_TIMESTAMP_GAP` | `2s` | Discontinuity gap that resets the tracker (`100ms`–`30s`) |
+| `ATLAS_TRACKER_CMC_MIN_CONFIDENCE` | `0.25` | Minimum camera-motion estimate confidence applied by `byte_track_cmc` |
+| `ATLAS_TRACKER_CMC_MAX_DIMENSION` / `ATLAS_TRACKER_CMC_MAX_FEATURES` | `320` / `300` | Bounded sparse-optical-flow workload in the Hailo adapter |
+| `ATLAS_TRACKER_CONFIRMATION_OBSERVATIONS` | `2` | Atlas observations required to promote a lifecycle from `TENTATIVE` to `ACTIVE` (`1`–`10`) |
+| `ATLAS_TRACKER_PREDICTION_HORIZON` | `750ms` | Maximum bounded image-space prediction interval (`100ms`–`10s`) |
+| `ATLAS_TRACKER_LOST_AFTER` / `ATLAS_TRACKER_CLOSE_AFTER` | `1s` / `3s` | Time since the last confirmed observation before `LOST`, then terminal `CLOSED` |
+| `ATLAS_TRACKER_LIFECYCLE_SNAPSHOT_INTERVAL` | `1s` | Periodic durable-summary cadence; state transitions are always sent immediately |
+| `ATLAS_TRACKER_HISTORY_OBSERVATIONS` | `60` | Maximum high-frequency observations retained onboard per active track (`2`–`600`) |
+| `ATLAS_GEOLOCATION_BORESIGHT_ANGULAR_UNCERTAINTY_DEG` | `10` | Static camera/gimbal boresight angular error bound included in every coordinate (`0.1`–`44.9` degrees) |
+| `ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE` | empty | Commissioning artifact or record that physically justifies the configured bound; empty evidence is explicitly `UNVERIFIED` |
+| `ATLAS_AIRCRAFT_FOLLOW_ENABLED` | `false` | Enables the PX4 Offboard Follow-from-standoff controller only after commissioning evidence is configured |
+| `ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE` | empty | Accepted simulation/HIL/controlled-flight record for this installation; required when aircraft follow is enabled |
+| `ATLAS_BYTETRACK_WORKER_PATH` | `atlas-bytetrack-worker` | Original FoundationVision ByteTrack worker executable; packaged installs use `/usr/libexec/atlas-agent/atlas-bytetrack-worker` |
+| `ATLAS_BYTETRACK_REQUEST_TIMEOUT` | `250ms` | Per-frame worker deadline (`10ms`–`5s`); timeout degrades to untracked detections and resets the association session |
+| `ATLAS_BYTETRACK_FRAME_RATE` / `ATLAS_BYTETRACK_BUFFER_FRAMES` | `30` / `30` | Upstream frame-rate scaling and lost-track buffer |
+| `ATLAS_BYTETRACK_TRACK_THRESHOLD` / `ATLAS_BYTETRACK_HIGH_THRESHOLD` | `0.50` / `0.60` | Upstream second-stage and new-track score thresholds |
+| `ATLAS_BYTETRACK_MATCH_THRESHOLD` | `0.80` | Upstream first-stage IoU assignment cost threshold |
+| `ATLAS_GIMBAL_FOLLOW_UPDATE_INTERVAL` / `ATLAS_GIMBAL_FOLLOW_TRACK_FRESHNESS` | `100ms` / `350ms` | Onboard controller cadence and maximum confirmed-observation age before holding |
+| `ATLAS_GIMBAL_FOLLOW_HOLD_TIMEOUT` | `2s` | Maximum continuous temporary-loss hold before the follow session stops |
+| `ATLAS_GIMBAL_FOLLOW_DEADBAND` | `0.025` | Normalized image-centre error ignored to prevent gimbal hunting |
+| `ATLAS_GIMBAL_FOLLOW_PITCH_GAIN` / `ATLAS_GIMBAL_FOLLOW_YAW_GAIN` | `60` / `80` | Image error to angular-rate proportional gains |
+| `ATLAS_GIMBAL_FOLLOW_MAX_PITCH_RATE` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW_RATE` | `20` / `30` | Maximum commanded rates in degrees per second |
+| `ATLAS_GIMBAL_FOLLOW_MAX_PITCH_ACCELERATION` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW_ACCELERATION` | `60` / `90` | Maximum ordinary rate change in degrees per second squared |
+| `ATLAS_GIMBAL_FOLLOW_MIN_PITCH` / `ATLAS_GIMBAL_FOLLOW_MAX_PITCH` | `-90` / `30` | Installation-calibrated physical pitch envelope |
+| `ATLAS_GIMBAL_FOLLOW_MIN_YAW` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW` | `-180` / `180` | Installation-calibrated aircraft-relative yaw envelope |
+| `ATLAS_GIMBAL_FOLLOW_LIMIT_MARGIN` | `2` | Angular margin reserved inside each physical stop |
 | `ATLAS_VIDEO_SOURCE_ID` | `a8-main` | Identity shared with the native decoder for overlay matching |
 | `ATLAS_HAILO_ACCELERATOR` | `hailo-8l` | Accelerator identity reported in health |
+
+The calibration-free geolocation foundation uses a centred-boresight method.
+The caller declares whether the centred point is ground contact or target
+centre; target centre also requires the assumed height of that aim point above
+ground and its uncertainty. Agent combines the frame-time-correlated aircraft
+pose with measured gimbal attitude
+relative to North, produces world-NED and aircraft-body-FRD directions, and
+intersects the ray with a caller-supplied horizontal plane.
+
+The default safety envelope requires the declared point to be within 0.04 of
+image centre on each normalized axis, frame-time uncertainty no greater than
+500 ms, at least 20 degrees of depression, and no more than 3 km ground range.
+The reported error radius includes aircraft horizontal/vertical quality,
+timing and velocity, ground/aim-point-height uncertainty, a conservative
+10-degree static boresight bound, measured gimbal motion during the timing
+window, and a 1-metre camera-to-navigation-origin allowance. The method rejects off-centre
+points, or an uncertainty cone that reaches the horizon, rather than guessing
+lens geometry, and it records the flat-plane and camera/gimbal alignment
+assumptions in every result.
+
+The 10-degree value is an uncalibrated operational bound, not a measured camera
+accuracy claim, and must be confirmed or increased during payload acceptance.
+
+Follow from standoff is installed fail-closed. By default the Agent advertises
+`aircraft_follow:standoff:v1:unverified` and refuses translation. Setting
+`ATLAS_AIRCRAFT_FOLLOW_ENABLED=true` is valid only when both the aircraft-follow
+validation reference and physical boresight-alignment reference are non-empty.
+That configuration records the evidence identity; it is not a substitute for
+performing the referenced simulation, HIL, and controlled-flight acceptance.
+
+Native exposes this estimator only for the exact current operator selection.
+`geolocate_selected_track` carries `selectionId`, `sourceId`,
+`trackSessionId`, and `trackId` together with automatically resolved ground
+altitude, uncertainty, source/version, and the MVP target-centre-height
+assumption. Native first uses its configured DEM at the aircraft position and
+may fall back to an explicitly labelled autopilot home-altitude plane. Agent uses
+the selected track's retained pre-inference timing anchor and returns either a
+schema-versioned coordinate estimate or a stable rejection code plus reason.
+The command is observational: it does not acquire the payload lease or move the
+gimbal. Native schema 21 persists both successful coordinates and rejected
+attempts against the selection and session-scoped track.
 
 Perception providers are separate runtime processes. They translate native
 runtime output into the versioned Atlas contract before connecting to the Unix
 socket. Live frames use a latest-value buffer, so stale detections are discarded
 instead of delaying current state. The current concrete adapter is HailoRT via
 the Hailo GStreamer/TAPPAS elements; Jetson adapters remain future work.
+When GStreamer 1.22 or newer and the RTSP sender provide a reconstructable
+absolute sender clock, the Hailo adapter attaches the RTCP/NTP capture time to
+the frame. Older runtimes or cameras without usable sender timing continue with
+the conservative pre-inference pipeline-ingress estimate. Atlas rejects
+implausibly old or future sender timestamps instead of treating clock presence
+as proof of synchronization.
 
 For native development, install the adapter on a computer where HailoRT, TAPPAS
 Core, PyGObject, and their Python bindings are already available:
@@ -345,6 +454,39 @@ Core, PyGObject, and their Python bindings are already available:
 ```sh
 sudo install -m 0755 scripts/atlas-hailort-adapter.py /usr/local/bin/atlas-hailort-adapter
 ```
+
+Build the FoundationVision ByteTrack worker on the target architecture
+with CMake and Eigen 3 development headers:
+
+```sh
+./scripts/build-bytetrack-worker.sh /tmp/atlas-bytetrack-worker
+ATLAS_TRACKER_ALGORITHM=byte_track \
+ATLAS_BYTETRACK_WORKER_PATH=/tmp/atlas-bytetrack-worker \
+go run ./cmd/atlas-agent
+```
+
+Manual worker construction is only needed for source-based development. The
+Debian package builder automatically finds or creates the Linux-arm64 worker
+and validates its executable format before packaging it.
+
+To exercise both ByteTrack modes against ignored local recordings in
+`sampleVids/`, generate detector stimuli and replay them through the exact
+worker-backed tracking stage:
+
+```sh
+python3 scripts/atlas-sample-video-detections.py \
+  ../sampleVids/33039-395456502.mp4 \
+  --output /tmp/atlas-sample-detections.ndjson \
+  --stride 5 --max-frames 100 --max-width 1280
+go run ./cmd/atlas-tracker-replay \
+  -algorithm byte_track_cmc \
+  -worker-path /tmp/atlas-bytetrack-worker \
+  -input /tmp/atlas-sample-detections.ndjson \
+  -output /tmp/atlas-sample-tracks.ndjson
+```
+
+This harness uses OpenCV HOG detections so it validates replay, camera-motion,
+association, and reset behavior only. It is not Hailo/YOLO accuracy evidence.
 
 Then enable it alongside Atlas Agent:
 

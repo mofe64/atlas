@@ -1,7 +1,7 @@
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::Serialize;
 
-use super::LocalDatabase;
+use super::{perception_geolocations, LocalDatabase};
 
 const DEFAULT_COMMAND_TIMEOUT_MS: i64 = 15_000;
 const MAX_COMMAND_TIMEOUT_MS: i64 = 120_000;
@@ -107,6 +107,9 @@ impl LocalDatabase {
             ],
         )
         .map_err(|error| format!("insert vehicle command: {error}"))?;
+        if command_type == "geolocate_selected_track" {
+            perception_geolocations::insert_request(&tx, &id, drone_id, &parameters, now)?;
+        }
         insert_event(
             &tx,
             &generate_id(&tx)?,
@@ -231,6 +234,17 @@ impl LocalDatabase {
                 ],
             )
             .map_err(|error| format!("update vehicle command state: {error}"))?;
+            if terminal {
+                perception_geolocations::resolve_from_command_update(
+                    &tx,
+                    &input.command_id,
+                    next,
+                    &input.result_code,
+                    &input.message,
+                    input.evidence_json.as_deref(),
+                    input.occurred_at_unix_ms,
+                )?;
+            }
         }
         insert_event(
             &tx,
@@ -384,6 +398,15 @@ impl LocalDatabase {
                 params![id, now, result_code, message],
             )
             .map_err(|error| format!("expire vehicle command: {error}"))?;
+            perception_geolocations::resolve_from_command_update(
+                &tx,
+                &id,
+                "timed_out",
+                result_code,
+                message,
+                None,
+                now,
+            )?;
             insert_event(
                 &tx,
                 &generate_id(&tx)?,
@@ -475,7 +498,10 @@ fn validate_command_type(value: &str) -> Result<(), String> {
         | "camera_set_zoom"
         | "payload_control_begin"
         | "payload_control_renew"
-        | "payload_control_end" => Ok(()),
+        | "payload_control_end"
+        | "gimbal_follow_start"
+        | "gimbal_follow_stop"
+        | "geolocate_selected_track" => Ok(()),
         _ => Err("unsupported vehicle command type".to_string()),
     }
 }
@@ -544,6 +570,73 @@ fn validate_command_parameters(
                 return Err("gimbal rates must be between -90 and 90 degrees per second".into());
             }
         }
+        "gimbal_follow_start" => {
+            for key in ["sourceId", "trackSessionId", "trackId"] {
+                if value
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .is_none_or(str::is_empty)
+                {
+                    return Err(format!("{key} must be a non-empty string"));
+                }
+            }
+        }
+        "geolocate_selected_track" => {
+            for key in [
+                "selectionId",
+                "sourceId",
+                "trackSessionId",
+                "trackId",
+                "groundAltitudeSource",
+                "groundAltitudeSourceVersion",
+                "requestedBy",
+            ] {
+                let value = value
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                if value.trim().is_empty() || value.len() > 240 {
+                    return Err(format!(
+                        "{key} must be a non-empty string of at most 240 characters"
+                    ));
+                }
+            }
+            let aim_point = value
+                .get("aimPoint")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if !matches!(aim_point, "GROUND_CONTACT" | "TARGET_CENTER") {
+                return Err("aimPoint must be GROUND_CONTACT or TARGET_CENTER".into());
+            }
+            let ground_altitude = number("groundAltitudeAmslMeters")?;
+            let ground_uncertainty = number("groundAltitudeUncertaintyMeters")?;
+            if !(-500.0..=9_000.0).contains(&ground_altitude) {
+                return Err("groundAltitudeAmslMeters must be between -500 and 9000".into());
+            }
+            if !(0.0..=100.0).contains(&ground_uncertainty) {
+                return Err("groundAltitudeUncertaintyMeters must be between 0 and 100".into());
+            }
+            let resolved_at = value
+                .get("groundAltitudeResolvedAtUnixMs")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or_default();
+            if resolved_at <= 0 {
+                return Err("groundAltitudeResolvedAtUnixMs must be a positive integer".into());
+            }
+            let aim_height = number("assumedAimPointHeightMeters")?;
+            let aim_height_uncertainty = number("assumedAimPointHeightUncertaintyMeters")?;
+            if aim_point == "GROUND_CONTACT" {
+                if aim_height != 0.0 || aim_height_uncertainty != 0.0 {
+                    return Err("GROUND_CONTACT cannot include an assumed aim-point height".into());
+                }
+            } else if !(0.0..=100.0).contains(&aim_height)
+                || aim_height == 0.0
+                || !(0.0..=100.0).contains(&aim_height_uncertainty)
+                || aim_height_uncertainty == 0.0
+            {
+                return Err("TARGET_CENTER requires positive aim-point height and uncertainty at or below 100 metres".into());
+            }
+        }
         "gimbal_set_roi" => {
             let latitude = number("latitude")?;
             let longitude = number("longitude")?;
@@ -606,6 +699,45 @@ fn validate_command_policy(
     if !link_ready {
         return Err("a fresh connected communication link is required".to_string());
     }
+    if command_type == "geolocate_selected_track" {
+        let selection_id = parameters["selectionId"].as_str().unwrap_or_default();
+        let source_id = parameters["sourceId"].as_str().unwrap_or_default();
+        let track_session_id = parameters["trackSessionId"].as_str().unwrap_or_default();
+        let track_id = parameters["trackId"].as_str().unwrap_or_default();
+        let selected: bool = connection
+            .query_row(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM perception_track_selections selections
+                    JOIN perception_tracks tracks ON tracks.id = selections.track_id
+                    JOIN perception_track_sessions sessions ON sessions.id = selections.track_session_id
+                    WHERE selections.id = ?1
+                      AND selections.drone_id = ?2
+                      AND selections.status = 'SELECTED'
+                      AND selections.track_session_id = ?3
+                      AND selections.track_id = ?4
+                      AND sessions.source_id = ?5
+                      AND tracks.lifecycle_state = 'ACTIVE'
+                )
+                "#,
+                params![selection_id, drone_id, track_session_id, track_id, source_id],
+                |row| row.get(0),
+            )
+            .map_err(|error| format!("check selected-track geolocation policy: {error}"))?;
+        if !selected {
+            return Err(
+                "geolocation requires the exact currently selected ACTIVE track, selection, and source"
+                    .into(),
+            );
+        }
+        let resolved_at = parameters["groundAltitudeResolvedAtUnixMs"]
+            .as_i64()
+            .unwrap_or_default();
+        if resolved_at > now + 300_000 {
+            return Err("ground altitude provenance cannot be dated in the future".into());
+        }
+    }
     if command_type.starts_with("gimbal_")
         || command_type.starts_with("camera_")
         || command_type.starts_with("payload_control_")
@@ -655,6 +787,37 @@ fn validate_command_policy(
                             .into(),
                     );
                 }
+            }
+        }
+        if command_type == "gimbal_follow_start" {
+            let source_id = parameters["sourceId"].as_str().unwrap_or_default();
+            let track_session_id = parameters["trackSessionId"].as_str().unwrap_or_default();
+            let track_id = parameters["trackId"].as_str().unwrap_or_default();
+            let selected: bool = connection
+                .query_row(
+                    r#"
+                    SELECT EXISTS(
+                        SELECT 1
+                        FROM perception_track_selections selections
+                        JOIN perception_tracks tracks ON tracks.id = selections.track_id
+                        JOIN perception_track_sessions sessions ON sessions.id = selections.track_session_id
+                        WHERE selections.drone_id = ?1
+                          AND selections.status = 'SELECTED'
+                          AND selections.track_session_id = ?2
+                          AND selections.track_id = ?3
+                          AND sessions.source_id = ?4
+                          AND tracks.lifecycle_state = 'ACTIVE'
+                    )
+                    "#,
+                    params![drone_id, track_session_id, track_id, source_id],
+                    |row| row.get(0),
+                )
+                .map_err(|error| format!("check operator-selected track policy: {error}"))?;
+            if !selected {
+                return Err(
+                    "gimbal follow requires the exact currently selected ACTIVE track and source"
+                        .into(),
+                );
             }
         }
         return Ok(());
@@ -827,5 +990,20 @@ mod parameter_tests {
             "leaseDurationMs":7000
         });
         assert!(validate_command_parameters("payload_control_begin", &missing_run).is_err());
+    }
+
+    #[test]
+    fn gimbal_follow_requires_an_exact_track_identity() {
+        let valid = json!({
+            "controlContext":{"kind":"mission_override","missionRunId":"run-1"},
+            "controlSessionId":"follow-1",
+            "sourceId":"camera-main",
+            "trackSessionId":"track-session-1",
+            "trackId":"atlas:track-session-1:1"
+        });
+        assert!(validate_command_parameters("gimbal_follow_start", &valid).is_ok());
+        let mut missing_track = valid;
+        missing_track["trackId"] = json!("");
+        assert!(validate_command_parameters("gimbal_follow_start", &missing_track).is_err());
     }
 }

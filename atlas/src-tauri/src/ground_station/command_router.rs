@@ -3,12 +3,14 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::{mpsc, RwLock};
 use tonic::Status;
 
-use crate::database::{LocalDatabase, VehicleCommandSnapshot};
+use crate::database::{AircraftFollowSessionSnapshot, LocalDatabase, VehicleCommandSnapshot};
 
 use super::{
     proto::pb::{
-        ground_station_to_agent, GroundStationToAgent, MissionOperationRequest,
-        MissionOperationType, VehicleCommandCancellation, VehicleCommandRequest,
+        ground_station_to_agent, AircraftFollowControlAction, AircraftFollowControlRequest,
+        AircraftFollowEnvelope, AircraftFollowTargetState, GroundStationToAgent,
+        MissionActionCheckpoint, MissionOperationRequest, MissionOperationType,
+        MissionReconciliationRequest, VehicleCommandCancellation, VehicleCommandRequest,
         VehicleCommandType,
     },
     unix_time_ms,
@@ -105,6 +107,142 @@ impl CommandRouter {
         Ok(())
     }
 
+    pub(crate) async fn deliver_mission_reconciliation(
+        &self,
+        database: &LocalDatabase,
+        drone_id: &str,
+    ) -> Result<bool, String> {
+        let Some(snapshot) = database.mission_reconciliation(drone_id)? else {
+            return Ok(false);
+        };
+        let session = self
+            .sessions
+            .read()
+            .await
+            .get(drone_id)
+            .cloned()
+            .ok_or_else(|| "drone has no active Atlas Agent session".to_string())?;
+        let requested_at = unix_time_ms();
+        let reconciliation_id = format!("reconcile-{drone_id}-{requested_at}");
+        let actions = snapshot
+            .run
+            .actions
+            .iter()
+            .map(|action| MissionActionCheckpoint {
+                action_sequence: action.action_sequence,
+                action_type: action.action_type.clone(),
+                state: action.state.clone(),
+                attempt: action.attempt,
+                attempt_deadline_at_unix_ms: action.attempt_deadline_at_unix_ms,
+                next_attempt_at_unix_ms: action.next_attempt_at_unix_ms,
+            })
+            .collect();
+        session
+            .outbound
+            .send(Ok(GroundStationToAgent {
+                payload: Some(
+                    ground_station_to_agent::Payload::MissionReconciliationRequest(
+                        MissionReconciliationRequest {
+                            reconciliation_id,
+                            mission_run_id: snapshot.run.id,
+                            drone_id: snapshot.run.drone_id,
+                            run_state: snapshot.run.status,
+                            mission_plan_json: snapshot.mission_plan_json,
+                            current_waypoint: snapshot.run.current_waypoint,
+                            total_waypoints: snapshot.run.total_waypoints,
+                            actions,
+                            requested_at_unix_ms: requested_at,
+                            deadline_at_unix_ms: requested_at + 30_000,
+                        },
+                    ),
+                ),
+            }))
+            .await
+            .map_err(|_| {
+                "Atlas Agent session closed before mission reconciliation delivery".to_string()
+            })?;
+        Ok(true)
+    }
+
+    pub(crate) async fn deliver_aircraft_follow_control(
+        &self,
+        follow: &AircraftFollowSessionSnapshot,
+        operation_id: &str,
+        action: &str,
+        reason_code: &str,
+        reason: &str,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .read()
+            .await
+            .get(&follow.drone_id)
+            .cloned()
+            .ok_or_else(|| "drone has no active Atlas Agent session".to_string())?;
+        let target = &follow.target;
+        session
+            .outbound
+            .send(Ok(GroundStationToAgent {
+                payload: Some(
+                    ground_station_to_agent::Payload::AircraftFollowControlRequest(
+                        AircraftFollowControlRequest {
+                            operation_id: operation_id.to_string(),
+                            follow_session_id: follow.id.clone(),
+                            drone_id: follow.drone_id.clone(),
+                            action: aircraft_follow_action(action) as i32,
+                            envelope: Some(AircraftFollowEnvelope {
+                                standoff_m: follow.standoff_m,
+                                altitude_relative_m: follow.altitude_relative_m,
+                                minimum_altitude_relative_m: follow.minimum_altitude_relative_m,
+                                maximum_altitude_relative_m: follow.maximum_altitude_relative_m,
+                                maximum_ground_speed_m_s: follow.maximum_ground_speed_mps,
+                                maximum_acceleration_m_s2: follow.maximum_acceleration_mps2,
+                                maximum_duration_ms: follow.maximum_duration_ms,
+                                boundary_center_latitude: follow.boundary_center_latitude,
+                                boundary_center_longitude: follow.boundary_center_longitude,
+                                boundary_radius_m: follow.boundary_radius_m,
+                                minimum_battery_percent: follow.minimum_battery_percent,
+                                minimum_track_confidence: follow.minimum_track_confidence,
+                                maximum_geolocation_uncertainty_m: follow
+                                    .maximum_geolocation_uncertainty_m,
+                                maximum_velocity_uncertainty_m_s: follow
+                                    .maximum_velocity_uncertainty_mps,
+                            }),
+                            target: Some(AircraftFollowTargetState {
+                                geolocation_id: target.geolocation_id.clone(),
+                                selection_id: target.selection_id.clone(),
+                                source_id: target.source_id.clone(),
+                                track_session_id: target.track_session_id.clone(),
+                                track_id: target.track_id.clone(),
+                                observed_at_unix_ms: target.observed_at_unix_ms,
+                                latitude: target.latitude,
+                                longitude: target.longitude,
+                                altitude_amsl_m: target.altitude_amsl_m,
+                                velocity_north_m_s: target.velocity_north_mps,
+                                velocity_east_m_s: target.velocity_east_mps,
+                                horizontal_uncertainty_m: target.horizontal_uncertainty_m,
+                                velocity_uncertainty_m_s: target.velocity_uncertainty_mps,
+                                track_confidence: target.track_confidence,
+                                lifecycle_state: target.lifecycle_state.clone(),
+                                motion_status: target.motion_status.clone(),
+                            }),
+                            operator_lease_expires_at_unix_ms: follow
+                                .operator_lease_expires_at_unix_ms
+                                .unwrap_or_default(),
+                            requested_at_unix_ms: unix_time_ms(),
+                            reason_code: reason_code.to_string(),
+                            reason: reason.to_string(),
+                            validation_reference: follow.validation_reference.clone(),
+                        },
+                    ),
+                ),
+            }))
+            .await
+            .map_err(|_| {
+                "Atlas Agent session closed before aircraft follow control delivery".to_string()
+            })
+    }
+
     pub(crate) async fn cancel(
         &self,
         drone_id: &str,
@@ -183,6 +321,9 @@ fn command_type(value: &str) -> VehicleCommandType {
         "payload_control_end" => VehicleCommandType::PayloadControlEnd,
         "gimbal_set_roi" => VehicleCommandType::GimbalSetRoi,
         "camera_set_zoom" => VehicleCommandType::CameraSetZoom,
+        "gimbal_follow_start" => VehicleCommandType::GimbalFollowStart,
+        "gimbal_follow_stop" => VehicleCommandType::GimbalFollowStop,
+        "geolocate_selected_track" => VehicleCommandType::GeolocateSelectedTrack,
         _ => VehicleCommandType::Unspecified,
     }
 }
@@ -196,5 +337,15 @@ fn mission_operation_type(value: &str) -> MissionOperationType {
         "cancel" => MissionOperationType::Cancel,
         "return_to_launch" => MissionOperationType::ReturnToLaunch,
         _ => MissionOperationType::Unspecified,
+    }
+}
+
+fn aircraft_follow_action(value: &str) -> AircraftFollowControlAction {
+    match value {
+        "start" => AircraftFollowControlAction::Start,
+        "renew" => AircraftFollowControlAction::Renew,
+        "hold" => AircraftFollowControlAction::Hold,
+        "end" => AircraftFollowControlAction::End,
+        _ => AircraftFollowControlAction::Unspecified,
     }
 }

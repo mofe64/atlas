@@ -127,16 +127,128 @@ export type IncidentAssignment = {
 
 export type ArrivalFailurePolicy = "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION";
 
+export type IncidentResponsePattern = "HOLD_AT_STAGING" | "OFFSET_OBSERVE" | "BOUNDED_AREA_SCAN" | "BOUNDED_ORBIT";
+
+export type ResponseCoordinate = { latitude: number; longitude: number };
+
+export type IncidentResponseGeometry =
+  | {
+      responsePattern: "HOLD_AT_STAGING";
+      stagingLatitude: number;
+      stagingLongitude: number;
+      altitudeMeters: number;
+      speedMps: number;
+    }
+  | {
+      responsePattern: "OFFSET_OBSERVE";
+      observationLatitude: number;
+      observationLongitude: number;
+      altitudeMeters: number;
+      speedMps: number;
+    }
+  | {
+      responsePattern: "BOUNDED_AREA_SCAN";
+      areaPolygon: ResponseCoordinate[];
+      altitudeMeters: number;
+      speedMps: number;
+      laneSpacingMeters: number;
+      sweepAngleDegrees: number;
+    }
+  | {
+      responsePattern: "BOUNDED_ORBIT";
+      centerLatitude: number;
+      centerLongitude: number;
+      radiusMeters: number;
+      altitudeLevelsMeters: number[];
+      speedMps: number;
+      lapsPerLevel: number;
+      direction: "CLOCKWISE" | "COUNTERCLOCKWISE";
+      maxVerticalRateMps: number;
+    };
+
+export type AircraftSuitabilityReason = {
+  code: string;
+  message: string;
+};
+
+export type IncidentResponseAircraftSuitability = {
+  droneId: string;
+  droneName: string;
+  available: boolean;
+  recommended: boolean;
+  connectionStatus: ConnectionStatus;
+  batteryPercent?: number | null;
+  telemetryAgeMs?: number | null;
+  distanceMeters?: number | null;
+  estimatedArrivalSeconds?: number | null;
+  activeIncidentId?: string | null;
+  unfinishedMissionRunId?: string | null;
+  blockers: AircraftSuitabilityReason[];
+  considerations: AircraftSuitabilityReason[];
+};
+
 export type PrepareIncidentResponseInput = {
   expectedIncidentRevision: number;
   droneId: string;
-  stagingLatitude: number;
-  stagingLongitude: number;
-  altitudeMeters: number;
-  speedMps: number;
+  geometry: IncidentResponseGeometry;
   arrivalFailurePolicy: ArrivalFailurePolicy;
-  pointGimbalAtIncident: boolean;
   incidentTargetAltitudeAmslMeters?: number | null;
+  buildingHorizontalClearanceMeters: number;
+  buildingVerticalClearanceMeters: number;
+  knownBuildingOverrideReason?: string | null;
+};
+
+export type KnownBuildingAssessment = {
+  status: "CLEAR_OF_CHECKED_VOLUMES" | "INTERSECTIONS" | "INCOMPLETE" | "DATA_UNAVAILABLE" | string;
+  statement: string;
+  checkedFeatureCount: number;
+  horizontalClearanceMeters: number;
+  verticalClearanceMeters: number;
+  homeAbsoluteAltitudeMeters?: number | null;
+  routeStart?: {
+    latitude: number;
+    longitude: number;
+    relativeAltitudeMeters: number;
+  } | null;
+  routeSegmentCount: number;
+  intersectionCount: number;
+  unknownHeightCount: number;
+  coverageComplete: boolean;
+  overrideRequired: boolean;
+  overrideReason?: string | null;
+  provenance?: {
+    provider: string;
+    product: string;
+    datasetId: string;
+    schemaVersion: string;
+    release: string;
+    retrievedAtUnixMs: number;
+    coverageBbox: [number, number, number, number];
+  } | null;
+  issues: Array<{
+    featureId: string;
+    result: "INTERSECTION" | "HEIGHT_OR_DATUM_UNKNOWN" | string;
+    routeSegmentIndexes: number[];
+    routePointIndexes: number[];
+    absoluteBaseMeters?: number | null;
+    absoluteTopMeters?: number | null;
+    relativeTopMeters?: number | null;
+    heightSource: string;
+    heightConfidence?: string | null;
+    evidenceDate?: string | null;
+    footprint: ResponseCoordinate[];
+  }>;
+  limitations: string[];
+};
+
+export type IncidentResponsePlanPreview = {
+  templateType: Mission["templateType"];
+  patternType: string;
+  generatedWaypoints: MissionPlan["generatedWaypoints"];
+  actions: MissionPlan["actions"];
+  metadata: MissionPlan["metadata"];
+  validationWarnings: string[];
+  knownBuildingAssessment: KnownBuildingAssessment;
 };
 
 export type PreparedIncidentResponse = {
@@ -161,4 +273,57 @@ export type CreateIncidentInput = {
 export type UpdateIncidentInput = CreateIncidentInput & {
   expectedRevision: number;
   status: IncidentStatus;
+};
+
+export type OperationalTrackGeolocation = {
+  geolocation: {
+    id: string;
+    commandId: string;
+    selectionId: string;
+    droneId: string;
+    trackSessionId: string;
+    trackId: string;
+    sourceId: string;
+    status: "SUCCEEDED";
+    requestedAtUnixMs: number;
+    resolvedAtUnixMs?: number | null;
+    aimPoint: "GROUND_CONTACT" | "TARGET_CENTER";
+    assumedAimPointHeightM: number;
+    assumedAimPointHeightUncertaintyM: number;
+    groundAltitudeAmslM: number;
+    groundAltitudeUncertaintyM: number;
+    groundAltitudeSource: string;
+    groundAltitudeSourceVersion: string;
+    groundAltitudeResolvedAtUnixMs: number;
+    latitude?: number | null;
+    longitude?: number | null;
+    altitudeAmslM?: number | null;
+    horizontalUncertaintyM?: number | null;
+    method: string;
+    frameObservedAtUnixMs?: number | null;
+    refinementStatus: "NOT_REQUESTED" | "CONVERGED" | "MAX_ITERATIONS";
+    terrainSource: string;
+    terrainSourceVersion: string;
+    terrainIterationCount: number;
+    terrainResidualM?: number | null;
+    rangeSource: string;
+    filteredLatitude?: number | null;
+    filteredLongitude?: number | null;
+    targetVelocityNorthMps?: number | null;
+    targetVelocityEastMps?: number | null;
+    targetSpeedMps?: number | null;
+    targetDirectionDeg?: number | null;
+    targetVelocityUncertaintyMps?: number | null;
+    motionStatus: string;
+    rejectionCode: string;
+    rejectionReason: string;
+    evidence?: unknown;
+  };
+  droneName: string;
+  classLabel: string;
+  lifecycleState: "TENTATIVE" | "ACTIVE" | "TEMPORARILY_OCCLUDED" | "LOST" | "CLOSED";
+  observationCount: number;
+  selectionStatus: string;
+  annotationCount: number;
+  evidenceMarkerCount: number;
 };

@@ -5,6 +5,9 @@ import sys
 import unittest
 from unittest import mock
 
+import cv2
+import numpy as np
+
 
 SCRIPT = pathlib.Path(__file__).with_name("atlas-hailort-adapter.py")
 SPEC = importlib.util.spec_from_file_location("atlas_hailort_adapter", SCRIPT)
@@ -35,6 +38,54 @@ class FakeDetection:
 
 class FakeHailo:
     HAILO_UNIQUE_ID = object()
+
+
+class FakeCaps:
+    def __init__(self, name):
+        self.name = name
+
+
+class FakeGst:
+    CLOCK_TIME_NONE = (1 << 64) - 1
+
+    class Caps:
+        @staticmethod
+        def from_string(name):
+            return FakeCaps(name)
+
+
+class FakeReferenceMeta:
+    def __init__(self, timestamp):
+        self.timestamp = timestamp
+
+
+class FakeReferenceBuffer:
+    def __init__(self, values):
+        self.values = values
+
+    def get_reference_timestamp_meta(self, caps):
+        value = self.values.get(caps.name)
+        return None if value is None else FakeReferenceMeta(value)
+
+
+class FakeRTSPSource:
+    def __init__(self, supported=True):
+        self.supported = supported
+        self.values = {}
+
+    def find_property(self, name):
+        return object() if self.supported and name == "add-reference-timestamp-meta" else None
+
+    def set_property(self, name, value):
+        self.values[name] = value
+
+
+class FakePipeline:
+    def __init__(self, source):
+        self.source = source
+
+    def get_by_name(self, name):
+        return self.source if name == "atlas_rtsp_source" else None
 
 
 class HailoAdapterTests(unittest.TestCase):
@@ -80,7 +131,49 @@ class HailoAdapterTests(unittest.TestCase):
         pipeline = ADAPTER.build_pipeline(config)
         self.assertIn("hailonet", pipeline)
         self.assertIn("atlas_detection_output", pipeline)
+        self.assertIn("name=atlas_rtsp_source", pipeline)
         self.assertNotIn("hailooverlay", pipeline)
+
+    def test_source_reference_timestamp_is_enabled_only_when_supported(self):
+        source = FakeRTSPSource(supported=True)
+        self.assertTrue(ADAPTER.enable_source_reference_timestamps(FakePipeline(source)))
+        self.assertEqual(source.values, {"add-reference-timestamp-meta": True})
+        unsupported = FakeRTSPSource(supported=False)
+        self.assertFalse(ADAPTER.enable_source_reference_timestamps(FakePipeline(unsupported)))
+        self.assertEqual(unsupported.values, {})
+
+    def test_source_reference_timestamp_converts_recognized_epochs(self):
+        unix_ns = 1_700_000_000_123_456_789
+        ntp_buffer = FakeReferenceBuffer({
+            "timestamp/x-ntp": unix_ns + ADAPTER.NTP_UNIX_EPOCH_OFFSET_NS,
+        })
+        self.assertEqual(ADAPTER.source_capture_unix_ns(ntp_buffer, FakeGst), unix_ns)
+        unix_buffer = FakeReferenceBuffer({"timestamp/x-unix": unix_ns})
+        self.assertEqual(ADAPTER.source_capture_unix_ns(unix_buffer, FakeGst), unix_ns)
+        invalid = FakeReferenceBuffer({"timestamp/x-ntp": FakeGst.CLOCK_TIME_NONE})
+        self.assertIsNone(ADAPTER.source_capture_unix_ns(invalid, FakeGst))
+
+    def test_sparse_optical_flow_reports_normalized_previous_to_current_motion(self):
+        first = np.zeros((240, 320, 3), dtype=np.uint8)
+        rng = np.random.default_rng(42)
+        for x, y in rng.integers([20, 20], [300, 220], size=(80, 2)):
+            cv2.circle(first, (int(x), int(y)), 2, (255, 255, 255), -1)
+        shift_x, shift_y = 12, 7
+        second = cv2.warpAffine(
+            first,
+            np.float32([[1, 0, shift_x], [0, 1, shift_y]]),
+            (first.shape[1], first.shape[0]),
+        )
+        estimator = ADAPTER.CameraMotionEstimator(cv2, np, max_dimension=320, max_features=300)
+        self.assertIsNone(estimator.estimate(first))
+        motion = estimator.estimate(second)
+        self.assertIsNotNone(motion)
+        self.assertEqual(motion["method"], "SPARSE_OPTICAL_FLOW")
+        self.assertAlmostEqual(motion["homography"][2], shift_x / first.shape[1], delta=0.01)
+        self.assertAlmostEqual(motion["homography"][5], shift_y / first.shape[0], delta=0.01)
+        self.assertGreater(motion["confidence"], 0.25)
+        estimator.reset()
+        self.assertIsNone(estimator.estimate(second))
 
 
 if __name__ == "__main__":

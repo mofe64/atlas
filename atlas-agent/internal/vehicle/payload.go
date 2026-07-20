@@ -12,6 +12,7 @@ import (
 
 	camerapb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/camera"
 	gimbalpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/gimbal"
+	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -43,13 +44,15 @@ type PayloadEvent struct {
 }
 
 type manualPayloadSession struct {
-	id              string
-	kind            string
-	runID           string
-	gimbalID        int32
-	cameraID        int32
-	expiresAt       time.Time
-	expirationTimer *time.Timer
+	id               string
+	kind             string
+	runID            string
+	gimbalID         int32
+	cameraID         int32
+	expiresAt        time.Time
+	expirationTimer  *time.Timer
+	followExpected   bool
+	followStopReason string
 }
 
 // PayloadController is the single authority for mission and operator payload
@@ -74,6 +77,10 @@ type PayloadController struct {
 	waypoint            uint32
 	manual              *manualPayloadSession
 	eventSink           func(PayloadEvent)
+	followSource        perception.TrackFollowSource
+	followConfig        GimbalFollowConfig
+	follow              *gimbalFollowSession
+	trackGeolocator     *selectedTrackGeolocator
 }
 
 // ConfigureCameraTransports explicitly selects the camera drivers that may
@@ -106,20 +113,32 @@ func NewPayloadController(address string, logger *slog.Logger) (*PayloadControll
 		return nil, fmt.Errorf("create MAVSDK payload client: %w", err)
 	}
 	return &PayloadController{
-		connection: connection,
-		logger:     logger,
-		gimbal:     gimbalpb.NewGimbalServiceClient(connection),
-		camera:     camerapb.NewCameraServiceClient(connection),
+		connection:   connection,
+		logger:       logger,
+		gimbal:       gimbalpb.NewGimbalServiceClient(connection),
+		camera:       camerapb.NewCameraServiceClient(connection),
+		followConfig: DefaultGimbalFollowConfig(),
 	}, nil
 }
 
 func (p *PayloadController) Close() error {
+	p.commandMu.Lock()
+	p.mu.Lock()
+	follow := p.follow
+	p.mu.Unlock()
+	p.cancelTrackFollowLocked("AGENT_SHUTDOWN")
+	if follow != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		_ = p.commandFollowRates(ctx, follow.gimbalID, 0, 0)
+		cancel()
+	}
 	p.mu.Lock()
 	if p.manual != nil && p.manual.expirationTimer != nil {
 		p.manual.expirationTimer.Stop()
 	}
 	p.manual = nil
 	p.mu.Unlock()
+	p.commandMu.Unlock()
 	return p.connection.Close()
 }
 
@@ -144,6 +163,7 @@ func (p *PayloadController) ConfigureMission(runID string, plan payloadMissionPl
 	p.plan = plan
 	p.waypoint = 0
 	p.mu.Unlock()
+	p.cancelTrackFollowLocked("MISSION_RECONFIGURED")
 }
 
 func (p *PayloadController) ActivateMission(ctx context.Context, runID, state string) error {
@@ -215,6 +235,7 @@ func (p *PayloadController) EndMission(ctx context.Context, runID string) {
 	p.runID = ""
 	p.plan = payloadMissionPlan{}
 	p.mu.Unlock()
+	p.cancelTrackFollowLocked("MISSION_ENDED")
 	if manual == nil || clearManual {
 		stopContext, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
@@ -272,6 +293,15 @@ func (p *PayloadController) Execute(ctx context.Context, commandType, parameters
 	case "payload_control_end":
 		return p.endManual(ctx, input)
 	}
+	if commandType == "gimbal_follow_start" {
+		return p.startTrackFollow(ctx, input)
+	}
+	if commandType == "gimbal_follow_stop" {
+		return p.stopTrackFollow(ctx, input)
+	}
+	if commandType == "geolocate_selected_track" {
+		return p.geolocateSelectedTrack(input)
+	}
 	if err := p.validateManual(input); err != nil {
 		return CommandResult{Code: "PAYLOAD_CONTROL_REQUIRED", Message: err.Error()}, err
 	}
@@ -295,20 +325,33 @@ func (p *PayloadController) Execute(ctx context.Context, commandType, parameters
 }
 
 type payloadCommand struct {
-	ControlContext            payloadControlContext `json:"controlContext"`
-	ControlSessionID          string                `json:"controlSessionId"`
-	LeaseDurationMS           int64                 `json:"leaseDurationMs"`
-	GimbalID                  int32                 `json:"gimbalId"`
-	CameraComponentID         int32                 `json:"cameraComponentId"`
-	PitchDegrees              float32               `json:"pitchDegrees"`
-	YawDegrees                float32               `json:"yawDegrees"`
-	YawFrame                  string                `json:"yawFrame"`
-	PitchRateDegreesPerSecond float32               `json:"pitchRateDegreesPerSecond"`
-	YawRateDegreesPerSecond   float32               `json:"yawRateDegreesPerSecond"`
-	Latitude                  float64               `json:"latitude"`
-	Longitude                 float64               `json:"longitude"`
-	AltitudeAmslMeters        float32               `json:"altitudeAmslMeters"`
-	ZoomPercent               float32               `json:"zoomPercent"`
+	ControlContext                         payloadControlContext `json:"controlContext"`
+	ControlSessionID                       string                `json:"controlSessionId"`
+	LeaseDurationMS                        int64                 `json:"leaseDurationMs"`
+	GimbalID                               int32                 `json:"gimbalId"`
+	CameraComponentID                      int32                 `json:"cameraComponentId"`
+	PitchDegrees                           float32               `json:"pitchDegrees"`
+	YawDegrees                             float32               `json:"yawDegrees"`
+	YawFrame                               string                `json:"yawFrame"`
+	PitchRateDegreesPerSecond              float32               `json:"pitchRateDegreesPerSecond"`
+	YawRateDegreesPerSecond                float32               `json:"yawRateDegreesPerSecond"`
+	Latitude                               float64               `json:"latitude"`
+	Longitude                              float64               `json:"longitude"`
+	AltitudeAmslMeters                     float32               `json:"altitudeAmslMeters"`
+	ZoomPercent                            float32               `json:"zoomPercent"`
+	SourceID                               string                `json:"sourceId"`
+	TrackSessionID                         string                `json:"trackSessionId"`
+	TrackID                                string                `json:"trackId"`
+	SelectionID                            string                `json:"selectionId"`
+	AimPoint                               string                `json:"aimPoint"`
+	GroundAltitudeAmslMeters               float64               `json:"groundAltitudeAmslMeters"`
+	GroundAltitudeUncertaintyMeters        float64               `json:"groundAltitudeUncertaintyMeters"`
+	GroundAltitudeSource                   string                `json:"groundAltitudeSource"`
+	GroundAltitudeSourceVersion            string                `json:"groundAltitudeSourceVersion"`
+	GroundAltitudeResolvedAtUnixMS         int64                 `json:"groundAltitudeResolvedAtUnixMs"`
+	AssumedAimPointHeightMeters            float64               `json:"assumedAimPointHeightMeters"`
+	AssumedAimPointHeightUncertaintyMeters float64               `json:"assumedAimPointHeightUncertaintyMeters"`
+	RequestedBy                            string                `json:"requestedBy"`
 }
 
 type payloadControlContext struct {
@@ -381,6 +424,14 @@ func (p *PayloadController) renewManual(input payloadCommand) (CommandResult, er
 	if err := p.validateManualLocked(input); err != nil {
 		return CommandResult{Code: "PAYLOAD_CONTROL_REQUIRED", Message: err.Error()}, err
 	}
+	if p.manual.followExpected && p.follow == nil {
+		reason := p.manual.followStopReason
+		if reason == "" {
+			reason = "UNKNOWN"
+		}
+		err := fmt.Errorf("onboard gimbal follow stopped: %s", reason)
+		return CommandResult{Code: "GIMBAL_FOLLOW_STOPPED", Message: err.Error()}, err
+	}
 	p.manual.expiresAt = time.Now().Add(lease)
 	p.scheduleExpirationLocked(lease)
 	return CommandResult{Code: "PAYLOAD_LEASE_RENEWED", Message: "Manual payload control lease renewed"}, nil
@@ -401,6 +452,7 @@ func (p *PayloadController) endManual(ctx context.Context, input payloadCommand)
 	state := p.runState
 	waypoint := p.waypoint
 	p.mu.Unlock()
+	p.cancelTrackFollowLocked("PAYLOAD_CONTROL_ENDED")
 	if manual.kind == inspectionControl {
 		if err := p.stopAndReleaseGimbal(ctx, manual.gimbalID); err != nil {
 			return CommandResult{Code: "PAYLOAD_RELEASE_FAILED", Message: err.Error()}, err
@@ -429,6 +481,7 @@ func (p *PayloadController) expireManual(sessionID string) {
 	waypoint := p.waypoint
 	p.manual = nil
 	p.mu.Unlock()
+	p.cancelTrackFollowLocked("PAYLOAD_LEASE_EXPIRED")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if manual.kind == inspectionControl {
@@ -733,6 +786,12 @@ func (p *PayloadController) Capabilities() []string {
 	capabilities := []string{}
 	if len(p.gimbalIDs) > 0 {
 		capabilities = append(capabilities, "gimbal:detected", "gimbal:roi", "payload:manual_override", "command:gimbal_set_angles", "command:gimbal_set_rates", "command:gimbal_center", "command:gimbal_set_roi")
+		if p.followSource != nil {
+			capabilities = append(capabilities, "gimbal:track_follow", "command:gimbal_follow_start", "command:gimbal_follow_stop")
+		}
+		if p.trackGeolocator != nil {
+			capabilities = append(capabilities, "geolocation:selected_track_boresight", "command:geolocate_selected_track", "geolocation:boresight_alignment:"+p.trackGeolocator.foundation.BoresightAlignmentStatus())
+		}
 		for _, id := range p.gimbalIDs {
 			capabilities = append(capabilities, fmt.Sprintf("gimbal:id:%d", id))
 		}

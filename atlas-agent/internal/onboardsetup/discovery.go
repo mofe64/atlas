@@ -154,7 +154,7 @@ func discoverHailo(ctx context.Context, runner Runner, paths Paths) HailoStatus 
 		status.Accelerator = parseHailoAccelerator(result.Output)
 	}
 	status.GStreamerReady = commandSucceeds(ctx, runner, "gst-inspect-1.0", "hailonet") && commandSucceeds(ctx, runner, "gst-inspect-1.0", "hailofilter")
-	status.PythonReady = commandSucceeds(ctx, runner, "python3", "-c", "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo")
+	status.PythonReady = commandSucceeds(ctx, runner, "python3", "-c", "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo; import cv2; import numpy")
 	if !status.PCIVisible {
 		status.MissingComponents = append(status.MissingComponents, "Hailo PCIe device")
 	}
@@ -167,7 +167,7 @@ func discoverHailo(ctx context.Context, runner Runner, paths Paths) HailoStatus 
 		status.MissingComponents = append(status.MissingComponents, "hailonet/hailofilter")
 	}
 	if !status.PythonReady {
-		status.MissingComponents = append(status.MissingComponents, "Hailo Python bindings")
+		status.MissingComponents = append(status.MissingComponents, "Hailo/OpenCV/NumPy Python bindings")
 	}
 	return status
 }

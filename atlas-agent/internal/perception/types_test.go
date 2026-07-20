@@ -38,6 +38,50 @@ func TestFrameValidateRejectsBoxOutsideFrame(t *testing.T) {
 	}
 }
 
+func TestHealthValidateDistinguishesInactiveFromFailedRuntime(t *testing.T) {
+	health := Health{SourceID: "a8-main", Provider: "hailo", ActivationState: "INACTIVE", ObservedAt: time.Now().UTC()}
+	if err := health.Validate(); err != nil {
+		t.Fatalf("intentionally inactive health must remain valid: %v", err)
+	}
+	health.ActivationState = "STOPPED_MAYBE"
+	if err := health.Validate(); err == nil {
+		t.Fatal("invalid activation state was accepted")
+	}
+}
+
+func TestFrameValidateAcceptsCameraMotionHomography(t *testing.T) {
+	frame := Frame{
+		SourceID: "a8-main", StreamEpoch: "epoch-1", FrameID: "frame-1",
+		ObservedAt: time.Now().UTC(), ImageWidth: 640, ImageHeight: 640,
+		Model: ModelIdentity{Name: "atlas-objects", Version: "1"},
+		CameraMotion: &CameraMotionEstimate{
+			Method: "ECC", Confidence: 0.8,
+			Homography: []float64{1, 0, 0.01, 0, 1, -0.02, 0, 0, 1},
+		},
+	}
+	if err := frame.Validate(); err != nil {
+		t.Fatalf("valid camera motion was rejected: %v", err)
+	}
+	frame.CameraMotion.Homography = frame.CameraMotion.Homography[:8]
+	if err := frame.Validate(); err == nil {
+		t.Fatal("short camera motion homography was accepted")
+	}
+}
+
+func TestTrackingHealthRequiresSessionForActiveTracker(t *testing.T) {
+	health := Health{
+		SourceID: "a8-main", Provider: "hailo", ObservedAt: time.Now().UTC(),
+		Tracking: &TrackingHealth{Algorithm: TrackerAlgorithmByteTrackCMC, State: "ACTIVE", CameraMotionState: "DISABLED"},
+	}
+	if err := health.Validate(); err == nil {
+		t.Fatal("active tracking health without a session was accepted")
+	}
+	health.Tracking.SessionID = "session-1"
+	if err := health.Validate(); err != nil {
+		t.Fatalf("valid tracking health was rejected: %v", err)
+	}
+}
+
 func TestPublishLatestDropsStaleValue(t *testing.T) {
 	values := make(chan int, 1)
 	publishLatest(values, 1)

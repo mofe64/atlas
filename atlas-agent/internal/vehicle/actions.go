@@ -14,8 +14,9 @@ import (
 )
 
 type CommandResult struct {
-	Code    string
-	Message string
+	Code         string
+	Message      string
+	EvidenceJSON string
 }
 
 type ActionExecutor struct {
@@ -101,7 +102,8 @@ func (e *ActionExecutor) Execute(ctx context.Context, commandID, commandType, pa
 		}
 	case "payload_control_begin", "payload_control_renew", "payload_control_end",
 		"gimbal_set_angles", "gimbal_set_rates", "gimbal_center", "gimbal_set_roi",
-		"camera_set_zoom":
+		"gimbal_follow_start", "gimbal_follow_stop", "camera_set_zoom",
+		"geolocate_selected_track":
 		commandResult, executeErr := e.payload.Execute(ctx, commandType, parametersJSON)
 		if executeErr != nil {
 			e.receipts[commandID] = commandReceipt{result: commandResult, errorMessage: executeErr.Error()}

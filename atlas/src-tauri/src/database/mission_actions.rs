@@ -2,9 +2,18 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::Value;
 
-use super::{incidents::mark_incident_response_on_scene, LocalDatabase, MissionRunSnapshot};
+use super::{
+    alerts::reconcile_mission_action_alert, incidents::mark_incident_response_arrival_acknowledged,
+    LocalDatabase, MissionRunSnapshot,
+};
 
-const RUNTIME_ACTION_TYPES: &[&str] = &["HOLD_AT_ARRIVAL", "POINT_GIMBAL_AT_INCIDENT"];
+const RUNTIME_ACTION_TYPES: &[&str] = &[
+    "START_PERCEPTION",
+    "STOP_PERCEPTION",
+    "HOLD_AT_ARRIVAL",
+    "POINT_GIMBAL_AT_INCIDENT",
+    "RESUME_AFTER_ARRIVAL",
+];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +27,11 @@ pub(crate) struct MissionActionExecutionSnapshot {
     pub attempt: u32,
     pub max_attempts: u32,
     pub failure_policy: String,
+    pub timeout_ms: i64,
+    pub retry_initial_delay_ms: i64,
+    pub retry_backoff_multiplier: f64,
+    pub attempt_deadline_at_unix_ms: Option<i64>,
+    pub next_attempt_at_unix_ms: Option<i64>,
     pub requested_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
     pub started_at_unix_ms: Option<i64>,
@@ -98,11 +112,11 @@ impl LocalDatabase {
             return self.mission_run(&input.mission_run_id);
         }
 
-        let execution: (String, String, String, u32, u32, String) = tx
+        let execution: (String, String, String, u32, u32, String, i64, i64, f64) = tx
             .query_row(
-                "SELECT id, action_type, state, attempt, max_attempts, failure_policy FROM mission_action_executions WHERE mission_run_id = ?1 AND action_sequence = ?2",
+                "SELECT id, action_type, state, attempt, max_attempts, failure_policy, timeout_ms, retry_initial_delay_ms, retry_backoff_multiplier FROM mission_action_executions WHERE mission_run_id = ?1 AND action_sequence = ?2",
                 params![input.mission_run_id, input.action_sequence],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?, row.get(8)?)),
             )
             .optional()
             .map_err(|error| format!("read mission action execution: {error}"))?
@@ -119,6 +133,9 @@ impl LocalDatabase {
             current_attempt,
             max_attempts,
             failure_policy,
+            timeout_ms,
+            retry_initial_delay_ms,
+            retry_backoff_multiplier,
         ) = execution;
         if action_type != input.action_type {
             return Err(format!(
@@ -142,6 +159,19 @@ impl LocalDatabase {
 
         let completed = matches!(input.state.as_str(), "SUCCEEDED" | "POLICY_APPLIED");
         let clear_error = input.state == "SUCCEEDED";
+        let attempt_deadline_at = (input.state == "RUNNING")
+            .then(|| add_milliseconds(input.occurred_at_unix_ms, timeout_ms))
+            .transpose()?;
+        let next_attempt_at = (input.state == "RETRYING")
+            .then(|| {
+                let delay = retry_delay_ms(
+                    retry_initial_delay_ms,
+                    retry_backoff_multiplier,
+                    input.attempt,
+                )?;
+                add_milliseconds(input.occurred_at_unix_ms, delay)
+            })
+            .transpose()?;
         tx.execute(
             r#"
             UPDATE mission_action_executions
@@ -168,6 +198,8 @@ impl LocalDatabase {
                     ELSE error_message
                 END,
                 evidence_json = COALESCE(?9, evidence_json)
+                ,attempt_deadline_at_unix_ms = ?10
+                ,next_attempt_at_unix_ms = ?11
             WHERE id = ?1
             "#,
             params![
@@ -180,6 +212,8 @@ impl LocalDatabase {
                 clear_error,
                 input.message,
                 input.evidence_json,
+                attempt_deadline_at,
+                next_attempt_at,
             ],
         )
         .map_err(|error| format!("update mission action execution: {error}"))?;
@@ -200,7 +234,7 @@ impl LocalDatabase {
             && current_state != "SUCCEEDED"
             && input.state == "SUCCEEDED"
         {
-            mark_incident_response_on_scene(
+            mark_incident_response_arrival_acknowledged(
                 &tx,
                 &input.mission_run_id,
                 &execution_id,
@@ -208,6 +242,7 @@ impl LocalDatabase {
                 input.occurred_at_unix_ms,
             )?;
         }
+        reconcile_mission_action_alert(&tx, &execution_id, input)?;
 
         tx.commit()
             .map_err(|error| format!("commit mission action update: {error}"))?;
@@ -258,12 +293,22 @@ pub(super) fn create_mission_action_executions(
             .get("failurePolicy")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("{action_type} requires an explicit failurePolicy"))?;
-        validate_failure_policy(failure_policy)?;
+        validate_failure_policy(&action_type, failure_policy)?;
+        let timeout_ms = bounded_u64_param(&values, "timeoutMs", 1_000, 120_000, &action_type)?;
+        let retry_initial_delay_ms =
+            bounded_u64_param(&values, "retryInitialDelayMs", 0, 60_000, &action_type)?;
+        let retry_backoff_multiplier = values
+            .get("retryBackoffMultiplier")
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && (1.0..=5.0).contains(value))
+            .ok_or_else(|| {
+                format!("{action_type} requires retryBackoffMultiplier between 1 and 5")
+            })?;
 
         let execution_id = generate_id(tx)?;
         tx.execute(
-            "INSERT INTO mission_action_executions (id, mission_run_id, mission_plan_id, action_sequence, action_type, state, attempt, max_attempts, failure_policy, requested_at_unix_ms, updated_at_unix_ms) VALUES (?1, ?2, ?3, ?4, ?5, 'REQUESTED', 0, ?6, ?7, ?8, ?8)",
-            params![execution_id, mission_run_id, mission_plan_id, action_sequence, action_type, max_attempts, failure_policy, now],
+            "INSERT INTO mission_action_executions (id, mission_run_id, mission_plan_id, action_sequence, action_type, state, attempt, max_attempts, failure_policy, timeout_ms, retry_initial_delay_ms, retry_backoff_multiplier, requested_at_unix_ms, updated_at_unix_ms) VALUES (?1, ?2, ?3, ?4, ?5, 'REQUESTED', 0, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
+            params![execution_id, mission_run_id, mission_plan_id, action_sequence, action_type, max_attempts, failure_policy, timeout_ms, retry_initial_delay_ms, retry_backoff_multiplier, now],
         )
         .map_err(|error| format!("insert mission action execution: {error}"))?;
         insert_action_event(
@@ -288,7 +333,7 @@ pub(super) fn read_mission_action_executions(
 ) -> Result<Vec<MissionActionExecutionSnapshot>, String> {
     let mut statement = connection
         .prepare(
-            "SELECT id, mission_plan_id, action_sequence, action_type, state, attempt, max_attempts, failure_policy, requested_at_unix_ms, updated_at_unix_ms, started_at_unix_ms, completed_at_unix_ms, error_code, error_message, evidence_json FROM mission_action_executions WHERE mission_run_id = ?1 ORDER BY action_sequence",
+            "SELECT id, mission_plan_id, action_sequence, action_type, state, attempt, max_attempts, failure_policy, timeout_ms, retry_initial_delay_ms, retry_backoff_multiplier, attempt_deadline_at_unix_ms, next_attempt_at_unix_ms, requested_at_unix_ms, updated_at_unix_ms, started_at_unix_ms, completed_at_unix_ms, error_code, error_message, evidence_json FROM mission_action_executions WHERE mission_run_id = ?1 ORDER BY action_sequence",
         )
         .map_err(|error| format!("prepare mission action executions: {error}"))?;
     let mut executions = statement
@@ -303,13 +348,18 @@ pub(super) fn read_mission_action_executions(
                 attempt: row.get(5)?,
                 max_attempts: row.get(6)?,
                 failure_policy: row.get(7)?,
-                requested_at_unix_ms: row.get(8)?,
-                updated_at_unix_ms: row.get(9)?,
-                started_at_unix_ms: row.get(10)?,
-                completed_at_unix_ms: row.get(11)?,
-                error_code: row.get(12)?,
-                error_message: row.get(13)?,
-                evidence_json: row.get(14)?,
+                timeout_ms: row.get(8)?,
+                retry_initial_delay_ms: row.get(9)?,
+                retry_backoff_multiplier: row.get(10)?,
+                attempt_deadline_at_unix_ms: row.get(11)?,
+                next_attempt_at_unix_ms: row.get(12)?,
+                requested_at_unix_ms: row.get(13)?,
+                updated_at_unix_ms: row.get(14)?,
+                started_at_unix_ms: row.get(15)?,
+                completed_at_unix_ms: row.get(16)?,
+                error_code: row.get(17)?,
+                error_message: row.get(18)?,
+                evidence_json: row.get(19)?,
                 events: Vec::new(),
             })
         })
@@ -393,25 +443,57 @@ fn validate_action_transition(
             "mission action attempt cannot move backwards from {current_attempt} to {next_attempt}"
         ));
     }
-    let allowed = current == next
-        || matches!(
-            (current, next),
-            ("REQUESTED", "RUNNING" | "FAILED")
-                | ("RUNNING", "RETRYING" | "SUCCEEDED" | "FAILED")
-                | ("RETRYING", "RUNNING" | "FAILED")
-                | ("FAILED", "POLICY_APPLIED")
-        );
+    let allowed = match (current, next) {
+        (current, next) if current == next => next_attempt == current_attempt,
+        ("REQUESTED", "RUNNING") => current_attempt == 0 && next_attempt == 1,
+        ("REQUESTED", "FAILED") => next_attempt == current_attempt,
+        ("RUNNING", "RETRYING" | "SUCCEEDED" | "FAILED") => next_attempt == current_attempt,
+        ("RETRYING", "RUNNING") => next_attempt == current_attempt.saturating_add(1),
+        ("RETRYING", "FAILED") | ("FAILED", "POLICY_APPLIED") => next_attempt == current_attempt,
+        _ => false,
+    };
     allowed
         .then_some(())
         .ok_or_else(|| format!("invalid mission action transition {current} -> {next}"))
 }
 
-fn validate_failure_policy(value: &str) -> Result<(), String> {
-    matches!(value, "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION")
+fn validate_failure_policy(action_type: &str, value: &str) -> Result<(), String> {
+    let valid = matches!(value, "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION")
+        || (matches!(action_type, "POINT_GIMBAL_AT_INCIDENT" | "STOP_PERCEPTION")
+            && value == "SKIP_OPTIONAL_AND_NOTIFY");
+    valid
         .then_some(())
-        .ok_or_else(|| {
-            "failurePolicy must be RETURN_TO_LAUNCH or OPERATOR_INTERVENTION".to_string()
-        })
+        .ok_or_else(|| format!("unsupported failurePolicy {value} for {action_type}"))
+}
+
+fn bounded_u64_param(
+    values: &Value,
+    key: &str,
+    minimum: u64,
+    maximum: u64,
+    action_type: &str,
+) -> Result<i64, String> {
+    values
+        .get(key)
+        .and_then(Value::as_u64)
+        .filter(|value| (minimum..=maximum).contains(value))
+        .map(|value| value as i64)
+        .ok_or_else(|| format!("{action_type} requires {key} between {minimum} and {maximum}"))
+}
+
+fn retry_delay_ms(initial: i64, multiplier: f64, completed_attempt: u32) -> Result<i64, String> {
+    let exponent = completed_attempt.saturating_sub(1) as i32;
+    let delay = initial as f64 * multiplier.powi(exponent);
+    if !delay.is_finite() || delay > i64::MAX as f64 {
+        return Err("mission action retry delay overflowed".to_string());
+    }
+    Ok(delay.round() as i64)
+}
+
+fn add_milliseconds(timestamp: i64, milliseconds: i64) -> Result<i64, String> {
+    timestamp
+        .checked_add(milliseconds)
+        .ok_or_else(|| "mission action timestamp overflowed".to_string())
 }
 
 fn generate_id(tx: &Transaction<'_>) -> Result<String, String> {
@@ -421,20 +503,32 @@ fn generate_id(tx: &Transaction<'_>) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{validate_action_transition, validate_failure_policy};
+    use super::{retry_delay_ms, validate_action_transition, validate_failure_policy};
 
     #[test]
     fn action_lifecycle_rejects_success_without_acknowledged_execution() {
         assert!(validate_action_transition("REQUESTED", "SUCCEEDED", 0, 1).is_err());
         assert!(validate_action_transition("REQUESTED", "RUNNING", 0, 1).is_ok());
         assert!(validate_action_transition("RUNNING", "SUCCEEDED", 1, 1).is_ok());
+        assert!(validate_action_transition("RUNNING", "RUNNING", 1, 2).is_err());
+        assert!(validate_action_transition("RETRYING", "RUNNING", 1, 2).is_ok());
     }
 
     #[test]
     fn action_failure_policy_is_explicit_and_bounded() {
-        assert!(validate_failure_policy("RETURN_TO_LAUNCH").is_ok());
-        assert!(validate_failure_policy("OPERATOR_INTERVENTION").is_ok());
-        assert!(validate_failure_policy("").is_err());
-        assert!(validate_failure_policy("SILENT_DEFAULT").is_err());
+        assert!(validate_failure_policy("HOLD_AT_ARRIVAL", "RETURN_TO_LAUNCH").is_ok());
+        assert!(validate_failure_policy("HOLD_AT_ARRIVAL", "OPERATOR_INTERVENTION").is_ok());
+        assert!(
+            validate_failure_policy("POINT_GIMBAL_AT_INCIDENT", "SKIP_OPTIONAL_AND_NOTIFY").is_ok()
+        );
+        assert!(validate_failure_policy("HOLD_AT_ARRIVAL", "SKIP_OPTIONAL_AND_NOTIFY").is_err());
+        assert!(validate_failure_policy("HOLD_AT_ARRIVAL", "SILENT_DEFAULT").is_err());
+    }
+
+    #[test]
+    fn retry_backoff_is_derived_from_the_completed_attempt() {
+        assert_eq!(retry_delay_ms(2_000, 2.0, 1).unwrap(), 2_000);
+        assert_eq!(retry_delay_ms(2_000, 2.0, 2).unwrap(), 4_000);
+        assert_eq!(retry_delay_ms(2_000, 2.0, 3).unwrap(), 8_000);
     }
 }

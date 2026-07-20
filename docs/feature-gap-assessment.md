@@ -1,12 +1,20 @@
 # Atlas Feature Gap Assessment
 
-**Status:** Draft  
+**Status:** Living roadmap and gap assessment; not the shipped-behavior reference
 **Assessment date:** 16 July 2026  
-**Last updated:** 17 July 2026  
+**Last updated:** 20 July 2026
+
 **Scope:** Atlas Native, Atlas Agent, and the future coordinated-services boundary  
 **Reference material:** Supplied screenshots of public-safety drone dispatch and
 live-operation products, the supplied mission-execution and mission-intelligence
 assessment, and the current Atlas implementation
+
+For shipped behavior, use the [developer documentation index](README.md),
+[mission guide](mission-types-and-flight-patterns.md),
+[incident-dispatch guide](incident-dispatch.md), and
+[perception/tracking/follow guide](inference-tracking-and-follow.md). This file
+mixes implemented status with remaining product direction and must not be used
+as an execution contract.
 
 ## 1. Objective
 
@@ -24,16 +32,32 @@ The screenshots are treated as product references, not as verified
 specifications of any vendor system. Recommendations are based on what is
 visible in those screenshots and on the current Atlas implementation.
 
+### 1.1 Confirmed Deployment Scope
+
+The initial operating countries are the **United Kingdom and Nigeria**, and the
+initial target market is **public-safety deployment**. Atlas must therefore
+support jurisdiction-specific airspace adapters rather than assuming that one
+provider, licence, update mechanism, or coverage claim applies in both
+countries.
+
+Public-safety use does not make unofficial or community-sourced airspace data
+authoritative. Each imported restriction, NOTAM, or traffic track must retain
+its country, issuing authority, provider, effective interval, observed or
+retrieved time, source version, and licence or access basis. Loss or staleness
+of an external source must be visible to the operator and must not silently be
+treated as “no restriction”.
+
 ## 2. Executive Summary
 
-Atlas is currently **aircraft-first and mission-first**:
+Atlas's execution core is **aircraft-first and mission-first**:
 
 1. An operator selects an aircraft or creates a mission.
 2. Atlas validates and generates an immutable mission plan.
 3. The operator uploads and starts the mission.
 4. Atlas tracks execution, commands, telemetry, payload state, and history.
 
-The reference products are primarily **incident-first**:
+Atlas now layers an **incident-first** Operations workflow over that execution
+core, matching the basic shape used by the reference products:
 
 1. A CAD, ALPR, 911, or manually created incident appears.
 2. The incident is displayed on a shared operational map.
@@ -52,13 +76,28 @@ Atlas already has stronger foundations than the screenshots alone reveal:
 - Clean video with frame-aligned perception metadata.
 - Gimbal angles, rates, geographic ROI, and camera zoom.
 - Mission pause, cancel, Hold, Land, and Return-to-Launch behavior.
+- Durable, deduplicated operational alerts with independent acknowledgement and
+  source-driven resolution.
+- Persistent Map, Video, and Split response layouts with shared routes, durable
+  aircraft trails, response identity, safety controls, and a restrained flight
+  HUD.
+- A Native-owned dispatch suitability assessment that excludes reserved or
+  busy aircraft, applies current readiness and capability gates, ranks eligible
+  aircraft by estimated arrival and battery, and explains every blocker or
+  recommendation.
+- A distinct Hold at Staging lifecycle: acknowledged Hold leaves the mission
+  run paused and the assignment `STAGED`, without incident gimbal targeting or
+  an `ON_SCENE` claim.
+- Zoom-dependent incident and aircraft labels that prioritise the selected
+  response, critical incidents, and live aircraft before progressively
+  revealing lower-priority context.
 
-The most important gap is therefore not basic flight control. It is the
-**dispatch and operational coordination layer that turns an incoming incident
-into a safe, durable Atlas mission run**.
-
-Atlas should preserve its current control and audit model while adding a thin
-incident-response layer above it.
+The local dispatch and operational-coordination layer is now implemented for
+manual incidents and four reviewed response patterns. The most important
+remaining coordination gaps are authenticated external incident intake,
+multi-operator/cross-ground-station authority, authoritative airspace sources,
+and remote evidence/coordinated-service workflows. Those additions must
+preserve the existing local control and audit model.
 
 The expanded assessment also makes clear that Atlas should be understood as two
 connected systems:
@@ -69,20 +108,22 @@ connected systems:
    associated across frames, how observations are geolocated, and how Atlas
    converts them into operator-reviewable events.
 
-The agreed perception and selected-track direction is:
+The agreed perception and selected-track direction has produced the current
+implementation:
 
 - Keep Hailo/TAPPAS responsible for onboard detector inference.
-- Add a tracker abstraction after normalized Hailo detections.
-- Support both BoT-SORT and ByteTrack, with only one active tracker per stream.
-- Use BoT-SORT as the configurable default because drone and gimbal movement
-  make camera-motion compensation valuable.
-- Keep ByteTrack as the lower-compute fallback and comparison baseline.
-- Start BoT-SORT with camera-motion compensation enabled and ReID disabled.
-- Create persistent, session-scoped Atlas track records rather than treating a
+- Use a tracker abstraction after normalized Hailo detections.
+- Support plain ByteTrack and ByteTrack CMC, with only one active tracker per stream.
+- Use plain ByteTrack as the production default and comparison baseline.
+- Retain ByteTrack CMC as the aerial candidate because drone and gimbal
+  movement make camera-motion compensation valuable.
+- Keep ReID disabled until representative evidence justifies its cost.
+- Persist session-scoped Atlas track records rather than treating a
   track ID as a permanent identity.
-- Add low-latency onboard gimbal following for an operator-selected track.
-- Later add operator-authorized aircraft following at a bounded standoff
-  distance, after trustworthy detection geolocation exists.
+- Provide low-latency onboard gimbal following for an operator-selected track.
+- Keep operator-authorized aircraft following at a bounded standoff fail-closed:
+  the software path is implemented, while each installation remains
+  `UNVERIFIED` until geolocation, HIL, and controlled-flight evidence is accepted.
 - Do not implement unrestricted autonomous pursuit or aircraft movement driven
   directly from bounding-box pixels.
 
@@ -94,8 +135,9 @@ The agreed MVP operations and payload direction is:
   validate and normalize external context; it will not directly command an
   aircraft.
 - Approve Hold at Staging and Offset Observe as the initial arrival behaviors.
-- Support operator-approved Area Scan and stepped-altitude Bounded Orbit inside
-  explicit horizontal and vertical bounds.
+- Support operator-approved Area Scan and single-level Bounded Orbit inside
+  explicit horizontal and vertical bounds. Stepped/multi-level orbit remains
+  future work.
 - Record evidence to an Atlas-managed local filesystem store. Do not depend on
   the A8 MicroSD card. Preserve a storage boundary for later verified S3
   replication.
@@ -147,22 +189,28 @@ The current perception path is approximately:
 ```text
 Camera/RTSP
     -> GStreamer and Hailo inference
-        -> normalized detections and optional upstream track IDs
-            -> Atlas Agent perception stream
-                -> frame-aligned Native perception store
-                    -> clean-video overlay
+        -> normalized detections
+            -> Atlas-owned ByteTrack or ByteTrack CMC stage
+                -> revisioned lifecycle updates and tracked frames
+                    -> Atlas Agent perception stream
+                        -> durable Native track store and frame-aligned overlay
 ```
 
-Atlas already preserves source video timestamps, model identity, bounding
-boxes, confidence, and an optional `track_id`. It does not yet provide:
+Atlas preserves source video timestamps, model identity, bounding boxes,
+confidence, Atlas-owned `track_id`, revisioned lifecycle state, track-session
+identity, durable lifecycle events, session/mission counts, counting-rule
+events, exact operator selection, and durable selected-track boresight
+coordinates/rejections. Native also performs target-area DEM refinement and
+world-space motion filtering, and the default-disabled Follow-from-standoff
+software path consumes only a converged, filtered exact selection. It does not
+yet provide:
 
-- An explicitly selected and supervised tracker stage in the Atlas pipeline.
-- Persistent track lifecycle records and track-session identity.
-- Aircraft roll and pitch at frame-capture time.
-- Measured gimbal attitude at frame-capture time.
-- Camera calibration and camera-to-gimbal mounting records.
-- Detection geolocation with a reported uncertainty.
-- A dynamic flight-control mode for following a selected moving track.
+- A measured-range provider or survey-accepted physical boresight model;
+  configured DEM elevation currently supplies ground-height context and is
+  refined iteratively at the target estimate.
+- Surveyed accuracy validation for boresight geolocation.
+- HIL and controlled-flight acceptance for Follow from standoff; real movement
+  remains disabled and `UNVERIFIED` by default.
 
 Relevant implementation references:
 
@@ -184,23 +232,26 @@ Relevant implementation references:
 | --- | --- | --- | --- |
 | Fleet registration and readiness | Supported | Supported | Atlas has a sound local operational model. |
 | Mission planning and execution | Strong | Present, often simplified for rapid response | Atlas is stronger in plan immutability, terrain profiling, and run history. |
-| Incident/CAD dispatch | Not supported | Central workflow | Highest-priority gap. |
-| Shared operational map | Mission-scoped map | Fleet, incidents, personnel, units, and aircraft together | Atlas needs a dedicated Operations workspace. |
-| Rapid response / fly to point | Possible through a manually created waypoint mission | One-click or short response flow | Add as a rapid mission workflow, not a raw command. |
-| Live map and video | Operator switches between map and camera | Persistent split views | Add Map, Video, and Split layouts. |
-| Video flight HUD | Telemetry exists outside the video | Critical telemetry overlaid on video | Add a restrained safety HUD. |
-| Camera and gimbal control | Gimbal angle/rate/ROI and zoom supported | Similar, with direct media controls | Atlas is already strong; recording and still capture are gaps. |
+| Incident/CAD dispatch | Manual incident intake, durable incident events and assignments, and an incident-first response workflow are implemented; external CAD and sensor connectors remain intentionally absent | Central workflow | The local public-safety workflow is implemented. A future signed Backend webhook remains the integration boundary. |
+| Aircraft suitability | Native excludes lifecycle-inactive, reserved, busy, disconnected, stale, unhealthy, undercharged, positionless, or capability-incompatible aircraft; it ranks the eligible set by ETA and battery and exposes reasons to the operator | Ranked dispatch recommendation with availability reasons | Implemented for local fleet evidence. Upload/start checks remain authoritative because conditions can change after recommendation. Payload-specific ranking can be extended as verified payload inventory is added. |
+| Shared operational map | A dedicated local Operations workspace combines manual incidents, aircraft, track-target coordinates and uncertainty, clustering, selection, response routes, durable trails, search/status/priority filters, independently toggleable local layers, and zoom-dependent labels for selected, critical, and live context | Fleet, incidents, personnel, units, and aircraft together | Local aircraft, incident, and latest-per-track target markers are implemented. Target popups retain lifecycle, observation time, terrain refinement, motion uncertainty, selection, and evidence counts. Responder/unit markers remain deferred until an authoritative partner feed exists; operator markers remain deferred until Native has authenticated operator/location state. |
+| Rapid response / fly to point | Native transactionally previews and prepares operator-reviewed Hold at Staging, Offset Observe, Bounded Area Scan, and single-level Bounded Orbit plans with their incident and aircraft assignment; operators can confirm into the existing upload/start path or auditably abandon an unstarted preparation | One-click or short response flow | The initial expanded shapes are implemented without bypassing mission safety gates. Hold at Staging pauses in a durable `STAGED` state awaiting an explicit operator decision; Offset Observe Holds and points at the incident. Serial PX4 SITL acceptance now covers Staging, the full generated Area Scan, and the 25-waypoint single-level Orbit with continuous RTSP pulls and RTL isolation. Stepped-altitude transitions remain separate, intentionally missing feature work. |
+| Live map and video | Operations and incident-response execution provide persistent Map, Video, and Split layouts without remounting map, video, or perception surfaces | Persistent split views | Implemented for local response operations; preserve this mount boundary as additional media sources are added. |
+| Video flight HUD | A reducible HUD presents armed/in-air state, mode, battery, altitude, speed, heading, GPS/link freshness, acknowledged local-recorder state, and the highest related alert | Critical telemetry overlaid on video | Implemented for existing telemetry, alerts, and local evidence recording. |
+| Camera and gimbal control | Gimbal angle/rate/ROI and zoom plus local source-RTSP recording and clean-frame still capture controls | Similar, with direct media controls | Recording and still capture are implemented without relying on A8 storage. |
 | Perception overlay | Frame-aligned detections supported | Detection or situational overlays | Atlas has a strong technical foundation. |
-| Multi-object tracking | Optional upstream `track_id`; no Atlas-selected tracker lifecycle | Persistent object tracks | Add BoT-SORT and ByteTrack behind one tracker interface; default to BoT-SORT. |
-| Persistent track records | Not supported | Tracks, last-known position, counts, and events | Add session-scoped track state and persist important samples and events. |
-| Gimbal track following | Manual gimbal angles, rates, ROI, and zoom | Select a target and keep it framed | Add an onboard image-space gimbal controller for a selected track. |
-| Detection geolocation | Not supported | Map markers tied to observations | Add pose buffering, measured gimbal attitude, camera calibration, timestamp correlation, terrain/range intersection, and uncertainty. |
-| Aircraft selected-track following | Not supported | Dynamic target observation | Add later as an explicit operator-authorized, bounded standoff mode; never navigate from pixels alone. |
+| Multi-object tracking | The pinned MIT-licensed FoundationVision ByteTrack C++ worker is the production default; an Atlas extension applies sparse-optical-flow CMC before association in `byte_track_cmc`; both share Atlas session resets, IDs, health, and disabled ReID | Persistent object tracks | Compare both modes on annotated aerial footage and the target companion computer. |
+| Persistent track records | Native schema 23 persists session-scoped summaries, append-only lifecycle and selection events, bounded periodic/important samples, session/mission counts, line/polygon events, operator annotations, recording evidence markers, track-linked stills/event clips, initial/refined track geolocations, terrain provenance, and filtered target motion; Agent owns confirmation, bounded high-frequency history, prediction decay, loss, closure, and rule evaluation | Tracks, last-known position, counts, events, and linked media | Lifecycle, count/history, operator selection, track-linked evidence media, terrain-refined geolocation, map presentation, and motion filtering are implemented. Annotated-footage and surveyed geolocation accuracy acceptance remain. |
+| Operator track selection | Live video selects an exact `(track_session_id, track_id)`, retains it through bounded occlusion, exposes explicit terminal results, and supports clear, note, and active-recording evidence-marker actions | Select and inspect a target without identity drift | Implemented. LOST/CLOSED selections freeze their snapshot and never silently attach to a revived or new ID. |
+| Gimbal track following | Operator-selected onboard image-space gimbal following with bounded rate, acceleration, limits, temporary-loss hold, and explicit terminal states | Select a target and keep it framed | Implemented; target-computer and real payload acceptance remain. |
+| Detection geolocation | Native authorizes the exact active operator selection, resolves an initial plane, Agent estimates from the track's retained frame timing and measured pose/gimbal histories, and Native validates iterative target-area DEM samples against the same observation ray; schema 22 stores the final coordinate/error radius, explicit rejection, and motion state | Map markers tied to observations | Iterative DEM refinement, operational markers, lifecycle/evidence/observation/uncertainty linkage, and world-space speed/direction filtering are implemented. Measured range remains an explicit future `range_source`; target-computer/payload validation, physical boresight commissioning, and surveyed accuracy testing remain acceptance work. |
+| Aircraft selected-track following | Native persists an operator-reviewed envelope and durable lifecycle; Agent runs a short-lease MAVSDK Offboard controller with world-state, battery, link, position, altitude, geofence, duration, and Offboard watchdogs plus explicit Hold reasons | Dynamic target observation | Software path implemented and simulation-tested. Real translation is disabled and visibly `UNVERIFIED` until physical boresight, HIL, and controlled-flight acceptance references are configured. It never navigates from pixels alone. |
 | Scene events and summaries | Structured detections only | Operator-oriented alerts and scene interpretation | Add deterministic event rules first; use a ground-station VLM only as an evidence-linked summarizer. |
-| Airspace awareness | Not supported | Nearby-aircraft warning and deconfliction | Required before broader BVLOS operations. |
-| Terrain and obstacle routing | Terrain profile only; no obstacle avoidance | 3D buildings and pathfinder presentation | Add OS NGD and Building Height Attribute as an MVP known-building warning layer; do not claim complete obstacle clearance. |
-| Evidence media | Mission recording intent exists; no archival media system | Record and still-capture controls | Add Atlas-managed local file storage with SQLite manifests; preserve a later S3 replica boundary and do not rely on A8 MicroSD. |
-| Operator assignment | No current operator/user model in Native | Named pilots and shared dispatch | Needed when Atlas becomes multi-operator. |
+| Operational alerts | Native persists normalized alert episodes and append-only events for telemetry freshness, battery, global/home position, Agent, video, perception, incident-revision, arrival-action, and mission-translation conditions. A centralized drawer shows current conditions and retained history. | Cross-system operator warnings with acknowledgement and recovery | The durable foundation is implemented. Add airspace conflicts, audio escalation/mute, filtering, and context-specific presentation as their source models become authoritative. |
+| Airspace awareness | Not integrated. UK official products can be viewed or downloaded, but Atlas has not confirmed a documented, supported production API and operational reuse contract. No equivalent open machine-readable Nigerian feed has been confirmed | Nearby-aircraft warning and deconfliction | Deferred under the automated-source-only decision. Do not scrape briefing pages or imply clear airspace. Reconsider when NATS provides an approved machine interface, a licensed provider is contracted, or NAMA access is agreed. |
+| Terrain and obstacle routing | Terrain profiling plus an offline, provenance-bound OS NGD / Building Height Attribute known-building assessment reports intersections, unknown heights, incomplete coverage, and operator overrides for incident-response routes | 3D buildings and pathfinder presentation | The warning layer is implemented, but it is deliberately not obstacle avoidance and never claims a safe or obstacle-free route. Add broader obstacle providers and 3D flight-volume validation later. |
+| Evidence media | Native records segmented source RTSP and schema-23 still/event-clip assets into a configurable local root with atomic publication, thumbnails, local SHA-256 integrity, disk guardrails, durable gaps, track/context linkage, append-only review/annotation history, and recoverable policy deletion | Record, still capture, event clips, browser, and review controls | The offline evidence workflow is implemented through retention and recoverable deletion. Export packages/manifests, encryption policy, and later verified replicas remain. |
+| Operator assignment | No authenticated operator/user or live personnel-location model in Native | Named pilots and shared dispatch | Operator markers are intentionally deferred. Add them only with authenticated sessions, explicit location consent, freshness, and an offline authority model. |
 | Authentication and organizations | Backend foundation only; not in Native control path | Multi-user operational systems | Needed for coordinated deployments, but not for local control continuity. |
 | Video street/address projection | Not supported | Street labels projected into live imagery | Low priority and technically risky. |
 | Thermal source switching | No thermal payload is installed | Visible in some reference interfaces | Do not expose thermal controls. The current A8 is visible-only. |
@@ -209,7 +260,7 @@ Relevant implementation references:
 | GPS-denied indoor mapping and navigation | Not supported | Indoor inspection and mapping | Add later as a bounded 2.5D demonstrator using PX4/H-Flow for local flight, OAK stereo depth for mapping, onboard frontier planning, and Hold-before-operator-deferral. This first stage does not deliberately climb or descend around obstacles. |
 | Full 3D indoor autonomy | Not supported and outside the current hardware plan | Autonomous exploration through volumetric free space | Treat as a future funded program: GPU-class companion compute, 360-degree 3D lidar, synchronized IMU-equipped stereo, upward/downward coverage, ROS 2 autonomy runtime, 3D mapping, 3D trajectory planning, and independent reactive collision monitoring. |
 | Audio/talk-down | Not supported | Visible in one reference interface | Skip unless the payload roadmap explicitly requires it. |
-| Mission action policies | Durable requested/running/retrying/succeeded/failed/policy-applied execution now covers arrival Hold and optional incident gimbal pointing, with explicit RTL or operator-intervention policy | Reusable arrival and observation behavior | Extend the same runtime with configurable timeouts/backoff and the remaining reusable actions; add broader failure policies only when their acknowledgement semantics are defined. |
+| Mission action policies | Durable requested/running/retrying/succeeded/failed/policy-applied execution covers arrival Hold, optional incident gimbal pointing, and post-arrival mission Resume. Every chain carries an immutable waypoint trigger; Area Scan and Orbit execute the chain after their first generated waypoint and resume only after acknowledgement. One-waypoint Offset Observe completes after Hold and incident targeting, while Hold at Staging uses a Hold-only chain that pauses the run and preserves a `STAGED` assignment until an explicit mission Resume, RTL, or Cancel decision. Land remains an independent immediate safety command and does not by itself close the mission run. Immutable per-action timeout and exponential retry timing, durable deadlines/next-attempt timestamps, explicit RTL/operator-intervention/optional-skip policy, and Native-to-Agent restart reconciliation are implemented. | Reusable arrival and observation behavior | Serial Native-to-Agent PX4 SITL acceptance passed on 19 July 2026 for `PAUSED` / `STAGED`, Area Scan Hold → Resume → cumulative route completion, Orbit Hold → ROI → Resume → cumulative route completion, continuous RTSP pulls, and RTL between cases. Physical A8 gimbal acceptance remains; extend the catalogue only when each acknowledgement and failure-policy contract is defined. |
 
 ## 5. Product Direction
 
@@ -270,15 +321,17 @@ Initial operational policy is:
 - **Offset Observe:** the default arrival behavior.
 - **Bounded Area Scan:** permitted after operator review of its polygon, route,
   altitude, and constraints.
-- **Bounded Orbit:** permitted after operator review of its center, radius,
-  altitude envelope, direction, transitions, and known-building warnings.
+- **Bounded Orbit:** currently permitted at one reviewed altitude after review
+  of its center, radius, direction, laps, and known-building warnings.
 - **Direct Overhead:** exceptional rather than a default.
-- **Follow from Standoff:** a later, separately authorized dynamic mode.
+- **Follow from Standoff:** a separately authorized dynamic mode whose software
+  path is implemented but whose real-aircraft use remains commissioning-gated.
 - **Autonomous Pursuit:** not supported.
 
-A bounded orbit may use an explicit stepped-altitude schedule. Atlas should
-complete a configured number of laps at one altitude, transition within the
-approved vertical envelope, and then complete the next level:
+A future multi-level bounded orbit may use an explicit stepped-altitude
+schedule. It would complete a configured number of laps at one altitude,
+transition within the approved vertical envelope, and then complete the next
+level:
 
 ```yaml
 orbit:
@@ -292,21 +345,76 @@ orbit:
   max_vertical_rate_mps: 1.5
 ```
 
-The initial implementation should use discrete levels, normally ordered low to
-high or high to low. A continuously climbing or descending helical orbit is
-deferred. Route validation must cover every orbit level and the transitions
-between them.
+That future extension should use discrete levels, normally ordered low to high
+or high to low. A continuously climbing or descending helical orbit is deferred.
+Route validation must cover every orbit level and the transitions between them.
+The current implementation intentionally rejects more than one level.
+
+#### Current expanded-response implementation
+
+The current implementation provides four reviewed response geometries through one Native
+preview/prepare boundary:
+
+- **Hold at Staging** stores a reviewed staging point and a Hold-only arrival
+  chain. After PX4 acknowledges Hold, Agent reports the run `PAUSED` and Native
+  preserves the assignment as `STAGED`; it does not target the incident or
+  populate `on_scene_at`. A later mission Resume, RTL, or Cancel is an explicit
+  operator decision. Land remains available as an independent safety command
+  but does not by itself close the paused mission run.
+- **Offset Observe** stores the operator-placed observation point, home-relative
+  altitude, speed, required arrival Hold, and acknowledged incident gimbal
+  action. Gimbal-action exhaustion is recorded under its optional-skip failure
+  policy rather than silently changing the flight action.
+- **Bounded Area Scan** reuses the existing lawn-mower planner and stores the
+  complete reviewed polygon, spacing, sweep angle, altitude, expected route
+  distance, immutable plan, run linkage, and incident assignment. Its explicit
+  arrival phase runs Hold after generated waypoint zero, then durably resumes
+  the remaining lawn-mower route.
+- **Bounded Orbit** stores the centre, radius, one explicit altitude level, lap
+  count, direction, vertical-rate limit, and an explicit zero-transition
+  schedule. It expands that envelope to deterministic direct waypoints and
+  keeps the incident as the gimbal target. Its explicit arrival phase runs
+  Hold and incident gimbal pointing after generated waypoint zero, then
+  durably resumes the remaining orbit.
+
+Stepped-altitude orbit input is intentionally rejected in this batch. Live
+single-level geometry and action acceptance has now passed, but stepped levels
+still need an explicit transition planner, implementation, and their own
+acceptance; every future level and transition must receive the same
+known-building assessment.
+
+Preview and transactional preparation both revalidate the incident revision,
+aircraft, generated route, and known-building evidence. Preparation persists
+the exact reviewed geometry and assessment inside the immutable plan before it
+creates the linked assignment. No flight command is sent until the operator
+continues through the existing upload/start safety gates.
+
+The known-building assessment also persists the aircraft route start and home
+altitude datum used during review. A one-waypoint plan is checked as a route
+point even when departure telemetry was unavailable. Upload requires fresh
+telemetry and rejects an expanded response if its current departure moved more
+than 30 metres horizontally, changed more than 5 metres vertically, or changed
+home-altitude datum; the operator must then prepare a new response.
+
+Known-building input is an Atlas-configured local GeoJSON snapshot derived from
+OS NGD Building data and, where applicable, joined Building Height Attribute
+fields. Each snapshot must include explicit provider, product, dataset ID,
+schema version, release, retrieval time, and coverage bounding box provenance.
+Atlas reports checked intersections, missing height or altitude-datum evidence,
+coverage limits, and the source height fields. A `CLEAR_OF_CHECKED_VOLUMES`
+result means only that no intersection was found in that declared snapshot and
+clearance envelope; it is never presented as obstacle-free or safe.
 
 #### Evidence storage
 
-Evidence media will be stored in an Atlas-managed local filesystem store. The
+Evidence media is stored in an Atlas-managed local filesystem store. The
 A8 MicroSD card is outside the MVP evidence architecture.
 
-SQLite should contain manifests, relationships, checksums, states, retention,
-and audit events. MP4, JPEG, and thumbnail bytes should remain outside SQLite.
-Long recordings should be segmented, finalized atomically, and checked for
-integrity. The evidence root, retention, quota, low-space threshold, and reserve
-must be configurable.
+SQLite contains manifests, relationships, checksums, states, retention, and
+audit events. MP4, JPEG, and thumbnail bytes remain outside SQLite. Long
+recordings are segmented, finalized atomically, and checked for integrity. The
+evidence root, retention policy, segment duration, low-space warning, and stop
+reserve are configurable.
 
 The storage model should allow a later S3 replica without changing the evidence
 asset identity:
@@ -323,9 +431,9 @@ policy permits deletion.
 
 #### MVP known-building data
 
-Atlas will use OS NGD building features for footprints and OS Building Height
-Attribute for approximate heights. The resulting volumes are an operator-review
-and warning layer only.
+Atlas can load provenance-bound OS NGD building features for footprints and OS
+Building Height Attribute fields for approximate heights. The resulting volumes
+are an operator-review and warning layer only.
 
 The valid product claim is:
 
@@ -401,7 +509,7 @@ downward sensing. Arbitrary vertical routing belongs to the full 3D stage.
 
 #### Tracker architecture
 
-The Atlas tracking path will be:
+The current Atlas tracking path is:
 
 ```text
 Decoded video frame
@@ -416,32 +524,32 @@ The selected tracker is configured per perception stream:
 
 ```yaml
 tracker:
-  type: botsort
+  type: byte_track_cmc
   camera_motion_compensation: sparse_optical_flow
   reid: false
 ```
 
-Supported values should initially be `botsort`, `bytetrack`, and `none`.
-BoT-SORT is the default; ByteTrack is the lower-compute fallback and benchmark
-baseline. Atlas must run only one tracker for a stream at a time so there is one
+Supported values are `byte_track`, `byte_track_cmc`, and `disabled`.
+ByteTrack is the production default; ByteTrack CMC is the moving-camera aerial
+candidate. Atlas runs only one tracker for a stream at a time so there is one
 authoritative track-ID sequence.
 
-The tracker integration should consume normalized Hailo detections. Atlas should
-not replace Hailo inference with an end-to-end Ultralytics runtime merely to gain
+The tracker integration consumes normalized Hailo detections. Atlas does not
+replace Hailo inference with an end-to-end Ultralytics runtime merely to gain
 access to a tracker API.
 
 #### Selected-track behavior
 
-Atlas will distinguish two operator actions:
+Atlas distinguishes two operator actions:
 
 1. **Follow with camera:** keep an operator-selected track centered using the
    gimbal while the aircraft holds or continues an authorized flight behavior.
 2. **Follow from standoff:** reposition the aircraft to maintain an authorized
    observation envelope around a geolocated moving track.
 
-Camera following can be developed first from image-space tracking. Aircraft
-following requires time-aligned world-space track estimates and must be
-implemented as a separate, explicitly authorized flight mode.
+Camera following is implemented from image-space tracking. Aircraft following
+requires time-aligned world-space track estimates and remains a separate,
+explicitly authorized and default-disabled flight mode.
 
 #### Scene intelligence
 
@@ -456,15 +564,15 @@ A vision-language model may summarize evidence, but it must not become the
 source of flight authority or silently turn an uncertain observation into a
 confirmed operational fact.
 
-## 6. Priority 0: Capabilities to Add First
+## 6. Priority 0 foundation: current implementation and remaining gaps
 
 ### 6.1 Operations Workspace
 
 #### Problem
 
-Atlas currently organizes the application around Fleet, Missions, and History.
-This works for deliberate mission preparation, but it does not provide one
-place to answer:
+Before the Operations workspace, Atlas organized the application primarily
+around Fleet, Missions, and History. That structure did not provide one place
+to answer:
 
 - What is happening now?
 - Where is it happening?
@@ -474,14 +582,15 @@ place to answer:
 
 #### Recommended behavior
 
-Add an **Operations** workspace containing:
+The implemented **Operations** workspace contains:
 
 - A shared operational map.
 - Open and active incident queues.
 - Connected and disconnected aircraft.
 - Current assignments and routes.
 - Active mission state.
-- Critical aircraft and airspace alerts.
+- Critical aircraft alerts. Airspace alerts remain absent while the source is
+  unavailable.
 - Search and filter controls.
 - A selected-incident detail panel.
 
@@ -491,13 +600,15 @@ The map should support independently toggleable layers:
 - Atlas aircraft.
 - Incident assignments.
 - Current routes and aircraft trails.
-- External responders or personnel, when integrations exist.
-- Airspace tracks and warnings.
+- External responders or personnel only when authoritative integrations exist.
+- Airspace tracks and warnings only when a source is integrated and healthy.
 - Operator-created markers.
 
-The map must use clustering, priority-based visibility, and zoom-dependent
-labels. The reference screenshots demonstrate useful context, but also show the
-risk of excessive marker density and visual competition.
+The map uses clustering, priority-based visibility, and zoom-dependent labels.
+At low zoom it retains selected context; as zoom increases it adds critical and
+high-priority incidents, live aircraft, and finally the broader local set. This
+keeps operational identity visible without presenting responder, operator, or
+airspace markers for which Atlas has no source.
 
 #### Relationship to existing Atlas
 
@@ -509,15 +620,15 @@ real-time command surface.
 
 #### Problem
 
-Atlas has no incident entity. Missions are currently standalone definitions and
-runs, so Atlas cannot retain why an aircraft was deployed or associate multiple
-operational actions with one event.
+Atlas now has revisioned `incidents`, append-only `incident_events`, and
+aircraft-reserving `incident_assignments`. The remaining model gap is trusted
+external intake and authenticated operator ownership, not the local incident
+entity itself.
 
 #### Recommended behavior
 
-Create a source-neutral incident model, but expose only manual operator entry in
-the MVP. Manual incidents should be fully local and must not depend on Atlas
-Backend.
+The implemented source-neutral model exposes only manual operator entry in the
+MVP. Manual incidents are fully local and do not depend on Atlas Backend.
 
 Keep the source fields even though their initial values are fixed:
 
@@ -550,7 +661,10 @@ incidents
     area
     occurred_at_unix_ms
     received_at_unix_ms
+    created_at_unix_ms
     updated_at_unix_ms
+    revision
+    location_revision
     source_payload_json
 
 incident_events
@@ -572,6 +686,7 @@ incident_assignments
     operator_id
     status
     assigned_at_unix_ms
+    on_scene_at_unix_ms
     ended_at_unix_ms
 ```
 
@@ -590,9 +705,10 @@ No external incident payload may directly create or start a mission run.
 
 #### Problem
 
-Atlas can approximate “fly to point” with a waypoint mission, but the current
-workflow requires deliberate mission authoring. That is too slow for
-incident-response operations.
+Atlas previously required deliberate standalone mission authoring to approximate
+“fly to point.” The implemented response workflow now prepares a normal Atlas
+mission and assignment from the incident review without bypassing mission
+safety or audit history.
 
 #### Recommended behavior
 
@@ -604,8 +720,8 @@ Selecting **Respond** should:
    - Hold at a reviewed staging point.
    - Observe from a safe offset.
    - Search a reviewed bounded area.
-   - Orbit inside reviewed horizontal and vertical bounds.
-   - Execute an optional stepped-altitude orbit with explicit levels and laps.
+   - Orbit at one reviewed altitude inside explicit horizontal and vertical
+     bounds.
 4. Generate a rapid-response mission definition and immutable plan.
 5. Show route, distance, altitude, estimated arrival time, and blockers.
 6. Require operator confirmation.
@@ -632,11 +748,11 @@ mission path already provides:
 The UI can make the workflow feel immediate without bypassing the underlying
 safety model.
 
-For a stepped-altitude orbit, the immutable plan must expose each altitude
-level, the laps at that level, the transition path, altitude reference, maximum
-vertical rate, terrain clearance, known-building warnings, and expected battery
-cost. A generic minimum and maximum altitude is not sufficient evidence of the
-actual path Atlas intends to fly.
+Stepped-altitude orbit is not implemented. Before adding it, the immutable plan
+must expose each altitude level, the laps at that level, the transition path,
+altitude reference, maximum vertical rate, terrain clearance, known-building
+warnings, and expected battery cost. A generic minimum and maximum altitude is
+not sufficient evidence of the actual path Atlas intends to fly.
 
 ### 6.4 Map, Video, and Split Views
 
@@ -649,8 +765,10 @@ an active response, operators often need both simultaneously.
 
 Provide three layouts:
 
-- **Map:** Maximum map area with a compact video preview.
-- **Video:** Maximum video area with a compact map.
+- **Map:** A dedicated full map surface. Keep video ownership mounted, but do
+  not leave the video visually present as a compact preview.
+- **Video:** A dedicated full video surface. Keep map ownership mounted, but do
+  not leave the map visually present as a compact preview.
 - **Split:** Map and video side by side.
 
 All three layouts should preserve:
@@ -664,6 +782,14 @@ All three layouts should preserve:
 
 Layout selection should not recreate subscriptions, lose mission state, or reset
 the aircraft trail.
+
+This is now implemented in both the Operations response surface and incident
+mission execution. Map and video remain mounted while CSS changes their
+presentation, so stream/perception leases, detection alignment, map state, and
+trail state survive layout changes. In Operations, Map and Video are dedicated
+single-surface presentations: the inactive sibling is visually and
+accessibility-hidden without being unmounted. Split presents both at equal
+prominence. Tablet widths preserve the same ownership boundary.
 
 ### 6.5 Restrained Video Flight HUD
 
@@ -697,13 +823,20 @@ Rules:
 - HUD content must not cover the primary center reticle or detection target.
 - Operators must be able to reduce the overlay when inspecting fine detail.
 
+The initial HUD is implemented from the existing local fleet telemetry, durable
+alert projection, and acknowledged local recorder lifecycle. Stale telemetry
+uses an explicit dashed boundary and warning text; critical alerts use severity
+text and a triangular mark in addition to color. Recording state comes from the
+requested/running/succeeded/failed recorder state machine rather than mission
+intent alone.
+
 ### 6.6 Operational Alert Model
 
 #### Problem
 
-Atlas currently records PX4 status events and command failures, but there is no
-single alert model for operator attention across aircraft, incidents, video,
-airspace, and system health.
+Atlas previously recorded PX4 status events and command failures without one
+alert model for operator attention across aircraft, incidents, video, airspace,
+and system health.
 
 #### Recommended behavior
 
@@ -732,15 +865,51 @@ Acknowledgement must mean “the operator has seen the alert,” not “the haza
 longer exists.” Resolution must come from system state or an explicit,
 auditable operator action.
 
+#### Current implementation
+
+The durable foundation is implemented in Atlas Native using SQLite alert and
+append-only alert-event records. One partial unique index permits only one
+unresolved episode for a deduplication key, so repeated observations update the
+same alert's last-seen time, evidence, and observation count instead of creating
+alert spam. Resolution is a separate source-driven transition; acknowledgement
+does not resolve the condition. If an acknowledged condition increases in
+severity, the same alert returns to active/unseen so the escalation requires a
+new acknowledgement.
+
+Initial integrated sources are:
+
+- Stale and lost telemetry.
+- Battery below warning and critical thresholds, with recovery hysteresis.
+- Global position and home position unavailable.
+- Agent disconnected.
+- Requested video unavailable.
+- Advertised perception capability unavailable or unhealthy.
+- Incident revision changed after response planning.
+- Arrival action retrying, failed, or awaiting operator intervention.
+- Mission translation warnings reported by the Agent.
+
+Alerts retain aircraft, incident, and mission-run associations where available,
+recommended operator action, supporting evidence, first/last-seen timestamps,
+and active, acknowledged, resolved, or expired state. Resolved history is kept
+for 30 days before being marked expired rather than deleted, and both alert and
+event history survive Native restart. The application header now opens one
+central alert drawer; warnings have deliberately not been scattered through
+individual screens before this shared model exists.
+
+Remaining work in this capability area includes nearby-aircraft conflicts,
+audio escalation and mute behavior, richer filtering, role/ownership semantics
+for multi-operator deployments, and context-specific warning placement.
+
 ### 6.7 Reusable Mission Actions and Failure Policies
 
 #### Problem
 
-Atlas mission plans already contain semantic actions for speed, gimbal intent,
-recording intent, perception intent, RTL, and Land. Some actions translate into
-MAVSDK mission items, while others remain payload intent or structured warnings.
-Atlas does not yet have one generic runtime that executes every action with a
-durable action lifecycle.
+Atlas mission plans contain semantic actions for speed, gimbal intent,
+recording intent, perception intent, RTL, and Land. Some translate into MAVSDK
+mission items, while others execute through Agent payload or perception
+controllers. Incident arrival actions now have a durable runtime with
+acknowledgements, retry timing, and failure policy. Atlas still does not expose
+one arbitrary generic runtime for every possible semantic action.
 
 That limits reusable behaviors such as:
 
@@ -780,9 +949,9 @@ position-quality, or other safety failures.
 Action state changes should be durable:
 
 ```text
-PENDING -> RUNNING -> SUCCEEDED
-                  -> RETRY_WAIT -> RUNNING
-                  -> FAILED -> POLICY_APPLIED
+REQUESTED -> RUNNING -> SUCCEEDED
+                    -> RETRYING -> RUNNING
+                    -> FAILED -> POLICY_APPLIED
 ```
 
 Point observation and orbit should be reusable behaviors assembled from these
@@ -792,10 +961,10 @@ the same execution path:
 ```text
 take off
     -> transit
-        -> arrive at staging point
-            -> point gimbal
-                -> start perception and recording
-                    -> observe, orbit, or wait for operator
+        -> arrive at reviewed point
+            -> Hold at Staging: Hold -> PAUSED/STAGED -> wait for operator
+            -> Offset Observe: Hold -> point gimbal -> observe
+            -> bounded pattern: Hold -> optional gimbal -> Resume
 ```
 
 ## 7. Priority 1: Capabilities to Add Next
@@ -833,6 +1002,49 @@ Potential sources may include:
 - Local radar or acoustic systems.
 - Partner-agency feeds.
 
+#### Confirmed operating countries and source access
+
+Atlas initially targets public-safety operations in the United Kingdom and
+Nigeria. “Open” must be evaluated in three separate ways:
+
+1. **Human access:** an operator can view or download the information.
+2. **Machine access:** Atlas can retrieve a stable, documented data format or
+   API without scraping an interactive briefing page.
+3. **Operational reuse:** the provider permits Atlas to process, cache, display,
+   and redistribute the data in a safety-related product.
+
+A source is not integration-ready merely because human access is free.
+
+| Country and information | Authoritative source | Access assessment as of 19 July 2026 | Atlas decision |
+| --- | --- | --- | --- |
+| UK permanent and UAS restrictions | UK CAA identifies NATS AIS as the primary source. NATS publishes the UK AIP, a UAS Flight Restrictions dataset, and a UK ICAO AIP dataset | **Human/download access exists, but Atlas has not confirmed a stable documented machine endpoint or an operational reuse contract.** AIRAC publication cadence does not by itself define safe automated retrieval, redistribution, or outage behavior | **Deferred.** Do not scrape or ship a manual-import substitute. Reconsider when NATS approves a documented automated interface and the required caching, display, redistribution, freshness, and outage terms |
+| UK temporary restrictions and NOTAM | NATS AIS Internet Briefing System and its Pre-Flight Information Bulletins | **Human access is available but production integration is unresolved.** Briefing is available to registered users; no public, documented production NOTAM API has been confirmed for Atlas, and account-backed page access must not be scraped | Keep NOTAM coverage marked unavailable until NATS supplies or approves a machine interface, or Atlas contracts a licensed aeronautical-data provider. Operators must continue using the official briefing workflow in the interim |
+| Nigeria permanent and restricted airspace | Nigerian Airspace Management Agency (NAMA) Aeronautical Information Services; NCAA is the regulator | **Formal access required.** NCAA identifies NAMA as the authority for aeronautical charts, AIP, AIC, and NOTAM. No official open machine-readable Nigerian AIP dataset or public API has been confirmed | **Deferred.** Do not build from unofficial chart copies. Reconsider after NAMA access or a licensed provider with explicit Nigerian coverage is available |
+| Nigeria temporary restrictions and NOTAM | NAMA International NOTAM Office and AIS | **Formal access required.** No official public production API has been confirmed | **Deferred.** Until approved access exists, Atlas must treat Nigerian NOTAM coverage as unavailable, never clear |
+
+Authoritative starting points:
+
+- [UK CAA airspace-restriction guidance](https://www.caa.co.uk/drones/open-category/moving-on-to-more-advanced-flying/airspace/airspace-restrictions/)
+- [NATS statement of freely available aeronautical products](https://www.aurora.nats.co.uk/htmlAIP/Publications/2025-02-06/html/eAIC/EG-eAIC-2025-015-W-en-GB.html)
+- [NATS digital datasets](https://nats-uk.ead-it.com/cms-nats/opencms/en/Publications/digital-datasets/)
+- [NATS AIS briefing service and registration](https://nats-uk.ead-it.com/cms-nats/opencms/en/home/)
+- [NATS aeronautical-product terms](https://nats-uk.ead-it.com/cms-nats/opencms/en/agb/)
+- [NCAA statement identifying NAMA as Nigeria's authoritative AIS/AIM provider](https://ncaa.gov.ng/media/vbxd4jwx/reg-27.pdf)
+- [Current Nigerian AIS requirements in Nig.CARs Part 14](https://ncaa.gov.ng/media/dmbmncbg/nigcars-part-14-subpart-4.pdf)
+- [NCAA report on Nigeria's AIXM/eAIP transition work](https://ncaa.gov.ng/media/news/nigeria-hosts-icao-aim-rbis-workshop-as-dgca-capt-chris-najomo-declares-open-aixm-eaiptod-training-in-abuja/)
+- [ICAO directory entry for Nigerian AIP and NOTAM services](https://www.icao.int/APAC/Meetings/2023%20AAITF18/Flimsy%2001%20Doc7383%20Aeronautical%20Information%20Services%20Provided%20by%20States.pdf)
+
+The first airspace milestone should cover **published restrictions and source
+health**, not nearby-aircraft deconfliction. Live cooperative traffic still
+needs a separate ADS-B, Remote ID, UTM, radar, or partner feed, and none of
+those sources alone can prove that the surrounding airspace is clear.
+
+No airspace adapter is implemented in this review. That is deliberate: the
+requested preference is the most automated supported option, and no approved,
+documented national machine interface has yet been confirmed. Atlas therefore
+does not download, scrape, cache, or render either country's restrictions, and
+must not display an implicit “clear” state.
+
 A conflict engine should calculate:
 
 - Horizontal separation.
@@ -858,33 +1070,87 @@ quality, authority model, route constraints, and failure behavior are proven.
 
 #### Problem
 
-Atlas mission plans can encode start/stop camera-video intent, but the current
-Native video pipeline is a low-latency preview rather than an archival recorder.
-There is no operator-facing still capture or incident-linked media library.
+Atlas mission plans can encode start/stop camera-video intent. Batch 9 added an
+archival source-RTSP recorder alongside the low-latency preview. Schema 23 now
+adds still capture, thumbnails, marker-linked clips, annotation, review, and
+policy-driven recoverable deletion. Export packaging remains intentionally
+deferred.
 
 The MVP decision is to record into Atlas-managed local file storage. The A8
 MicroSD card is not an evidence store or fallback in this architecture.
+
+#### Batch 9 implementation
+
+Native now owns one recorder for the configured primary source. Its durable
+lifecycle is:
+
+```text
+operator request -> REQUESTED SQLite session
+    -> FFmpeg creates non-empty source-RTSP temporary bytes
+    -> RUNNING acknowledgement
+    -> FFmpeg closes a segment and appends its source timeline range
+    -> SHA-256 + FINALIZING manifest
+    -> atomic same-filesystem rename into objects/
+    -> checksum revalidation + LOCAL_VERIFIED
+    -> graceful stop -> SUCCEEDED
+       process/source/storage fault -> evidence gap + FAILED + visible alert
+```
+
+Schema 17 persists recording sessions, segment manifests, append-only recorder
+events, and evidence-gap events. Sessions retain aircraft and optional incident,
+mission, and run associations; linked associations are inferred and revalidated
+from the reviewed mission assignment. The configurable evidence root is local,
+requires a writable absolute path when overridden, and uses warning and stop
+free-space thresholds. Reaching the stop reserve closes the recorder safely,
+retains every already verified segment, and raises both storage and gap evidence.
+
+Every failure after the durable `REQUESTED` insert, including per-session
+directory creation and recorder-monitor thread startup, is converted to a
+durable `FAILED` session with gap evidence so the one-active-source constraint
+cannot be stranded. At shutdown, final manifest processing errors are terminal,
+and the SQLite success transition independently refuses `SUCCEEDED` while any
+segment remains `FINALIZING`.
+
+On restart, Native recovers closed segments from the FFmpeg segment list and
+reconciles any `FINALIZING` manifest. An open `.partial.mp4` remains temporary,
+is not exposed as a valid segment, and produces a `RECORDER_RESTART` gap. The
+operator workspace distinguishes requested, running, stopped/verified, and
+failed/gap state and provides basic Start Evidence and Stop + Verify controls.
+
+Schema 23 adds first-class `STILL` and `EVENT_CLIP` assets. Stills use the latest
+clean Native-decoded JPEG and retain the current session-scoped track identity
+when selected. An evidence marker queues a bounded pre/post-roll clip; the clip
+stays `PENDING` until locally verified recording segments cover the window.
+FFmpeg assembles the clip and thumbnail under temporary storage, Atlas checks
+both files, atomically publishes the asset directory, and changes the asset to
+`READY`. The Evidence workspace supports review states, append-only notes/tags
+and lifecycle events, legal hold, and `READY -> TRASHED -> PURGED` retention.
+Purge is allowed only after the recorded grace deadline.
 
 #### Recommended behavior
 
 Add:
 
-- Start recording.
-- Stop recording.
-- Capture still.
-- Positive local-recorder state acknowledgement.
-- Media manifest linked to incident, aircraft, mission run, and time.
-- Operator annotation.
-- Export with checksums and metadata.
+- Start recording. **Implemented for the configured source RTSP recorder.**
+- Stop recording. **Implemented as a graceful finalize-and-verify request.**
+- Capture still. **Implemented from the latest clean Native frame, optionally
+  linked to the selected track.**
+- Positive local-recorder state acknowledgement. **Implemented through the
+  requested/running/succeeded/failed session lifecycle.**
+- Media metadata linked to incident, aircraft, mission run, recording, track,
+  marker, and observation time. **Implemented.**
+- Operator asset annotation and review. **Implemented as append-only history.**
+- Export with checksums and metadata. **Deferred from this slice.**
 
 The initial storage design should use:
 
 ```text
 configurable local evidence root
-    objects/<asset-id>.mp4
-    objects/<asset-id>.jpg
-    thumbnails/<asset-id>.jpg
-    temporary/<asset-id>.partial
+    objects/<recording-session>/<segment>.mp4
+    assets/<asset-id>/original.{jpg,mp4}
+    assets/<asset-id>/thumbnail.jpg
+    trash/<asset-id>/...
+    temporary/assets/<asset-id>/...
 
 SQLite
     evidence asset metadata
@@ -899,12 +1165,13 @@ recordings so a crash or storage fault cannot corrupt an entire mission. Finaliz
 through an atomic rename, calculate a checksum, and only then mark the asset
 `LOCAL_VERIFIED`.
 
-Before exposing media controls, define:
+The remaining policy decisions before external evidence exchange are:
 
 - Evidence-root configuration and permission checks.
 - Storage quota, warning threshold, critical low-water mark, and reserved space.
 - Behavior when the ground link or RTSP source is interrupted.
-- Retention period and local deletion policy.
+- Retention period and local deletion policy. **Implemented with editable
+  standard/extended intervals, legal hold, and a trash grace period.**
 - Encryption-at-rest requirements.
 - Evidence export format.
 - Clock and timestamp evidence.
@@ -1046,9 +1313,14 @@ direction of travel while the A8 gimbal looks inward at the observation target.
 
 YOLO detections are frame-local observations. Repeated detections do not by
 themselves establish that the same person or vehicle remains visible across
-frames. Atlas currently transports an optional upstream `track_id`, but does not
-select, configure, supervise, or report the lifecycle of the tracker that
-created it.
+frames. Atlas now owns tracker selection, session IDs, discontinuity resets,
+health, and authoritative `track_id` assignment. The original MIT-licensed
+FoundationVision ByteTrack C++ deployment core is the production default. The
+same worker can apply Atlas camera-motion compensation as `byte_track_cmc`.
+Agent and Native now provide bounded, revisioned persistent track lifecycle
+records, session/mission counts, configured crossing rules, and exact operator
+selection. Remaining work is annotated representative-footage and
+target-computer acceptance plus gimbal following.
 
 #### Recommended behavior
 
@@ -1058,14 +1330,13 @@ Add a common onboard tracker interface after Hailo detection:
 update(frame, detections, capture_time) -> tracked detections
 ```
 
-Provide two implementations:
+Provide two modes of the same supervised worker:
 
-- **BoT-SORT:** the default because camera-motion compensation is relevant to
-  moving aircraft and gimbals.
-- **ByteTrack:** a lower-compute fallback and a stable baseline for evaluating
-  whether BoT-SORT provides enough operational benefit.
+- **ByteTrack:** the production default and stable comparison baseline.
+- **ByteTrack CMC:** the aerial candidate, applying confidence-gated global
+  camera motion after Kalman prediction and before IoU association.
 
-Initial BoT-SORT configuration should:
+Initial ByteTrack CMC configuration should:
 
 - Enable camera-motion compensation.
 - Disable ReID.
@@ -1083,7 +1354,7 @@ The tracker must be reset after:
 - A tracker process restart.
 - A gap longer than the configured track-retention threshold.
 
-The perception stream should eventually report:
+The perception stream now reports:
 
 ```text
 track_id
@@ -1099,7 +1370,7 @@ session. They are anonymous temporary associations, not personal identities.
 
 #### Validation
 
-Both trackers should be evaluated on the target companion computer and
+Both modes should be evaluated on the target companion computer and
 representative aerial footage using:
 
 - ID switches.
@@ -1110,9 +1381,9 @@ representative aerial footage using:
 - CPU and memory use.
 - Added latency and dropped frames.
 
-BoT-SORT remains the product default only while it meets the required
-performance envelope. The operator-facing product behavior must not depend on a
-specific tracker implementation.
+ByteTrack CMC should be promoted over the plain default only if it improves
+association accuracy while meeting the required performance envelope. The
+operator-facing product behavior must not depend on a specific tracker mode.
 
 ### 7.6 Persistent Tracks, Counts, and Gimbal Following
 
@@ -1121,12 +1392,12 @@ specific tracker implementation.
 High-frequency boxes should remain in bounded onboard memory. Atlas should
 persist:
 
-- Track creation and closure.
-- Latest confirmed state.
-- Important state changes.
-- Periodic geolocated samples.
-- Operator selections and annotations.
-- Evidence image or clip references.
+- Track creation and closure. **Implemented.**
+- Latest confirmed state. **Implemented.**
+- Important state changes. **Implemented as append-only lifecycle events.**
+- Periodic image-space samples. **Implemented; geolocation remains Phase 5.**
+- Operator selections and annotations. **Implemented.**
+- Evidence recording markers. **Implemented; track-linked stills and clips remain.**
 - Generated events.
 
 A track lifecycle should distinguish:
@@ -1142,6 +1413,8 @@ Atlas must separately display:
 - Current confirmed position.
 
 Prediction confidence must decay with time and stop after a bounded threshold.
+**Implemented with configurable bounded history, extrapolation horizon, loss,
+closure, and periodic-summary thresholds.**
 
 #### Counting
 
@@ -1155,11 +1428,29 @@ Counts must retain tracker-session context because an ID switch can otherwise
 produce double counting. Accuracy should be reported as a measured tracker and
 rule outcome, not assumed from the number of IDs.
 
+**Implemented.** Agent reports current visible confirmed tracks, unique
+confirmed tracks per tracker session, and revisioned directional line or
+polygon entry/exit totals. Native persists idempotent count events, preserves
+their tracker-session identity, and separately maps tracks into a running
+mission for mission-unique totals. Counting uses confirmed observations only;
+long unseen gaps do not infer crossings.
+
+#### Operator track selection
+
+**Implemented.** Live video selects only a visible `ACTIVE` track using the
+exact `(track_session_id, track_id)` identity. Native retains the selection
+through bounded `TEMPORARILY_OCCLUDED` state, records reacquisition and all
+selection transitions, and returns explicit `LOST` or `CLOSED` outcomes. A
+terminal selection freezes its track snapshot and cannot silently reattach if
+the backend later emits the same local key. Operators can clear the result,
+add a note, or create an evidence marker against an active local recording.
+
 #### Operator-selected gimbal following
 
-The operator should be able to choose a visible track and request **Follow with
-camera**. An onboard controller compares the track target point with the image
-center and commands bounded gimbal rates.
+**Implemented.** The operator can choose a visible track and request **Follow
+with camera**. The Agent-owned controller uses the exact session-scoped track,
+compares the confirmed box centre with image centre, and commands the existing
+payload authority with aircraft-relative pitch/yaw rates.
 
 This controller should:
 
@@ -1174,7 +1465,16 @@ This controller should:
   payload fault.
 
 Gimbal following does not require the target to be geolocated and should be
-delivered before aircraft following.
+delivered before aircraft following. The implementation uses a short renewable
+payload lease, measured MAVSDK gimbal attitude, configurable physical limits,
+rate and acceleration bounds, a deadband, and braking-distance rate limiting.
+Temporary occlusion or a stale observation commands zero rates and holds the
+current angle for a configurable bounded interval. Tentative, lost, or closed
+tracks, exact-identity/source changes,
+lease loss, Agent shutdown, mission end, and gimbal read/write faults stop the
+controller. It never searches for a replacement track ID. Start/stop operations
+use Native's durable vehicle-command lifecycle and the current mission-override
+or on-ground inspection ownership policies.
 
 ### 7.7 Detection Geolocation and Movement Estimation
 
@@ -1183,40 +1483,47 @@ delivered before aircraft following.
 A detection provides a pixel-space location. Responders and aircraft navigation
 need a world-space estimate with an honest statement of uncertainty.
 
-The geolocation calculation is:
+The current calibration-free MVP calculation is:
 
 ```text
-target pixel
-    -> distortion-corrected camera ray
-        -> camera-to-gimbal transform
-            -> gimbal-to-aircraft transform
-                -> aircraft-to-world transform
-                    -> terrain, ground-plane, or measured-range intersection
+declared target point centred in the image
+    -> camera/gimbal boresight alignment assumption
+        -> measured gimbal attitude relative to North
+            -> world NED ray and aircraft-body coordinates
+                -> bounded horizontal-plane intersection
 ```
 
-#### Required foundation
+This method deliberately does not project arbitrary pixels. Digital zoom does
+not affect the estimate as long as it preserves the image centre. Off-centre
+geolocation would require a separate measured field-of-view or camera
+calibration model and is outside the current implementation.
 
-Atlas should add:
+#### Implemented foundation
+
+Atlas provides:
 
 1. **High-rate onboard pose buffer.** Store timestamped aircraft latitude,
    longitude, altitude, roll, pitch, yaw, velocity, and quality. Interpolate the
    samples around the frame-capture time.
 2. **Measured gimbal-attitude telemetry.** Use actual gimbal yaw, pitch, and roll
    rather than the last commanded values.
-3. **Versioned camera calibration.** Store camera intrinsics, distortion,
-   calibrated image size, zoom/crop state, and the camera-to-gimbal mounting
-   transform.
+3. **Centred-boresight gate.** Require the declared target point to be within a
+   small normalized distance of image centre and record the assumption that
+   camera centre aligns with the measured gimbal forward axis.
 4. **Timestamp correlation.** Relate video PTS, companion-computer monotonic
    time, autopilot time, and gimbal time. Detection completion or UI receipt
    time must not replace image-capture time.
-5. **Uncertainty model.** Account for aircraft position, attitude, gimbal angle,
-   calibration, timestamp, detection contact point, terrain, target-height, and
-   range uncertainty.
+5. **Intersection-plane provenance.** Require an AMSL ground altitude and its
+   uncertainty. Distinguish a centred ground-contact point from a centred target
+   body point with an explicit assumed aim-point height above ground and height
+   uncertainty.
+6. **Uncertainty model.** Account for aircraft position, camera/GNSS origin
+   separation, timestamp, boresight/gimbal alignment, ground altitude, target
+   height, and shallow-angle amplification.
 
-For a standing ground target, the first estimate may use the bottom center of
-the bounding box as the ground-contact pixel. That assumption must be recorded
-because it fails for rooftops, bridges, upper floors, and partially occluded
-objects.
+The current centred-boresight implementation does not silently switch to the
+bottom centre of a box. Ground-contact versus target-centre intent is explicit,
+and target-centre mode carries a reviewed height and uncertainty assumption.
 
 Geolocation accuracy degrades sharply near the horizon. At 60 metres altitude,
 one degree of angular error produces roughly 2 metres of ground-range error at
@@ -1240,6 +1547,71 @@ observed_or_predicted
 Movement direction and speed must be calculated from filtered world-space
 positions. Pixel movement alone cannot distinguish target motion from aircraft
 or gimbal motion.
+
+#### Implementation status: selected-track centred-boresight geolocation
+
+The first P3 slice is implemented onboard:
+
+- A bounded high-rate aircraft pose timeline uses timestamped MAVSDK
+  quaternions as its sampling spine and carries estimator latitude, longitude,
+  AMSL/relative altitude, NED velocity, navigation quality, field age, and GPS
+  uncertainty.
+- Measured Gimbal v2 attitude is buffered per gimbal with the gimbal timestamp,
+  forward/North quaternion and Euler representations, and angular velocity.
+- Autopilot boot time, autopilot Unix time, gimbal time, video PTS, companion
+  Unix time, and companion `CLOCK_MONOTONIC` have explicit bounded correlation
+  domains and reset epochs.
+- Perception protocol v3 records PTS and companion clocks before inference.
+  Detection completion is not used as capture time.
+- Aircraft and gimbal lookup interpolate only between bounded samples, reject
+  excessive gaps/stale position, and never cross a clock rollback.
+- The boresight estimator accepts only a declared aim point within 0.04 of image
+  centre on each axis. It uses measured gimbal attitude relative to North to
+  form a world NED ray and transforms that ray into aircraft-body FRD
+  coordinates using the synchronized aircraft attitude.
+- Horizontal-plane intersection rejects unhealthy global position, unavailable
+  velocity, frame-time uncertainty above 500 ms, depression below 20 degrees,
+  an intersection plane above the aircraft, and ground range above 3 km.
+- Results carry frame-time quality, origin and intersection coordinates,
+  North/East offsets, slant/ground range, depression, ground source, aim-point
+  kind, aim-point-height assumption, and a conservative componentized horizontal
+  error radius. The default uncalibrated static angular bound is 10 degrees,
+  the minimum depression is 20 degrees, measured gimbal motion during
+  frame-time uncertainty expands it, and the unmeasured
+  camera-to-GNSS origin allowance is 1 metre. Estimates are rejected if the
+  resulting uncertainty cone reaches the horizon.
+- The Hailo RTSP adapter dynamically enables GStreamer's reconstructed sender
+  timestamp metadata when the installed runtime supports it, converts
+  recognized NTP/Unix references, and keeps pipeline-ingress timing as the
+  compatible fallback. Implausible sender timestamps are not promoted to
+  source-reference quality.
+- Native authorizes geolocation only for the exact current `SELECTED` / `ACTIVE`
+  `(selection_id, track_session_id, track_id, source_id)` tuple. Agent then
+  retrieves that track's own latest frame timing; it does not substitute the
+  newest unrelated video frame or search for a replacement ID.
+- The operator must supply a reviewed AMSL ground altitude, uncertainty,
+  source, source version, and review timestamp. Target-centre estimates also
+  require aim-point height and uncertainty. These inputs are validated on both
+  sides of the Agent/Native boundary and stored with every attempt.
+- The request uses the durable vehicle-command lifecycle but does not take
+  payload control or command the gimbal. Successful coordinates and horizontal
+  uncertainty are persisted in Native schema 22. Off-centre, stale, unhealthy,
+  identity-mismatched, timing, and geometry failures are persisted as explicit
+  rejection codes and reasons against the same track and selection.
+
+Source-reference timing still depends on both a GStreamer 1.22+ runtime and a
+camera/RTSP session that supplies a usable reconstructed absolute sender clock;
+this has not yet been verified against the target A8 output. Otherwise frame
+time remains a `PIPELINE_INGRESS_ESTIMATE` with a conservative uncertainty
+floor. The runtime rejects an off-centre aim point instead of guessing a pixel
+angle. The lens-calibration
+registry and arbitrary-pixel projection implementation have been removed.
+Atlas resolves the initial plane automatically: configured DEM elevation at the
+aircraft position first, then an explicitly labelled and conservatively bounded
+absolute-minus-relative-altitude home-plane fallback. It then samples the DEM
+at the estimated target and iterates on the immutable observation ray. Measured
+range, target-computer acceptance, physical boresight commissioning, and
+surveyed ground-truth validation remain outstanding.
 
 ### 7.8 MVP Known-Building Route Assessment
 
@@ -1266,6 +1638,8 @@ For every known building, Atlas should:
 4. Add a configured vertical clearance margin to the building top.
 5. Check the transit route, every orbit level, and all climb/descent transitions
    against the resulting volume.
+6. Persist the assessed departure point and altitude datum and require fresh,
+   matching departure evidence again at upload.
 
 ```text
 known_building_top_amsl
@@ -1365,6 +1739,23 @@ location estimation, authority, and failure behavior are understood.
 
 ### 8.4 Operator-Authorized Aircraft Track Following
 
+#### Implementation status (July 2026)
+
+The software path described below is implemented. Native schema 24 stores the
+reviewed envelope, exact track target updates, durable state, event trace, lease,
+commissioning references, and exit reason. The Follow workspace continuously
+reacquires and terrain-refines the exact selected track before renewing a short
+operator lease. Agent owns a MAVSDK Offboard velocity loop with independent
+watchdogs and explicit PX4 Hold.
+
+This is not yet a declaration of flight acceptance. Agent defaults to
+`aircraft_follow:standoff:v1:unverified` and refuses translation. It may
+advertise `verified` only when configuration names both an accepted follow
+validation record and a physical boresight-alignment record. Unit/simulated
+controller tests have been run in this implementation slice; HIL and controlled
+flight have not, so real installations must remain `UNVERIFIED` until that work
+is performed and reviewed.
+
 #### Decision
 
 Atlas should support an operator requesting that the aircraft follow a specific
@@ -1385,25 +1776,32 @@ select confirmed track
         -> validate track geolocation and flight constraints
             -> acquire stable target state
                 -> enter bounded following
-                    -> hold, end, or return on degradation
+                    -> Hold on degradation
+                        -> explicit operator end or RTL decision
 ```
 
-Atlas should use two coordinated onboard loops:
+Atlas exposes two separate onboard authorities that may be used together only
+under explicit operator control:
 
 - A fast gimbal loop keeps the target framed.
 - A navigation loop uses the filtered target position and velocity to update a
   moving observation point.
 
+Camera follow does not start aircraft follow, and aircraft follow does not
+acquire the gimbal lease. Failure of the navigation loop stops Offboard and
+commands Hold; it never infers RTL or Land.
+
 The aircraft should maintain an observation envelope rather than chase the
 target position directly. Configurable constraints should include:
 
-- Minimum and maximum standoff distance.
+- Reviewed standoff distance.
 - Altitude band.
 - Maximum groundspeed and acceleration.
 - Geographic boundary and geofence.
 - Maximum follow duration.
-- Battery return reserve.
-- Airspace and obstacle restrictions.
+- Minimum battery reserve.
+- The reviewed geographic boundary; authoritative airspace and obstacle gates
+  remain future integrations.
 - Minimum track confidence and maximum geolocation uncertainty.
 
 The control state should be explicit and durable:
@@ -1432,9 +1830,11 @@ The behavior must:
 - Record every authorization, state transition, constraint change, and exit
   reason.
 
-This capability should be delivered only after geolocation has been validated
-against known ground truth and after the airspace, command-ownership, and
-degradation behaviors have been exercised in simulation and controlled flight.
+Real-aircraft enablement must occur only after geolocation has been validated
+against known ground truth and after command ownership and degradation behavior
+have been exercised in simulation, HIL, and controlled flight. The implemented
+commissioning gate enforces this as installation evidence rather than treating
+software presence as acceptance.
 
 ### 8.5 Scene Events and Ground-Station Summaries
 
@@ -2108,9 +2508,9 @@ unbounded track loss, or navigate directly from image-space error.
 
 **Decision: Skip.**
 
-ByteTrack and BoT-SORT do not require Atlas to move detector inference into an
-end-to-end Ultralytics runtime. Preserve the Hailo/TAPPAS inference path and
-adapt its normalized detections into the selected tracker.
+ByteTrack does not require Atlas to move detector inference into an end-to-end
+Ultralytics runtime. Preserve the Hailo/TAPPAS inference path and adapt its
+normalized detections into the selected tracker mode.
 
 ### 9.10 Continuous Full-Rate VLM Processing
 
@@ -2150,8 +2550,8 @@ The following invariants should remain true:
     active until the Atlas local recorder has acknowledged the request and
     confirmed that file capture has started.
 12. **Automated perception does not silently become flight authority.**
-13. **One tracker is authoritative per stream.** BoT-SORT and ByteTrack may
-    both be available, but Atlas does not merge competing live track-ID spaces.
+13. **One tracker is authoritative per stream.** Plain ByteTrack and ByteTrack
+    CMC may both be available, but Atlas does not merge competing live track-ID spaces.
 14. **Track IDs are temporary and anonymous.** They are scoped to an aircraft,
     camera source, stream epoch, and tracker session and are not treated as a
     person's identity.
@@ -2229,53 +2629,63 @@ The following invariants should remain true:
 
 ### Phase 1: Mission and Incident Foundation
 
-- Canonical incident and incident-event schema.
-- Manual incident creation as the only runtime incident source.
+- Canonical incident and incident-event schema. **Implemented.**
+- Manual incident creation as the only runtime incident source. **Implemented.**
 - Source-neutral fields for a future signed Backend webhook, without building
   the webhook or a mock connector.
-- Operations workspace.
-- Shared fleet and incident map.
-- Search, filters, clustering, and layer controls.
-- Selected-incident detail panel.
-- Incident-to-mission association.
+- Operations workspace. **Implemented.**
+- Shared fleet and incident map. **Implemented.**
+- Search, filters, clustering, layer controls, and zoom-dependent labels.
+  **Implemented for local incident and aircraft sources.**
+- Selected-incident detail panel. **Implemented.**
+- Incident-to-mission association. **Implemented.**
 - Generic action lifecycle with timeout, retry, and failure policy.
+  **Implemented for the current arrival-action catalogue.**
 - Point-observation and orbit behaviors.
 - Mission timeline and evidence-marker events.
 
 ### Phase 2: Rapid Response
 
-- Respond workflow.
-- Aircraft suitability and blocker display.
-- Hold at Staging and default Offset Observe arrival patterns.
-- Operator-reviewed Bounded Area Scan.
+- Respond workflow. **Implemented.**
+- Aircraft suitability, recommendation, and blocker display. **Implemented.**
+- Hold at Staging and default Offset Observe arrival patterns. **Implemented as
+  distinct runtime semantics.**
+- Operator-reviewed Bounded Area Scan. **Implemented.**
 - Operator-reviewed Bounded Orbit with explicit altitude bounds, levels, laps,
-  and transitions.
-- Automatic rapid mission generation.
-- Existing upload/preflight/start integration.
+  and transitions. **Single-level implemented; stepped transitions remain
+  intentionally missing. The single-level PX4 SITL prerequisite passed on 19
+  July 2026.**
+- Automatic rapid mission generation. **Implemented.**
+- Existing upload/preflight/start integration. **Implemented.**
 - OS NGD and Building Height Attribute known-building warnings for transit,
   orbit levels, and altitude transitions.
-- Map, Video, and Split layouts.
-- Restrained video flight HUD.
-- Source-RTSP recording into a configurable local evidence root.
+- Map, Video, and Split layouts. **Implemented for local response workspaces.**
+- Restrained video flight HUD. **Implemented for existing telemetry and alerts.**
+- Source-RTSP recording into a configurable local evidence root. **Implemented.**
 - Segmented files, atomic finalization, checksums, disk-space guardrails, SQLite
   manifests, recorder-state acknowledgement, and evidence-gap events.
+  **Implemented.**
 
 ### Phase 3: Tracking and Camera Follow
 
-- Normalize detector outputs after Hailo inference.
-- Add the Atlas tracker abstraction.
-- Add BoT-SORT as the configurable default with camera-motion compensation and
-  ReID disabled.
-- Add ByteTrack as the lower-compute fallback and benchmark baseline.
-- Add tracker health, configuration, and reset behavior.
-- Add persistent, session-scoped track records.
-- Add current and configured zone-crossing counts.
-- Add last-observed and bounded predicted track states.
+- Normalize detector outputs after Hailo inference. **Implemented.**
+- Add the Atlas tracker abstraction. **Implemented.**
+- Add ByteTrack as the production default and benchmark baseline.
+  **Implemented with the pinned FoundationVision MIT C++ core.**
+- Add ByteTrack CMC as the aerial candidate with confidence-gated camera-motion
+  compensation and ReID disabled. **Implemented as an extension of the same worker.**
+- Add tracker health, configuration, and reset behavior. **Implemented.**
+- Add persistent, session-scoped track records. **Implemented in Native schema 18.**
+- Add current, mission/session-unique, and configured line/zone-crossing
+  counts. **Implemented in Native schema 21 with Agent-side rule evaluation.**
+- Add last-observed and bounded predicted track states. **Implemented.**
+- Add exact session-scoped operator selection, durable actions, notes, and
+  recording evidence markers. **Implemented.**
 - Add operator-selected onboard gimbal following.
 
 ### Phase 4: Operational Safety
 
-- Normalized alert model.
+- Normalized alert model. **Implemented for the initial local sources.**
 - Airspace provider abstraction.
 - Nearby-aircraft tracks.
 - Conflict prediction and alerting.
@@ -2291,19 +2701,21 @@ The following invariants should remain true:
 - Terrain, ground-plane, and optional measured-range projection.
 - Geolocation uncertainty and validation against known ground truth.
 - World-space target position, speed, and direction.
-- Operator-authorized Follow from Standoff state machine.
-- Onboard dynamic navigation controller with watchdogs.
-- Track-loss, offboard-loss, link-loss, and operator-stop handling.
-- Simulation, hardware-in-the-loop, and controlled-flight validation.
+- Operator-authorized Follow from Standoff state machine. **Implemented in schema 24.**
+- Onboard dynamic navigation controller with watchdogs. **Implemented; defaults to `UNVERIFIED`.**
+- Track-loss, offboard-loss, link-loss, and operator-stop handling. **Implemented.**
+- Simulation, hardware-in-the-loop, and controlled-flight validation. **Controller simulation tests implemented; HIL and controlled-flight acceptance remain.**
 
 ### Phase 6: Evidence Expansion and Scene Intelligence
 
-- Still capture, thumbnails, operator annotation, and evidence export.
-- Configurable retention and local deletion workflow.
+- Still capture, thumbnails, asset-level operator annotation, and evidence
+  browser/review. **Implemented. Export remains deferred.**
+- Configurable retention and recoverable local deletion workflow. **Implemented.**
 - Optional verified S3 replication behind the evidence-storage boundary.
 - Deterministic track and scene-event rules.
 - Pose or segmentation profiles for selected operational problems.
-- Event-triggered evidence clips.
+- Event-triggered, track-linked evidence clips. **Implemented for operator
+  evidence markers and verified local recording segments.**
 - Schema-constrained ground-station VLM summaries.
 - Operator confirm and dismiss workflow.
 
@@ -2485,8 +2897,9 @@ Guardrails:
    normalized incident context and never commands aircraft directly.
 4. Hold at Staging and Offset Observe are approved initial arrival behaviors.
 5. Bounded Area Scan and Bounded Orbit require operator review.
-6. Bounded Orbit supports explicit stepped-altitude levels inside approved
-   bounds. Continuous helical orbit is deferred.
+6. Bounded Orbit currently supports one explicit altitude level. Discrete
+   stepped-altitude levels and their transitions are deferred; continuous
+   helical orbit is also deferred.
 7. Evidence is recorded to Atlas-managed local file storage, with metadata in
    SQLite and no A8 MicroSD dependency.
 8. S3 is a future verified replica behind the same evidence-storage boundary.
@@ -2528,56 +2941,65 @@ Guardrails:
 
 ### 13.2 Remaining Open Decisions
 
-1. Is Atlas targeting public-safety DFR operations, industrial response, or a
-   shared incident model that supports both?
-2. Is Atlas expected to support one operator and one aircraft initially, or
+The deployment decision is now **public-safety operations in the United Kingdom
+and Nigeria**. The remaining decisions are:
+
+1. Is Atlas expected to support one operator and one aircraft initially, or
    multi-operator fleet dispatch from the first release?
-3. What is the required maximum response distance?
-4. Which airspace data sources are available in the target deployment region?
-5. What authentication and offline-access behavior is required?
-6. What local evidence-root capacity, retention period, encryption policy, and
+2. What is the required maximum response distance?
+3. **Deferred external dependency:** no UK airspace work resumes until NATS
+   approves a documented automated interface and the required operational reuse
+   terms, or Atlas contracts a suitable licensed provider.
+4. **Deferred external dependency:** no Nigerian airspace work resumes until
+   NAMA provides approved machine access or Atlas contracts a provider with
+   explicit Nigerian coverage and reuse rights.
+5. If national or licensed access later becomes available, what coverage,
+   freshness, provenance, redistribution, and outage guarantees are acceptable
+   for public-safety use?
+6. What authentication and offline-access behavior is required?
+7. What local evidence-root capacity, retention period, encryption policy, and
    disk reserve are required?
-7. Which additional terrain, vegetation, wire, mast, crane, temporary-obstacle,
+8. Which additional terrain, vegetation, wire, mast, crane, temporary-obstacle,
    or local-survey sources will be required beyond the MVP known-building check?
-8. Which maintained and license-compatible ByteTrack and BoT-SORT
-   implementations should Atlas embed or depend on?
-9. What maximum tracker CPU, memory, and latency budget is acceptable on each
+9. What review and upgrade cadence should govern the pinned FoundationVision
+   ByteTrack core and Atlas CMC extension?
+10. What maximum tracker CPU, memory, and latency budget is acceptable on each
    supported companion-computer profile?
-10. How will each supported camera, zoom state, and physical mounting be
+11. How will each supported camera, zoom state, and physical mounting be
     calibrated and versioned?
-11. Which terrain or elevation source is authoritative enough for initial
+12. Which terrain or elevation source is authoritative enough for initial
     ground-intersection geolocation?
-12. What maximum geolocation uncertainty permits selected-track aircraft
+13. What maximum geolocation uncertainty permits selected-track aircraft
     following?
-13. Which standoff, altitude, speed, duration, boundary, loss, and recovery
+14. Which standoff, altitude, speed, duration, boundary, loss, and recovery
     policies are operationally approved for Follow from Standoff?
-14. Which default orbit altitude levels, vertical rates, laps, and clearance
+15. Which default orbit altitude levels, vertical rates, laps, and clearance
     margins should each deployment profile use?
-15. What exact room size, lighting, surface texture, fixed altitude, speed,
+16. What exact room size, lighting, surface texture, fixed altitude, speed,
     acceleration, stopping distance, clearance, duration, and battery reserve
     define the controlled indoor demonstration envelope?
-16. What measured H-Flow/PX4 drift, map-to-odometry disagreement, transform age,
+17. What measured H-Flow/PX4 drift, map-to-odometry disagreement, transform age,
     depth coverage, and SLAM quality thresholds permit indoor translation?
-17. Which maintained mapping, point-cloud, frontier, and route-planning
+18. Which maintained mapping, point-cloud, frontier, and route-planning
     implementations should Atlas use, and can they meet the Raspberry Pi 5 CPU,
     memory, USB, thermal, and power budget alongside Hailo perception?
-18. What indoor map-completeness condition ends exploration successfully?
-19. Which side, rear, upward, low-light, or active-depth sensors are required
+19. What indoor map-completeness condition ends exploration successfully?
+20. Which side, rear, upward, low-light, or active-depth sensors are required
     before moving beyond the controlled single-level demonstrator?
-20. Which indoor Hold, rescan, breadcrumb return, land-in-place, and manual
+21. Which indoor Hold, rescan, breadcrumb return, land-in-place, and manual
     takeover policies are approved for each failure class?
-21. Which companion computer, carrier, storage, cooling, power supply, lidar,
+22. Which companion computer, carrier, storage, cooling, power supply, lidar,
     stereo/IMU camera, and supplemental vertical sensors meet the full 3D
     aircraft's mass, endurance, thermal, EMI, and field-of-view budgets?
-22. Which exact PX4, ROS 2, uXRCE-DDS, sensor-driver, and message versions form
+23. Which exact PX4, ROS 2, uXRCE-DDS, sensor-driver, and message versions form
     the pinned and supported full 3D runtime?
-23. Which lidar-inertial and visual-inertial estimators meet the required drift,
+24. Which lidar-inertial and visual-inertial estimators meet the required drift,
     covariance, relocalization, and degraded-state behavior on representative
     indoor environments?
-24. Which volumetric mapper, 3D frontier implementation, route search, and
+25. Which volumetric mapper, 3D frontier implementation, route search, and
     trajectory generator meet the required update rate and deterministic
     failure behavior under flight-compute load?
-25. What measured sensor coverage, vertical-corridor observation, clearance,
+26. What measured sensor coverage, vertical-corridor observation, clearance,
     estimator quality, and return-route thresholds permit deliberate climb or
     descent?
 
@@ -2589,32 +3011,48 @@ product:
 ### Incident operations slice
 
 1. Add a local incident model and manual incident creation.
-   Do not add a mock or external runtime connector.
+   Do not add a mock or external runtime connector. **Implemented.**
 2. Add an Operations workspace with incident and aircraft map layers.
+   **Implemented, including zoom-dependent label decluttering.**
 3. Add Respond to Incident using Hold at Staging or Offset Observe by default.
-4. Add operator-reviewed Bounded Area Scan and stepped-altitude Bounded Orbit
-   with explicit levels, laps, and transitions.
+   **Implemented. Hold at Staging pauses as `STAGED` without incident targeting;
+   Offset Observe uses acknowledged Hold and incident gimbal behavior.**
+4. Add operator-reviewed Bounded Area Scan and single-level Bounded Orbit;
+   retain stepped levels, laps, and transitions as an explicit later extension.
+   **Area Scan and single-level Bounded Orbit are implemented in Batch 10;
+   serial single-level PX4 SITL acceptance passed on 19 July 2026, while
+   stepped-level planning and execution remain intentionally missing.**
 5. Add OS NGD and Building Height Attribute checks that report known-building
    intersections, unknown heights, and dataset provenance without claiming an
    obstacle-free route.
+   **Implemented in Batch 10 for configurable offline provenance-bound GeoJSON
+   snapshots.**
 6. Link the resulting mission run and events back to the incident.
+   **Implemented.**
 7. Add a map/video Split layout and critical video HUD.
+   **Implemented.**
 8. Introduce durable action timeout, retry, and failure-policy state for the
    first reusable arrival actions.
+   **Implemented.**
 9. Add local source-RTSP recording with segmented files, atomic finalization,
    checksums, disk guardrails, manifests, and evidence-gap events.
+   **Implemented.**
+   **Implemented in Batch 9.**
 
 ### Tracking foundation slice
 
 1. Insert an Atlas-owned tracker stage after normalized Hailo detections.
-2. Implement BoT-SORT and ByteTrack behind one interface.
-3. Configure BoT-SORT as the default with camera-motion compensation enabled
-   and ReID disabled.
+   **Implemented.**
+2. Implement plain ByteTrack and ByteTrack CMC behind one interface. **Implemented.**
+3. Configure ByteTrack as the default and expose confidence-gated CMC as the
+   aerial candidate with ReID disabled. **Implemented.**
 4. Add tracker health, reset behavior, stream/session identity, and performance
-   measurements.
-5. Add bounded persistent track state and operator selection.
-6. Prototype gimbal-only Follow with Camera under the existing payload-control
-   ownership model.
+   measurements. **Health, reset, and identity implemented; target performance
+   acceptance remains open.**
+5. Add bounded persistent track state. **Implemented.**
+6. Add operator track selection and durable selection events. **Implemented.**
+7. Prototype gimbal-only Follow with Camera under the existing payload-control
+   ownership model. **Implemented.**
 
 These slices can progress independently but converge in the mission timeline:
 the incident explains why the aircraft is deployed, while persistent tracks and
@@ -2624,6 +3062,9 @@ Detection geolocation and aircraft Follow from Standoff should begin as a
 separate engineering program after the tracker foundation. They require new
 telemetry, calibration, time-correlation, uncertainty, and dynamic-control
 boundaries and should not be hidden inside the first tracker implementation.
+The bounded pose/gimbal timeline and initial video/autopilot clock correlation
+are now implemented; calibrated projection, complete uncertainty, surveyed
+validation, and the aircraft-control boundary remain open.
 
 The OAK-D Lite and H-Flow integrations start only after the physical hardware is
 installed. Their future presence must not be assumed by the MVP route planner,

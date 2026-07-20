@@ -85,6 +85,11 @@ const (
 	VehicleCommandType_VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END   VehicleCommandType = 9
 	VehicleCommandType_VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI        VehicleCommandType = 10
 	VehicleCommandType_VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM       VehicleCommandType = 11
+	VehicleCommandType_VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START   VehicleCommandType = 12
+	VehicleCommandType_VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP    VehicleCommandType = 13
+	// Non-actuating request that estimates one exact operator-selected track at
+	// its latest frame-aligned aircraft/gimbal state.
+	VehicleCommandType_VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK VehicleCommandType = 14
 )
 
 // Enum value maps for VehicleCommandType.
@@ -102,20 +107,26 @@ var (
 		9:  "VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END",
 		10: "VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI",
 		11: "VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM",
+		12: "VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START",
+		13: "VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP",
+		14: "VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK",
 	}
 	VehicleCommandType_value = map[string]int32{
-		"VEHICLE_COMMAND_TYPE_UNSPECIFIED":           0,
-		"VEHICLE_COMMAND_TYPE_HOLD":                  1,
-		"VEHICLE_COMMAND_TYPE_RETURN_TO_LAUNCH":      2,
-		"VEHICLE_COMMAND_TYPE_LAND":                  3,
-		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_ANGLES":     4,
-		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_RATES":      5,
-		"VEHICLE_COMMAND_TYPE_GIMBAL_CENTER":         6,
-		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_BEGIN": 7,
-		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_RENEW": 8,
-		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END":   9,
-		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI":        10,
-		"VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM":       11,
+		"VEHICLE_COMMAND_TYPE_UNSPECIFIED":              0,
+		"VEHICLE_COMMAND_TYPE_HOLD":                     1,
+		"VEHICLE_COMMAND_TYPE_RETURN_TO_LAUNCH":         2,
+		"VEHICLE_COMMAND_TYPE_LAND":                     3,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_ANGLES":        4,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_RATES":         5,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_CENTER":            6,
+		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_BEGIN":    7,
+		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_RENEW":    8,
+		"VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END":      9,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI":           10,
+		"VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM":          11,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START":      12,
+		"VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP":       13,
+		"VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK": 14,
 	}
 )
 
@@ -216,6 +227,124 @@ func (VehicleCommandUpdateType) EnumDescriptor() ([]byte, []int) {
 	return file_atlas_ground_station_proto_rawDescGZIP(), []int{2}
 }
 
+// Aircraft following is a separate supervised navigation authority. It never
+// follows image-space pixels and does not inherit a gimbal-follow lease.
+type AircraftFollowControlAction int32
+
+const (
+	AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED AircraftFollowControlAction = 0
+	AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_START       AircraftFollowControlAction = 1
+	AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW       AircraftFollowControlAction = 2
+	AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD        AircraftFollowControlAction = 3
+	AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_END         AircraftFollowControlAction = 4
+)
+
+// Enum value maps for AircraftFollowControlAction.
+var (
+	AircraftFollowControlAction_name = map[int32]string{
+		0: "AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED",
+		1: "AIRCRAFT_FOLLOW_CONTROL_ACTION_START",
+		2: "AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW",
+		3: "AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD",
+		4: "AIRCRAFT_FOLLOW_CONTROL_ACTION_END",
+	}
+	AircraftFollowControlAction_value = map[string]int32{
+		"AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED": 0,
+		"AIRCRAFT_FOLLOW_CONTROL_ACTION_START":       1,
+		"AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW":       2,
+		"AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD":        3,
+		"AIRCRAFT_FOLLOW_CONTROL_ACTION_END":         4,
+	}
+)
+
+func (x AircraftFollowControlAction) Enum() *AircraftFollowControlAction {
+	p := new(AircraftFollowControlAction)
+	*p = x
+	return p
+}
+
+func (x AircraftFollowControlAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AircraftFollowControlAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
+}
+
+func (AircraftFollowControlAction) Type() protoreflect.EnumType {
+	return &file_atlas_ground_station_proto_enumTypes[3]
+}
+
+func (x AircraftFollowControlAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AircraftFollowControlAction.Descriptor instead.
+func (AircraftFollowControlAction) EnumDescriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
+}
+
+type AircraftFollowSessionUpdateType int32
+
+const (
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED   AircraftFollowSessionUpdateType = 0
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING    AircraftFollowSessionUpdateType = 1
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING     AircraftFollowSessionUpdateType = 2
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING     AircraftFollowSessionUpdateType = 3
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD AircraftFollowSessionUpdateType = 4
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED         AircraftFollowSessionUpdateType = 5
+	AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED      AircraftFollowSessionUpdateType = 6
+)
+
+// Enum value maps for AircraftFollowSessionUpdateType.
+var (
+	AircraftFollowSessionUpdateType_name = map[int32]string{
+		0: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED",
+		1: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING",
+		2: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING",
+		3: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING",
+		4: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD",
+		5: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED",
+		6: "AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED",
+	}
+	AircraftFollowSessionUpdateType_value = map[string]int32{
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED":   0,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING":    1,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING":     2,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING":     3,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD": 4,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED":         5,
+		"AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED":      6,
+	}
+)
+
+func (x AircraftFollowSessionUpdateType) Enum() *AircraftFollowSessionUpdateType {
+	p := new(AircraftFollowSessionUpdateType)
+	*p = x
+	return p
+}
+
+func (x AircraftFollowSessionUpdateType) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (AircraftFollowSessionUpdateType) Descriptor() protoreflect.EnumDescriptor {
+	return file_atlas_ground_station_proto_enumTypes[4].Descriptor()
+}
+
+func (AircraftFollowSessionUpdateType) Type() protoreflect.EnumType {
+	return &file_atlas_ground_station_proto_enumTypes[4]
+}
+
+func (x AircraftFollowSessionUpdateType) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use AircraftFollowSessionUpdateType.Descriptor instead.
+func (AircraftFollowSessionUpdateType) EnumDescriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+}
+
 // Mission operations use the same durable request/update boundary as vehicle
 // commands, while retaining a mission-specific lifecycle and progress model.
 type MissionOperationType int32
@@ -263,11 +392,11 @@ func (x MissionOperationType) String() string {
 }
 
 func (MissionOperationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[5].Descriptor()
 }
 
 func (MissionOperationType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[3]
+	return &file_atlas_ground_station_proto_enumTypes[5]
 }
 
 func (x MissionOperationType) Number() protoreflect.EnumNumber {
@@ -276,7 +405,7 @@ func (x MissionOperationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionOperationType.Descriptor instead.
 func (MissionOperationType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
 }
 
 type MissionRunUpdateType int32
@@ -301,7 +430,9 @@ const (
 	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED   MissionRunUpdateType = 16
 	// Runtime mission actions are reported through the mission stream so their
 	// acknowledgement remains ordered with flight progress for the same run.
-	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED MissionRunUpdateType = 17
+	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED    MissionRunUpdateType = 17
+	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED MissionRunUpdateType = 18
+	MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED   MissionRunUpdateType = 19
 )
 
 // Enum value maps for MissionRunUpdateType.
@@ -325,6 +456,8 @@ var (
 		15: "MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED",
 		16: "MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED",
 		17: "MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED",
+		18: "MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED",
+		19: "MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED",
 	}
 	MissionRunUpdateType_value = map[string]int32{
 		"MISSION_RUN_UPDATE_TYPE_UNSPECIFIED":              0,
@@ -345,6 +478,8 @@ var (
 		"MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED": 15,
 		"MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED":   16,
 		"MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED":     17,
+		"MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED":  18,
+		"MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED":    19,
 	}
 )
 
@@ -359,11 +494,11 @@ func (x MissionRunUpdateType) String() string {
 }
 
 func (MissionRunUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[4].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[6].Descriptor()
 }
 
 func (MissionRunUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[4]
+	return &file_atlas_ground_station_proto_enumTypes[6]
 }
 
 func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
@@ -372,7 +507,7 @@ func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionRunUpdateType.Descriptor instead.
 func (MissionRunUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
 }
 
 type MissionActionState int32
@@ -420,11 +555,11 @@ func (x MissionActionState) String() string {
 }
 
 func (MissionActionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[5].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[7].Descriptor()
 }
 
 func (MissionActionState) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[5]
+	return &file_atlas_ground_station_proto_enumTypes[7]
 }
 
 func (x MissionActionState) Number() protoreflect.EnumNumber {
@@ -433,7 +568,7 @@ func (x MissionActionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionActionState.Descriptor instead.
 func (MissionActionState) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
 }
 
 type AgentToGroundStation struct {
@@ -447,6 +582,7 @@ type AgentToGroundStation struct {
 	//	*AgentToGroundStation_StatusText
 	//	*AgentToGroundStation_CommandUpdate
 	//	*AgentToGroundStation_MissionRunUpdate
+	//	*AgentToGroundStation_AircraftFollowSessionUpdate
 	Payload       isAgentToGroundStation_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -550,6 +686,15 @@ func (x *AgentToGroundStation) GetMissionRunUpdate() *MissionRunUpdate {
 	return nil
 }
 
+func (x *AgentToGroundStation) GetAircraftFollowSessionUpdate() *AircraftFollowSessionUpdate {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentToGroundStation_AircraftFollowSessionUpdate); ok {
+			return x.AircraftFollowSessionUpdate
+		}
+	}
+	return nil
+}
+
 type isAgentToGroundStation_Payload interface {
 	isAgentToGroundStation_Payload()
 }
@@ -578,6 +723,10 @@ type AgentToGroundStation_MissionRunUpdate struct {
 	MissionRunUpdate *MissionRunUpdate `protobuf:"bytes,7,opt,name=mission_run_update,json=missionRunUpdate,proto3,oneof"`
 }
 
+type AgentToGroundStation_AircraftFollowSessionUpdate struct {
+	AircraftFollowSessionUpdate *AircraftFollowSessionUpdate `protobuf:"bytes,8,opt,name=aircraft_follow_session_update,json=aircraftFollowSessionUpdate,proto3,oneof"`
+}
+
 func (*AgentToGroundStation_Registration) isAgentToGroundStation_Payload() {}
 
 func (*AgentToGroundStation_Heartbeat) isAgentToGroundStation_Payload() {}
@@ -590,6 +739,8 @@ func (*AgentToGroundStation_CommandUpdate) isAgentToGroundStation_Payload() {}
 
 func (*AgentToGroundStation_MissionRunUpdate) isAgentToGroundStation_Payload() {}
 
+func (*AgentToGroundStation_AircraftFollowSessionUpdate) isAgentToGroundStation_Payload() {}
+
 type GroundStationToAgent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -598,6 +749,8 @@ type GroundStationToAgent struct {
 	//	*GroundStationToAgent_CommandRequest
 	//	*GroundStationToAgent_CommandCancellation
 	//	*GroundStationToAgent_MissionOperationRequest
+	//	*GroundStationToAgent_MissionReconciliationRequest
+	//	*GroundStationToAgent_AircraftFollowControlRequest
 	Payload       isGroundStationToAgent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -676,6 +829,24 @@ func (x *GroundStationToAgent) GetMissionOperationRequest() *MissionOperationReq
 	return nil
 }
 
+func (x *GroundStationToAgent) GetMissionReconciliationRequest() *MissionReconciliationRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*GroundStationToAgent_MissionReconciliationRequest); ok {
+			return x.MissionReconciliationRequest
+		}
+	}
+	return nil
+}
+
+func (x *GroundStationToAgent) GetAircraftFollowControlRequest() *AircraftFollowControlRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*GroundStationToAgent_AircraftFollowControlRequest); ok {
+			return x.AircraftFollowControlRequest
+		}
+	}
+	return nil
+}
+
 type isGroundStationToAgent_Payload interface {
 	isGroundStationToAgent_Payload()
 }
@@ -696,6 +867,14 @@ type GroundStationToAgent_MissionOperationRequest struct {
 	MissionOperationRequest *MissionOperationRequest `protobuf:"bytes,4,opt,name=mission_operation_request,json=missionOperationRequest,proto3,oneof"`
 }
 
+type GroundStationToAgent_MissionReconciliationRequest struct {
+	MissionReconciliationRequest *MissionReconciliationRequest `protobuf:"bytes,5,opt,name=mission_reconciliation_request,json=missionReconciliationRequest,proto3,oneof"`
+}
+
+type GroundStationToAgent_AircraftFollowControlRequest struct {
+	AircraftFollowControlRequest *AircraftFollowControlRequest `protobuf:"bytes,6,opt,name=aircraft_follow_control_request,json=aircraftFollowControlRequest,proto3,oneof"`
+}
+
 func (*GroundStationToAgent_RegistrationAccepted) isGroundStationToAgent_Payload() {}
 
 func (*GroundStationToAgent_CommandRequest) isGroundStationToAgent_Payload() {}
@@ -703,6 +882,10 @@ func (*GroundStationToAgent_CommandRequest) isGroundStationToAgent_Payload() {}
 func (*GroundStationToAgent_CommandCancellation) isGroundStationToAgent_Payload() {}
 
 func (*GroundStationToAgent_MissionOperationRequest) isGroundStationToAgent_Payload() {}
+
+func (*GroundStationToAgent_MissionReconciliationRequest) isGroundStationToAgent_Payload() {}
+
+func (*GroundStationToAgent_AircraftFollowControlRequest) isGroundStationToAgent_Payload() {}
 
 // AgentPerception is deliberately accelerator-neutral. Hailo HEF/TAPPAS,
 // NVIDIA DeepStream/TensorRT, and software ONNX runtimes must translate their
@@ -716,6 +899,7 @@ type AgentPerception struct {
 	//	*AgentPerception_Registration
 	//	*AgentPerception_Frame
 	//	*AgentPerception_Health
+	//	*AgentPerception_TrackUpdates
 	Payload       isAgentPerception_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -799,6 +983,15 @@ func (x *AgentPerception) GetHealth() *PerceptionHealth {
 	return nil
 }
 
+func (x *AgentPerception) GetTrackUpdates() *PerceptionTrackUpdateBatch {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentPerception_TrackUpdates); ok {
+			return x.TrackUpdates
+		}
+	}
+	return nil
+}
+
 type isAgentPerception_Payload interface {
 	isAgentPerception_Payload()
 }
@@ -815,11 +1008,17 @@ type AgentPerception_Health struct {
 	Health *PerceptionHealth `protobuf:"bytes,5,opt,name=health,proto3,oneof"`
 }
 
+type AgentPerception_TrackUpdates struct {
+	TrackUpdates *PerceptionTrackUpdateBatch `protobuf:"bytes,6,opt,name=track_updates,json=trackUpdates,proto3,oneof"`
+}
+
 func (*AgentPerception_Registration) isAgentPerception_Payload() {}
 
 func (*AgentPerception_Frame) isAgentPerception_Payload() {}
 
 func (*AgentPerception_Health) isAgentPerception_Payload() {}
+
+func (*AgentPerception_TrackUpdates) isAgentPerception_Payload() {}
 
 type GroundStationPerception struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -827,6 +1026,7 @@ type GroundStationPerception struct {
 	//
 	//	*GroundStationPerception_StreamAccepted
 	//	*GroundStationPerception_FrameSubscription
+	//	*GroundStationPerception_CountingRules
 	Payload       isGroundStationPerception_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -887,6 +1087,15 @@ func (x *GroundStationPerception) GetFrameSubscription() *PerceptionFrameSubscri
 	return nil
 }
 
+func (x *GroundStationPerception) GetCountingRules() *PerceptionCountingRuleSet {
+	if x != nil {
+		if x, ok := x.Payload.(*GroundStationPerception_CountingRules); ok {
+			return x.CountingRules
+		}
+	}
+	return nil
+}
+
 type isGroundStationPerception_Payload interface {
 	isGroundStationPerception_Payload()
 }
@@ -899,9 +1108,15 @@ type GroundStationPerception_FrameSubscription struct {
 	FrameSubscription *PerceptionFrameSubscription `protobuf:"bytes,2,opt,name=frame_subscription,json=frameSubscription,proto3,oneof"`
 }
 
+type GroundStationPerception_CountingRules struct {
+	CountingRules *PerceptionCountingRuleSet `protobuf:"bytes,3,opt,name=counting_rules,json=countingRules,proto3,oneof"`
+}
+
 func (*GroundStationPerception_StreamAccepted) isGroundStationPerception_Payload() {}
 
 func (*GroundStationPerception_FrameSubscription) isGroundStationPerception_Payload() {}
+
+func (*GroundStationPerception_CountingRules) isGroundStationPerception_Payload() {}
 
 // Native renews short consumer leases while a live view is mounted. The agent
 // keeps inference and health reporting active but suppresses high-rate frame
@@ -1370,6 +1585,710 @@ func (x *PerceptionDetection) GetAttributesJson() string {
 	return ""
 }
 
+// Lifecycle updates are independent of frame subscriptions so Native can
+// persist track state even when no high-rate live-video consumer is mounted.
+type PerceptionTrackUpdateBatch struct {
+	state            protoimpl.MessageState       `protogen:"open.v1"`
+	SourceId         string                       `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	StreamEpoch      string                       `protobuf:"bytes,2,opt,name=stream_epoch,json=streamEpoch,proto3" json:"stream_epoch,omitempty"`
+	TrackSessionId   string                       `protobuf:"bytes,3,opt,name=track_session_id,json=trackSessionId,proto3" json:"track_session_id,omitempty"`
+	TrackerType      string                       `protobuf:"bytes,4,opt,name=tracker_type,json=trackerType,proto3" json:"tracker_type,omitempty"`
+	ObservedAtUnixMs int64                        `protobuf:"varint,5,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	SessionStarted   bool                         `protobuf:"varint,6,opt,name=session_started,json=sessionStarted,proto3" json:"session_started,omitempty"`
+	SessionEnded     bool                         `protobuf:"varint,7,opt,name=session_ended,json=sessionEnded,proto3" json:"session_ended,omitempty"`
+	SessionEndReason string                       `protobuf:"bytes,8,opt,name=session_end_reason,json=sessionEndReason,proto3" json:"session_end_reason,omitempty"`
+	Tracks           []*PerceptionTrackSnapshot   `protobuf:"bytes,9,rep,name=tracks,proto3" json:"tracks,omitempty"`
+	CurrentVisible   uint64                       `protobuf:"varint,10,opt,name=current_visible,json=currentVisible,proto3" json:"current_visible,omitempty"`
+	UniqueConfirmed  uint64                       `protobuf:"varint,11,opt,name=unique_confirmed,json=uniqueConfirmed,proto3" json:"unique_confirmed,omitempty"`
+	RuleCounts       []*PerceptionTrackRuleCount  `protobuf:"bytes,12,rep,name=rule_counts,json=ruleCounts,proto3" json:"rule_counts,omitempty"`
+	CountEvents      []*PerceptionTrackCountEvent `protobuf:"bytes,13,rep,name=count_events,json=countEvents,proto3" json:"count_events,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *PerceptionTrackUpdateBatch) Reset() {
+	*x = PerceptionTrackUpdateBatch{}
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionTrackUpdateBatch) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionTrackUpdateBatch) ProtoMessage() {}
+
+func (x *PerceptionTrackUpdateBatch) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionTrackUpdateBatch.ProtoReflect.Descriptor instead.
+func (*PerceptionTrackUpdateBatch) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *PerceptionTrackUpdateBatch) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackUpdateBatch) GetStreamEpoch() string {
+	if x != nil {
+		return x.StreamEpoch
+	}
+	return ""
+}
+
+func (x *PerceptionTrackUpdateBatch) GetTrackSessionId() string {
+	if x != nil {
+		return x.TrackSessionId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackUpdateBatch) GetTrackerType() string {
+	if x != nil {
+		return x.TrackerType
+	}
+	return ""
+}
+
+func (x *PerceptionTrackUpdateBatch) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *PerceptionTrackUpdateBatch) GetSessionStarted() bool {
+	if x != nil {
+		return x.SessionStarted
+	}
+	return false
+}
+
+func (x *PerceptionTrackUpdateBatch) GetSessionEnded() bool {
+	if x != nil {
+		return x.SessionEnded
+	}
+	return false
+}
+
+func (x *PerceptionTrackUpdateBatch) GetSessionEndReason() string {
+	if x != nil {
+		return x.SessionEndReason
+	}
+	return ""
+}
+
+func (x *PerceptionTrackUpdateBatch) GetTracks() []*PerceptionTrackSnapshot {
+	if x != nil {
+		return x.Tracks
+	}
+	return nil
+}
+
+func (x *PerceptionTrackUpdateBatch) GetCurrentVisible() uint64 {
+	if x != nil {
+		return x.CurrentVisible
+	}
+	return 0
+}
+
+func (x *PerceptionTrackUpdateBatch) GetUniqueConfirmed() uint64 {
+	if x != nil {
+		return x.UniqueConfirmed
+	}
+	return 0
+}
+
+func (x *PerceptionTrackUpdateBatch) GetRuleCounts() []*PerceptionTrackRuleCount {
+	if x != nil {
+		return x.RuleCounts
+	}
+	return nil
+}
+
+func (x *PerceptionTrackUpdateBatch) GetCountEvents() []*PerceptionTrackCountEvent {
+	if x != nil {
+		return x.CountEvents
+	}
+	return nil
+}
+
+type NormalizedPoint struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	X             float64                `protobuf:"fixed64,1,opt,name=x,proto3" json:"x,omitempty"`
+	Y             float64                `protobuf:"fixed64,2,opt,name=y,proto3" json:"y,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NormalizedPoint) Reset() {
+	*x = NormalizedPoint{}
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NormalizedPoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NormalizedPoint) ProtoMessage() {}
+
+func (x *NormalizedPoint) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NormalizedPoint.ProtoReflect.Descriptor instead.
+func (*NormalizedPoint) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *NormalizedPoint) GetX() float64 {
+	if x != nil {
+		return x.X
+	}
+	return 0
+}
+
+func (x *NormalizedPoint) GetY() float64 {
+	if x != nil {
+		return x.Y
+	}
+	return 0
+}
+
+// Native replaces the complete active rule set for one source. Rules use
+// normalized image coordinates so they remain independent of decoder size.
+type PerceptionCountingRuleSet struct {
+	state         protoimpl.MessageState    `protogen:"open.v1"`
+	SourceId      string                    `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	Rules         []*PerceptionCountingRule `protobuf:"bytes,2,rep,name=rules,proto3" json:"rules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PerceptionCountingRuleSet) Reset() {
+	*x = PerceptionCountingRuleSet{}
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionCountingRuleSet) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionCountingRuleSet) ProtoMessage() {}
+
+func (x *PerceptionCountingRuleSet) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionCountingRuleSet.ProtoReflect.Descriptor instead.
+func (*PerceptionCountingRuleSet) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PerceptionCountingRuleSet) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *PerceptionCountingRuleSet) GetRules() []*PerceptionCountingRule {
+	if x != nil {
+		return x.Rules
+	}
+	return nil
+}
+
+type PerceptionCountingRule struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RuleId        string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`
+	RuleType      string                 `protobuf:"bytes,3,opt,name=rule_type,json=ruleType,proto3" json:"rule_type,omitempty"`
+	Revision      uint64                 `protobuf:"varint,4,opt,name=revision,proto3" json:"revision,omitempty"`
+	Points        []*NormalizedPoint     `protobuf:"bytes,5,rep,name=points,proto3" json:"points,omitempty"`
+	ClassIds      []int32                `protobuf:"varint,6,rep,packed,name=class_ids,json=classIds,proto3" json:"class_ids,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PerceptionCountingRule) Reset() {
+	*x = PerceptionCountingRule{}
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionCountingRule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionCountingRule) ProtoMessage() {}
+
+func (x *PerceptionCountingRule) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionCountingRule.ProtoReflect.Descriptor instead.
+func (*PerceptionCountingRule) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PerceptionCountingRule) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *PerceptionCountingRule) GetLabel() string {
+	if x != nil {
+		return x.Label
+	}
+	return ""
+}
+
+func (x *PerceptionCountingRule) GetRuleType() string {
+	if x != nil {
+		return x.RuleType
+	}
+	return ""
+}
+
+func (x *PerceptionCountingRule) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *PerceptionCountingRule) GetPoints() []*NormalizedPoint {
+	if x != nil {
+		return x.Points
+	}
+	return nil
+}
+
+func (x *PerceptionCountingRule) GetClassIds() []int32 {
+	if x != nil {
+		return x.ClassIds
+	}
+	return nil
+}
+
+type PerceptionTrackRuleCount struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RuleId         string                 `protobuf:"bytes,1,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	RuleRevision   uint64                 `protobuf:"varint,2,opt,name=rule_revision,json=ruleRevision,proto3" json:"rule_revision,omitempty"`
+	RuleType       string                 `protobuf:"bytes,3,opt,name=rule_type,json=ruleType,proto3" json:"rule_type,omitempty"`
+	LineForward    uint64                 `protobuf:"varint,4,opt,name=line_forward,json=lineForward,proto3" json:"line_forward,omitempty"`
+	LineReverse    uint64                 `protobuf:"varint,5,opt,name=line_reverse,json=lineReverse,proto3" json:"line_reverse,omitempty"`
+	PolygonEntries uint64                 `protobuf:"varint,6,opt,name=polygon_entries,json=polygonEntries,proto3" json:"polygon_entries,omitempty"`
+	PolygonExits   uint64                 `protobuf:"varint,7,opt,name=polygon_exits,json=polygonExits,proto3" json:"polygon_exits,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PerceptionTrackRuleCount) Reset() {
+	*x = PerceptionTrackRuleCount{}
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionTrackRuleCount) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionTrackRuleCount) ProtoMessage() {}
+
+func (x *PerceptionTrackRuleCount) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionTrackRuleCount.ProtoReflect.Descriptor instead.
+func (*PerceptionTrackRuleCount) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *PerceptionTrackRuleCount) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackRuleCount) GetRuleRevision() uint64 {
+	if x != nil {
+		return x.RuleRevision
+	}
+	return 0
+}
+
+func (x *PerceptionTrackRuleCount) GetRuleType() string {
+	if x != nil {
+		return x.RuleType
+	}
+	return ""
+}
+
+func (x *PerceptionTrackRuleCount) GetLineForward() uint64 {
+	if x != nil {
+		return x.LineForward
+	}
+	return 0
+}
+
+func (x *PerceptionTrackRuleCount) GetLineReverse() uint64 {
+	if x != nil {
+		return x.LineReverse
+	}
+	return 0
+}
+
+func (x *PerceptionTrackRuleCount) GetPolygonEntries() uint64 {
+	if x != nil {
+		return x.PolygonEntries
+	}
+	return 0
+}
+
+func (x *PerceptionTrackRuleCount) GetPolygonExits() uint64 {
+	if x != nil {
+		return x.PolygonExits
+	}
+	return 0
+}
+
+type PerceptionTrackCountEvent struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	EventId          string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	RuleId           string                 `protobuf:"bytes,2,opt,name=rule_id,json=ruleId,proto3" json:"rule_id,omitempty"`
+	RuleRevision     uint64                 `protobuf:"varint,3,opt,name=rule_revision,json=ruleRevision,proto3" json:"rule_revision,omitempty"`
+	TrackSessionId   string                 `protobuf:"bytes,4,opt,name=track_session_id,json=trackSessionId,proto3" json:"track_session_id,omitempty"`
+	TrackId          string                 `protobuf:"bytes,5,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
+	EventType        string                 `protobuf:"bytes,6,opt,name=event_type,json=eventType,proto3" json:"event_type,omitempty"`
+	ObservedAtUnixMs int64                  `protobuf:"varint,7,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	Anchor           *NormalizedPoint       `protobuf:"bytes,8,opt,name=anchor,proto3" json:"anchor,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *PerceptionTrackCountEvent) Reset() {
+	*x = PerceptionTrackCountEvent{}
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionTrackCountEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionTrackCountEvent) ProtoMessage() {}
+
+func (x *PerceptionTrackCountEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionTrackCountEvent.ProtoReflect.Descriptor instead.
+func (*PerceptionTrackCountEvent) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *PerceptionTrackCountEvent) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackCountEvent) GetRuleId() string {
+	if x != nil {
+		return x.RuleId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackCountEvent) GetRuleRevision() uint64 {
+	if x != nil {
+		return x.RuleRevision
+	}
+	return 0
+}
+
+func (x *PerceptionTrackCountEvent) GetTrackSessionId() string {
+	if x != nil {
+		return x.TrackSessionId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackCountEvent) GetTrackId() string {
+	if x != nil {
+		return x.TrackId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackCountEvent) GetEventType() string {
+	if x != nil {
+		return x.EventType
+	}
+	return ""
+}
+
+func (x *PerceptionTrackCountEvent) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *PerceptionTrackCountEvent) GetAnchor() *NormalizedPoint {
+	if x != nil {
+		return x.Anchor
+	}
+	return nil
+}
+
+type PerceptionTrackSnapshot struct {
+	state                     protoimpl.MessageState `protogen:"open.v1"`
+	TrackId                   string                 `protobuf:"bytes,1,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
+	TrackSessionId            string                 `protobuf:"bytes,2,opt,name=track_session_id,json=trackSessionId,proto3" json:"track_session_id,omitempty"`
+	TrackerType               string                 `protobuf:"bytes,3,opt,name=tracker_type,json=trackerType,proto3" json:"tracker_type,omitempty"`
+	LifecycleState            string                 `protobuf:"bytes,4,opt,name=lifecycle_state,json=lifecycleState,proto3" json:"lifecycle_state,omitempty"`
+	Revision                  uint64                 `protobuf:"varint,5,opt,name=revision,proto3" json:"revision,omitempty"`
+	AgeFrames                 uint64                 `protobuf:"varint,6,opt,name=age_frames,json=ageFrames,proto3" json:"age_frames,omitempty"`
+	ObservationCount          uint64                 `protobuf:"varint,7,opt,name=observation_count,json=observationCount,proto3" json:"observation_count,omitempty"`
+	FirstObservedAtUnixMs     int64                  `protobuf:"varint,8,opt,name=first_observed_at_unix_ms,json=firstObservedAtUnixMs,proto3" json:"first_observed_at_unix_ms,omitempty"`
+	LastObservedAtUnixMs      int64                  `protobuf:"varint,9,opt,name=last_observed_at_unix_ms,json=lastObservedAtUnixMs,proto3" json:"last_observed_at_unix_ms,omitempty"`
+	LatestConfirmedBox        *NormalizedBoundingBox `protobuf:"bytes,10,opt,name=latest_confirmed_box,json=latestConfirmedBox,proto3" json:"latest_confirmed_box,omitempty"`
+	LatestDetectionConfidence float64                `protobuf:"fixed64,11,opt,name=latest_detection_confidence,json=latestDetectionConfidence,proto3" json:"latest_detection_confidence,omitempty"`
+	PredictedBox              *NormalizedBoundingBox `protobuf:"bytes,12,opt,name=predicted_box,json=predictedBox,proto3" json:"predicted_box,omitempty"`
+	PredictionConfidence      float64                `protobuf:"fixed64,13,opt,name=prediction_confidence,json=predictionConfidence,proto3" json:"prediction_confidence,omitempty"`
+	ClosedAtUnixMs            int64                  `protobuf:"varint,14,opt,name=closed_at_unix_ms,json=closedAtUnixMs,proto3" json:"closed_at_unix_ms,omitempty"`
+	ClosureReason             string                 `protobuf:"bytes,15,opt,name=closure_reason,json=closureReason,proto3" json:"closure_reason,omitempty"`
+	ClassId                   int32                  `protobuf:"varint,16,opt,name=class_id,json=classId,proto3" json:"class_id,omitempty"`
+	ClassLabel                string                 `protobuf:"bytes,17,opt,name=class_label,json=classLabel,proto3" json:"class_label,omitempty"`
+	UpdateReason              string                 `protobuf:"bytes,18,opt,name=update_reason,json=updateReason,proto3" json:"update_reason,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
+}
+
+func (x *PerceptionTrackSnapshot) Reset() {
+	*x = PerceptionTrackSnapshot{}
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionTrackSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionTrackSnapshot) ProtoMessage() {}
+
+func (x *PerceptionTrackSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionTrackSnapshot.ProtoReflect.Descriptor instead.
+func (*PerceptionTrackSnapshot) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *PerceptionTrackSnapshot) GetTrackId() string {
+	if x != nil {
+		return x.TrackId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetTrackSessionId() string {
+	if x != nil {
+		return x.TrackSessionId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetTrackerType() string {
+	if x != nil {
+		return x.TrackerType
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetLifecycleState() string {
+	if x != nil {
+		return x.LifecycleState
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetRevision() uint64 {
+	if x != nil {
+		return x.Revision
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetAgeFrames() uint64 {
+	if x != nil {
+		return x.AgeFrames
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetObservationCount() uint64 {
+	if x != nil {
+		return x.ObservationCount
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetFirstObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.FirstObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetLastObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.LastObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetLatestConfirmedBox() *NormalizedBoundingBox {
+	if x != nil {
+		return x.LatestConfirmedBox
+	}
+	return nil
+}
+
+func (x *PerceptionTrackSnapshot) GetLatestDetectionConfidence() float64 {
+	if x != nil {
+		return x.LatestDetectionConfidence
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetPredictedBox() *NormalizedBoundingBox {
+	if x != nil {
+		return x.PredictedBox
+	}
+	return nil
+}
+
+func (x *PerceptionTrackSnapshot) GetPredictionConfidence() float64 {
+	if x != nil {
+		return x.PredictionConfidence
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetClosedAtUnixMs() int64 {
+	if x != nil {
+		return x.ClosedAtUnixMs
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetClosureReason() string {
+	if x != nil {
+		return x.ClosureReason
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetClassId() int32 {
+	if x != nil {
+		return x.ClassId
+	}
+	return 0
+}
+
+func (x *PerceptionTrackSnapshot) GetClassLabel() string {
+	if x != nil {
+		return x.ClassLabel
+	}
+	return ""
+}
+
+func (x *PerceptionTrackSnapshot) GetUpdateReason() string {
+	if x != nil {
+		return x.UpdateReason
+	}
+	return ""
+}
+
 type NormalizedBoundingBox struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	X             float64                `protobuf:"fixed64,1,opt,name=x,proto3" json:"x,omitempty"`
@@ -1382,7 +2301,7 @@ type NormalizedBoundingBox struct {
 
 func (x *NormalizedBoundingBox) Reset() {
 	*x = NormalizedBoundingBox{}
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1394,7 +2313,7 @@ func (x *NormalizedBoundingBox) String() string {
 func (*NormalizedBoundingBox) ProtoMessage() {}
 
 func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1407,7 +2326,7 @@ func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedBoundingBox.ProtoReflect.Descriptor instead.
 func (*NormalizedBoundingBox) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *NormalizedBoundingBox) GetX() float64 {
@@ -1454,13 +2373,17 @@ type PerceptionHealth struct {
 	LastError             string                   `protobuf:"bytes,12,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
 	Model                 *PerceptionModelIdentity `protobuf:"bytes,13,opt,name=model,proto3" json:"model,omitempty"`
 	ObservedAtUnixMs      int64                    `protobuf:"varint,14,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	unknownFields         protoimpl.UnknownFields
-	sizeCache             protoimpl.SizeCache
+	// ACTIVE and INACTIVE are healthy observed states. FAILED means the runtime
+	// could not satisfy its desired activation state.
+	ActivationState string                    `protobuf:"bytes,15,opt,name=activation_state,json=activationState,proto3" json:"activation_state,omitempty"`
+	Tracking        *PerceptionTrackingHealth `protobuf:"bytes,16,opt,name=tracking,proto3" json:"tracking,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *PerceptionHealth) Reset() {
 	*x = PerceptionHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1472,7 +2395,7 @@ func (x *PerceptionHealth) String() string {
 func (*PerceptionHealth) ProtoMessage() {}
 
 func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1485,7 +2408,7 @@ func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionHealth.ProtoReflect.Descriptor instead.
 func (*PerceptionHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PerceptionHealth) GetSourceId() string {
@@ -1586,6 +2509,138 @@ func (x *PerceptionHealth) GetObservedAtUnixMs() int64 {
 	return 0
 }
 
+func (x *PerceptionHealth) GetActivationState() string {
+	if x != nil {
+		return x.ActivationState
+	}
+	return ""
+}
+
+func (x *PerceptionHealth) GetTracking() *PerceptionTrackingHealth {
+	if x != nil {
+		return x.Tracking
+	}
+	return nil
+}
+
+// Tracking health describes temporary object association, not the identity of
+// a person or vehicle. session_id changes whenever continuity is not safe.
+type PerceptionTrackingHealth struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Algorithm              string                 `protobuf:"bytes,1,opt,name=algorithm,proto3" json:"algorithm,omitempty"`
+	State                  string                 `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
+	SessionId              string                 `protobuf:"bytes,3,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	LastResetReason        string                 `protobuf:"bytes,4,opt,name=last_reset_reason,json=lastResetReason,proto3" json:"last_reset_reason,omitempty"`
+	ResetCount             uint64                 `protobuf:"varint,5,opt,name=reset_count,json=resetCount,proto3" json:"reset_count,omitempty"`
+	LastError              string                 `protobuf:"bytes,6,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	CameraMotionState      string                 `protobuf:"bytes,7,opt,name=camera_motion_state,json=cameraMotionState,proto3" json:"camera_motion_state,omitempty"`
+	CameraMotionMethod     string                 `protobuf:"bytes,8,opt,name=camera_motion_method,json=cameraMotionMethod,proto3" json:"camera_motion_method,omitempty"`
+	CameraMotionConfidence float64                `protobuf:"fixed64,9,opt,name=camera_motion_confidence,json=cameraMotionConfidence,proto3" json:"camera_motion_confidence,omitempty"`
+	ReIdEnabled            bool                   `protobuf:"varint,10,opt,name=re_id_enabled,json=reIdEnabled,proto3" json:"re_id_enabled,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *PerceptionTrackingHealth) Reset() {
+	*x = PerceptionTrackingHealth{}
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PerceptionTrackingHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PerceptionTrackingHealth) ProtoMessage() {}
+
+func (x *PerceptionTrackingHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PerceptionTrackingHealth.ProtoReflect.Descriptor instead.
+func (*PerceptionTrackingHealth) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PerceptionTrackingHealth) GetAlgorithm() string {
+	if x != nil {
+		return x.Algorithm
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetLastResetReason() string {
+	if x != nil {
+		return x.LastResetReason
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetResetCount() uint64 {
+	if x != nil {
+		return x.ResetCount
+	}
+	return 0
+}
+
+func (x *PerceptionTrackingHealth) GetLastError() string {
+	if x != nil {
+		return x.LastError
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetCameraMotionState() string {
+	if x != nil {
+		return x.CameraMotionState
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetCameraMotionMethod() string {
+	if x != nil {
+		return x.CameraMotionMethod
+	}
+	return ""
+}
+
+func (x *PerceptionTrackingHealth) GetCameraMotionConfidence() float64 {
+	if x != nil {
+		return x.CameraMotionConfidence
+	}
+	return 0
+}
+
+func (x *PerceptionTrackingHealth) GetReIdEnabled() bool {
+	if x != nil {
+		return x.ReIdEnabled
+	}
+	return false
+}
+
 type AgentRegistration struct {
 	state                 protoimpl.MessageState      `protogen:"open.v1"`
 	RegistrationRequestId string                      `protobuf:"bytes,1,opt,name=registration_request_id,json=registrationRequestId,proto3" json:"registration_request_id,omitempty"`
@@ -1603,7 +2658,7 @@ type AgentRegistration struct {
 
 func (x *AgentRegistration) Reset() {
 	*x = AgentRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1615,7 +2670,7 @@ func (x *AgentRegistration) String() string {
 func (*AgentRegistration) ProtoMessage() {}
 
 func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1628,7 +2683,7 @@ func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRegistration.ProtoReflect.Descriptor instead.
 func (*AgentRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentRegistration) GetRegistrationRequestId() string {
@@ -1709,7 +2764,7 @@ type DeviceProfile struct {
 
 func (x *DeviceProfile) Reset() {
 	*x = DeviceProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1721,7 +2776,7 @@ func (x *DeviceProfile) String() string {
 func (*DeviceProfile) ProtoMessage() {}
 
 func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1734,7 +2789,7 @@ func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceProfile.ProtoReflect.Descriptor instead.
 func (*DeviceProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeviceProfile) GetDeviceName() string {
@@ -1799,7 +2854,7 @@ type DroneProfile struct {
 
 func (x *DroneProfile) Reset() {
 	*x = DroneProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1811,7 +2866,7 @@ func (x *DroneProfile) String() string {
 func (*DroneProfile) ProtoMessage() {}
 
 func (x *DroneProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1824,7 +2879,7 @@ func (x *DroneProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DroneProfile.ProtoReflect.Descriptor instead.
 func (*DroneProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DroneProfile) GetDroneId() string {
@@ -1875,7 +2930,7 @@ type FlightControllerAttachment struct {
 
 func (x *FlightControllerAttachment) Reset() {
 	*x = FlightControllerAttachment{}
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1887,7 +2942,7 @@ func (x *FlightControllerAttachment) String() string {
 func (*FlightControllerAttachment) ProtoMessage() {}
 
 func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1900,7 +2955,7 @@ func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlightControllerAttachment.ProtoReflect.Descriptor instead.
 func (*FlightControllerAttachment) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FlightControllerAttachment) GetTransport() string {
@@ -1947,7 +3002,7 @@ type AgentHeartbeat struct {
 
 func (x *AgentHeartbeat) Reset() {
 	*x = AgentHeartbeat{}
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1959,7 +3014,7 @@ func (x *AgentHeartbeat) String() string {
 func (*AgentHeartbeat) ProtoMessage() {}
 
 func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1972,7 +3027,7 @@ func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentHeartbeat.ProtoReflect.Descriptor instead.
 func (*AgentHeartbeat) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AgentHeartbeat) GetObservedAtUnixMs() int64 {
@@ -2020,7 +3075,7 @@ type AircraftTelemetry struct {
 
 func (x *AircraftTelemetry) Reset() {
 	*x = AircraftTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2032,7 +3087,7 @@ func (x *AircraftTelemetry) String() string {
 func (*AircraftTelemetry) ProtoMessage() {}
 
 func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2045,7 +3100,7 @@ func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftTelemetry.ProtoReflect.Descriptor instead.
 func (*AircraftTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AircraftTelemetry) GetObservedAtUnixMs() int64 {
@@ -2253,7 +3308,7 @@ type BatteryTelemetry struct {
 
 func (x *BatteryTelemetry) Reset() {
 	*x = BatteryTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2265,7 +3320,7 @@ func (x *BatteryTelemetry) String() string {
 func (*BatteryTelemetry) ProtoMessage() {}
 
 func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2278,7 +3333,7 @@ func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatteryTelemetry.ProtoReflect.Descriptor instead.
 func (*BatteryTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *BatteryTelemetry) GetId() uint32 {
@@ -2352,7 +3407,7 @@ type VehicleHealth struct {
 
 func (x *VehicleHealth) Reset() {
 	*x = VehicleHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2364,7 +3419,7 @@ func (x *VehicleHealth) String() string {
 func (*VehicleHealth) ProtoMessage() {}
 
 func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2377,7 +3432,7 @@ func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleHealth.ProtoReflect.Descriptor instead.
 func (*VehicleHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *VehicleHealth) GetGyrometerCalibrationOk() bool {
@@ -2440,7 +3495,7 @@ type RcStatus struct {
 
 func (x *RcStatus) Reset() {
 	*x = RcStatus{}
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2452,7 +3507,7 @@ func (x *RcStatus) String() string {
 func (*RcStatus) ProtoMessage() {}
 
 func (x *RcStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2465,7 +3520,7 @@ func (x *RcStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RcStatus.ProtoReflect.Descriptor instead.
 func (*RcStatus) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RcStatus) GetAvailable() bool {
@@ -2501,7 +3556,7 @@ type HomePosition struct {
 
 func (x *HomePosition) Reset() {
 	*x = HomePosition{}
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2513,7 +3568,7 @@ func (x *HomePosition) String() string {
 func (*HomePosition) ProtoMessage() {}
 
 func (x *HomePosition) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2526,7 +3581,7 @@ func (x *HomePosition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HomePosition.ProtoReflect.Descriptor instead.
 func (*HomePosition) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *HomePosition) GetLatitude() float64 {
@@ -2571,7 +3626,7 @@ type GpsQuality struct {
 
 func (x *GpsQuality) Reset() {
 	*x = GpsQuality{}
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2583,7 +3638,7 @@ func (x *GpsQuality) String() string {
 func (*GpsQuality) ProtoMessage() {}
 
 func (x *GpsQuality) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2596,7 +3651,7 @@ func (x *GpsQuality) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpsQuality.ProtoReflect.Descriptor instead.
 func (*GpsQuality) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GpsQuality) GetHdop() float64 {
@@ -2655,7 +3710,7 @@ type AgentStatusText struct {
 
 func (x *AgentStatusText) Reset() {
 	*x = AgentStatusText{}
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2667,7 +3722,7 @@ func (x *AgentStatusText) String() string {
 func (*AgentStatusText) ProtoMessage() {}
 
 func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2680,7 +3735,7 @@ func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStatusText.ProtoReflect.Descriptor instead.
 func (*AgentStatusText) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentStatusText) GetObservedAtUnixMs() int64 {
@@ -2724,7 +3779,7 @@ type RegistrationAccepted struct {
 
 func (x *RegistrationAccepted) Reset() {
 	*x = RegistrationAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2736,7 +3791,7 @@ func (x *RegistrationAccepted) String() string {
 func (*RegistrationAccepted) ProtoMessage() {}
 
 func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2749,7 +3804,7 @@ func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegistrationAccepted.ProtoReflect.Descriptor instead.
 func (*RegistrationAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RegistrationAccepted) GetAgentId() string {
@@ -2802,7 +3857,7 @@ type VehicleCommandRequest struct {
 
 func (x *VehicleCommandRequest) Reset() {
 	*x = VehicleCommandRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2814,7 +3869,7 @@ func (x *VehicleCommandRequest) String() string {
 func (*VehicleCommandRequest) ProtoMessage() {}
 
 func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2827,7 +3882,7 @@ func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandRequest.ProtoReflect.Descriptor instead.
 func (*VehicleCommandRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *VehicleCommandRequest) GetCommandId() string {
@@ -2889,7 +3944,7 @@ type VehicleCommandCancellation struct {
 
 func (x *VehicleCommandCancellation) Reset() {
 	*x = VehicleCommandCancellation{}
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2901,7 +3956,7 @@ func (x *VehicleCommandCancellation) String() string {
 func (*VehicleCommandCancellation) ProtoMessage() {}
 
 func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2914,7 +3969,7 @@ func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandCancellation.ProtoReflect.Descriptor instead.
 func (*VehicleCommandCancellation) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *VehicleCommandCancellation) GetCommandId() string {
@@ -2947,7 +4002,7 @@ type VehicleCommandUpdate struct {
 
 func (x *VehicleCommandUpdate) Reset() {
 	*x = VehicleCommandUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2959,7 +4014,7 @@ func (x *VehicleCommandUpdate) String() string {
 func (*VehicleCommandUpdate) ProtoMessage() {}
 
 func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2972,7 +4027,7 @@ func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandUpdate.ProtoReflect.Descriptor instead.
 func (*VehicleCommandUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *VehicleCommandUpdate) GetEventId() string {
@@ -3031,6 +4086,542 @@ func (x *VehicleCommandUpdate) GetEvidenceJson() string {
 	return ""
 }
 
+type AircraftFollowEnvelope struct {
+	state                          protoimpl.MessageState `protogen:"open.v1"`
+	StandoffM                      float64                `protobuf:"fixed64,1,opt,name=standoff_m,json=standoffM,proto3" json:"standoff_m,omitempty"`
+	AltitudeRelativeM              float64                `protobuf:"fixed64,2,opt,name=altitude_relative_m,json=altitudeRelativeM,proto3" json:"altitude_relative_m,omitempty"`
+	MinimumAltitudeRelativeM       float64                `protobuf:"fixed64,3,opt,name=minimum_altitude_relative_m,json=minimumAltitudeRelativeM,proto3" json:"minimum_altitude_relative_m,omitempty"`
+	MaximumAltitudeRelativeM       float64                `protobuf:"fixed64,4,opt,name=maximum_altitude_relative_m,json=maximumAltitudeRelativeM,proto3" json:"maximum_altitude_relative_m,omitempty"`
+	MaximumGroundSpeedMS           float64                `protobuf:"fixed64,5,opt,name=maximum_ground_speed_m_s,json=maximumGroundSpeedMS,proto3" json:"maximum_ground_speed_m_s,omitempty"`
+	MaximumAccelerationMS2         float64                `protobuf:"fixed64,6,opt,name=maximum_acceleration_m_s2,json=maximumAccelerationMS2,proto3" json:"maximum_acceleration_m_s2,omitempty"`
+	MaximumDurationMs              int64                  `protobuf:"varint,7,opt,name=maximum_duration_ms,json=maximumDurationMs,proto3" json:"maximum_duration_ms,omitempty"`
+	BoundaryCenterLatitude         float64                `protobuf:"fixed64,8,opt,name=boundary_center_latitude,json=boundaryCenterLatitude,proto3" json:"boundary_center_latitude,omitempty"`
+	BoundaryCenterLongitude        float64                `protobuf:"fixed64,9,opt,name=boundary_center_longitude,json=boundaryCenterLongitude,proto3" json:"boundary_center_longitude,omitempty"`
+	BoundaryRadiusM                float64                `protobuf:"fixed64,10,opt,name=boundary_radius_m,json=boundaryRadiusM,proto3" json:"boundary_radius_m,omitempty"`
+	MinimumBatteryPercent          float64                `protobuf:"fixed64,11,opt,name=minimum_battery_percent,json=minimumBatteryPercent,proto3" json:"minimum_battery_percent,omitempty"`
+	MinimumTrackConfidence         float64                `protobuf:"fixed64,12,opt,name=minimum_track_confidence,json=minimumTrackConfidence,proto3" json:"minimum_track_confidence,omitempty"`
+	MaximumGeolocationUncertaintyM float64                `protobuf:"fixed64,13,opt,name=maximum_geolocation_uncertainty_m,json=maximumGeolocationUncertaintyM,proto3" json:"maximum_geolocation_uncertainty_m,omitempty"`
+	MaximumVelocityUncertaintyMS   float64                `protobuf:"fixed64,14,opt,name=maximum_velocity_uncertainty_m_s,json=maximumVelocityUncertaintyMS,proto3" json:"maximum_velocity_uncertainty_m_s,omitempty"`
+	unknownFields                  protoimpl.UnknownFields
+	sizeCache                      protoimpl.SizeCache
+}
+
+func (x *AircraftFollowEnvelope) Reset() {
+	*x = AircraftFollowEnvelope{}
+	mi := &file_atlas_ground_station_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AircraftFollowEnvelope) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AircraftFollowEnvelope) ProtoMessage() {}
+
+func (x *AircraftFollowEnvelope) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AircraftFollowEnvelope.ProtoReflect.Descriptor instead.
+func (*AircraftFollowEnvelope) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *AircraftFollowEnvelope) GetStandoffM() float64 {
+	if x != nil {
+		return x.StandoffM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetAltitudeRelativeM() float64 {
+	if x != nil {
+		return x.AltitudeRelativeM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMinimumAltitudeRelativeM() float64 {
+	if x != nil {
+		return x.MinimumAltitudeRelativeM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumAltitudeRelativeM() float64 {
+	if x != nil {
+		return x.MaximumAltitudeRelativeM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumGroundSpeedMS() float64 {
+	if x != nil {
+		return x.MaximumGroundSpeedMS
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumAccelerationMS2() float64 {
+	if x != nil {
+		return x.MaximumAccelerationMS2
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumDurationMs() int64 {
+	if x != nil {
+		return x.MaximumDurationMs
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetBoundaryCenterLatitude() float64 {
+	if x != nil {
+		return x.BoundaryCenterLatitude
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetBoundaryCenterLongitude() float64 {
+	if x != nil {
+		return x.BoundaryCenterLongitude
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetBoundaryRadiusM() float64 {
+	if x != nil {
+		return x.BoundaryRadiusM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMinimumBatteryPercent() float64 {
+	if x != nil {
+		return x.MinimumBatteryPercent
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMinimumTrackConfidence() float64 {
+	if x != nil {
+		return x.MinimumTrackConfidence
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumGeolocationUncertaintyM() float64 {
+	if x != nil {
+		return x.MaximumGeolocationUncertaintyM
+	}
+	return 0
+}
+
+func (x *AircraftFollowEnvelope) GetMaximumVelocityUncertaintyMS() float64 {
+	if x != nil {
+		return x.MaximumVelocityUncertaintyMS
+	}
+	return 0
+}
+
+type AircraftFollowTargetState struct {
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	GeolocationId          string                 `protobuf:"bytes,1,opt,name=geolocation_id,json=geolocationId,proto3" json:"geolocation_id,omitempty"`
+	SelectionId            string                 `protobuf:"bytes,2,opt,name=selection_id,json=selectionId,proto3" json:"selection_id,omitempty"`
+	SourceId               string                 `protobuf:"bytes,3,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	TrackSessionId         string                 `protobuf:"bytes,4,opt,name=track_session_id,json=trackSessionId,proto3" json:"track_session_id,omitempty"`
+	TrackId                string                 `protobuf:"bytes,5,opt,name=track_id,json=trackId,proto3" json:"track_id,omitempty"`
+	ObservedAtUnixMs       int64                  `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	Latitude               float64                `protobuf:"fixed64,7,opt,name=latitude,proto3" json:"latitude,omitempty"`
+	Longitude              float64                `protobuf:"fixed64,8,opt,name=longitude,proto3" json:"longitude,omitempty"`
+	AltitudeAmslM          float64                `protobuf:"fixed64,9,opt,name=altitude_amsl_m,json=altitudeAmslM,proto3" json:"altitude_amsl_m,omitempty"`
+	VelocityNorthMS        float64                `protobuf:"fixed64,10,opt,name=velocity_north_m_s,json=velocityNorthMS,proto3" json:"velocity_north_m_s,omitempty"`
+	VelocityEastMS         float64                `protobuf:"fixed64,11,opt,name=velocity_east_m_s,json=velocityEastMS,proto3" json:"velocity_east_m_s,omitempty"`
+	HorizontalUncertaintyM float64                `protobuf:"fixed64,12,opt,name=horizontal_uncertainty_m,json=horizontalUncertaintyM,proto3" json:"horizontal_uncertainty_m,omitempty"`
+	VelocityUncertaintyMS  float64                `protobuf:"fixed64,13,opt,name=velocity_uncertainty_m_s,json=velocityUncertaintyMS,proto3" json:"velocity_uncertainty_m_s,omitempty"`
+	TrackConfidence        float64                `protobuf:"fixed64,14,opt,name=track_confidence,json=trackConfidence,proto3" json:"track_confidence,omitempty"`
+	LifecycleState         string                 `protobuf:"bytes,15,opt,name=lifecycle_state,json=lifecycleState,proto3" json:"lifecycle_state,omitempty"`
+	MotionStatus           string                 `protobuf:"bytes,16,opt,name=motion_status,json=motionStatus,proto3" json:"motion_status,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *AircraftFollowTargetState) Reset() {
+	*x = AircraftFollowTargetState{}
+	mi := &file_atlas_ground_station_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AircraftFollowTargetState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AircraftFollowTargetState) ProtoMessage() {}
+
+func (x *AircraftFollowTargetState) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AircraftFollowTargetState.ProtoReflect.Descriptor instead.
+func (*AircraftFollowTargetState) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *AircraftFollowTargetState) GetGeolocationId() string {
+	if x != nil {
+		return x.GeolocationId
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetSelectionId() string {
+	if x != nil {
+		return x.SelectionId
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetTrackSessionId() string {
+	if x != nil {
+		return x.TrackSessionId
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetTrackId() string {
+	if x != nil {
+		return x.TrackId
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetLatitude() float64 {
+	if x != nil {
+		return x.Latitude
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetLongitude() float64 {
+	if x != nil {
+		return x.Longitude
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetAltitudeAmslM() float64 {
+	if x != nil {
+		return x.AltitudeAmslM
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetVelocityNorthMS() float64 {
+	if x != nil {
+		return x.VelocityNorthMS
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetVelocityEastMS() float64 {
+	if x != nil {
+		return x.VelocityEastMS
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetHorizontalUncertaintyM() float64 {
+	if x != nil {
+		return x.HorizontalUncertaintyM
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetVelocityUncertaintyMS() float64 {
+	if x != nil {
+		return x.VelocityUncertaintyMS
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetTrackConfidence() float64 {
+	if x != nil {
+		return x.TrackConfidence
+	}
+	return 0
+}
+
+func (x *AircraftFollowTargetState) GetLifecycleState() string {
+	if x != nil {
+		return x.LifecycleState
+	}
+	return ""
+}
+
+func (x *AircraftFollowTargetState) GetMotionStatus() string {
+	if x != nil {
+		return x.MotionStatus
+	}
+	return ""
+}
+
+type AircraftFollowControlRequest struct {
+	state                        protoimpl.MessageState      `protogen:"open.v1"`
+	OperationId                  string                      `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	FollowSessionId              string                      `protobuf:"bytes,2,opt,name=follow_session_id,json=followSessionId,proto3" json:"follow_session_id,omitempty"`
+	DroneId                      string                      `protobuf:"bytes,3,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
+	Action                       AircraftFollowControlAction `protobuf:"varint,4,opt,name=action,proto3,enum=atlas.groundstation.v1.AircraftFollowControlAction" json:"action,omitempty"`
+	Envelope                     *AircraftFollowEnvelope     `protobuf:"bytes,5,opt,name=envelope,proto3" json:"envelope,omitempty"`
+	Target                       *AircraftFollowTargetState  `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
+	OperatorLeaseExpiresAtUnixMs int64                       `protobuf:"varint,7,opt,name=operator_lease_expires_at_unix_ms,json=operatorLeaseExpiresAtUnixMs,proto3" json:"operator_lease_expires_at_unix_ms,omitempty"`
+	RequestedAtUnixMs            int64                       `protobuf:"varint,8,opt,name=requested_at_unix_ms,json=requestedAtUnixMs,proto3" json:"requested_at_unix_ms,omitempty"`
+	ReasonCode                   string                      `protobuf:"bytes,9,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
+	Reason                       string                      `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
+	ValidationReference          string                      `protobuf:"bytes,11,opt,name=validation_reference,json=validationReference,proto3" json:"validation_reference,omitempty"`
+	unknownFields                protoimpl.UnknownFields
+	sizeCache                    protoimpl.SizeCache
+}
+
+func (x *AircraftFollowControlRequest) Reset() {
+	*x = AircraftFollowControlRequest{}
+	mi := &file_atlas_ground_station_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AircraftFollowControlRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AircraftFollowControlRequest) ProtoMessage() {}
+
+func (x *AircraftFollowControlRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AircraftFollowControlRequest.ProtoReflect.Descriptor instead.
+func (*AircraftFollowControlRequest) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *AircraftFollowControlRequest) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *AircraftFollowControlRequest) GetFollowSessionId() string {
+	if x != nil {
+		return x.FollowSessionId
+	}
+	return ""
+}
+
+func (x *AircraftFollowControlRequest) GetDroneId() string {
+	if x != nil {
+		return x.DroneId
+	}
+	return ""
+}
+
+func (x *AircraftFollowControlRequest) GetAction() AircraftFollowControlAction {
+	if x != nil {
+		return x.Action
+	}
+	return AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED
+}
+
+func (x *AircraftFollowControlRequest) GetEnvelope() *AircraftFollowEnvelope {
+	if x != nil {
+		return x.Envelope
+	}
+	return nil
+}
+
+func (x *AircraftFollowControlRequest) GetTarget() *AircraftFollowTargetState {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+func (x *AircraftFollowControlRequest) GetOperatorLeaseExpiresAtUnixMs() int64 {
+	if x != nil {
+		return x.OperatorLeaseExpiresAtUnixMs
+	}
+	return 0
+}
+
+func (x *AircraftFollowControlRequest) GetRequestedAtUnixMs() int64 {
+	if x != nil {
+		return x.RequestedAtUnixMs
+	}
+	return 0
+}
+
+func (x *AircraftFollowControlRequest) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+func (x *AircraftFollowControlRequest) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+func (x *AircraftFollowControlRequest) GetValidationReference() string {
+	if x != nil {
+		return x.ValidationReference
+	}
+	return ""
+}
+
+type AircraftFollowSessionUpdate struct {
+	state            protoimpl.MessageState          `protogen:"open.v1"`
+	EventId          string                          `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	OperationId      string                          `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
+	FollowSessionId  string                          `protobuf:"bytes,3,opt,name=follow_session_id,json=followSessionId,proto3" json:"follow_session_id,omitempty"`
+	UpdateType       AircraftFollowSessionUpdateType `protobuf:"varint,4,opt,name=update_type,json=updateType,proto3,enum=atlas.groundstation.v1.AircraftFollowSessionUpdateType" json:"update_type,omitempty"`
+	ObservedAtUnixMs int64                           `protobuf:"varint,5,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
+	ReasonCode       string                          `protobuf:"bytes,6,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
+	Message          string                          `protobuf:"bytes,7,opt,name=message,proto3" json:"message,omitempty"`
+	EvidenceJson     string                          `protobuf:"bytes,8,opt,name=evidence_json,json=evidenceJson,proto3" json:"evidence_json,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *AircraftFollowSessionUpdate) Reset() {
+	*x = AircraftFollowSessionUpdate{}
+	mi := &file_atlas_ground_station_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AircraftFollowSessionUpdate) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AircraftFollowSessionUpdate) ProtoMessage() {}
+
+func (x *AircraftFollowSessionUpdate) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AircraftFollowSessionUpdate.ProtoReflect.Descriptor instead.
+func (*AircraftFollowSessionUpdate) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *AircraftFollowSessionUpdate) GetEventId() string {
+	if x != nil {
+		return x.EventId
+	}
+	return ""
+}
+
+func (x *AircraftFollowSessionUpdate) GetOperationId() string {
+	if x != nil {
+		return x.OperationId
+	}
+	return ""
+}
+
+func (x *AircraftFollowSessionUpdate) GetFollowSessionId() string {
+	if x != nil {
+		return x.FollowSessionId
+	}
+	return ""
+}
+
+func (x *AircraftFollowSessionUpdate) GetUpdateType() AircraftFollowSessionUpdateType {
+	if x != nil {
+		return x.UpdateType
+	}
+	return AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED
+}
+
+func (x *AircraftFollowSessionUpdate) GetObservedAtUnixMs() int64 {
+	if x != nil {
+		return x.ObservedAtUnixMs
+	}
+	return 0
+}
+
+func (x *AircraftFollowSessionUpdate) GetReasonCode() string {
+	if x != nil {
+		return x.ReasonCode
+	}
+	return ""
+}
+
+func (x *AircraftFollowSessionUpdate) GetMessage() string {
+	if x != nil {
+		return x.Message
+	}
+	return ""
+}
+
+func (x *AircraftFollowSessionUpdate) GetEvidenceJson() string {
+	if x != nil {
+		return x.EvidenceJson
+	}
+	return ""
+}
+
 type MissionOperationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
@@ -3047,7 +4638,7 @@ type MissionOperationRequest struct {
 
 func (x *MissionOperationRequest) Reset() {
 	*x = MissionOperationRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3059,7 +4650,7 @@ func (x *MissionOperationRequest) String() string {
 func (*MissionOperationRequest) ProtoMessage() {}
 
 func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3072,7 +4663,7 @@ func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionOperationRequest.ProtoReflect.Descriptor instead.
 func (*MissionOperationRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *MissionOperationRequest) GetOperationId() string {
@@ -3124,6 +4715,209 @@ func (x *MissionOperationRequest) GetDeadlineAtUnixMs() int64 {
 	return 0
 }
 
+// Native sends its durable run/action checkpoints after every Agent session
+// registration. The Agent must first prove that PX4 still holds the immutable
+// mission before associating its in-memory executor with the run.
+type MissionReconciliationRequest struct {
+	state             protoimpl.MessageState     `protogen:"open.v1"`
+	ReconciliationId  string                     `protobuf:"bytes,1,opt,name=reconciliation_id,json=reconciliationId,proto3" json:"reconciliation_id,omitempty"`
+	MissionRunId      string                     `protobuf:"bytes,2,opt,name=mission_run_id,json=missionRunId,proto3" json:"mission_run_id,omitempty"`
+	DroneId           string                     `protobuf:"bytes,3,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
+	RunState          string                     `protobuf:"bytes,4,opt,name=run_state,json=runState,proto3" json:"run_state,omitempty"`
+	MissionPlanJson   string                     `protobuf:"bytes,5,opt,name=mission_plan_json,json=missionPlanJson,proto3" json:"mission_plan_json,omitempty"`
+	CurrentWaypoint   *uint32                    `protobuf:"varint,6,opt,name=current_waypoint,json=currentWaypoint,proto3,oneof" json:"current_waypoint,omitempty"`
+	TotalWaypoints    uint32                     `protobuf:"varint,7,opt,name=total_waypoints,json=totalWaypoints,proto3" json:"total_waypoints,omitempty"`
+	Actions           []*MissionActionCheckpoint `protobuf:"bytes,8,rep,name=actions,proto3" json:"actions,omitempty"`
+	RequestedAtUnixMs int64                      `protobuf:"varint,9,opt,name=requested_at_unix_ms,json=requestedAtUnixMs,proto3" json:"requested_at_unix_ms,omitempty"`
+	DeadlineAtUnixMs  int64                      `protobuf:"varint,10,opt,name=deadline_at_unix_ms,json=deadlineAtUnixMs,proto3" json:"deadline_at_unix_ms,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *MissionReconciliationRequest) Reset() {
+	*x = MissionReconciliationRequest{}
+	mi := &file_atlas_ground_station_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MissionReconciliationRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MissionReconciliationRequest) ProtoMessage() {}
+
+func (x *MissionReconciliationRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MissionReconciliationRequest.ProtoReflect.Descriptor instead.
+func (*MissionReconciliationRequest) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *MissionReconciliationRequest) GetReconciliationId() string {
+	if x != nil {
+		return x.ReconciliationId
+	}
+	return ""
+}
+
+func (x *MissionReconciliationRequest) GetMissionRunId() string {
+	if x != nil {
+		return x.MissionRunId
+	}
+	return ""
+}
+
+func (x *MissionReconciliationRequest) GetDroneId() string {
+	if x != nil {
+		return x.DroneId
+	}
+	return ""
+}
+
+func (x *MissionReconciliationRequest) GetRunState() string {
+	if x != nil {
+		return x.RunState
+	}
+	return ""
+}
+
+func (x *MissionReconciliationRequest) GetMissionPlanJson() string {
+	if x != nil {
+		return x.MissionPlanJson
+	}
+	return ""
+}
+
+func (x *MissionReconciliationRequest) GetCurrentWaypoint() uint32 {
+	if x != nil && x.CurrentWaypoint != nil {
+		return *x.CurrentWaypoint
+	}
+	return 0
+}
+
+func (x *MissionReconciliationRequest) GetTotalWaypoints() uint32 {
+	if x != nil {
+		return x.TotalWaypoints
+	}
+	return 0
+}
+
+func (x *MissionReconciliationRequest) GetActions() []*MissionActionCheckpoint {
+	if x != nil {
+		return x.Actions
+	}
+	return nil
+}
+
+func (x *MissionReconciliationRequest) GetRequestedAtUnixMs() int64 {
+	if x != nil {
+		return x.RequestedAtUnixMs
+	}
+	return 0
+}
+
+func (x *MissionReconciliationRequest) GetDeadlineAtUnixMs() int64 {
+	if x != nil {
+		return x.DeadlineAtUnixMs
+	}
+	return 0
+}
+
+type MissionActionCheckpoint struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	ActionSequence          uint32                 `protobuf:"varint,1,opt,name=action_sequence,json=actionSequence,proto3" json:"action_sequence,omitempty"`
+	ActionType              string                 `protobuf:"bytes,2,opt,name=action_type,json=actionType,proto3" json:"action_type,omitempty"`
+	State                   string                 `protobuf:"bytes,3,opt,name=state,proto3" json:"state,omitempty"`
+	Attempt                 uint32                 `protobuf:"varint,4,opt,name=attempt,proto3" json:"attempt,omitempty"`
+	AttemptDeadlineAtUnixMs *int64                 `protobuf:"varint,5,opt,name=attempt_deadline_at_unix_ms,json=attemptDeadlineAtUnixMs,proto3,oneof" json:"attempt_deadline_at_unix_ms,omitempty"`
+	NextAttemptAtUnixMs     *int64                 `protobuf:"varint,6,opt,name=next_attempt_at_unix_ms,json=nextAttemptAtUnixMs,proto3,oneof" json:"next_attempt_at_unix_ms,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *MissionActionCheckpoint) Reset() {
+	*x = MissionActionCheckpoint{}
+	mi := &file_atlas_ground_station_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MissionActionCheckpoint) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MissionActionCheckpoint) ProtoMessage() {}
+
+func (x *MissionActionCheckpoint) ProtoReflect() protoreflect.Message {
+	mi := &file_atlas_ground_station_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MissionActionCheckpoint.ProtoReflect.Descriptor instead.
+func (*MissionActionCheckpoint) Descriptor() ([]byte, []int) {
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *MissionActionCheckpoint) GetActionSequence() uint32 {
+	if x != nil {
+		return x.ActionSequence
+	}
+	return 0
+}
+
+func (x *MissionActionCheckpoint) GetActionType() string {
+	if x != nil {
+		return x.ActionType
+	}
+	return ""
+}
+
+func (x *MissionActionCheckpoint) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *MissionActionCheckpoint) GetAttempt() uint32 {
+	if x != nil {
+		return x.Attempt
+	}
+	return 0
+}
+
+func (x *MissionActionCheckpoint) GetAttemptDeadlineAtUnixMs() int64 {
+	if x != nil && x.AttemptDeadlineAtUnixMs != nil {
+		return *x.AttemptDeadlineAtUnixMs
+	}
+	return 0
+}
+
+func (x *MissionActionCheckpoint) GetNextAttemptAtUnixMs() int64 {
+	if x != nil && x.NextAttemptAtUnixMs != nil {
+		return *x.NextAttemptAtUnixMs
+	}
+	return 0
+}
+
 type MissionRunUpdate struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	EventId      string                 `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
@@ -3151,7 +4945,7 @@ type MissionRunUpdate struct {
 
 func (x *MissionRunUpdate) Reset() {
 	*x = MissionRunUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[29]
+	mi := &file_atlas_ground_station_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3163,7 +4957,7 @@ func (x *MissionRunUpdate) String() string {
 func (*MissionRunUpdate) ProtoMessage() {}
 
 func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[29]
+	mi := &file_atlas_ground_station_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3176,7 +4970,7 @@ func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionRunUpdate.ProtoReflect.Descriptor instead.
 func (*MissionRunUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{29}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *MissionRunUpdate) GetEventId() string {
@@ -3302,7 +5096,7 @@ var File_atlas_ground_station_proto protoreflect.FileDescriptor
 
 const file_atlas_ground_station_proto_rawDesc = "" +
 	"\n" +
-	"\x1aatlas/ground_station.proto\x12\x16atlas.groundstation.v1\"\xa1\x04\n" +
+	"\x1aatlas/ground_station.proto\x12\x16atlas.groundstation.v1\"\x9d\x05\n" +
 	"\x14AgentToGroundStation\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12O\n" +
@@ -3312,25 +5106,30 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\vstatus_text\x18\x05 \x01(\v2'.atlas.groundstation.v1.AgentStatusTextH\x00R\n" +
 	"statusText\x12U\n" +
 	"\x0ecommand_update\x18\x06 \x01(\v2,.atlas.groundstation.v1.VehicleCommandUpdateH\x00R\rcommandUpdate\x12X\n" +
-	"\x12mission_run_update\x18\a \x01(\v2(.atlas.groundstation.v1.MissionRunUpdateH\x00R\x10missionRunUpdateB\t\n" +
-	"\apayload\"\xb8\x03\n" +
+	"\x12mission_run_update\x18\a \x01(\v2(.atlas.groundstation.v1.MissionRunUpdateH\x00R\x10missionRunUpdate\x12z\n" +
+	"\x1eaircraft_follow_session_update\x18\b \x01(\v23.atlas.groundstation.v1.AircraftFollowSessionUpdateH\x00R\x1baircraftFollowSessionUpdateB\t\n" +
+	"\apayload\"\xb5\x05\n" +
 	"\x14GroundStationToAgent\x12c\n" +
 	"\x15registration_accepted\x18\x01 \x01(\v2,.atlas.groundstation.v1.RegistrationAcceptedH\x00R\x14registrationAccepted\x12X\n" +
 	"\x0fcommand_request\x18\x02 \x01(\v2-.atlas.groundstation.v1.VehicleCommandRequestH\x00R\x0ecommandRequest\x12g\n" +
 	"\x14command_cancellation\x18\x03 \x01(\v22.atlas.groundstation.v1.VehicleCommandCancellationH\x00R\x13commandCancellation\x12m\n" +
-	"\x19mission_operation_request\x18\x04 \x01(\v2/.atlas.groundstation.v1.MissionOperationRequestH\x00R\x17missionOperationRequestB\t\n" +
-	"\apayload\"\xb7\x02\n" +
+	"\x19mission_operation_request\x18\x04 \x01(\v2/.atlas.groundstation.v1.MissionOperationRequestH\x00R\x17missionOperationRequest\x12|\n" +
+	"\x1emission_reconciliation_request\x18\x05 \x01(\v24.atlas.groundstation.v1.MissionReconciliationRequestH\x00R\x1cmissionReconciliationRequest\x12}\n" +
+	"\x1faircraft_follow_control_request\x18\x06 \x01(\v24.atlas.groundstation.v1.AircraftFollowControlRequestH\x00R\x1caircraftFollowControlRequestB\t\n" +
+	"\apayload\"\x92\x03\n" +
 	"\x0fAgentPerception\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x19\n" +
 	"\bdrone_id\x18\x02 \x01(\tR\adroneId\x12Z\n" +
 	"\fregistration\x18\x03 \x01(\v24.atlas.groundstation.v1.PerceptionStreamRegistrationH\x00R\fregistration\x12?\n" +
 	"\x05frame\x18\x04 \x01(\v2'.atlas.groundstation.v1.PerceptionFrameH\x00R\x05frame\x12B\n" +
-	"\x06health\x18\x05 \x01(\v2(.atlas.groundstation.v1.PerceptionHealthH\x00R\x06healthB\t\n" +
-	"\apayload\"\xe7\x01\n" +
+	"\x06health\x18\x05 \x01(\v2(.atlas.groundstation.v1.PerceptionHealthH\x00R\x06health\x12Y\n" +
+	"\rtrack_updates\x18\x06 \x01(\v22.atlas.groundstation.v1.PerceptionTrackUpdateBatchH\x00R\ftrackUpdatesB\t\n" +
+	"\apayload\"\xc3\x02\n" +
 	"\x17GroundStationPerception\x12[\n" +
 	"\x0fstream_accepted\x18\x01 \x01(\v20.atlas.groundstation.v1.PerceptionStreamAcceptedH\x00R\x0estreamAccepted\x12d\n" +
-	"\x12frame_subscription\x18\x02 \x01(\v23.atlas.groundstation.v1.PerceptionFrameSubscriptionH\x00R\x11frameSubscriptionB\t\n" +
+	"\x12frame_subscription\x18\x02 \x01(\v23.atlas.groundstation.v1.PerceptionFrameSubscriptionH\x00R\x11frameSubscription\x12Z\n" +
+	"\x0ecounting_rules\x18\x03 \x01(\v21.atlas.groundstation.v1.PerceptionCountingRuleSetH\x00R\rcountingRulesB\t\n" +
 	"\apayload\"\xdf\x01\n" +
 	"\x1bPerceptionFrameSubscription\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
@@ -3375,12 +5174,81 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"confidence\x18\x04 \x01(\x01R\n" +
 	"confidence\x12P\n" +
 	"\fbounding_box\x18\x05 \x01(\v2-.atlas.groundstation.v1.NormalizedBoundingBoxR\vboundingBox\x12'\n" +
-	"\x0fattributes_json\x18\x06 \x01(\tR\x0eattributesJson\"a\n" +
+	"\x0fattributes_json\x18\x06 \x01(\tR\x0eattributesJson\"\x9a\x05\n" +
+	"\x1aPerceptionTrackUpdateBatch\x12\x1b\n" +
+	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12!\n" +
+	"\fstream_epoch\x18\x02 \x01(\tR\vstreamEpoch\x12(\n" +
+	"\x10track_session_id\x18\x03 \x01(\tR\x0etrackSessionId\x12!\n" +
+	"\ftracker_type\x18\x04 \x01(\tR\vtrackerType\x12-\n" +
+	"\x13observed_at_unix_ms\x18\x05 \x01(\x03R\x10observedAtUnixMs\x12'\n" +
+	"\x0fsession_started\x18\x06 \x01(\bR\x0esessionStarted\x12#\n" +
+	"\rsession_ended\x18\a \x01(\bR\fsessionEnded\x12,\n" +
+	"\x12session_end_reason\x18\b \x01(\tR\x10sessionEndReason\x12G\n" +
+	"\x06tracks\x18\t \x03(\v2/.atlas.groundstation.v1.PerceptionTrackSnapshotR\x06tracks\x12'\n" +
+	"\x0fcurrent_visible\x18\n" +
+	" \x01(\x04R\x0ecurrentVisible\x12)\n" +
+	"\x10unique_confirmed\x18\v \x01(\x04R\x0funiqueConfirmed\x12Q\n" +
+	"\vrule_counts\x18\f \x03(\v20.atlas.groundstation.v1.PerceptionTrackRuleCountR\n" +
+	"ruleCounts\x12T\n" +
+	"\fcount_events\x18\r \x03(\v21.atlas.groundstation.v1.PerceptionTrackCountEventR\vcountEvents\"-\n" +
+	"\x0fNormalizedPoint\x12\f\n" +
+	"\x01x\x18\x01 \x01(\x01R\x01x\x12\f\n" +
+	"\x01y\x18\x02 \x01(\x01R\x01y\"~\n" +
+	"\x19PerceptionCountingRuleSet\x12\x1b\n" +
+	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12D\n" +
+	"\x05rules\x18\x02 \x03(\v2..atlas.groundstation.v1.PerceptionCountingRuleR\x05rules\"\xde\x01\n" +
+	"\x16PerceptionCountingRule\x12\x17\n" +
+	"\arule_id\x18\x01 \x01(\tR\x06ruleId\x12\x14\n" +
+	"\x05label\x18\x02 \x01(\tR\x05label\x12\x1b\n" +
+	"\trule_type\x18\x03 \x01(\tR\bruleType\x12\x1a\n" +
+	"\brevision\x18\x04 \x01(\x04R\brevision\x12?\n" +
+	"\x06points\x18\x05 \x03(\v2'.atlas.groundstation.v1.NormalizedPointR\x06points\x12\x1b\n" +
+	"\tclass_ids\x18\x06 \x03(\x05R\bclassIds\"\x89\x02\n" +
+	"\x18PerceptionTrackRuleCount\x12\x17\n" +
+	"\arule_id\x18\x01 \x01(\tR\x06ruleId\x12#\n" +
+	"\rrule_revision\x18\x02 \x01(\x04R\fruleRevision\x12\x1b\n" +
+	"\trule_type\x18\x03 \x01(\tR\bruleType\x12!\n" +
+	"\fline_forward\x18\x04 \x01(\x04R\vlineForward\x12!\n" +
+	"\fline_reverse\x18\x05 \x01(\x04R\vlineReverse\x12'\n" +
+	"\x0fpolygon_entries\x18\x06 \x01(\x04R\x0epolygonEntries\x12#\n" +
+	"\rpolygon_exits\x18\a \x01(\x04R\fpolygonExits\"\xc8\x02\n" +
+	"\x19PerceptionTrackCountEvent\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12\x17\n" +
+	"\arule_id\x18\x02 \x01(\tR\x06ruleId\x12#\n" +
+	"\rrule_revision\x18\x03 \x01(\x04R\fruleRevision\x12(\n" +
+	"\x10track_session_id\x18\x04 \x01(\tR\x0etrackSessionId\x12\x19\n" +
+	"\btrack_id\x18\x05 \x01(\tR\atrackId\x12\x1d\n" +
+	"\n" +
+	"event_type\x18\x06 \x01(\tR\teventType\x12-\n" +
+	"\x13observed_at_unix_ms\x18\a \x01(\x03R\x10observedAtUnixMs\x12?\n" +
+	"\x06anchor\x18\b \x01(\v2'.atlas.groundstation.v1.NormalizedPointR\x06anchor\"\xe1\x06\n" +
+	"\x17PerceptionTrackSnapshot\x12\x19\n" +
+	"\btrack_id\x18\x01 \x01(\tR\atrackId\x12(\n" +
+	"\x10track_session_id\x18\x02 \x01(\tR\x0etrackSessionId\x12!\n" +
+	"\ftracker_type\x18\x03 \x01(\tR\vtrackerType\x12'\n" +
+	"\x0flifecycle_state\x18\x04 \x01(\tR\x0elifecycleState\x12\x1a\n" +
+	"\brevision\x18\x05 \x01(\x04R\brevision\x12\x1d\n" +
+	"\n" +
+	"age_frames\x18\x06 \x01(\x04R\tageFrames\x12+\n" +
+	"\x11observation_count\x18\a \x01(\x04R\x10observationCount\x128\n" +
+	"\x19first_observed_at_unix_ms\x18\b \x01(\x03R\x15firstObservedAtUnixMs\x126\n" +
+	"\x18last_observed_at_unix_ms\x18\t \x01(\x03R\x14lastObservedAtUnixMs\x12_\n" +
+	"\x14latest_confirmed_box\x18\n" +
+	" \x01(\v2-.atlas.groundstation.v1.NormalizedBoundingBoxR\x12latestConfirmedBox\x12>\n" +
+	"\x1blatest_detection_confidence\x18\v \x01(\x01R\x19latestDetectionConfidence\x12R\n" +
+	"\rpredicted_box\x18\f \x01(\v2-.atlas.groundstation.v1.NormalizedBoundingBoxR\fpredictedBox\x123\n" +
+	"\x15prediction_confidence\x18\r \x01(\x01R\x14predictionConfidence\x12)\n" +
+	"\x11closed_at_unix_ms\x18\x0e \x01(\x03R\x0eclosedAtUnixMs\x12%\n" +
+	"\x0eclosure_reason\x18\x0f \x01(\tR\rclosureReason\x12\x19\n" +
+	"\bclass_id\x18\x10 \x01(\x05R\aclassId\x12\x1f\n" +
+	"\vclass_label\x18\x11 \x01(\tR\n" +
+	"classLabel\x12#\n" +
+	"\rupdate_reason\x18\x12 \x01(\tR\fupdateReason\"a\n" +
 	"\x15NormalizedBoundingBox\x12\f\n" +
 	"\x01x\x18\x01 \x01(\x01R\x01x\x12\f\n" +
 	"\x01y\x18\x02 \x01(\x01R\x01y\x12\x14\n" +
 	"\x05width\x18\x03 \x01(\x01R\x05width\x12\x16\n" +
-	"\x06height\x18\x04 \x01(\x01R\x06height\"\xd6\x04\n" +
+	"\x06height\x18\x04 \x01(\x01R\x06height\"\xcf\x05\n" +
 	"\x10PerceptionHealth\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1a\n" +
 	"\bprovider\x18\x02 \x01(\tR\bprovider\x12 \n" +
@@ -3397,7 +5265,24 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\n" +
 	"last_error\x18\f \x01(\tR\tlastError\x12E\n" +
 	"\x05model\x18\r \x01(\v2/.atlas.groundstation.v1.PerceptionModelIdentityR\x05model\x12-\n" +
-	"\x13observed_at_unix_ms\x18\x0e \x01(\x03R\x10observedAtUnixMs\"\xf3\x03\n" +
+	"\x13observed_at_unix_ms\x18\x0e \x01(\x03R\x10observedAtUnixMs\x12)\n" +
+	"\x10activation_state\x18\x0f \x01(\tR\x0factivationState\x12L\n" +
+	"\btracking\x18\x10 \x01(\v20.atlas.groundstation.v1.PerceptionTrackingHealthR\btracking\"\x99\x03\n" +
+	"\x18PerceptionTrackingHealth\x12\x1c\n" +
+	"\talgorithm\x18\x01 \x01(\tR\talgorithm\x12\x14\n" +
+	"\x05state\x18\x02 \x01(\tR\x05state\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x03 \x01(\tR\tsessionId\x12*\n" +
+	"\x11last_reset_reason\x18\x04 \x01(\tR\x0flastResetReason\x12\x1f\n" +
+	"\vreset_count\x18\x05 \x01(\x04R\n" +
+	"resetCount\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\x06 \x01(\tR\tlastError\x12.\n" +
+	"\x13camera_motion_state\x18\a \x01(\tR\x11cameraMotionState\x120\n" +
+	"\x14camera_motion_method\x18\b \x01(\tR\x12cameraMotionMethod\x128\n" +
+	"\x18camera_motion_confidence\x18\t \x01(\x01R\x16cameraMotionConfidence\x12\"\n" +
+	"\rre_id_enabled\x18\n" +
+	" \x01(\bR\vreIdEnabled\"\xf3\x03\n" +
 	"\x11AgentRegistration\x126\n" +
 	"\x17registration_request_id\x18\x01 \x01(\tR\x15registrationRequestId\x12'\n" +
 	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12#\n" +
@@ -3579,7 +5464,67 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"resultCode\x12\x18\n" +
 	"\amessage\x18\a \x01(\tR\amessage\x12#\n" +
 	"\revidence_json\x18\b \x01(\tR\fevidenceJsonB\x13\n" +
-	"\x11_progress_percent\"\xde\x02\n" +
+	"\x11_progress_percent\"\xaf\x06\n" +
+	"\x16AircraftFollowEnvelope\x12\x1d\n" +
+	"\n" +
+	"standoff_m\x18\x01 \x01(\x01R\tstandoffM\x12.\n" +
+	"\x13altitude_relative_m\x18\x02 \x01(\x01R\x11altitudeRelativeM\x12=\n" +
+	"\x1bminimum_altitude_relative_m\x18\x03 \x01(\x01R\x18minimumAltitudeRelativeM\x12=\n" +
+	"\x1bmaximum_altitude_relative_m\x18\x04 \x01(\x01R\x18maximumAltitudeRelativeM\x126\n" +
+	"\x18maximum_ground_speed_m_s\x18\x05 \x01(\x01R\x14maximumGroundSpeedMS\x129\n" +
+	"\x19maximum_acceleration_m_s2\x18\x06 \x01(\x01R\x16maximumAccelerationMS2\x12.\n" +
+	"\x13maximum_duration_ms\x18\a \x01(\x03R\x11maximumDurationMs\x128\n" +
+	"\x18boundary_center_latitude\x18\b \x01(\x01R\x16boundaryCenterLatitude\x12:\n" +
+	"\x19boundary_center_longitude\x18\t \x01(\x01R\x17boundaryCenterLongitude\x12*\n" +
+	"\x11boundary_radius_m\x18\n" +
+	" \x01(\x01R\x0fboundaryRadiusM\x126\n" +
+	"\x17minimum_battery_percent\x18\v \x01(\x01R\x15minimumBatteryPercent\x128\n" +
+	"\x18minimum_track_confidence\x18\f \x01(\x01R\x16minimumTrackConfidence\x12I\n" +
+	"!maximum_geolocation_uncertainty_m\x18\r \x01(\x01R\x1emaximumGeolocationUncertaintyM\x12F\n" +
+	" maximum_velocity_uncertainty_m_s\x18\x0e \x01(\x01R\x1cmaximumVelocityUncertaintyMS\"\x9c\x05\n" +
+	"\x19AircraftFollowTargetState\x12%\n" +
+	"\x0egeolocation_id\x18\x01 \x01(\tR\rgeolocationId\x12!\n" +
+	"\fselection_id\x18\x02 \x01(\tR\vselectionId\x12\x1b\n" +
+	"\tsource_id\x18\x03 \x01(\tR\bsourceId\x12(\n" +
+	"\x10track_session_id\x18\x04 \x01(\tR\x0etrackSessionId\x12\x19\n" +
+	"\btrack_id\x18\x05 \x01(\tR\atrackId\x12-\n" +
+	"\x13observed_at_unix_ms\x18\x06 \x01(\x03R\x10observedAtUnixMs\x12\x1a\n" +
+	"\blatitude\x18\a \x01(\x01R\blatitude\x12\x1c\n" +
+	"\tlongitude\x18\b \x01(\x01R\tlongitude\x12&\n" +
+	"\x0faltitude_amsl_m\x18\t \x01(\x01R\raltitudeAmslM\x12+\n" +
+	"\x12velocity_north_m_s\x18\n" +
+	" \x01(\x01R\x0fvelocityNorthMS\x12)\n" +
+	"\x11velocity_east_m_s\x18\v \x01(\x01R\x0evelocityEastMS\x128\n" +
+	"\x18horizontal_uncertainty_m\x18\f \x01(\x01R\x16horizontalUncertaintyM\x127\n" +
+	"\x18velocity_uncertainty_m_s\x18\r \x01(\x01R\x15velocityUncertaintyMS\x12)\n" +
+	"\x10track_confidence\x18\x0e \x01(\x01R\x0ftrackConfidence\x12'\n" +
+	"\x0flifecycle_state\x18\x0f \x01(\tR\x0elifecycleState\x12#\n" +
+	"\rmotion_status\x18\x10 \x01(\tR\fmotionStatus\"\xd2\x04\n" +
+	"\x1cAircraftFollowControlRequest\x12!\n" +
+	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12*\n" +
+	"\x11follow_session_id\x18\x02 \x01(\tR\x0ffollowSessionId\x12\x19\n" +
+	"\bdrone_id\x18\x03 \x01(\tR\adroneId\x12K\n" +
+	"\x06action\x18\x04 \x01(\x0e23.atlas.groundstation.v1.AircraftFollowControlActionR\x06action\x12J\n" +
+	"\benvelope\x18\x05 \x01(\v2..atlas.groundstation.v1.AircraftFollowEnvelopeR\benvelope\x12I\n" +
+	"\x06target\x18\x06 \x01(\v21.atlas.groundstation.v1.AircraftFollowTargetStateR\x06target\x12G\n" +
+	"!operator_lease_expires_at_unix_ms\x18\a \x01(\x03R\x1coperatorLeaseExpiresAtUnixMs\x12/\n" +
+	"\x14requested_at_unix_ms\x18\b \x01(\x03R\x11requestedAtUnixMs\x12\x1f\n" +
+	"\vreason_code\x18\t \x01(\tR\n" +
+	"reasonCode\x12\x16\n" +
+	"\x06reason\x18\n" +
+	" \x01(\tR\x06reason\x121\n" +
+	"\x14validation_reference\x18\v \x01(\tR\x13validationReference\"\xf0\x02\n" +
+	"\x1bAircraftFollowSessionUpdate\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12!\n" +
+	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12*\n" +
+	"\x11follow_session_id\x18\x03 \x01(\tR\x0ffollowSessionId\x12X\n" +
+	"\vupdate_type\x18\x04 \x01(\x0e27.atlas.groundstation.v1.AircraftFollowSessionUpdateTypeR\n" +
+	"updateType\x12-\n" +
+	"\x13observed_at_unix_ms\x18\x05 \x01(\x03R\x10observedAtUnixMs\x12\x1f\n" +
+	"\vreason_code\x18\x06 \x01(\tR\n" +
+	"reasonCode\x12\x18\n" +
+	"\amessage\x18\a \x01(\tR\amessage\x12#\n" +
+	"\revidence_json\x18\b \x01(\tR\fevidenceJson\"\xde\x02\n" +
 	"\x17MissionOperationRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12$\n" +
 	"\x0emission_run_id\x18\x02 \x01(\tR\fmissionRunId\x12\x19\n" +
@@ -3587,7 +5532,30 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x0eoperation_type\x18\x04 \x01(\x0e2,.atlas.groundstation.v1.MissionOperationTypeR\roperationType\x12*\n" +
 	"\x11mission_plan_json\x18\x05 \x01(\tR\x0fmissionPlanJson\x12/\n" +
 	"\x14requested_at_unix_ms\x18\x06 \x01(\x03R\x11requestedAtUnixMs\x12-\n" +
-	"\x13deadline_at_unix_ms\x18\a \x01(\x03R\x10deadlineAtUnixMs\"\xbb\x06\n" +
+	"\x13deadline_at_unix_ms\x18\a \x01(\x03R\x10deadlineAtUnixMs\"\xee\x03\n" +
+	"\x1cMissionReconciliationRequest\x12+\n" +
+	"\x11reconciliation_id\x18\x01 \x01(\tR\x10reconciliationId\x12$\n" +
+	"\x0emission_run_id\x18\x02 \x01(\tR\fmissionRunId\x12\x19\n" +
+	"\bdrone_id\x18\x03 \x01(\tR\adroneId\x12\x1b\n" +
+	"\trun_state\x18\x04 \x01(\tR\brunState\x12*\n" +
+	"\x11mission_plan_json\x18\x05 \x01(\tR\x0fmissionPlanJson\x12.\n" +
+	"\x10current_waypoint\x18\x06 \x01(\rH\x00R\x0fcurrentWaypoint\x88\x01\x01\x12'\n" +
+	"\x0ftotal_waypoints\x18\a \x01(\rR\x0etotalWaypoints\x12I\n" +
+	"\aactions\x18\b \x03(\v2/.atlas.groundstation.v1.MissionActionCheckpointR\aactions\x12/\n" +
+	"\x14requested_at_unix_ms\x18\t \x01(\x03R\x11requestedAtUnixMs\x12-\n" +
+	"\x13deadline_at_unix_ms\x18\n" +
+	" \x01(\x03R\x10deadlineAtUnixMsB\x13\n" +
+	"\x11_current_waypoint\"\xcd\x02\n" +
+	"\x17MissionActionCheckpoint\x12'\n" +
+	"\x0faction_sequence\x18\x01 \x01(\rR\x0eactionSequence\x12\x1f\n" +
+	"\vaction_type\x18\x02 \x01(\tR\n" +
+	"actionType\x12\x14\n" +
+	"\x05state\x18\x03 \x01(\tR\x05state\x12\x18\n" +
+	"\aattempt\x18\x04 \x01(\rR\aattempt\x12A\n" +
+	"\x1battempt_deadline_at_unix_ms\x18\x05 \x01(\x03H\x00R\x17attemptDeadlineAtUnixMs\x88\x01\x01\x129\n" +
+	"\x17next_attempt_at_unix_ms\x18\x06 \x01(\x03H\x01R\x13nextAttemptAtUnixMs\x88\x01\x01B\x1e\n" +
+	"\x1c_attempt_deadline_at_unix_msB\x1a\n" +
+	"\x18_next_attempt_at_unix_ms\"\xbb\x06\n" +
 	"\x10MissionRunUpdate\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12$\n" +
@@ -3617,7 +5585,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"!PerceptionFrameSubscriptionAction\x124\n" +
 	"0PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x127\n" +
 	"3PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW\x10\x01\x12-\n" +
-	")PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP\x10\x02*\x83\x04\n" +
+	")PERCEPTION_FRAME_SUBSCRIPTION_ACTION_STOP\x10\x02*\x91\x05\n" +
 	"\x12VehicleCommandType\x12$\n" +
 	" VEHICLE_COMMAND_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19VEHICLE_COMMAND_TYPE_HOLD\x10\x01\x12)\n" +
@@ -3631,7 +5599,10 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"(VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END\x10\t\x12'\n" +
 	"#VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI\x10\n" +
 	"\x12(\n" +
-	"$VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM\x10\v*\xd0\x03\n" +
+	"$VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM\x10\v\x12,\n" +
+	"(VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START\x10\f\x12+\n" +
+	"'VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP\x10\r\x121\n" +
+	"-VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK\x10\x0e*\xd0\x03\n" +
 	"\x18VehicleCommandUpdateType\x12+\n" +
 	"'VEHICLE_COMMAND_UPDATE_TYPE_UNSPECIFIED\x10\x00\x12(\n" +
 	"$VEHICLE_COMMAND_UPDATE_TYPE_ACCEPTED\x10\x01\x12(\n" +
@@ -3642,7 +5613,21 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\"VEHICLE_COMMAND_UPDATE_TYPE_FAILED\x10\x06\x12)\n" +
 	"%VEHICLE_COMMAND_UPDATE_TYPE_TIMED_OUT\x10\a\x12)\n" +
 	"%VEHICLE_COMMAND_UPDATE_TYPE_CANCELLED\x10\b\x125\n" +
-	"1VEHICLE_COMMAND_UPDATE_TYPE_CANCELLATION_REJECTED\x10\t*\x98\x02\n" +
+	"1VEHICLE_COMMAND_UPDATE_TYPE_CANCELLATION_REJECTED\x10\t*\xf2\x01\n" +
+	"\x1bAircraftFollowControlAction\x12.\n" +
+	"*AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED\x10\x00\x12(\n" +
+	"$AIRCRAFT_FOLLOW_CONTROL_ACTION_START\x10\x01\x12(\n" +
+	"$AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW\x10\x02\x12'\n" +
+	"#AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD\x10\x03\x12&\n" +
+	"\"AIRCRAFT_FOLLOW_CONTROL_ACTION_END\x10\x04*\x88\x03\n" +
+	"\x1fAircraftFollowSessionUpdateType\x123\n" +
+	"/AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED\x10\x00\x122\n" +
+	".AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING\x10\x01\x121\n" +
+	"-AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING\x10\x02\x121\n" +
+	"-AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING\x10\x03\x125\n" +
+	"1AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD\x10\x04\x12-\n" +
+	")AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED\x10\x05\x120\n" +
+	",AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED\x10\x06*\x98\x02\n" +
 	"\x14MissionOperationType\x12&\n" +
 	"\"MISSION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_UPLOAD\x10\x01\x12 \n" +
@@ -3650,7 +5635,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x1cMISSION_OPERATION_TYPE_PAUSE\x10\x03\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_RESUME\x10\x04\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_CANCEL\x10\x05\x12+\n" +
-	"'MISSION_OPERATION_TYPE_RETURN_TO_LAUNCH\x10\x06*\x92\x06\n" +
+	"'MISSION_OPERATION_TYPE_RETURN_TO_LAUNCH\x10\x06*\xfa\x06\n" +
 	"\x14MissionRunUpdateType\x12'\n" +
 	"#MISSION_RUN_UPDATE_TYPE_UNSPECIFIED\x10\x00\x12.\n" +
 	"*MISSION_RUN_UPDATE_TYPE_OPERATION_ACCEPTED\x10\x01\x12+\n" +
@@ -3670,7 +5655,9 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	".MISSION_RUN_UPDATE_TYPE_PAYLOAD_MANUAL_STARTED\x10\x0e\x124\n" +
 	"0MISSION_RUN_UPDATE_TYPE_PAYLOAD_MISSION_RESTORED\x10\x0f\x122\n" +
 	".MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED\x10\x10\x120\n" +
-	",MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED\x10\x11*\x91\x02\n" +
+	",MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED\x10\x11\x123\n" +
+	"/MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED\x10\x12\x121\n" +
+	"-MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED\x10\x13*\x91\x02\n" +
 	"\x12MissionActionState\x12$\n" +
 	" MISSION_ACTION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eMISSION_ACTION_STATE_REQUESTED\x10\x01\x12 \n" +
@@ -3695,89 +5682,124 @@ func file_atlas_ground_station_proto_rawDescGZIP() []byte {
 	return file_atlas_ground_station_proto_rawDescData
 }
 
-var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
+var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_atlas_ground_station_proto_goTypes = []any{
 	(PerceptionFrameSubscriptionAction)(0), // 0: atlas.groundstation.v1.PerceptionFrameSubscriptionAction
 	(VehicleCommandType)(0),                // 1: atlas.groundstation.v1.VehicleCommandType
 	(VehicleCommandUpdateType)(0),          // 2: atlas.groundstation.v1.VehicleCommandUpdateType
-	(MissionOperationType)(0),              // 3: atlas.groundstation.v1.MissionOperationType
-	(MissionRunUpdateType)(0),              // 4: atlas.groundstation.v1.MissionRunUpdateType
-	(MissionActionState)(0),                // 5: atlas.groundstation.v1.MissionActionState
-	(*AgentToGroundStation)(nil),           // 6: atlas.groundstation.v1.AgentToGroundStation
-	(*GroundStationToAgent)(nil),           // 7: atlas.groundstation.v1.GroundStationToAgent
-	(*AgentPerception)(nil),                // 8: atlas.groundstation.v1.AgentPerception
-	(*GroundStationPerception)(nil),        // 9: atlas.groundstation.v1.GroundStationPerception
-	(*PerceptionFrameSubscription)(nil),    // 10: atlas.groundstation.v1.PerceptionFrameSubscription
-	(*PerceptionStreamRegistration)(nil),   // 11: atlas.groundstation.v1.PerceptionStreamRegistration
-	(*PerceptionStreamAccepted)(nil),       // 12: atlas.groundstation.v1.PerceptionStreamAccepted
-	(*PerceptionFrame)(nil),                // 13: atlas.groundstation.v1.PerceptionFrame
-	(*PerceptionModelIdentity)(nil),        // 14: atlas.groundstation.v1.PerceptionModelIdentity
-	(*PerceptionDetection)(nil),            // 15: atlas.groundstation.v1.PerceptionDetection
-	(*NormalizedBoundingBox)(nil),          // 16: atlas.groundstation.v1.NormalizedBoundingBox
-	(*PerceptionHealth)(nil),               // 17: atlas.groundstation.v1.PerceptionHealth
-	(*AgentRegistration)(nil),              // 18: atlas.groundstation.v1.AgentRegistration
-	(*DeviceProfile)(nil),                  // 19: atlas.groundstation.v1.DeviceProfile
-	(*DroneProfile)(nil),                   // 20: atlas.groundstation.v1.DroneProfile
-	(*FlightControllerAttachment)(nil),     // 21: atlas.groundstation.v1.FlightControllerAttachment
-	(*AgentHeartbeat)(nil),                 // 22: atlas.groundstation.v1.AgentHeartbeat
-	(*AircraftTelemetry)(nil),              // 23: atlas.groundstation.v1.AircraftTelemetry
-	(*BatteryTelemetry)(nil),               // 24: atlas.groundstation.v1.BatteryTelemetry
-	(*VehicleHealth)(nil),                  // 25: atlas.groundstation.v1.VehicleHealth
-	(*RcStatus)(nil),                       // 26: atlas.groundstation.v1.RcStatus
-	(*HomePosition)(nil),                   // 27: atlas.groundstation.v1.HomePosition
-	(*GpsQuality)(nil),                     // 28: atlas.groundstation.v1.GpsQuality
-	(*AgentStatusText)(nil),                // 29: atlas.groundstation.v1.AgentStatusText
-	(*RegistrationAccepted)(nil),           // 30: atlas.groundstation.v1.RegistrationAccepted
-	(*VehicleCommandRequest)(nil),          // 31: atlas.groundstation.v1.VehicleCommandRequest
-	(*VehicleCommandCancellation)(nil),     // 32: atlas.groundstation.v1.VehicleCommandCancellation
-	(*VehicleCommandUpdate)(nil),           // 33: atlas.groundstation.v1.VehicleCommandUpdate
-	(*MissionOperationRequest)(nil),        // 34: atlas.groundstation.v1.MissionOperationRequest
-	(*MissionRunUpdate)(nil),               // 35: atlas.groundstation.v1.MissionRunUpdate
+	(AircraftFollowControlAction)(0),       // 3: atlas.groundstation.v1.AircraftFollowControlAction
+	(AircraftFollowSessionUpdateType)(0),   // 4: atlas.groundstation.v1.AircraftFollowSessionUpdateType
+	(MissionOperationType)(0),              // 5: atlas.groundstation.v1.MissionOperationType
+	(MissionRunUpdateType)(0),              // 6: atlas.groundstation.v1.MissionRunUpdateType
+	(MissionActionState)(0),                // 7: atlas.groundstation.v1.MissionActionState
+	(*AgentToGroundStation)(nil),           // 8: atlas.groundstation.v1.AgentToGroundStation
+	(*GroundStationToAgent)(nil),           // 9: atlas.groundstation.v1.GroundStationToAgent
+	(*AgentPerception)(nil),                // 10: atlas.groundstation.v1.AgentPerception
+	(*GroundStationPerception)(nil),        // 11: atlas.groundstation.v1.GroundStationPerception
+	(*PerceptionFrameSubscription)(nil),    // 12: atlas.groundstation.v1.PerceptionFrameSubscription
+	(*PerceptionStreamRegistration)(nil),   // 13: atlas.groundstation.v1.PerceptionStreamRegistration
+	(*PerceptionStreamAccepted)(nil),       // 14: atlas.groundstation.v1.PerceptionStreamAccepted
+	(*PerceptionFrame)(nil),                // 15: atlas.groundstation.v1.PerceptionFrame
+	(*PerceptionModelIdentity)(nil),        // 16: atlas.groundstation.v1.PerceptionModelIdentity
+	(*PerceptionDetection)(nil),            // 17: atlas.groundstation.v1.PerceptionDetection
+	(*PerceptionTrackUpdateBatch)(nil),     // 18: atlas.groundstation.v1.PerceptionTrackUpdateBatch
+	(*NormalizedPoint)(nil),                // 19: atlas.groundstation.v1.NormalizedPoint
+	(*PerceptionCountingRuleSet)(nil),      // 20: atlas.groundstation.v1.PerceptionCountingRuleSet
+	(*PerceptionCountingRule)(nil),         // 21: atlas.groundstation.v1.PerceptionCountingRule
+	(*PerceptionTrackRuleCount)(nil),       // 22: atlas.groundstation.v1.PerceptionTrackRuleCount
+	(*PerceptionTrackCountEvent)(nil),      // 23: atlas.groundstation.v1.PerceptionTrackCountEvent
+	(*PerceptionTrackSnapshot)(nil),        // 24: atlas.groundstation.v1.PerceptionTrackSnapshot
+	(*NormalizedBoundingBox)(nil),          // 25: atlas.groundstation.v1.NormalizedBoundingBox
+	(*PerceptionHealth)(nil),               // 26: atlas.groundstation.v1.PerceptionHealth
+	(*PerceptionTrackingHealth)(nil),       // 27: atlas.groundstation.v1.PerceptionTrackingHealth
+	(*AgentRegistration)(nil),              // 28: atlas.groundstation.v1.AgentRegistration
+	(*DeviceProfile)(nil),                  // 29: atlas.groundstation.v1.DeviceProfile
+	(*DroneProfile)(nil),                   // 30: atlas.groundstation.v1.DroneProfile
+	(*FlightControllerAttachment)(nil),     // 31: atlas.groundstation.v1.FlightControllerAttachment
+	(*AgentHeartbeat)(nil),                 // 32: atlas.groundstation.v1.AgentHeartbeat
+	(*AircraftTelemetry)(nil),              // 33: atlas.groundstation.v1.AircraftTelemetry
+	(*BatteryTelemetry)(nil),               // 34: atlas.groundstation.v1.BatteryTelemetry
+	(*VehicleHealth)(nil),                  // 35: atlas.groundstation.v1.VehicleHealth
+	(*RcStatus)(nil),                       // 36: atlas.groundstation.v1.RcStatus
+	(*HomePosition)(nil),                   // 37: atlas.groundstation.v1.HomePosition
+	(*GpsQuality)(nil),                     // 38: atlas.groundstation.v1.GpsQuality
+	(*AgentStatusText)(nil),                // 39: atlas.groundstation.v1.AgentStatusText
+	(*RegistrationAccepted)(nil),           // 40: atlas.groundstation.v1.RegistrationAccepted
+	(*VehicleCommandRequest)(nil),          // 41: atlas.groundstation.v1.VehicleCommandRequest
+	(*VehicleCommandCancellation)(nil),     // 42: atlas.groundstation.v1.VehicleCommandCancellation
+	(*VehicleCommandUpdate)(nil),           // 43: atlas.groundstation.v1.VehicleCommandUpdate
+	(*AircraftFollowEnvelope)(nil),         // 44: atlas.groundstation.v1.AircraftFollowEnvelope
+	(*AircraftFollowTargetState)(nil),      // 45: atlas.groundstation.v1.AircraftFollowTargetState
+	(*AircraftFollowControlRequest)(nil),   // 46: atlas.groundstation.v1.AircraftFollowControlRequest
+	(*AircraftFollowSessionUpdate)(nil),    // 47: atlas.groundstation.v1.AircraftFollowSessionUpdate
+	(*MissionOperationRequest)(nil),        // 48: atlas.groundstation.v1.MissionOperationRequest
+	(*MissionReconciliationRequest)(nil),   // 49: atlas.groundstation.v1.MissionReconciliationRequest
+	(*MissionActionCheckpoint)(nil),        // 50: atlas.groundstation.v1.MissionActionCheckpoint
+	(*MissionRunUpdate)(nil),               // 51: atlas.groundstation.v1.MissionRunUpdate
 }
 var file_atlas_ground_station_proto_depIdxs = []int32{
-	18, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
-	22, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
-	23, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
-	29, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
-	33, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
-	35, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
-	30, // 6: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
-	31, // 7: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
-	32, // 8: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
-	34, // 9: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
-	11, // 10: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
-	13, // 11: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
-	17, // 12: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
-	12, // 13: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
-	10, // 14: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
-	0,  // 15: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
-	14, // 16: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	15, // 17: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
-	16, // 18: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	14, // 19: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	19, // 20: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
-	20, // 21: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
-	21, // 22: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
-	24, // 23: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
-	25, // 24: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
-	26, // 25: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
-	27, // 26: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
-	28, // 27: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
-	1,  // 28: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
-	2,  // 29: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
-	3,  // 30: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
-	4,  // 31: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
-	5,  // 32: atlas.groundstation.v1.MissionRunUpdate.action_state:type_name -> atlas.groundstation.v1.MissionActionState
-	6,  // 33: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
-	8,  // 34: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
-	7,  // 35: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
-	9,  // 36: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
-	35, // [35:37] is the sub-list for method output_type
-	33, // [33:35] is the sub-list for method input_type
-	33, // [33:33] is the sub-list for extension type_name
-	33, // [33:33] is the sub-list for extension extendee
-	0,  // [0:33] is the sub-list for field type_name
+	28, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
+	32, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
+	33, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
+	39, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
+	43, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
+	51, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
+	47, // 6: atlas.groundstation.v1.AgentToGroundStation.aircraft_follow_session_update:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdate
+	40, // 7: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
+	41, // 8: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
+	42, // 9: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
+	48, // 10: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
+	49, // 11: atlas.groundstation.v1.GroundStationToAgent.mission_reconciliation_request:type_name -> atlas.groundstation.v1.MissionReconciliationRequest
+	46, // 12: atlas.groundstation.v1.GroundStationToAgent.aircraft_follow_control_request:type_name -> atlas.groundstation.v1.AircraftFollowControlRequest
+	13, // 13: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
+	15, // 14: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
+	26, // 15: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
+	18, // 16: atlas.groundstation.v1.AgentPerception.track_updates:type_name -> atlas.groundstation.v1.PerceptionTrackUpdateBatch
+	14, // 17: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
+	12, // 18: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
+	20, // 19: atlas.groundstation.v1.GroundStationPerception.counting_rules:type_name -> atlas.groundstation.v1.PerceptionCountingRuleSet
+	0,  // 20: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
+	16, // 21: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	17, // 22: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
+	25, // 23: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	24, // 24: atlas.groundstation.v1.PerceptionTrackUpdateBatch.tracks:type_name -> atlas.groundstation.v1.PerceptionTrackSnapshot
+	22, // 25: atlas.groundstation.v1.PerceptionTrackUpdateBatch.rule_counts:type_name -> atlas.groundstation.v1.PerceptionTrackRuleCount
+	23, // 26: atlas.groundstation.v1.PerceptionTrackUpdateBatch.count_events:type_name -> atlas.groundstation.v1.PerceptionTrackCountEvent
+	21, // 27: atlas.groundstation.v1.PerceptionCountingRuleSet.rules:type_name -> atlas.groundstation.v1.PerceptionCountingRule
+	19, // 28: atlas.groundstation.v1.PerceptionCountingRule.points:type_name -> atlas.groundstation.v1.NormalizedPoint
+	19, // 29: atlas.groundstation.v1.PerceptionTrackCountEvent.anchor:type_name -> atlas.groundstation.v1.NormalizedPoint
+	25, // 30: atlas.groundstation.v1.PerceptionTrackSnapshot.latest_confirmed_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	25, // 31: atlas.groundstation.v1.PerceptionTrackSnapshot.predicted_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	16, // 32: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	27, // 33: atlas.groundstation.v1.PerceptionHealth.tracking:type_name -> atlas.groundstation.v1.PerceptionTrackingHealth
+	29, // 34: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
+	30, // 35: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
+	31, // 36: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
+	34, // 37: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
+	35, // 38: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
+	36, // 39: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
+	37, // 40: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
+	38, // 41: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
+	1,  // 42: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
+	2,  // 43: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
+	3,  // 44: atlas.groundstation.v1.AircraftFollowControlRequest.action:type_name -> atlas.groundstation.v1.AircraftFollowControlAction
+	44, // 45: atlas.groundstation.v1.AircraftFollowControlRequest.envelope:type_name -> atlas.groundstation.v1.AircraftFollowEnvelope
+	45, // 46: atlas.groundstation.v1.AircraftFollowControlRequest.target:type_name -> atlas.groundstation.v1.AircraftFollowTargetState
+	4,  // 47: atlas.groundstation.v1.AircraftFollowSessionUpdate.update_type:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdateType
+	5,  // 48: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
+	50, // 49: atlas.groundstation.v1.MissionReconciliationRequest.actions:type_name -> atlas.groundstation.v1.MissionActionCheckpoint
+	6,  // 50: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
+	7,  // 51: atlas.groundstation.v1.MissionRunUpdate.action_state:type_name -> atlas.groundstation.v1.MissionActionState
+	8,  // 52: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
+	10, // 53: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
+	9,  // 54: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
+	11, // 55: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
+	54, // [54:56] is the sub-list for method output_type
+	52, // [52:54] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_atlas_ground_station_proto_init() }
@@ -3792,36 +5814,43 @@ func file_atlas_ground_station_proto_init() {
 		(*AgentToGroundStation_StatusText)(nil),
 		(*AgentToGroundStation_CommandUpdate)(nil),
 		(*AgentToGroundStation_MissionRunUpdate)(nil),
+		(*AgentToGroundStation_AircraftFollowSessionUpdate)(nil),
 	}
 	file_atlas_ground_station_proto_msgTypes[1].OneofWrappers = []any{
 		(*GroundStationToAgent_RegistrationAccepted)(nil),
 		(*GroundStationToAgent_CommandRequest)(nil),
 		(*GroundStationToAgent_CommandCancellation)(nil),
 		(*GroundStationToAgent_MissionOperationRequest)(nil),
+		(*GroundStationToAgent_MissionReconciliationRequest)(nil),
+		(*GroundStationToAgent_AircraftFollowControlRequest)(nil),
 	}
 	file_atlas_ground_station_proto_msgTypes[2].OneofWrappers = []any{
 		(*AgentPerception_Registration)(nil),
 		(*AgentPerception_Frame)(nil),
 		(*AgentPerception_Health)(nil),
+		(*AgentPerception_TrackUpdates)(nil),
 	}
 	file_atlas_ground_station_proto_msgTypes[3].OneofWrappers = []any{
 		(*GroundStationPerception_StreamAccepted)(nil),
 		(*GroundStationPerception_FrameSubscription)(nil),
+		(*GroundStationPerception_CountingRules)(nil),
 	}
-	file_atlas_ground_station_proto_msgTypes[17].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[18].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[20].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[21].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[22].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[27].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[25].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[26].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[28].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[29].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[30].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[35].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[41].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[42].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[43].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_ground_station_proto_rawDesc), len(file_atlas_ground_station_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   30,
+			NumEnums:      8,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

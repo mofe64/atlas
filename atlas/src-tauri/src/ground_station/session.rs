@@ -10,7 +10,8 @@ use super::{
     command_router::CommandRouter,
     proto::pb::{
         agent_to_ground_station, ground_station_to_agent, AgentToGroundStation,
-        GroundStationToAgent, MissionActionState, MissionRunUpdateType, VehicleCommandUpdateType,
+        AircraftFollowSessionUpdateType, GroundStationToAgent, MissionActionState,
+        MissionRunUpdateType, VehicleCommandUpdateType,
     },
     registration, status_text, telemetry, unix_time_ms,
 };
@@ -266,6 +267,43 @@ pub(super) async fn open(
                         )),
                     }
                 }
+                Some(agent_to_ground_station::Payload::AircraftFollowSessionUpdate(message)) => {
+                    match (state.active_id(), state.drone_id.as_deref()) {
+                        (Some(_), Some(drone_id)) => {
+                            match database.aircraft_follow_session(&message.follow_session_id) {
+                                Err(error) => Err(Status::failed_precondition(error)),
+                                Ok(session) if session.drone_id != drone_id => {
+                                    Err(Status::permission_denied(
+                                        "aircraft follow update does not target this agent drone",
+                                    ))
+                                }
+                                Ok(_) => match aircraft_follow_state(message.update_type()) {
+                                    Some(next_state) => database
+                                        .apply_aircraft_follow_agent_update(
+                                            &crate::database::AircraftFollowAgentUpdateInput {
+                                                event_id: message.event_id,
+                                                operation_id: message.operation_id,
+                                                session_id: message.follow_session_id,
+                                                state: next_state.to_string(),
+                                                observed_at_unix_ms: message.observed_at_unix_ms,
+                                                reason_code: message.reason_code,
+                                                message: message.message,
+                                                evidence_json: message.evidence_json,
+                                            },
+                                        )
+                                        .map(|_| None)
+                                        .map_err(Status::failed_precondition),
+                                    None => Err(Status::invalid_argument(
+                                        "aircraft follow update has an unspecified state",
+                                    )),
+                                },
+                            }
+                        }
+                        _ => Err(Status::failed_precondition(
+                            "registration must be the first session message",
+                        )),
+                    }
+                }
                 None => Err(Status::invalid_argument("session message has no payload")),
             };
 
@@ -277,6 +315,12 @@ pub(super) async fn open(
                     if state.pending_delivery {
                         state.pending_delivery = false;
                         if let Some(drone_id) = state.drone_id.as_deref() {
+                            if let Err(error) = command_router
+                                .deliver_mission_reconciliation(&database, drone_id)
+                                .await
+                            {
+                                eprintln!("Deliver Atlas mission reconciliation failed: {error}");
+                            }
                             if let Err(error) =
                                 command_router.deliver_pending(&database, drone_id).await
                             {
@@ -296,6 +340,14 @@ pub(super) async fn open(
         if let Some(session_id) = state.session_id {
             if let Some(drone_id) = state.drone_id.as_deref() {
                 command_router.unregister(drone_id, &session_id).await;
+                if let Err(error) = database.degrade_aircraft_follow_for_drone(
+                    drone_id,
+                    "AGENT_SESSION_LOST",
+                    "Atlas Agent session ended; onboard follow control must enter Hold",
+                    unix_time_ms(),
+                ) {
+                    eprintln!("Degrade aircraft follow after Agent session loss failed: {error}");
+                }
             }
             if let Err(error) =
                 database.close_session(&session_id, "agent stream ended", unix_time_ms())
@@ -306,6 +358,18 @@ pub(super) async fn open(
     });
 
     Ok(Response::new(Box::pin(ReceiverStream::new(responses))))
+}
+
+fn aircraft_follow_state(update: AircraftFollowSessionUpdateType) -> Option<&'static str> {
+    match update {
+        AircraftFollowSessionUpdateType::Validating => Some("VALIDATING"),
+        AircraftFollowSessionUpdateType::Acquiring => Some("ACQUIRING"),
+        AircraftFollowSessionUpdateType::Following => Some("FOLLOWING"),
+        AircraftFollowSessionUpdateType::DegradedHold
+        | AircraftFollowSessionUpdateType::Rejected => Some("DEGRADED_HOLD"),
+        AircraftFollowSessionUpdateType::Ended => Some("ENDED"),
+        AircraftFollowSessionUpdateType::Unspecified => None,
+    }
 }
 
 fn mission_update_event(update: MissionRunUpdateType) -> &'static str {
@@ -327,6 +391,8 @@ fn mission_update_event(update: MissionRunUpdateType) -> &'static str {
         MissionRunUpdateType::PayloadMissionRestored => "payload_mission_restored",
         MissionRunUpdateType::PayloadRestoreFailed => "payload_restore_failed",
         MissionRunUpdateType::ActionStateChanged => "action_state_changed",
+        MissionRunUpdateType::ReconciliationAccepted => "reconciliation_accepted",
+        MissionRunUpdateType::ReconciliationFailed => "reconciliation_failed",
         MissionRunUpdateType::Unspecified => "unspecified",
     }
 }

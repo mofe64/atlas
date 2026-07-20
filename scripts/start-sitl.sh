@@ -10,6 +10,7 @@ PX4_MODEL="${ATLAS_PX4_MODEL:-gz_x500_gimbal}"
 PX4_WORLD="${ATLAS_PX4_WORLD:-baylands}"
 PX4_BOOT_WAIT_SECONDS="${ATLAS_PX4_BOOT_WAIT_SECONDS:-20}"
 STARTUP_TIMEOUT_SECONDS="${ATLAS_SITL_STARTUP_TIMEOUT_SECONDS:-120}"
+ATLAS_GZ_IP="${ATLAS_GZ_IP:-127.0.0.1}"
 ATLAS_GZ_AUTO_FOLLOW="${ATLAS_GZ_AUTO_FOLLOW:-1}"
 ATLAS_GZ_FOLLOW_TARGET_EXPLICIT=0
 if [[ -n "${ATLAS_GZ_FOLLOW_TARGET:-}" ]]; then
@@ -19,6 +20,20 @@ ATLAS_GZ_FOLLOW_TARGET="${ATLAS_GZ_FOLLOW_TARGET:-${PX4_MODEL#gz_}_0}"
 ATLAS_GZ_FOLLOW_OFFSET_X="${ATLAS_GZ_FOLLOW_OFFSET_X:--4.0}"
 ATLAS_GZ_FOLLOW_OFFSET_Y="${ATLAS_GZ_FOLLOW_OFFSET_Y:--4.0}"
 ATLAS_GZ_FOLLOW_OFFSET_Z="${ATLAS_GZ_FOLLOW_OFFSET_Z:-3.0}"
+
+ATLAS_SITL_VIDEO_ENABLED="${ATLAS_SITL_VIDEO_ENABLED:-1}"
+ATLAS_SITL_VIDEO_TOPIC="${ATLAS_SITL_VIDEO_TOPIC:-}"
+ATLAS_SITL_VIDEO_ADDRESS="${ATLAS_SITL_VIDEO_ADDRESS:-127.0.0.1}"
+ATLAS_SITL_VIDEO_PORT="${ATLAS_SITL_VIDEO_PORT:-8554}"
+ATLAS_SITL_VIDEO_PATH="${ATLAS_SITL_VIDEO_PATH:-/main.264}"
+ATLAS_SITL_VIDEO_FPS="${ATLAS_SITL_VIDEO_FPS:-30}"
+ATLAS_SITL_VIDEO_BITRATE_KBPS="${ATLAS_SITL_VIDEO_BITRATE_KBPS:-2500}"
+ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS="${ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS:-45}"
+ATLAS_SITL_VIDEO_BUILD_DIR="${ATLAS_SITL_VIDEO_BUILD_DIR:-${ROOT_DIR}/.atlas-run/bin}"
+ATLAS_SITL_VIDEO_SOURCE="${ROOT_DIR}/scripts/sitl-video-bridge.cpp"
+ATLAS_SITL_VIDEO_BRIDGE="${ATLAS_SITL_VIDEO_BUILD_DIR}/sitl-video-bridge"
+ATLAS_VIDEO_RTSP_URL="${ATLAS_VIDEO_RTSP_URL:-}"
+ATLAS_VIDEO_SOURCE_ID="${ATLAS_VIDEO_SOURCE_ID:-}"
 
 SITL_MAVLINK_ROUTER="${ATLAS_SITL_MAVLINK_ROUTER:-none}"
 MAVPROXY_BIN="${ATLAS_MAVPROXY_BIN:-"${PX4_DIR}/.venv/bin/mavproxy.py"}"
@@ -53,6 +68,7 @@ SKIP_PX4=0
 SKIP_MAVSDK=0
 SKIP_NATIVE=0
 SKIP_AGENT=0
+SKIP_VIDEO=0
 DRY_RUN=0
 
 PIDS=()
@@ -63,7 +79,7 @@ usage() {
 Usage: scripts/start-sitl.sh [options]
 
 Starts the current local-first Atlas SITL stack:
-  PX4 Gazebo -> mavsdk_server -> atlas-agent -> Atlas Native (Tauri + SQLite)
+  PX4 Gazebo -> local RTSP video + mavsdk_server -> atlas-agent -> Atlas Native
 
 Options:
   --px4-dir PATH       PX4-Autopilot checkout. Default: ${PX4_DIR}
@@ -77,6 +93,7 @@ Options:
   --skip-mavsdk        Do not start mavsdk_server.
   --skip-native        Do not start the Atlas Native Tauri application.
   --skip-agent         Do not start the current Atlas Agent.
+  --skip-video         Do not stream the Gazebo gimbal camera over local RTSP.
   --dry-run            Validate inputs and print commands without starting processes.
   -h, --help           Show this help.
 
@@ -85,11 +102,23 @@ Useful environment overrides:
   ATLAS_PX4_VENV
   ATLAS_PX4_MODEL
   ATLAS_PX4_WORLD
+  ATLAS_GZ_IP
   ATLAS_GZ_AUTO_FOLLOW
   ATLAS_GZ_FOLLOW_TARGET
   ATLAS_GZ_FOLLOW_OFFSET_X
   ATLAS_GZ_FOLLOW_OFFSET_Y
   ATLAS_GZ_FOLLOW_OFFSET_Z
+  ATLAS_SITL_VIDEO_ENABLED
+  ATLAS_SITL_VIDEO_TOPIC
+  ATLAS_SITL_VIDEO_ADDRESS
+  ATLAS_SITL_VIDEO_PORT
+  ATLAS_SITL_VIDEO_PATH
+  ATLAS_SITL_VIDEO_FPS
+  ATLAS_SITL_VIDEO_BITRATE_KBPS
+  ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS
+  ATLAS_SITL_VIDEO_BUILD_DIR
+  ATLAS_VIDEO_RTSP_URL
+  ATLAS_VIDEO_SOURCE_ID
   ATLAS_SITL_STARTUP_TIMEOUT_SECONDS
   ATLAS_SITL_MAVLINK_ROUTER
   ATLAS_MAVPROXY_BIN
@@ -157,6 +186,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --skip-agent)
       SKIP_AGENT=1
+      shift
+      ;;
+    --skip-video)
+      SKIP_VIDEO=1
       shift
       ;;
     --dry-run)
@@ -318,6 +351,27 @@ wait_for_tcp() {
   done
 }
 
+verify_rtsp_video() {
+  local codec
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    return
+  fi
+  log "verifying decodable H.264 video at ${SITL_VIDEO_RTSP_URL}"
+  if ! codec="$(ffprobe \
+    -rtsp_transport tcp \
+    -rw_timeout 5000000 \
+    -v error \
+    -select_streams v:0 \
+    -show_entries stream=codec_name \
+    -of default=noprint_wrappers=1:nokey=1 \
+    "$SITL_VIDEO_RTSP_URL" 2>/dev/null)"; then
+    fail "SITL RTSP server started but did not provide decodable video; see ${LOG_DIR}/sitl-video.log"
+  fi
+  if [[ "$codec" != "h264" ]]; then
+    fail "SITL RTSP stream reported unexpected codec '${codec:-none}'; expected h264"
+  fi
+}
+
 wait_for_log() {
   local label="$1"
   local logfile="$2"
@@ -350,10 +404,52 @@ native_runtime_prefix() {
 }
 
 native_command() {
-  printf '%senv ATLAS_GROUND_STATION_LISTEN_ADDR="%s" ATLAS_SQLITE_PATH="%s" npm run tauri dev' \
+  printf '%senv ATLAS_GROUND_STATION_LISTEN_ADDR="%s" ATLAS_SQLITE_PATH="%s" ATLAS_VIDEO_RTSP_URL="%s" ATLAS_VIDEO_SOURCE_ID="%s" npm run tauri dev' \
     "$(native_runtime_prefix)" \
     "$ATLAS_GROUND_STATION_LISTEN_ADDR" \
-    "$ATLAS_SQLITE_PATH"
+    "$ATLAS_SQLITE_PATH" \
+    "$ATLAS_VIDEO_RTSP_URL" \
+    "$ATLAS_VIDEO_SOURCE_ID"
+}
+
+sitl_video_command() {
+  printf 'env GZ_IP="%s" "%s" --topic "%s" --address "%s" --port "%s" --mount-path "%s" --fps "%s" --bitrate-kbps "%s" --frame-timeout "%s"' \
+    "$ATLAS_GZ_IP" \
+    "$ATLAS_SITL_VIDEO_BRIDGE" \
+    "$ATLAS_SITL_VIDEO_TOPIC" \
+    "$ATLAS_SITL_VIDEO_ADDRESS" \
+    "$ATLAS_SITL_VIDEO_PORT" \
+    "$ATLAS_SITL_VIDEO_PATH" \
+    "$ATLAS_SITL_VIDEO_FPS" \
+    "$ATLAS_SITL_VIDEO_BITRATE_KBPS" \
+    "$ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS"
+}
+
+build_sitl_video_bridge() {
+  local packages
+  packages="gz-transport13 gz-msgs10 gstreamer-1.0 gstreamer-app-1.0 gstreamer-rtsp-server-1.0"
+  if [[ -x "$ATLAS_SITL_VIDEO_BRIDGE" && "$ATLAS_SITL_VIDEO_BRIDGE" -nt "$ATLAS_SITL_VIDEO_SOURCE" ]]; then
+    return
+  fi
+
+  log "building Gazebo-to-RTSP video bridge"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '  c++ -std=c++17 -O2 -Wall -Wextra %q -o %q $(pkg-config --cflags --libs %s)\n' \
+      "$ATLAS_SITL_VIDEO_SOURCE" \
+      "$ATLAS_SITL_VIDEO_BRIDGE" \
+      "$packages"
+    return
+  fi
+
+  mkdir -p "$ATLAS_SITL_VIDEO_BUILD_DIR"
+  # pkg-config emits the compiler arguments as separate shell words by design.
+  # shellcheck disable=SC2046
+  if ! c++ -std=c++17 -O2 -Wall -Wextra \
+    "$ATLAS_SITL_VIDEO_SOURCE" \
+    -o "$ATLAS_SITL_VIDEO_BRIDGE" \
+    $(pkg-config --cflags --libs $packages); then
+    fail "could not build the Gazebo-to-RTSP video bridge"
+  fi
 }
 
 mavproxy_command() {
@@ -375,13 +471,15 @@ configure_gazebo_follow() {
   request="track_mode: FOLLOW, follow_target: {name: '${ATLAS_GZ_FOLLOW_TARGET}'}, follow_offset: {x: ${ATLAS_GZ_FOLLOW_OFFSET_X}, y: ${ATLAS_GZ_FOLLOW_OFFSET_Y}, z: ${ATLAS_GZ_FOLLOW_OFFSET_Z}}, follow_pgain: 1.0, track_pgain: 1.0"
   log "locking Gazebo camera to ${ATLAS_GZ_FOLLOW_TARGET}"
   if [[ "$DRY_RUN" -eq 1 ]]; then
-    printf '  gz topic -t /gui/track -m gz.msgs.CameraTrack -p %q\n' "$request"
+    printf '  env GZ_IP=%q gz topic -t /gui/track -m gz.msgs.CameraTrack -p %q\n' \
+      "$ATLAS_GZ_IP" \
+      "$request"
     return
   fi
   # PX4 publishes the same message while the model is spawning. Republish after
   # the boot wait so the GUI CameraTracking plugin is definitely subscribed.
   for attempt in 1 2 3; do
-    if gz topic -t /gui/track -m gz.msgs.CameraTrack -p "$request" >/dev/null 2>&1; then
+    if env GZ_IP="$ATLAS_GZ_IP" gz topic -t /gui/track -m gz.msgs.CameraTrack -p "$request" >/dev/null 2>&1; then
       sleep 1
     else
       log "Gazebo camera follow attempt ${attempt} was not accepted"
@@ -416,6 +514,29 @@ assert_prerequisites() {
   require_absolute_path "$SITL_STATE_DIR" "SITL state directory"
   require_absolute_path "$ATLAS_SQLITE_PATH" "Atlas SQLite path"
   require_absolute_path "$ATLAS_AGENT_STATE_DIR" "Atlas Agent state directory"
+
+  if [[ "$SKIP_VIDEO" -eq 0 ]]; then
+    require_command c++
+    require_command ffprobe
+    require_command pkg-config
+    require_path "$ATLAS_SITL_VIDEO_SOURCE" "SITL video bridge source"
+    require_absolute_path "$ATLAS_SITL_VIDEO_BUILD_DIR" "SITL video build directory"
+    if [[ "$ATLAS_SITL_VIDEO_TOPIC" != /* ]]; then
+      fail "ATLAS_SITL_VIDEO_TOPIC must be an absolute Gazebo topic: ${ATLAS_SITL_VIDEO_TOPIC}"
+    fi
+    if [[ "$ATLAS_SITL_VIDEO_PATH" != /* ]]; then
+      fail "ATLAS_SITL_VIDEO_PATH must begin with /: ${ATLAS_SITL_VIDEO_PATH}"
+    fi
+    if ! pkg-config --exists \
+      gz-transport13 \
+      gz-msgs10 \
+      gstreamer-1.0 \
+      gstreamer-app-1.0 \
+      gstreamer-rtsp-server-1.0; then
+      fail "SITL video requires Gazebo Transport, Gazebo Messages, GStreamer, and GStreamer RTSP Server development packages"
+    fi
+    require_tcp_port_free "SITL RTSP video" "$ATLAS_SITL_VIDEO_PORT"
+  fi
 
   if [[ "$SKIP_NATIVE" -eq 0 ]]; then
     require_command cargo
@@ -470,6 +591,9 @@ monitor_processes() {
   if [[ "$SKIP_AGENT" -eq 0 ]]; then
     log "  agent:   ${ATLAS_AGENT_STATE_DIR}"
   fi
+  if [[ "$SKIP_VIDEO" -eq 0 ]]; then
+    log "  video:   ${SITL_VIDEO_RTSP_URL}"
+  fi
   log "  logs:    ${LOG_DIR}"
   log "press Ctrl-C to stop the stack"
 
@@ -487,6 +611,26 @@ monitor_processes() {
 }
 
 apply_mavlink_defaults
+case "$ATLAS_SITL_VIDEO_ENABLED" in
+  0)
+    SKIP_VIDEO=1
+    ;;
+  1)
+    ;;
+  *)
+    fail "ATLAS_SITL_VIDEO_ENABLED must be 0 or 1"
+    ;;
+esac
+if [[ -z "$ATLAS_SITL_VIDEO_TOPIC" ]]; then
+  ATLAS_SITL_VIDEO_TOPIC="/world/${PX4_WORLD}/model/${ATLAS_GZ_FOLLOW_TARGET}/link/camera_link/sensor/camera/image"
+fi
+SITL_VIDEO_RTSP_URL="rtsp://${ATLAS_SITL_VIDEO_ADDRESS}:${ATLAS_SITL_VIDEO_PORT}${ATLAS_SITL_VIDEO_PATH}"
+if [[ "$SKIP_VIDEO" -eq 0 && -z "$ATLAS_VIDEO_RTSP_URL" ]]; then
+  ATLAS_VIDEO_RTSP_URL="$SITL_VIDEO_RTSP_URL"
+fi
+if [[ "$SKIP_VIDEO" -eq 0 && -z "$ATLAS_VIDEO_SOURCE_ID" ]]; then
+  ATLAS_VIDEO_SOURCE_ID="sitl-gimbal"
+fi
 assert_prerequisites
 
 NATIVE_GRPC_PORT="$(tcp_port_from_addr "$ATLAS_GROUND_STATION_LISTEN_ADDR")"
@@ -496,6 +640,7 @@ ATLAS_GROUND_STATION_ADDR="${ATLAS_GROUND_STATION_ADDR:-${NATIVE_GRPC_HOST}:${NA
 log "using PX4_DIR=${PX4_DIR}"
 log "using PX4 model=${PX4_MODEL}"
 log "using Gazebo world=${PX4_WORLD}"
+log "using Gazebo transport IP=${ATLAS_GZ_IP}"
 log "using MAVLink router=${SITL_MAVLINK_ROUTER}"
 if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
   log "using MAVProxy master=${MAVPROXY_MASTER}"
@@ -504,6 +649,11 @@ if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then
 fi
 log "using PX4 system address=${ATLAS_PX4_SYSTEM_ADDRESS}"
 log "using SITL state=${SITL_STATE_DIR}"
+if [[ "$SKIP_VIDEO" -eq 0 ]]; then
+  log "using Gazebo camera topic=${ATLAS_SITL_VIDEO_TOPIC}"
+  log "publishing SITL video=${SITL_VIDEO_RTSP_URL}"
+  log "using Atlas video source=${ATLAS_VIDEO_RTSP_URL} (${ATLAS_VIDEO_SOURCE_ID})"
+fi
 log "using logs=${LOG_DIR}"
 
 if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -514,12 +664,23 @@ if [[ "$SKIP_PX4" -eq 0 ]]; then
   start_process \
     "px4-sitl" \
     "$PX4_DIR" \
-    "source \"${PX4_VENV}\" && env PX4_GZ_WORLD=\"${PX4_WORLD}\" make \"${PX4_TARGET}\" \"${PX4_MODEL}\""
+    "source \"${PX4_VENV}\" && env GZ_IP=\"${ATLAS_GZ_IP}\" PX4_GZ_WORLD=\"${PX4_WORLD}\" make \"${PX4_TARGET}\" \"${PX4_MODEL}\""
   if [[ "$DRY_RUN" -eq 0 ]]; then
     log "giving PX4 ${PX4_BOOT_WAIT_SECONDS}s to publish MAVLink"
     sleep "$PX4_BOOT_WAIT_SECONDS"
   fi
   configure_gazebo_follow
+fi
+
+if [[ "$SKIP_VIDEO" -eq 0 ]]; then
+  build_sitl_video_bridge
+  start_process "sitl-video" "$ROOT_DIR" "$(sitl_video_command)"
+  wait_for_tcp \
+    "SITL RTSP video" \
+    "$ATLAS_SITL_VIDEO_ADDRESS" \
+    "$ATLAS_SITL_VIDEO_PORT" \
+    "$STARTUP_TIMEOUT_SECONDS"
+  verify_rtsp_video
 fi
 
 if [[ "$SITL_MAVLINK_ROUTER" == "mavproxy" ]]; then

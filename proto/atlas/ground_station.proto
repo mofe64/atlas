@@ -27,6 +27,7 @@ message AgentToGroundStation {
     AgentStatusText status_text = 5;
     VehicleCommandUpdate command_update = 6;
     MissionRunUpdate mission_run_update = 7;
+    AircraftFollowSessionUpdate aircraft_follow_session_update = 8;
   }
 }
 
@@ -36,6 +37,8 @@ message GroundStationToAgent {
     VehicleCommandRequest command_request = 2;
     VehicleCommandCancellation command_cancellation = 3;
     MissionOperationRequest mission_operation_request = 4;
+    MissionReconciliationRequest mission_reconciliation_request = 5;
+    AircraftFollowControlRequest aircraft_follow_control_request = 6;
   }
 }
 
@@ -50,6 +53,7 @@ message AgentPerception {
     PerceptionStreamRegistration registration = 3;
     PerceptionFrame frame = 4;
     PerceptionHealth health = 5;
+    PerceptionTrackUpdateBatch track_updates = 6;
   }
 }
 
@@ -57,6 +61,7 @@ message GroundStationPerception {
   oneof payload {
     PerceptionStreamAccepted stream_accepted = 1;
     PerceptionFrameSubscription frame_subscription = 2;
+    PerceptionCountingRuleSet counting_rules = 3;
   }
 }
 
@@ -118,6 +123,87 @@ message PerceptionDetection {
   string attributes_json = 6;
 }
 
+// Lifecycle updates are independent of frame subscriptions so Native can
+// persist track state even when no high-rate live-video consumer is mounted.
+message PerceptionTrackUpdateBatch {
+  string source_id = 1;
+  string stream_epoch = 2;
+  string track_session_id = 3;
+  string tracker_type = 4;
+  int64 observed_at_unix_ms = 5;
+  bool session_started = 6;
+  bool session_ended = 7;
+  string session_end_reason = 8;
+  repeated PerceptionTrackSnapshot tracks = 9;
+  uint64 current_visible = 10;
+  uint64 unique_confirmed = 11;
+  repeated PerceptionTrackRuleCount rule_counts = 12;
+  repeated PerceptionTrackCountEvent count_events = 13;
+}
+
+message NormalizedPoint {
+  double x = 1;
+  double y = 2;
+}
+
+// Native replaces the complete active rule set for one source. Rules use
+// normalized image coordinates so they remain independent of decoder size.
+message PerceptionCountingRuleSet {
+  string source_id = 1;
+  repeated PerceptionCountingRule rules = 2;
+}
+
+message PerceptionCountingRule {
+  string rule_id = 1;
+  string label = 2;
+  string rule_type = 3;
+  uint64 revision = 4;
+  repeated NormalizedPoint points = 5;
+  repeated int32 class_ids = 6;
+}
+
+message PerceptionTrackRuleCount {
+  string rule_id = 1;
+  uint64 rule_revision = 2;
+  string rule_type = 3;
+  uint64 line_forward = 4;
+  uint64 line_reverse = 5;
+  uint64 polygon_entries = 6;
+  uint64 polygon_exits = 7;
+}
+
+message PerceptionTrackCountEvent {
+  string event_id = 1;
+  string rule_id = 2;
+  uint64 rule_revision = 3;
+  string track_session_id = 4;
+  string track_id = 5;
+  string event_type = 6;
+  int64 observed_at_unix_ms = 7;
+  NormalizedPoint anchor = 8;
+}
+
+message PerceptionTrackSnapshot {
+  string track_id = 1;
+  string track_session_id = 2;
+  string tracker_type = 3;
+  string lifecycle_state = 4;
+  uint64 revision = 5;
+  uint64 age_frames = 6;
+  uint64 observation_count = 7;
+  int64 first_observed_at_unix_ms = 8;
+  int64 last_observed_at_unix_ms = 9;
+  NormalizedBoundingBox latest_confirmed_box = 10;
+  double latest_detection_confidence = 11;
+  NormalizedBoundingBox predicted_box = 12;
+  double prediction_confidence = 13;
+  int64 closed_at_unix_ms = 14;
+  string closure_reason = 15;
+  int32 class_id = 16;
+  string class_label = 17;
+  string update_reason = 18;
+}
+
 message NormalizedBoundingBox {
   double x = 1;
   double y = 2;
@@ -140,6 +226,25 @@ message PerceptionHealth {
   string last_error = 12;
   PerceptionModelIdentity model = 13;
   int64 observed_at_unix_ms = 14;
+  // ACTIVE and INACTIVE are healthy observed states. FAILED means the runtime
+  // could not satisfy its desired activation state.
+  string activation_state = 15;
+  PerceptionTrackingHealth tracking = 16;
+}
+
+// Tracking health describes temporary object association, not the identity of
+// a person or vehicle. session_id changes whenever continuity is not safe.
+message PerceptionTrackingHealth {
+  string algorithm = 1;
+  string state = 2;
+  string session_id = 3;
+  string last_reset_reason = 4;
+  uint64 reset_count = 5;
+  string last_error = 6;
+  string camera_motion_state = 7;
+  string camera_motion_method = 8;
+  double camera_motion_confidence = 9;
+  bool re_id_enabled = 10;
 }
 
 message AgentRegistration {
@@ -290,6 +395,11 @@ enum VehicleCommandType {
   VEHICLE_COMMAND_TYPE_PAYLOAD_CONTROL_END = 9;
   VEHICLE_COMMAND_TYPE_GIMBAL_SET_ROI = 10;
   VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM = 11;
+  VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START = 12;
+  VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP = 13;
+  // Non-actuating request that estimates one exact operator-selected track at
+  // its latest frame-aligned aircraft/gimbal state.
+  VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK = 14;
 }
 
 enum VehicleCommandUpdateType {
@@ -331,6 +441,87 @@ message VehicleCommandUpdate {
   string evidence_json = 8;
 }
 
+// Aircraft following is a separate supervised navigation authority. It never
+// follows image-space pixels and does not inherit a gimbal-follow lease.
+enum AircraftFollowControlAction {
+  AIRCRAFT_FOLLOW_CONTROL_ACTION_UNSPECIFIED = 0;
+  AIRCRAFT_FOLLOW_CONTROL_ACTION_START = 1;
+  AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW = 2;
+  AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD = 3;
+  AIRCRAFT_FOLLOW_CONTROL_ACTION_END = 4;
+}
+
+message AircraftFollowEnvelope {
+  double standoff_m = 1;
+  double altitude_relative_m = 2;
+  double minimum_altitude_relative_m = 3;
+  double maximum_altitude_relative_m = 4;
+  double maximum_ground_speed_m_s = 5;
+  double maximum_acceleration_m_s2 = 6;
+  int64 maximum_duration_ms = 7;
+  double boundary_center_latitude = 8;
+  double boundary_center_longitude = 9;
+  double boundary_radius_m = 10;
+  double minimum_battery_percent = 11;
+  double minimum_track_confidence = 12;
+  double maximum_geolocation_uncertainty_m = 13;
+  double maximum_velocity_uncertainty_m_s = 14;
+}
+
+message AircraftFollowTargetState {
+  string geolocation_id = 1;
+  string selection_id = 2;
+  string source_id = 3;
+  string track_session_id = 4;
+  string track_id = 5;
+  int64 observed_at_unix_ms = 6;
+  double latitude = 7;
+  double longitude = 8;
+  double altitude_amsl_m = 9;
+  double velocity_north_m_s = 10;
+  double velocity_east_m_s = 11;
+  double horizontal_uncertainty_m = 12;
+  double velocity_uncertainty_m_s = 13;
+  double track_confidence = 14;
+  string lifecycle_state = 15;
+  string motion_status = 16;
+}
+
+message AircraftFollowControlRequest {
+  string operation_id = 1;
+  string follow_session_id = 2;
+  string drone_id = 3;
+  AircraftFollowControlAction action = 4;
+  AircraftFollowEnvelope envelope = 5;
+  AircraftFollowTargetState target = 6;
+  int64 operator_lease_expires_at_unix_ms = 7;
+  int64 requested_at_unix_ms = 8;
+  string reason_code = 9;
+  string reason = 10;
+  string validation_reference = 11;
+}
+
+enum AircraftFollowSessionUpdateType {
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED = 0;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING = 1;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING = 2;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING = 3;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD = 4;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED = 5;
+  AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED = 6;
+}
+
+message AircraftFollowSessionUpdate {
+  string event_id = 1;
+  string operation_id = 2;
+  string follow_session_id = 3;
+  AircraftFollowSessionUpdateType update_type = 4;
+  int64 observed_at_unix_ms = 5;
+  string reason_code = 6;
+  string message = 7;
+  string evidence_json = 8;
+}
+
 // Mission operations use the same durable request/update boundary as vehicle
 // commands, while retaining a mission-specific lifecycle and progress model.
 enum MissionOperationType {
@@ -364,6 +555,8 @@ enum MissionRunUpdateType {
   // Runtime mission actions are reported through the mission stream so their
   // acknowledgement remains ordered with flight progress for the same run.
   MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED = 17;
+  MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED = 18;
+  MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED = 19;
 }
 
 enum MissionActionState {
@@ -385,6 +578,31 @@ message MissionOperationRequest {
   string mission_plan_json = 5;
   int64 requested_at_unix_ms = 6;
   int64 deadline_at_unix_ms = 7;
+}
+
+// Native sends its durable run/action checkpoints after every Agent session
+// registration. The Agent must first prove that PX4 still holds the immutable
+// mission before associating its in-memory executor with the run.
+message MissionReconciliationRequest {
+  string reconciliation_id = 1;
+  string mission_run_id = 2;
+  string drone_id = 3;
+  string run_state = 4;
+  string mission_plan_json = 5;
+  optional uint32 current_waypoint = 6;
+  uint32 total_waypoints = 7;
+  repeated MissionActionCheckpoint actions = 8;
+  int64 requested_at_unix_ms = 9;
+  int64 deadline_at_unix_ms = 10;
+}
+
+message MissionActionCheckpoint {
+  uint32 action_sequence = 1;
+  string action_type = 2;
+  string state = 3;
+  uint32 attempt = 4;
+  optional int64 attempt_deadline_at_unix_ms = 5;
+  optional int64 next_attempt_at_unix_ms = 6;
 }
 
 message MissionRunUpdate {

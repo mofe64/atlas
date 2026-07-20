@@ -18,6 +18,12 @@ flowchart LR
 Agent does not connect to Atlas Backend. Its main composition is
 [`atlas-agent/cmd/atlas-agent/main.go`](../atlas-agent/cmd/atlas-agent/main.go).
 
+Mission and dispatch semantics are documented in
+[Mission types and flight patterns](mission-types-and-flight-patterns.md) and
+[Incident dispatch](incident-dispatch.md). The complete perception-to-control
+pipeline is in
+[Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md).
+
 ## Startup composition
 
 The process starts in this order:
@@ -25,7 +31,8 @@ The process starts in this order:
 1. Load environment configuration.
 2. Load or create the stable local identity.
 3. If enabled, create the protected perception Unix socket and supervise or
-   await the provider adapter.
+   await the provider adapter. The adapter reports health from `READY`; it does
+   not run inference until Agent grants an activation claim.
 4. Connect telemetry subscriptions to `mavsdk_server`.
 5. Create one shared payload controller.
 6. Create the action executor and mission executor using that controller.
@@ -54,6 +61,15 @@ and validates process configuration. Core variables are:
 | `ATLAS_PERCEPTION_PROVIDER` | `disabled` | `disabled`, `external`, `hailo`, `deepstream`, `tensorrt`, or `onnx` |
 | `ATLAS_PERCEPTION_SOCKET_PATH` | Under Agent state | Protected provider-to-Agent socket |
 | `ATLAS_PERCEPTION_ADAPTER_MODE` | `process` | Agent-supervised process or external/systemd container |
+| `ATLAS_GIMBAL_FOLLOW_UPDATE_INTERVAL` | `100ms` | Onboard image-space controller cadence (`50ms`–`500ms`) |
+| `ATLAS_GIMBAL_FOLLOW_TRACK_FRESHNESS` | `350ms` | Maximum age of a confirmed observation before the controller holds |
+| `ATLAS_GIMBAL_FOLLOW_HOLD_TIMEOUT` | `2s` | Maximum continuous safety hold before follow terminates |
+| `ATLAS_GIMBAL_FOLLOW_MAX_PITCH_RATE` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW_RATE` | `20` / `30` | Bounded commanded rates in degrees per second |
+| `ATLAS_GIMBAL_FOLLOW_MIN_PITCH` / `ATLAS_GIMBAL_FOLLOW_MAX_PITCH` | `-90` / `30` | Calibrated physical pitch envelope in degrees |
+| `ATLAS_GIMBAL_FOLLOW_MIN_YAW` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW` | `-180` / `180` | Calibrated aircraft-relative yaw envelope in degrees |
+| `ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE` | empty | Physical camera/gimbal alignment acceptance record; empty remains `UNVERIFIED` |
+| `ATLAS_AIRCRAFT_FOLLOW_ENABLED` | `false` | Enables aircraft translation only for a commissioned installation |
+| `ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE` | empty | Accepted simulation/HIL/controlled-flight evidence reference required by the enabled controller |
 | `ATLAS_FLIGHT_CONTROLLER_ENDPOINT` | `/dev/serial0` | Registration metadata for the attached controller |
 | `ATLAS_FLIGHT_CONTROLLER_BAUD_RATE` | `921600` | Registration and setup metadata |
 
@@ -114,13 +130,48 @@ Subscriptions include:
 - RC state.
 - PX4 status text.
 
-Most streams retry independently after failure. The adapter requests a
-best-effort 2 Hz MAVSDK update rate, combines the latest fields under a mutex,
-and publishes at the configured interval only when it has a newer snapshot.
+Most streams retry independently after failure. The operator telemetry path
+requests a best-effort 2 Hz MAVSDK update rate, combines the latest fields under
+a mutex, and publishes at the configured interval only when it has a newer
+snapshot.
 
 The output channel has capacity one. If the consumer is slow, Agent removes the
 old pending snapshot and publishes the latest. Status text uses a separate
 buffered event channel because discrete warnings must be retained.
+
+### Geolocation temporal foundation
+
+[`internal/geolocation`](../atlas-agent/internal/geolocation) is a separate,
+bounded onboard time-series path. It requests 30 Hz timestamped aircraft
+quaternions, 10 Hz estimator position, and 20 Hz NED velocity, while retaining
+navigation-field age and GPS uncertainty on every synthesized pose sample. It
+also correlates the autopilot boot clock and autopilot Unix clock to companion
+`CLOCK_MONOTONIC`.
+
+The payload controller subscribes observationally to measured MAVSDK Gimbal v2
+attitude, including the gimbal timestamp, forward/North quaternions, Euler
+angles, and angular rates. This subscription never takes payload control.
+Aircraft and per-gimbal histories are bounded and are cleared across their
+respective timestamp rollbacks so interpolation cannot cross a reboot or clock
+epoch.
+
+Perception protocol v3 contributes a pre-inference PTS/companion-clock anchor.
+The foundation resolves a selected track's exact frame time, interpolates
+aircraft and measured gimbal state around it, and performs the bounded centred-
+boresight horizontal-plane estimate. A pipeline-ingress anchor is intentionally
+labelled as an estimate. Native uses that first result to sample the configured
+DEM at the target coordinate and iterates against the same immutable world-NED
+ray; it does not reissue the Agent command against a newer video frame. The
+final terrain coordinate, ordered samples, residual, uncertainty, lifecycle,
+and filtered world-space motion are durable. Arbitrary-pixel projection,
+measured range, and surveyed accuracy acceptance remain outside this
+implementation.
+
+Every estimate also declares physical boresight-alignment status. Without
+`ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE`, evidence says `UNVERIFIED`
+and explicitly does not claim that the static angular bound is field-accepted.
+A commissioned installation records its test artifact/reference and configured
+angular bound in every result.
 
 ## Action executor
 
@@ -184,6 +235,45 @@ seconds and renews every three. If renewal stops:
 
 Mission activation is rejected while inspection control owns the payload.
 
+### Operator-selected track following
+
+[`internal/vehicle/gimbal_follow.go`](../atlas-agent/internal/vehicle/gimbal_follow.go)
+runs the low-latency image-space gimbal loop onboard. Native starts it only for
+the exact selected `(track_session_id, track_id)` under an existing manual
+payload lease. The controller reads measured MAVSDK gimbal attitude, aims at
+the confirmed box centre, applies deadband, rate, acceleration, configured
+angle, and braking-distance limits, and sends aircraft-relative angular rates.
+
+`TEMPORARILY_OCCLUDED` or stale input holds the current angle with zero rates.
+Tentative or terminal lifecycle states, source/session replacement, lease loss,
+mission end, shutdown, or a gimbal read/write fault stop the loop. The
+controller never searches for or attaches to another track ID. Geolocation and
+aircraft motion are not part of this loop.
+
+### Follow from standoff navigation
+
+[`internal/vehicle/aircraft_follow.go`](../atlas-agent/internal/vehicle/aircraft_follow.go)
+is a separate PX4 Offboard authority. It never consumes bounding-box error and
+does not acquire gimbal ownership. Native supplies an exact selected-track
+identity, a terrain-refined world position and velocity, an immutable reviewed
+envelope, and a one-to-five-second operator lease. The Agent fixes the initial
+radial observation side, predicts the target over the bounded freshness window,
+and commands target-velocity feed-forward plus limited position correction.
+
+Before each setpoint the Agent checks lease, target age, maximum duration,
+telemetry age, arm/in-air state, local/global position health, battery reserve,
+altitude band, aircraft/target/observation-point boundary, and PX4 Offboard
+activity. Velocity and acceleration are clamped to the reviewed envelope. Any
+failure sends zero velocity, stops Offboard, explicitly requests PX4 Hold, and
+reports a durable exit reason to Native. Ground-stream loss invokes the same
+path; RC and PX4 failsafes remain independent.
+
+The controller advertises `unverified` and refuses to start by default. It
+advertises `verified` only when startup configuration contains both a follow
+validation reference and a physical boresight-alignment reference. Renewals
+may update only the exact target sample and lease: the Agent revalidates them
+against the original envelope so authority cannot expand in flight.
+
 ## Mission executor
 
 [`internal/vehicle/missions.go`](../atlas-agent/internal/vehicle/missions.go)
@@ -205,20 +295,31 @@ The executor serializes mission operations with `operationMu`. It supports:
 - Return to Launch.
 - Mission-progress subscription.
 
-For incident-response plans, mission translation also retains a separate
-arrival-action chain. Reaching the last waypoint does not complete the run.
-Agent executes `HOLD_AT_ARRIVAL` first, then optional
-`POINT_GIMBAL_AT_INCIDENT`, and emits acknowledged action states for each
-attempt. Exhausted retries apply only the immutable plan's explicit Return to
-Launch or operator-intervention policy.
+For incident-response plans, mission translation also retains a separate,
+waypoint-triggered arrival-action chain. Agent executes `HOLD_AT_ARRIVAL`
+first, then optional `POINT_GIMBAL_AT_INCIDENT`. Area Scan and Orbit add a
+durable `RESUME_AFTER_ARRIVAL` action and trigger the chain after generated
+waypoint zero, before their remaining pattern waypoints. One-waypoint Offset
+Observe triggers at its final waypoint and completes after its acknowledged
+observation chain. Hold at Staging carries a Hold-only
+`waitForOperatorDecision` action at the final waypoint; after Hold succeeds,
+Agent reports the run `PAUSED`, stops its progress watcher, and waits for an
+explicit mission Resume, RTL, or Cancel command. Land remains an independent
+immediate safety action and does not close the run by itself. Agent emits acknowledged action
+states for every attempt; exhausted retries apply only the immutable plan's
+explicit Return to Launch or operator-intervention policy.
 
-On initial start, Agent arms before requesting mission mode. If mission start
-fails after arming, Agent requests Hold. Resume does not arm again; it requires
-the loaded run to be paused.
+On initial start, Agent first executes any required `START_PERCEPTION` action
+and waits for a fresh inference frame. It then arms before requesting mission
+mode. If perception fails, it does not arm. If mission start fails after arming,
+Agent requests Hold and removes the mission perception claim. Resume does not
+arm or start perception again; it requires the loaded run to be paused.
 
 Mission progress updates the payload controller for the current waypoint and is
-streamed back to Native. Completion ends payload ownership and emits a terminal
-run update only after any reviewed arrival actions have succeeded.
+streamed back to Native. Waypoint progress alone is neither arrival nor mission
+completion. Completion ends payload ownership and emits a terminal run update
+only after the reviewed arrival phase has succeeded and the remaining route has
+completed.
 
 ## Perception boundary
 
@@ -234,15 +335,25 @@ The runtime source:
 - Rejects non-socket files at the configured path.
 - Validates protocol version, frames, detections, boxes, model identity, and
   health.
+- Owns reference-counted mission and renewable live-view activation claims.
+- Sends bidirectional activation requests and waits for observed runtime state
+  plus a fresh post-activation frame.
+- Filters detections to the union of requested mission profiles unless an
+  unfiltered live-view claim is present.
 - Publishes latest-only frame and health channels.
 
 For Hailo, [`scripts/atlas-hailort-adapter.py`](../atlas-agent/scripts/atlas-hailort-adapter.py)
-opens the clean A8 RTSP stream, runs Hailo/TAPPAS inference, extracts normalized
-metadata, and never draws or republishes video.
+keeps its GStreamer pipeline in `READY` by default. An activation request moves
+it to `PLAYING`, where it opens the clean A8 RTSP stream, runs Hailo/TAPPAS
+inference, extracts normalized metadata, and never draws or republishes video.
+Agent socket loss returns the adapter to `READY` as a fail-safe.
 
-Agent always forwards health. It forwards frames only while a Native consumer
-lease is active or a mission is `RUNNING`/`PAUSED`. Demand state is implemented
-in [`internal/transport/groundstation/frame_demand.go`](../atlas-agent/internal/transport/groundstation/frame_demand.go).
+Agent always forwards health, including the intentional `INACTIVE` state. It
+forwards frames only while a Native consumer lease is active or a mission is
+`RUNNING`/`PAUSED`. Demand state is implemented in
+[`internal/transport/groundstation/frame_demand.go`](../atlas-agent/internal/transport/groundstation/frame_demand.go),
+while runtime ownership is implemented in
+[`internal/perception/control.go`](../atlas-agent/internal/perception/control.go).
 
 ## Packaged runtime
 

@@ -2,6 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::{
+    alerts::reconcile_telemetry_alerts,
     events::{insert_status_event, prune_status_events},
     LocalDatabase, StatusEventInput,
 };
@@ -284,6 +285,7 @@ impl LocalDatabase {
         if !derived_events.is_empty() {
             prune_status_events(&transaction, &drone_id)?;
         }
+        reconcile_telemetry_alerts(&transaction, &drone_id, input)?;
 
         transaction
             .commit()

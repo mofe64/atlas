@@ -1,6 +1,6 @@
 use rusqlite::{params, OptionalExtension, Transaction};
 
-use super::LocalDatabase;
+use super::{alerts::resolve_alert, LocalDatabase};
 
 pub(crate) const ARCHIVED_REGISTRATION_ERROR: &str = "archived aircraft registration rejected";
 
@@ -200,6 +200,18 @@ impl LocalDatabase {
             ],
         )
         .map_err(|error| format!("insert communication link: {error}"))?;
+
+        resolve_alert(
+            &tx,
+            &format!("agent_disconnected:{}", input.drone_id),
+            "Atlas Agent registered and the communication link recovered",
+            &serde_json::json!({
+                "sessionId": input.session_id,
+                "communicationLinkId": link_id,
+                "remoteAddress": input.remote_address,
+            }),
+            input.observed_at_unix_ms,
+        )?;
 
         tx.commit()
             .map_err(|error| format!("commit agent registration: {error}"))?;

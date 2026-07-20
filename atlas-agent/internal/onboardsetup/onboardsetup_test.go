@@ -66,7 +66,7 @@ func TestDiscoverHailoRequiresCompleteRuntime(t *testing.T) {
 		"hailortcli fw-control identify": {Output: "Device Architecture: HAILO8L"},
 		"gst-inspect-1.0 hailonet":       {},
 		"gst-inspect-1.0 hailofilter":    {},
-		"python3 -c import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo": {},
+		"python3 -c import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo; import cv2; import numpy": {},
 	}}
 
 	status := discoverHailo(context.Background(), runner, DefaultPaths("/"))
@@ -293,6 +293,9 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 		`ATLAS_MAVSDK_SYSTEM_ADDRESS="serial:///dev/serial/by-id/usb-pixhawk:921600"`,
 		`ATLAS_CAMERA_TRANSPORT="siyi_udp"`,
 		`ATLAS_PERCEPTION_PROVIDER="hailo"`,
+		`ATLAS_TRACKER_ALGORITHM="byte_track"`,
+		`ATLAS_TRACKER_CMC_MAX_DIMENSION="320"`,
+		`ATLAS_BYTETRACK_WORKER_PATH="/usr/libexec/atlas-agent/atlas-bytetrack-worker"`,
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered config missing %q:\n%s", expected, rendered)

@@ -19,7 +19,7 @@ LABEL org.opencontainers.image.title="Atlas Hailo perception runtime" \
 
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends ca-certificates curl; \
+    apt-get install -y --no-install-recommends ca-certificates curl python3-opencv python3-numpy; \
     curl -fsSL "https://archive.raspberrypi.com/debian/pool/main/h/hailort/hailort_${HAILORT_VERSION}_arm64.deb" -o /tmp/hailort.deb; \
     curl -fsSL "https://archive.raspberrypi.com/debian/pool/main/p/pyhailort/python3-hailort_${PYHAILORT_VERSION}_arm64.deb" -o /tmp/python3-hailort.deb; \
     curl -fsSL "https://archive.raspberrypi.com/debian/pool/main/h/hailo-tappas-core/hailo-tappas-core_${TAPPAS_VERSION}_arm64.deb" -o /tmp/hailo-tappas-core.deb; \

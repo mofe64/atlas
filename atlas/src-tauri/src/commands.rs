@@ -4,6 +4,144 @@ use tauri::{ipc::Response, State};
 
 use crate::{database, AppState};
 
+#[tauri::command]
+pub(crate) fn evidence_recording_status(
+    state: tauri::State<'_, AppState>,
+    drone_id: Option<String>,
+    incident_id: Option<String>,
+    mission_id: Option<String>,
+    mission_run_id: Option<String>,
+) -> Result<crate::recording::EvidenceRecordingStatusSnapshot, String> {
+    state.recording.status(
+        drone_id.as_deref(),
+        incident_id.as_deref(),
+        mission_id.as_deref(),
+        mission_run_id.as_deref(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn start_evidence_recording(
+    state: tauri::State<'_, AppState>,
+    input: database::StartEvidenceRecordingInput,
+) -> Result<database::EvidenceRecordingSessionSnapshot, String> {
+    state.recording.start(input)
+}
+
+#[tauri::command]
+pub(crate) fn stop_evidence_recording(
+    state: tauri::State<'_, AppState>,
+    recording_session_id: String,
+) -> Result<database::EvidenceRecordingSessionSnapshot, String> {
+    state.recording.stop(&recording_session_id)
+}
+
+#[tauri::command]
+pub(crate) fn capture_evidence_still(
+    state: State<'_, AppState>,
+    input: database::CaptureEvidenceStillInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    let frame = state.video.latest_frame(&input.drone_id)?;
+    state.recording.capture_still(input, frame)
+}
+
+#[tauri::command]
+pub(crate) fn queue_evidence_event_clip(
+    state: State<'_, AppState>,
+    input: database::QueueEvidenceEventClipInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state.recording.queue_event_clip(input)
+}
+
+#[tauri::command]
+pub(crate) fn evidence_assets(
+    state: State<'_, AppState>,
+    input: Option<database::EvidenceAssetListInput>,
+) -> Result<Vec<database::EvidenceAssetSnapshot>, String> {
+    state.database.evidence_assets(&input.unwrap_or_default())
+}
+
+#[tauri::command]
+pub(crate) fn evidence_asset(
+    state: State<'_, AppState>,
+    asset_id: String,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state.database.evidence_asset(&asset_id)
+}
+
+#[tauri::command]
+pub(crate) fn evidence_asset_content(
+    state: State<'_, AppState>,
+    asset_id: String,
+    thumbnail: Option<bool>,
+) -> Result<Response, String> {
+    state
+        .recording
+        .evidence_asset_bytes(&asset_id, thumbnail.unwrap_or(false))
+        .map(Response::new)
+}
+
+#[tauri::command]
+pub(crate) fn review_evidence_asset(
+    state: State<'_, AppState>,
+    input: database::ReviewEvidenceAssetInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state.database.review_evidence_asset(&input, unix_time_ms())
+}
+
+#[tauri::command]
+pub(crate) fn annotate_evidence_asset(
+    state: State<'_, AppState>,
+    input: database::AnnotateEvidenceAssetInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state
+        .database
+        .annotate_evidence_asset(&input, unix_time_ms())
+}
+
+#[tauri::command]
+pub(crate) fn update_evidence_asset_retention(
+    state: State<'_, AppState>,
+    input: database::UpdateEvidenceAssetRetentionInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state
+        .database
+        .update_evidence_asset_retention(&input, unix_time_ms())
+}
+
+#[tauri::command]
+pub(crate) fn trash_evidence_asset(
+    state: State<'_, AppState>,
+    input: database::TrashEvidenceAssetInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state.recording.trash_asset(&input)
+}
+
+#[tauri::command]
+pub(crate) fn restore_evidence_asset(
+    state: State<'_, AppState>,
+    input: database::RestoreEvidenceAssetInput,
+) -> Result<database::EvidenceAssetSnapshot, String> {
+    state.recording.restore_asset(&input)
+}
+
+#[tauri::command]
+pub(crate) fn evidence_retention_policy(
+    state: State<'_, AppState>,
+) -> Result<database::EvidenceRetentionPolicySnapshot, String> {
+    state.database.evidence_retention_policy()
+}
+
+#[tauri::command]
+pub(crate) fn update_evidence_retention_policy(
+    state: State<'_, AppState>,
+    input: database::UpdateEvidenceRetentionPolicyInput,
+) -> Result<database::EvidenceRetentionPolicySnapshot, String> {
+    state
+        .database
+        .update_evidence_retention_policy(&input, unix_time_ms())
+}
+
 const MAX_FIRST_WAYPOINT_DISTANCE_METERS: f64 = 5_000.0;
 const MAX_TERRAIN_HOME_DRIFT_METERS: f64 = 30.0;
 
@@ -26,6 +164,30 @@ pub(crate) fn runtime_info() -> RuntimeInfo {
 }
 
 #[tauri::command]
+pub(crate) fn operational_alerts(
+    state: State<'_, AppState>,
+    include_history: Option<bool>,
+    limit: Option<usize>,
+) -> Result<database::OperationalAlertListSnapshot, String> {
+    let now = unix_time_ms();
+    state.database.refresh_time_based_alerts(now)?;
+    refresh_media_operational_alerts(&state.database, &state.video, &state.perception, now)?;
+    state
+        .database
+        .operational_alerts(include_history.unwrap_or(true), limit.unwrap_or(100))
+}
+
+#[tauri::command]
+pub(crate) fn acknowledge_operational_alert(
+    state: State<'_, AppState>,
+    alert_id: String,
+) -> Result<database::OperationalAlertSnapshot, String> {
+    state
+        .database
+        .acknowledge_operational_alert(&alert_id, unix_time_ms())
+}
+
+#[tauri::command]
 pub(crate) fn ground_station_snapshot(
     state: State<'_, AppState>,
 ) -> Result<GroundStationSnapshot, String> {
@@ -44,6 +206,152 @@ pub(crate) fn perception_snapshot(
     drone_id: Option<String>,
 ) -> Option<crate::ground_station::PerceptionSnapshot> {
     state.perception.snapshot(drone_id.as_deref())
+}
+
+/// Reads durable lifecycle summaries independently of the ephemeral live-view
+/// cache. Operator selection uses the exact session/track identity from here.
+#[tauri::command]
+pub(crate) fn perception_track_history(
+    state: State<'_, AppState>,
+    drone_id: String,
+    include_closed: Option<bool>,
+    limit: Option<usize>,
+) -> Result<Vec<database::PerceptionTrackRecordSnapshot>, String> {
+    state.database.perception_tracks(
+        &drone_id,
+        include_closed.unwrap_or(true),
+        limit.unwrap_or(200),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn perception_counts(
+    state: State<'_, AppState>,
+    drone_id: String,
+    source_id: String,
+    mission_run_id: Option<String>,
+) -> Result<database::PerceptionCountSnapshot, String> {
+    state
+        .database
+        .perception_counts(&drone_id, &source_id, mission_run_id.as_deref())
+}
+
+#[tauri::command]
+pub(crate) fn perception_counting_rules(
+    state: State<'_, AppState>,
+    drone_id: String,
+    source_id: Option<String>,
+) -> Result<Vec<database::CountingRuleSnapshot>, String> {
+    state
+        .database
+        .perception_counting_rules(&drone_id, source_id.as_deref(), false)
+}
+
+#[tauri::command]
+pub(crate) async fn upsert_perception_counting_rule(
+    state: State<'_, AppState>,
+    input: database::UpsertCountingRuleInput,
+) -> Result<database::CountingRuleSnapshot, String> {
+    let snapshot = state
+        .database
+        .upsert_perception_counting_rule(&input, unix_time_ms())?;
+    let active = state.database.perception_counting_rules(
+        &snapshot.drone_id,
+        Some(&snapshot.source_id),
+        true,
+    )?;
+    // Persistence is authoritative. A disconnected Agent receives the complete
+    // replacement set on its next perception-stream registration.
+    let _ = state
+        .perception
+        .send_counting_rules(&snapshot.drone_id, &snapshot.source_id, &active)
+        .await;
+    Ok(snapshot)
+}
+
+#[tauri::command]
+pub(crate) fn perception_track_selection(
+    state: State<'_, AppState>,
+    drone_id: String,
+) -> Result<Option<database::TrackSelectionSnapshot>, String> {
+    state.database.perception_track_selection(&drone_id)
+}
+
+#[tauri::command]
+pub(crate) fn select_perception_track(
+    state: State<'_, AppState>,
+    input: database::SelectTrackInput,
+) -> Result<database::TrackSelectionSnapshot, String> {
+    state
+        .database
+        .select_perception_track(&input, unix_time_ms())
+}
+
+#[tauri::command]
+pub(crate) fn clear_perception_track_selection(
+    state: State<'_, AppState>,
+    drone_id: String,
+    actor: Option<String>,
+) -> Result<(), String> {
+    state.database.clear_perception_track_selection(
+        &drone_id,
+        actor.as_deref().unwrap_or("operator"),
+        unix_time_ms(),
+    )
+}
+
+#[tauri::command]
+pub(crate) fn annotate_perception_track(
+    state: State<'_, AppState>,
+    input: database::TrackAnnotationInput,
+) -> Result<database::TrackAnnotationSnapshot, String> {
+    state
+        .database
+        .annotate_perception_track(&input, unix_time_ms())
+}
+
+#[tauri::command]
+pub(crate) fn perception_track_samples(
+    state: State<'_, AppState>,
+    track_session_id: String,
+    track_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<database::TrackSampleSnapshot>, String> {
+    state
+        .database
+        .perception_track_samples(&track_session_id, &track_id, limit.unwrap_or(120))
+}
+
+#[tauri::command]
+pub(crate) fn perception_track_geolocations(
+    state: State<'_, AppState>,
+    track_session_id: String,
+    track_id: String,
+    limit: Option<usize>,
+) -> Result<Vec<database::TrackGeolocationSnapshot>, String> {
+    state
+        .database
+        .perception_track_geolocations(&track_session_id, &track_id, limit.unwrap_or(20))
+}
+
+#[tauri::command]
+pub(crate) fn operational_track_geolocations(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<database::OperationalTrackGeolocationSnapshot>, String> {
+    state
+        .database
+        .operational_track_geolocations(limit.unwrap_or(250))
+}
+
+#[tauri::command]
+pub(crate) fn refine_perception_track_geolocation(
+    state: State<'_, AppState>,
+    input: database::TerrainRefinementInput,
+) -> Result<database::TrackGeolocationSnapshot, String> {
+    state
+        .database
+        .refine_perception_track_geolocation(&input, unix_time_ms())
 }
 
 #[tauri::command]
@@ -92,7 +400,23 @@ pub(crate) fn video_stream_start(
     state: State<'_, AppState>,
     drone_id: String,
 ) -> Result<crate::video::VideoStreamSnapshot, String> {
-    state.video.start(&drone_id)
+    let previous_drone = state.video.snapshot()?.drone_id;
+    let result = state.video.start(&drone_id);
+    if let Some(previous_drone) = previous_drone.filter(|previous| previous != &drone_id) {
+        state.database.resolve_operational_alert(
+            &format!("video_unavailable:{previous_drone}"),
+            "The operator selected a different aircraft video stream",
+            &serde_json::json!({ "replacementDroneId": drone_id }),
+            unix_time_ms(),
+        )?;
+    }
+    let _ = refresh_media_operational_alerts(
+        &state.database,
+        &state.video,
+        &state.perception,
+        unix_time_ms(),
+    );
+    result
 }
 
 #[tauri::command]
@@ -100,14 +424,31 @@ pub(crate) fn video_stream_stop(
     state: State<'_, AppState>,
     drone_id: Option<String>,
 ) -> Result<crate::video::VideoStreamSnapshot, String> {
-    state.video.stop(drone_id.as_deref())
+    let active_drone = drone_id.or_else(|| state.video.snapshot().ok()?.drone_id);
+    let snapshot = state.video.stop(active_drone.as_deref())?;
+    if let Some(drone_id) = active_drone {
+        state.database.resolve_operational_alert(
+            &format!("video_unavailable:{drone_id}"),
+            "The operator stopped the requested video stream",
+            &serde_json::json!({ "streamStatus": "stopped" }),
+            unix_time_ms(),
+        )?;
+    }
+    Ok(snapshot)
 }
 
 #[tauri::command]
 pub(crate) fn video_stream_snapshot(
     state: State<'_, AppState>,
 ) -> Result<crate::video::VideoStreamSnapshot, String> {
-    state.video.snapshot()
+    let snapshot = state.video.snapshot()?;
+    refresh_media_operational_alerts(
+        &state.database,
+        &state.video,
+        &state.perception,
+        unix_time_ms(),
+    )?;
+    Ok(snapshot)
 }
 
 /// Returns a raw packet: `ATV1`, a little-endian JSON-header length, the JSON
@@ -123,6 +464,108 @@ pub(crate) fn video_stream_frame(
         .video
         .frame_packet(&state.perception, &drone_id, after_sequence)
         .map(Response::new)
+}
+
+pub(crate) fn refresh_media_operational_alerts(
+    database: &database::LocalDatabase,
+    video: &crate::video::VideoManager,
+    perception: &crate::ground_station::PerceptionStore,
+    now: i64,
+) -> Result<(), String> {
+    let video_snapshot = video.snapshot()?;
+    if let Some(drone_id) = video_snapshot.drone_id.as_deref() {
+        let frame_age = video_snapshot
+            .last_frame_at_unix_ms
+            .map(|last_frame| now.saturating_sub(last_frame));
+        let connecting_too_long = video_snapshot.status == "connecting"
+            && video_snapshot
+                .started_at_unix_ms
+                .is_some_and(|started| now.saturating_sub(started) > 5_000);
+        let unavailable = video_snapshot.status == "error"
+            || connecting_too_long
+            || (video_snapshot.status == "playing" && frame_age.is_some_and(|age| age > 5_000));
+        let key = format!("video_unavailable:{drone_id}");
+        if unavailable {
+            database.observe_operational_alert(&database::AlertObservation {
+                dedupe_key: key,
+                alert_type: "VIDEO_UNAVAILABLE".into(),
+                severity: "WARNING".into(),
+                source: "video".into(),
+                drone_id: Some(drone_id.to_string()),
+                incident_id: None,
+                mission_run_id: None,
+                title: "Aircraft video unavailable".into(),
+                recommended_action: "Check the camera, RTSP path, and native decoder; continue flight decisions using confirmed telemetry until video recovers.".into(),
+                evidence: serde_json::json!({
+                    "streamStatus": video_snapshot.status,
+                    "startedAtUnixMs": video_snapshot.started_at_unix_ms,
+                    "lastFrameAtUnixMs": video_snapshot.last_frame_at_unix_ms,
+                    "frameAgeMs": frame_age,
+                    "lastError": video_snapshot.last_error,
+                }),
+                observed_at_unix_ms: now,
+            })?;
+        } else if video_snapshot.status == "playing" {
+            database.resolve_operational_alert(
+                &key,
+                "Fresh video frames are available",
+                &serde_json::json!({
+                    "streamStatus": video_snapshot.status,
+                    "lastFrameAtUnixMs": video_snapshot.last_frame_at_unix_ms,
+                }),
+                now,
+            )?;
+        }
+    } else if video_snapshot.status == "stopped" {
+        database.resolve_operational_alerts_by_type(
+            "VIDEO_UNAVAILABLE",
+            "No aircraft video stream is currently requested",
+            &serde_json::json!({ "streamStatus": "stopped" }),
+            now,
+        )?;
+    }
+
+    for aircraft in database.fleet_snapshot(false)?.aircraft {
+        let Some(drone_id) = aircraft.drone_id else {
+            continue;
+        };
+        let perception_expected = aircraft
+            .agent_capabilities
+            .iter()
+            .any(|capability| capability.starts_with("perception:"));
+        if !perception_expected {
+            continue;
+        }
+        let key = format!("perception_unavailable:{drone_id}");
+        let snapshot = perception.snapshot(Some(&drone_id));
+        let (available, evidence) = snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.operational_availability())
+            .unwrap_or((false, serde_json::json!({ "status": "not_connected" })));
+        if available {
+            database.resolve_operational_alert(
+                &key,
+                "Perception input, inference, and publishing are available",
+                &evidence,
+                now,
+            )?;
+        } else {
+            database.observe_operational_alert(&database::AlertObservation {
+                dedupe_key: key,
+                alert_type: "PERCEPTION_UNAVAILABLE".into(),
+                severity: "WARNING".into(),
+                source: "perception".into(),
+                drone_id: Some(drone_id),
+                incident_id: None,
+                mission_run_id: None,
+                title: "Aircraft perception unavailable".into(),
+                recommended_action: "Check the perception stream and accelerator health; do not rely on detection overlays until health recovers.".into(),
+                evidence,
+                observed_at_unix_ms: now,
+            })?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -210,14 +653,48 @@ pub(crate) fn update_incident(
 }
 
 #[tauri::command]
+pub(crate) fn preview_incident_response(
+    state: State<'_, AppState>,
+    incident_id: String,
+    input: database::ExpandedPrepareIncidentResponseInput,
+) -> Result<database::IncidentResponsePlanPreview, String> {
+    state
+        .database
+        .preview_expanded_incident_response(&incident_id, &input)
+}
+
+#[tauri::command]
+pub(crate) fn incident_response_aircraft_suitability(
+    state: State<'_, AppState>,
+    incident_id: String,
+    input: database::IncidentResponseAircraftSuitabilityInput,
+) -> Result<Vec<database::IncidentResponseAircraftSuitabilitySnapshot>, String> {
+    state
+        .database
+        .incident_response_aircraft_suitability(&incident_id, &input)
+}
+
+#[tauri::command]
 pub(crate) fn prepare_incident_response(
     state: State<'_, AppState>,
     incident_id: String,
-    input: database::PrepareIncidentResponseInput,
+    input: database::ExpandedPrepareIncidentResponseInput,
 ) -> Result<database::PreparedIncidentResponse, String> {
     state
         .database
-        .prepare_incident_response(&incident_id, &input)
+        .prepare_expanded_incident_response(&incident_id, &input)
+}
+
+#[tauri::command]
+pub(crate) fn abandon_prepared_response(
+    state: State<'_, AppState>,
+    incident_id: String,
+    assignment_id: String,
+    input: database::AbandonPreparedResponseInput,
+) -> Result<database::IncidentDetailSnapshot, String> {
+    state
+        .database
+        .abandon_prepared_response(&incident_id, &assignment_id, &input)
 }
 
 #[tauri::command]
@@ -298,18 +775,7 @@ pub(crate) async fn upload_mission(
     let dispatch = state
         .database
         .create_mission_run(&mission_id, &drone_id, Some(&plan.id))?;
-    let mut vehicle_plan = plan.clone();
-    if let Some(metadata) = vehicle_plan.metadata.as_object_mut() {
-        metadata.remove("terrainProfileEvidence");
-        if let Some(profile) = metadata
-            .get_mut("terrainProfile")
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            profile.remove("profilePoints");
-        }
-    }
-    let plan_json = serde_json::to_string(&vehicle_plan)
-        .map_err(|error| format!("serialize mission plan for upload: {error}"))?;
+    let plan_json = database::mission_plan_json_for_agent(plan.clone())?;
     let requested_at = unix_time_ms();
     match state
         .command_router
@@ -501,6 +967,7 @@ pub(crate) async fn control_mission_run(
         .database
         .record_mission_operation_requested(&mission_run_id, &operation)?;
     let requested_at = unix_time_ms();
+    let operation_timeout_ms = if operation == "start" { 90_000 } else { 30_000 };
     match state
         .command_router
         .deliver_mission_operation(
@@ -510,7 +977,7 @@ pub(crate) async fn control_mission_run(
             &operation,
             None,
             requested_at,
-            requested_at + 30_000,
+            requested_at + operation_timeout_ms,
         )
         .await
     {
@@ -754,6 +1221,130 @@ pub(crate) fn mission_run_history(
         drone_id.as_deref(),
         limit.unwrap_or(50),
     )
+}
+
+#[tauri::command]
+pub(crate) async fn create_aircraft_follow_session(
+    state: State<'_, AppState>,
+    input: database::CreateAircraftFollowSessionInput,
+    lease_duration_ms: Option<i64>,
+) -> Result<database::AircraftFollowSessionSnapshot, String> {
+    let now = unix_time_ms();
+    let requested = state.database.create_aircraft_follow_session(&input, now)?;
+    let authorized = state.database.authorize_aircraft_follow_session(
+        &requested.id,
+        lease_duration_ms.unwrap_or(3_000),
+        now,
+    )?;
+    let operation_id = format!("follow-start-{}-{now}", authorized.id);
+    if let Err(error) = state
+        .command_router
+        .deliver_aircraft_follow_control(&authorized, &operation_id, "start", "", "")
+        .await
+    {
+        state.database.degrade_aircraft_follow_session(
+            &authorized.id,
+            "atlas_native",
+            "START_DELIVERY_FAILED",
+            &error,
+            unix_time_ms(),
+        )?;
+        return Err(error);
+    }
+    state.database.aircraft_follow_session(&authorized.id)
+}
+
+#[tauri::command]
+pub(crate) async fn renew_aircraft_follow_session(
+    state: State<'_, AppState>,
+    input: database::RenewAircraftFollowSessionInput,
+) -> Result<database::AircraftFollowSessionSnapshot, String> {
+    let renewed = state
+        .database
+        .renew_aircraft_follow_session(&input, unix_time_ms())?;
+    let operation_id = format!("follow-renew-{}-{}", renewed.id, unix_time_ms());
+    if let Err(error) = state
+        .command_router
+        .deliver_aircraft_follow_control(&renewed, &operation_id, "renew", "", "")
+        .await
+    {
+        state.database.degrade_aircraft_follow_session(
+            &renewed.id,
+            "atlas_native",
+            "RENEWAL_DELIVERY_FAILED",
+            &error,
+            unix_time_ms(),
+        )?;
+        return Err(error);
+    }
+    state.database.aircraft_follow_session(&renewed.id)
+}
+
+#[tauri::command]
+pub(crate) async fn end_aircraft_follow_session(
+    state: State<'_, AppState>,
+    input: database::EndAircraftFollowSessionInput,
+) -> Result<database::AircraftFollowSessionSnapshot, String> {
+    let ending = state
+        .database
+        .record_aircraft_follow_end_requested(&input, unix_time_ms())?;
+    let operation_id = format!("follow-end-{}-{}", ending.id, unix_time_ms());
+    state
+        .command_router
+        .deliver_aircraft_follow_control(
+            &ending,
+            &operation_id,
+            "end",
+            "OPERATOR_STOP",
+            &input.reason,
+        )
+        .await?;
+    state.database.aircraft_follow_session(&ending.id)
+}
+
+#[tauri::command]
+pub(crate) fn aircraft_follow_session(
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<database::AircraftFollowSessionSnapshot, String> {
+    state.database.aircraft_follow_session(&session_id)
+}
+
+#[tauri::command]
+pub(crate) fn aircraft_follow_sessions(
+    state: State<'_, AppState>,
+    include_ended: Option<bool>,
+    limit: Option<usize>,
+) -> Result<Vec<database::AircraftFollowSessionSnapshot>, String> {
+    state
+        .database
+        .aircraft_follow_sessions(include_ended.unwrap_or(true), limit.unwrap_or(50))
+}
+
+pub(crate) async fn run_aircraft_follow_watchdogs(
+    database: &database::LocalDatabase,
+    router: &crate::ground_station::CommandRouter,
+    now: i64,
+) -> Result<(), String> {
+    for action in database.aircraft_follow_watchdog_actions(now)? {
+        let operation_id = format!("follow-hold-{}-{now}", action.session.id);
+        if let Err(error) = router
+            .deliver_aircraft_follow_control(
+                &action.session,
+                &operation_id,
+                "hold",
+                &action.reason_code,
+                &action.reason,
+            )
+            .await
+        {
+            eprintln!(
+                "Aircraft follow hold delivery failed for {}: {error}; onboard lease expiry remains authoritative",
+                action.session.id
+            );
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]

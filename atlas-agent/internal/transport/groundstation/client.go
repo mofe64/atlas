@@ -27,14 +27,14 @@ const (
 	maximumRetry = 30 * time.Second
 )
 
-func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor) {
+func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	frameDemand := newFrameDemand()
 	backoff := minimumRetry
 	for ctx.Err() == nil {
-		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, executor, missionExecutor, frameDemand)
+		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, executor, missionExecutor, followExecutor, frameDemand)
 		if ctx.Err() != nil {
 			return
 		}
@@ -60,11 +60,19 @@ type CommandExecutor interface {
 
 type MissionExecutor interface {
 	Execute(context.Context, vehicle.MissionOperation)
+	Reconcile(context.Context, vehicle.MissionReconciliation)
 	Updates() <-chan vehicle.MissionUpdate
 	Capabilities() []string
 }
 
-func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, frameDemand *frameDemand) error {
+type AircraftFollowExecutor interface {
+	Apply(context.Context, vehicle.AircraftFollowOperation)
+	GroundLinkLost()
+	Updates() <-chan vehicle.AircraftFollowUpdate
+	Capabilities() []string
+}
+
+func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, frameDemand *frameDemand) error {
 	connection, err := grpc.NewClient(cfg.GroundStationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("create ground-station client: %w", err)
@@ -79,6 +87,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	sessionID := identity.NewID()
 	now := time.Now().UTC()
 	capabilities := append(executor.Capabilities(), missionExecutor.Capabilities()...)
+	capabilities = append(capabilities, followExecutor.Capabilities()...)
 	if cfg.PerceptionEnabled() {
 		capabilities = append(capabilities, "perception:object_detection:v1", "perception:health:v1", "perception:frame_subscription:v1")
 	}
@@ -106,6 +115,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 		"binding_id", accepted.GetBindingId(),
 		"communication_link_id", accepted.GetCommunicationLinkId(),
 	)
+	defer followExecutor.GroundLinkLost()
 	perceptionContext, cancelPerception := context.WithCancel(ctx)
 	defer cancelPerception()
 	if cfg.PerceptionEnabled() {
@@ -117,6 +127,8 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	commandResults := make(chan commandExecutionUpdate, 8)
 	cancellations := make(chan *pb.VehicleCommandCancellation, 4)
 	missionOperations := make(chan *pb.MissionOperationRequest, 4)
+	missionReconciliations := make(chan *pb.MissionReconciliationRequest, 2)
+	aircraftFollowRequests := make(chan *pb.AircraftFollowControlRequest, 8)
 	go func() {
 		for {
 			message, err := stream.Recv()
@@ -131,6 +143,10 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 				cancellations <- payload.CommandCancellation
 			case *pb.GroundStationToAgent_MissionOperationRequest:
 				missionOperations <- payload.MissionOperationRequest
+			case *pb.GroundStationToAgent_MissionReconciliationRequest:
+				missionReconciliations <- payload.MissionReconciliationRequest
+			case *pb.GroundStationToAgent_AircraftFollowControlRequest:
+				aircraftFollowRequests <- payload.AircraftFollowControlRequest
 			}
 		}
 	}()
@@ -156,7 +172,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 			}
 		case update := <-commandResults:
 			logger.Info("vehicle command completed", "command_id", update.commandID, "result", update.updateType.String(), "result_code", update.resultCode)
-			if err := sendCommandUpdate(stream, sessionID, update.commandID, update.updateType, update.resultCode, update.message); err != nil {
+			if err := sendCommandUpdateWithEvidence(stream, sessionID, update.commandID, update.updateType, update.resultCode, update.message, update.evidenceJSON); err != nil {
 				return err
 			}
 		case cancellation := <-cancellations:
@@ -184,6 +200,66 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 				continue
 			}
 			go missionExecutor.Execute(ctx, vehicle.MissionOperation{OperationID: operation.GetOperationId(), RunID: operation.GetMissionRunId(), Type: operationType, MissionPlanJSON: operation.GetMissionPlanJson()})
+		case reconciliation := <-missionReconciliations:
+			if reconciliation.GetDroneId() != localIdentity.DroneID || reconciliation.GetMissionRunId() == "" {
+				if err := sendMissionUpdate(stream, sessionID, vehicle.MissionUpdate{EventID: identity.NewID(), OperationID: reconciliation.GetReconciliationId(), RunID: reconciliation.GetMissionRunId(), Type: "reconciliation_failed", State: reconciliation.GetRunState(), ObservedAt: time.Now().UTC(), ErrorCode: "INVALID_TARGET", Message: "Mission reconciliation does not target this drone"}); err != nil {
+					return err
+				}
+				continue
+			}
+			if time.Now().UTC().UnixMilli() > reconciliation.GetDeadlineAtUnixMs() {
+				if err := sendMissionUpdate(stream, sessionID, vehicle.MissionUpdate{EventID: identity.NewID(), OperationID: reconciliation.GetReconciliationId(), RunID: reconciliation.GetMissionRunId(), Type: "reconciliation_failed", State: reconciliation.GetRunState(), ObservedAt: time.Now().UTC(), ErrorCode: "DEADLINE_EXCEEDED", Message: "Mission reconciliation expired before execution"}); err != nil {
+					return err
+				}
+				continue
+			}
+			checkpoints := make([]vehicle.MissionActionCheckpoint, 0, len(reconciliation.GetActions()))
+			for _, checkpoint := range reconciliation.GetActions() {
+				checkpoints = append(checkpoints, vehicle.MissionActionCheckpoint{
+					Sequence:          checkpoint.GetActionSequence(),
+					ActionType:        checkpoint.GetActionType(),
+					State:             checkpoint.GetState(),
+					Attempt:           checkpoint.GetAttempt(),
+					AttemptDeadlineAt: unixMillisecondTime(checkpoint.AttemptDeadlineAtUnixMs),
+					NextAttemptAt:     unixMillisecondTime(checkpoint.NextAttemptAtUnixMs),
+				})
+			}
+			go missionExecutor.Reconcile(ctx, vehicle.MissionReconciliation{
+				ReconciliationID: reconciliation.GetReconciliationId(),
+				RunID:            reconciliation.GetMissionRunId(),
+				State:            reconciliation.GetRunState(),
+				MissionPlanJSON:  reconciliation.GetMissionPlanJson(),
+				CurrentWaypoint:  reconciliation.CurrentWaypoint,
+				TotalWaypoints:   reconciliation.GetTotalWaypoints(),
+				Actions:          checkpoints,
+			})
+		case request := <-aircraftFollowRequests:
+			if request.GetDroneId() != localIdentity.DroneID || request.GetFollowSessionId() == "" {
+				if err := sendAircraftFollowUpdate(stream, sessionID, vehicle.AircraftFollowUpdate{
+					EventID: identity.NewID(), OperationID: request.GetOperationId(), SessionID: request.GetFollowSessionId(),
+					State: "DEGRADED_HOLD", ObservedAt: time.Now().UTC(), ReasonCode: "INVALID_TARGET",
+					Message: "Aircraft follow request does not target this drone", EvidenceJSON: "{}",
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+			operation, err := aircraftFollowOperation(request)
+			if err != nil {
+				if sendErr := sendAircraftFollowUpdate(stream, sessionID, vehicle.AircraftFollowUpdate{
+					EventID: identity.NewID(), OperationID: request.GetOperationId(), SessionID: request.GetFollowSessionId(),
+					State: "DEGRADED_HOLD", ObservedAt: time.Now().UTC(), ReasonCode: "INVALID_FOLLOW_REQUEST",
+					Message: err.Error(), EvidenceJSON: "{}",
+				}); sendErr != nil {
+					return sendErr
+				}
+				continue
+			}
+			followExecutor.Apply(ctx, operation)
+		case update := <-followExecutor.Updates():
+			if err := sendAircraftFollowUpdate(stream, sessionID, update); err != nil {
+				return err
+			}
 		case update := <-missionExecutor.Updates():
 			frameDemand.setMissionState(update.RunID, update.State)
 			if err := sendMissionUpdate(stream, sessionID, update); err != nil {
@@ -254,11 +330,89 @@ func sendMissionUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, 
 	})
 }
 
+func sendAircraftFollowUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, pb.GroundStationToAgent], sessionID string, update vehicle.AircraftFollowUpdate) error {
+	return stream.Send(&pb.AgentToGroundStation{
+		SessionId: sessionID,
+		Payload: &pb.AgentToGroundStation_AircraftFollowSessionUpdate{AircraftFollowSessionUpdate: &pb.AircraftFollowSessionUpdate{
+			EventId: update.EventID, OperationId: update.OperationID, FollowSessionId: update.SessionID,
+			UpdateType: aircraftFollowUpdateType(update.State), ObservedAtUnixMs: update.ObservedAt.UnixMilli(),
+			ReasonCode: update.ReasonCode, Message: update.Message, EvidenceJson: update.EvidenceJSON,
+		}},
+	})
+}
+
+func aircraftFollowOperation(request *pb.AircraftFollowControlRequest) (vehicle.AircraftFollowOperation, error) {
+	action := aircraftFollowActionName(request.GetAction())
+	if action == "" {
+		return vehicle.AircraftFollowOperation{}, errors.New("aircraft follow control action is unspecified")
+	}
+	envelope, target := request.GetEnvelope(), request.GetTarget()
+	if envelope == nil || target == nil {
+		return vehicle.AircraftFollowOperation{}, errors.New("aircraft follow control is missing envelope or target state")
+	}
+	return vehicle.AircraftFollowOperation{
+		OperationID: request.GetOperationId(), SessionID: request.GetFollowSessionId(), DroneID: request.GetDroneId(), Action: action,
+		Envelope: vehicle.AircraftFollowEnvelope{
+			StandoffM: envelope.GetStandoffM(), AltitudeRelativeM: envelope.GetAltitudeRelativeM(),
+			MinimumAltitudeRelativeM: envelope.GetMinimumAltitudeRelativeM(), MaximumAltitudeRelativeM: envelope.GetMaximumAltitudeRelativeM(),
+			MaximumGroundSpeedMPS: envelope.GetMaximumGroundSpeedMS(), MaximumAccelerationMPS2: envelope.GetMaximumAccelerationMS2(),
+			MaximumDuration:        time.Duration(envelope.GetMaximumDurationMs()) * time.Millisecond,
+			BoundaryCenterLatitude: envelope.GetBoundaryCenterLatitude(), BoundaryCenterLongitude: envelope.GetBoundaryCenterLongitude(),
+			BoundaryRadiusM: envelope.GetBoundaryRadiusM(), MinimumBatteryPercent: envelope.GetMinimumBatteryPercent(),
+			MinimumTrackConfidence: envelope.GetMinimumTrackConfidence(), MaximumGeolocationUncertaintyM: envelope.GetMaximumGeolocationUncertaintyM(),
+			MaximumVelocityUncertaintyMPS: envelope.GetMaximumVelocityUncertaintyMS(),
+		},
+		Target: vehicle.AircraftFollowTarget{
+			GeolocationID: target.GetGeolocationId(), SelectionID: target.GetSelectionId(), SourceID: target.GetSourceId(),
+			TrackSessionID: target.GetTrackSessionId(), TrackID: target.GetTrackId(), ObservedAt: time.UnixMilli(target.GetObservedAtUnixMs()).UTC(),
+			Latitude: target.GetLatitude(), Longitude: target.GetLongitude(), AltitudeAMSLM: target.GetAltitudeAmslM(),
+			VelocityNorthMPS: target.GetVelocityNorthMS(), VelocityEastMPS: target.GetVelocityEastMS(),
+			HorizontalUncertaintyM: target.GetHorizontalUncertaintyM(), VelocityUncertaintyMPS: target.GetVelocityUncertaintyMS(),
+			TrackConfidence: target.GetTrackConfidence(), LifecycleState: target.GetLifecycleState(), MotionStatus: target.GetMotionStatus(),
+		},
+		LeaseExpiresAt: time.UnixMilli(request.GetOperatorLeaseExpiresAtUnixMs()).UTC(), ReasonCode: request.GetReasonCode(),
+		Reason: request.GetReason(), ValidationReference: request.GetValidationReference(),
+	}, nil
+}
+
+func aircraftFollowActionName(action pb.AircraftFollowControlAction) string {
+	switch action {
+	case pb.AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_START:
+		return "start"
+	case pb.AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW:
+		return "renew"
+	case pb.AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_HOLD:
+		return "hold"
+	case pb.AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_END:
+		return "end"
+	default:
+		return ""
+	}
+}
+
+func aircraftFollowUpdateType(state string) pb.AircraftFollowSessionUpdateType {
+	switch state {
+	case "VALIDATING":
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_VALIDATING
+	case "ACQUIRING":
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ACQUIRING
+	case "FOLLOWING":
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING
+	case "DEGRADED_HOLD":
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD
+	case "ENDED":
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED
+	default:
+		return pb.AircraftFollowSessionUpdateType_AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_UNSPECIFIED
+	}
+}
+
 type commandExecutionUpdate struct {
-	commandID  string
-	updateType pb.VehicleCommandUpdateType
-	resultCode string
-	message    string
+	commandID    string
+	updateType   pb.VehicleCommandUpdateType
+	resultCode   string
+	message      string
+	evidenceJSON string
 }
 
 func handleCommand(ctx context.Context, stream grpc.BidiStreamingClient[pb.AgentToGroundStation, pb.GroundStationToAgent], sessionID, droneID string, command *pb.VehicleCommandRequest, executor CommandExecutor, results chan<- commandExecutionUpdate) error {
@@ -286,7 +440,7 @@ func executeCommand(ctx context.Context, command *pb.VehicleCommandRequest, comm
 	commandContext, cancel := context.WithDeadline(ctx, time.UnixMilli(command.GetDeadlineAtUnixMs()))
 	defer cancel()
 	result, err := executor.Execute(commandContext, command.GetCommandId(), commandType, command.GetParametersJson())
-	update := commandExecutionUpdate{commandID: command.GetCommandId(), resultCode: result.Code}
+	update := commandExecutionUpdate{commandID: command.GetCommandId(), resultCode: result.Code, evidenceJSON: result.EvidenceJSON}
 	switch {
 	case err == nil:
 		update.updateType = pb.VehicleCommandUpdateType_VEHICLE_COMMAND_UPDATE_TYPE_SUCCEEDED
@@ -306,6 +460,10 @@ func executeCommand(ctx context.Context, command *pb.VehicleCommandRequest, comm
 }
 
 func sendCommandUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, pb.GroundStationToAgent], sessionID, commandID string, updateType pb.VehicleCommandUpdateType, resultCode, message string) error {
+	return sendCommandUpdateWithEvidence(stream, sessionID, commandID, updateType, resultCode, message, "")
+}
+
+func sendCommandUpdateWithEvidence(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, pb.GroundStationToAgent], sessionID, commandID string, updateType pb.VehicleCommandUpdateType, resultCode, message, evidenceJSON string) error {
 	return stream.Send(&pb.AgentToGroundStation{
 		SessionId: sessionID,
 		Payload: &pb.AgentToGroundStation_CommandUpdate{CommandUpdate: &pb.VehicleCommandUpdate{
@@ -315,6 +473,7 @@ func sendCommandUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, 
 			ObservedAtUnixMs: time.Now().UTC().UnixMilli(),
 			ResultCode:       resultCode,
 			Message:          message,
+			EvidenceJson:     evidenceJSON,
 		}},
 	})
 }
@@ -343,6 +502,12 @@ func commandTypeName(commandType pb.VehicleCommandType) string {
 		return "gimbal_set_roi"
 	case pb.VehicleCommandType_VEHICLE_COMMAND_TYPE_CAMERA_SET_ZOOM:
 		return "camera_set_zoom"
+	case pb.VehicleCommandType_VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_START:
+		return "gimbal_follow_start"
+	case pb.VehicleCommandType_VEHICLE_COMMAND_TYPE_GIMBAL_FOLLOW_STOP:
+		return "gimbal_follow_stop"
+	case pb.VehicleCommandType_VEHICLE_COMMAND_TYPE_GEOLOCATE_SELECTED_TRACK:
+		return "geolocate_selected_track"
 	default:
 		return ""
 	}
@@ -403,9 +568,21 @@ func missionUpdateType(value string) pb.MissionRunUpdateType {
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_PAYLOAD_RESTORE_FAILED
 	case "action_state_changed":
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED
+	case "reconciliation_accepted":
+		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_RECONCILIATION_ACCEPTED
+	case "reconciliation_failed":
+		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_RECONCILIATION_FAILED
 	default:
 		return pb.MissionRunUpdateType_MISSION_RUN_UPDATE_TYPE_UNSPECIFIED
 	}
+}
+
+func unixMillisecondTime(value *int64) *time.Time {
+	if value == nil {
+		return nil
+	}
+	parsed := time.UnixMilli(*value).UTC()
+	return &parsed
 }
 
 func missionActionState(value string) pb.MissionActionState {

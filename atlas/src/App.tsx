@@ -6,13 +6,21 @@ import { InspectionPayloadControl } from "./missions/MissionPayloadControl";
 import type { MissionRun } from "./missions/missionTypes";
 import type { ConnectionStatus, FleetSnapshot, NativeState, Nullable, StatusTone } from "./operationsTypes";
 import { LiveVideo } from "./video/LiveVideo";
+import {
+  emptyOperationalAlerts,
+  OperationalAlertButton,
+  OperationalAlertCenter,
+  type OperationalAlertList,
+} from "./alerts/OperationalAlerts";
 import "./App.css";
 
 const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
 const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
 const OperationsPage = lazy(() => import("./operations/OperationsPage").then((module) => ({ default: module.OperationsPage })));
+const EvidencePage = lazy(() => import("./evidence/EvidencePage").then((module) => ({ default: module.EvidencePage })));
+const FollowPage = lazy(() => import("./follow/FollowPage").then((module) => ({ default: module.FollowPage })));
 
-type WorkspaceView = "operations" | "fleet" | "aircraft" | "missions" | "mission-execution" | "history";
+type WorkspaceView = "operations" | "follow" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence" | "history";
 type AircraftSection = "overview" | "live" | "missions" | "settings";
 
 type GroundStationSnapshot = {
@@ -144,6 +152,10 @@ function App() {
   const [missionOrigin, setMissionOrigin] = useState<"missions" | "operations">("missions");
   const [aircraftSection, setAircraftSection] = useState<AircraftSection>("overview");
   const [showArchived, setShowArchived] = useState(false);
+  const [alerts, setAlerts] = useState<OperationalAlertList>(emptyOperationalAlerts);
+  const [alertsOpen, setAlertsOpen] = useState(false);
+  const [alertError, setAlertError] = useState<string>();
+  const [pendingAlertId, setPendingAlertId] = useState<string>();
 
   useEffect(() => {
     let active = true;
@@ -173,6 +185,49 @@ function App() {
       window.clearInterval(interval);
     };
   }, [selectedDroneId, showArchived]);
+
+  useEffect(() => {
+    if (nativeState !== "available") return;
+    let active = true;
+    async function refreshAlerts() {
+      try {
+        const next = await invoke<OperationalAlertList>("operational_alerts", {
+          includeHistory: true,
+          limit: 100,
+        });
+        if (active) {
+          setAlerts(next);
+          setAlertError(undefined);
+        }
+      } catch (reason) {
+        if (active) setAlertError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
+    void refreshAlerts();
+    const interval = window.setInterval(refreshAlerts, 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [nativeState]);
+
+  async function acknowledgeAlert(alertId: string) {
+    if (pendingAlertId) return;
+    setPendingAlertId(alertId);
+    setAlertError(undefined);
+    try {
+      await invoke("acknowledge_operational_alert", { alertId });
+      const next = await invoke<OperationalAlertList>("operational_alerts", {
+        includeHistory: true,
+        limit: 100,
+      });
+      setAlerts(next);
+    } catch (reason) {
+      setAlertError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setPendingAlertId(undefined);
+    }
+  }
 
   const heartbeat = formatRelativeTime(snapshot.lastHeartbeatAtUnixMs);
   const view = operatorView(snapshot, nativeState, heartbeat);
@@ -212,6 +267,17 @@ function App() {
         <nav className="workspace-nav" aria-label="Atlas workspace">
           <button
             type="button"
+            className={workspaceView === "evidence" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "evidence" ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("evidence");
+            }}
+          >
+            Evidence
+          </button>
+          <button
+            type="button"
             className={workspaceView === "operations" ? "workspace-nav__active" : undefined}
             aria-current={workspaceView === "operations" ? "page" : undefined}
             onClick={() => {
@@ -220,6 +286,17 @@ function App() {
             }}
           >
             Operations
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "follow" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "follow" ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("follow");
+            }}
+          >
+            Follow
           </button>
           <button
             type="button"
@@ -251,24 +328,42 @@ function App() {
             History
           </button>
         </nav>
-        <div
-          className={`system-state system-state--${fleetView.tone}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="state-dot" aria-hidden="true" />
-          <span>
-            <small>Fleet status</small>
-            <strong>{fleetView.statusLabel}</strong>
-          </span>
+        <div className="header-operational-state">
+          <OperationalAlertButton
+            alerts={alerts}
+            expanded={alertsOpen}
+            onClick={() => setAlertsOpen((open) => !open)}
+          />
+          <div
+            className={`system-state system-state--${fleetView.tone}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="state-dot" aria-hidden="true" />
+            <span>
+              <small>Fleet status</small>
+              <strong>{fleetView.statusLabel}</strong>
+            </span>
+          </div>
         </div>
       </header>
+
+      {alertsOpen && (
+        <OperationalAlertCenter
+          alerts={alerts}
+          pendingAlertId={pendingAlertId}
+          error={alertError}
+          onAcknowledge={(alertId) => void acknowledgeAlert(alertId)}
+          onClose={() => setAlertsOpen(false)}
+        />
+      )}
 
       {workspaceView === "operations" ? (
         <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading operational map…</p></main>}>
           <OperationsPage
             nativeAvailable={nativeState === "available"}
             fleet={{ ...fleet, aircraft: operationalAircraft }}
+            alerts={alerts}
             onOpenAircraft={(droneId) => {
               setSelectedDroneId(droneId);
               setAircraftSection("overview");
@@ -280,6 +375,13 @@ function App() {
               setMissionOrigin("operations");
               setWorkspaceView("mission-execution");
             }}
+          />
+        </Suspense>
+      ) : workspaceView === "follow" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening supervised follow…</p></main>}>
+          <FollowPage
+            nativeAvailable={nativeState === "available"}
+            fleet={{ ...fleet, aircraft: operationalAircraft }}
           />
         </Suspense>
       ) : workspaceView === "fleet" ? (
@@ -325,8 +427,13 @@ function App() {
             preferredDroneId={selectedDroneId}
             lockedDroneId={missionOrigin === "operations" ? selectedDroneId : undefined}
             backLabel={missionOrigin === "operations" ? "Operations" : "Mission planner"}
+            alerts={alerts}
             onBack={() => setWorkspaceView(missionOrigin)}
           />
+        </Suspense>
+      ) : workspaceView === "evidence" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening evidence ledger…</p></main>}>
+          <EvidencePage nativeAvailable={nativeState === "available"} />
         </Suspense>
       ) : workspaceView === "history" ? (
         <HistoryPage
@@ -416,7 +523,11 @@ function App() {
         {aircraftSection === "live" && (
           <section className="aircraft-live-workspace" aria-label="Live aircraft inspection">
             <div className="aircraft-live-video">
-              <LiveVideo nativeAvailable={nativeState === "available"} droneId={snapshot.droneId ?? undefined} />
+              <LiveVideo
+                nativeAvailable={nativeState === "available"}
+                droneId={snapshot.droneId ?? undefined}
+                aircraft={selectedAircraft}
+              />
             </div>
             <aside className="aircraft-live-control" aria-label="Inspection payload controls">
               <InspectionPayloadControl aircraft={selectedAircraft} />

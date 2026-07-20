@@ -24,6 +24,18 @@ type recordingGimbalServer struct {
 	roi           chan *gimbalpb.SetRoiLocationRequest
 	releases      chan *gimbalpb.ReleaseControlRequest
 	rejectControl bool
+	attitudePitch float32
+	attitudeYaw   float32
+}
+
+func (s *recordingGimbalServer) GetAttitude(_ context.Context, request *gimbalpb.GetAttitudeRequest) (*gimbalpb.GetAttitudeResponse, error) {
+	return &gimbalpb.GetAttitudeResponse{
+		GimbalResult: &gimbalpb.GimbalResult{Result: gimbalpb.GimbalResult_RESULT_SUCCESS, ResultStr: "accepted"},
+		Attitude: &gimbalpb.Attitude{
+			GimbalId:          request.GetGimbalId(),
+			EulerAngleForward: &gimbalpb.EulerAngle{PitchDeg: s.attitudePitch, YawDeg: s.attitudeYaw},
+		},
+	}, nil
 }
 
 func (s *recordingGimbalServer) TakeControl(_ context.Context, request *gimbalpb.TakeControlRequest) (*gimbalpb.TakeControlResponse, error) {

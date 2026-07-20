@@ -1,6 +1,9 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 
-use super::LocalDatabase;
+use super::{
+    alerts::{observe_alert, AlertObservation},
+    LocalDatabase,
+};
 
 impl LocalDatabase {
     pub(crate) fn active_session_matches(
@@ -61,16 +64,56 @@ impl LocalDatabase {
         reason: &str,
         ended_at_unix_ms: i64,
     ) -> Result<(), String> {
-        let connection = self
+        let mut connection = self
             .connection
             .lock()
             .map_err(|_| "local SQLite mutex was poisoned".to_string())?;
-        connection
+        let tx = connection
+            .transaction()
+            .map_err(|error| format!("begin communication-link closure: {error}"))?;
+        let link: Option<(String, String)> = tx
+            .query_row(
+                r#"
+                SELECT b.drone_id, l.id
+                FROM communication_links l
+                JOIN vehicle_agent_bindings b ON b.id = l.vehicle_agent_binding_id
+                WHERE l.session_instance_id = ?1 AND l.ended_at_unix_ms IS NULL
+                "#,
+                [session_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| format!("read communication link before closure: {error}"))?;
+        tx
             .execute(
                 "UPDATE communication_links SET status = 'disconnected', ended_at_unix_ms = ?2, ended_reason = ?3 WHERE session_instance_id = ?1 AND ended_at_unix_ms IS NULL",
                 params![session_id, ended_at_unix_ms, reason],
             )
             .map_err(|error| format!("close communication link: {error}"))?;
+        if let Some((drone_id, communication_link_id)) = link {
+            observe_alert(
+                &tx,
+                &AlertObservation {
+                    dedupe_key: format!("agent_disconnected:{drone_id}"),
+                    alert_type: "AGENT_DISCONNECTED".into(),
+                    severity: "CRITICAL".into(),
+                    source: "agent".into(),
+                    drone_id: Some(drone_id),
+                    incident_id: None,
+                    mission_run_id: None,
+                    title: "Atlas Agent disconnected".into(),
+                    recommended_action: "Restore the Agent link before issuing aircraft commands; use the aircraft's current autonomous safety mode meanwhile.".into(),
+                    evidence: serde_json::json!({
+                        "sessionId": session_id,
+                        "communicationLinkId": communication_link_id,
+                        "reason": reason,
+                    }),
+                    observed_at_unix_ms: ended_at_unix_ms,
+                },
+            )?;
+        }
+        tx.commit()
+            .map_err(|error| format!("commit communication-link closure: {error}"))?;
         Ok(())
     }
 }

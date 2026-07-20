@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { FleetAircraft, FleetSnapshot } from "../operationsTypes";
+import { highestRelatedOperationalAlert, type OperationalAlertList } from "../alerts/OperationalAlerts";
+import type { FleetAircraft, FleetSnapshot, IncidentDetail, IncidentSnapshot } from "../operationsTypes";
 import { OperationalMissionMap, type PayloadTarget, type TrackedAircraft, type TrackedHome } from "./OperationalMissionMap";
 import { MissionPayloadControl } from "./MissionPayloadControl";
 import { LiveVideo } from "../video/LiveVideo";
@@ -16,10 +17,22 @@ type MissionExecutionPageProps = {
   preferredDroneId?: string;
   lockedDroneId?: string;
   backLabel?: string;
+  alerts: OperationalAlertList;
   onBack: () => void;
 };
 
+type ResponseLayout = "map" | "video" | "split";
+
+type VehicleCommandReceipt = {
+  id: string;
+  status: string;
+  deadlineAtUnixMs: number;
+  resultCode: string;
+  resultMessage: string;
+};
+
 const terminalStates = new Set(["COMPLETED", "FAILED", "CANCELLED", "RTL"]);
+const terminalCommandStates = new Set(["succeeded", "failed", "rejected", "timed_out", "cancelled"]);
 
 type TelemetryHistoryPage = {
   snapshots: Array<{
@@ -31,7 +44,7 @@ type TelemetryHistoryPage = {
   }>;
 };
 
-export function MissionExecutionPage({ nativeAvailable, missionId, preferredDroneId, lockedDroneId, backLabel = "Mission planner", onBack }: MissionExecutionPageProps) {
+export function MissionExecutionPage({ nativeAvailable, missionId, preferredDroneId, lockedDroneId, backLabel = "Mission planner", alerts, onBack }: MissionExecutionPageProps) {
   const [mission, setMission] = useState<Mission>();
   const [plan, setPlan] = useState<MissionPlan>();
   const [fleet, setFleet] = useState<FleetSnapshot>();
@@ -44,7 +57,9 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   const [aircraftTrail, setAircraftTrail] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [payloadTarget, setPayloadTarget] = useState<PayloadTarget>();
   const [selectingPayloadTarget, setSelectingPayloadTarget] = useState(false);
-  const [liveSurface, setLiveSurface] = useState<"map" | "camera">("map");
+  const [liveSurface, setLiveSurface] = useState<ResponseLayout>(() => storedExecutionLayout());
+  const [responseIncident, setResponseIncident] = useState<IncidentSnapshot>();
+  const [safetyCommandResult, setSafetyCommandResult] = useState<string>();
 
   useEffect(() => {
     if (!nativeAvailable) return;
@@ -90,6 +105,33 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
     };
   }, [missionId, nativeAvailable, preferredDroneId]);
 
+  useEffect(() => {
+    window.localStorage.setItem("atlas.execution.responseLayout", liveSurface);
+  }, [liveSurface]);
+
+  useEffect(() => {
+    const incidentId = plan?.metadata.incidentResponse?.incidentId;
+    if (!nativeAvailable || !incidentId) {
+      setResponseIncident(undefined);
+      return;
+    }
+    let active = true;
+    async function refreshIncident() {
+      try {
+        const detail = await invoke<IncidentDetail>("incident_detail", { incidentId });
+        if (active) setResponseIncident(detail.incident);
+      } catch (reason) {
+        if (active) setError(messageFrom(reason));
+      }
+    }
+    void refreshIncident();
+    const interval = window.setInterval(refreshIncident, 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [nativeAvailable, plan?.metadata.incidentResponse?.incidentId]);
+
   const missionRuns = useMemo(() => runs.filter((run) => run.missionId === missionId), [missionId, runs]);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? missionRuns[0];
   const activeRun = missionRuns.find((run) => !terminalStates.has(run.status));
@@ -106,6 +148,16 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   const trackedHome = trackedHomePosition(targetAircraft);
   const preflight = preflightState(targetAircraft);
   const canUpload = Boolean(nativeAvailable && mission?.generatedPlanId && plan && selectedDroneId && uploadDistance?.ok && !activeRun && !targetActiveRun && !pendingOperation);
+  const responseIncidentId = plan?.metadata.incidentResponse?.incidentId;
+  const highestAlert = useMemo(
+    () => highestRelatedOperationalAlert(alerts.alerts, {
+      incidentId: responseIncidentId,
+      droneId: targetDroneId || undefined,
+      missionRunId: selectedRun?.id,
+    }),
+    [alerts.alerts, responseIncidentId, selectedRun?.id, targetDroneId],
+  );
+  const recordingPlanned = plan?.actions.some((action) => action.actionType === "START_RECORDING") ?? false;
 
   useEffect(() => {
     if (!nativeAvailable || !selectedRun) {
@@ -187,6 +239,32 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
     }
   }
 
+  async function landAircraft() {
+    if (!targetDroneId || !selectedRun || terminalStates.has(selectedRun.status)) return;
+    const confirmed = window.confirm("Request immediate Land for this aircraft? Use only when the landing area is safe.");
+    if (!confirmed) return;
+    setPendingOperation("land");
+    setError(undefined);
+    setSafetyCommandResult(undefined);
+    try {
+      const initial = await invoke<VehicleCommandReceipt>("request_vehicle_command", {
+        droneId: targetDroneId,
+        commandType: "land",
+        parametersJson: "{}",
+        timeoutMs: 15_000,
+      });
+      const receipt = await awaitVehicleCommand(initial);
+      if (receipt.status !== "succeeded") {
+        throw new Error(receipt.resultMessage || receipt.resultCode || `Land command ${receipt.status}`);
+      }
+      setSafetyCommandResult(receipt.resultMessage || receipt.resultCode || "Land acknowledged by PX4");
+    } catch (reason) {
+      setError(messageFrom(reason));
+    } finally {
+      setPendingOperation(undefined);
+    }
+  }
+
   if (!mission || !plan) {
     return (
       <main className="execution-workspace execution-workspace--loading" id="main-content">
@@ -216,41 +294,77 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
         <span className={selectedRun ? `run-state run-state--${selectedRun.status.toLowerCase()}` : "run-state"}>{displayedRunState}</span>
       </header>
 
+      {responseIncidentId && (
+        <section className={`execution-response-context execution-response-context--${(responseIncident?.priority ?? "MEDIUM").toLowerCase()}`} aria-label="Incident response identity and safety controls">
+          <div className="execution-response-context__identity">
+            <span aria-hidden="true">{responseIncident?.priority === "CRITICAL" ? "▲" : "◆"}</span>
+            <div>
+              <small>{responseIncident?.priority ?? "INCIDENT RESPONSE"} · INCIDENT {shortId(responseIncidentId)}</small>
+              <strong>{responseIncident?.summary || mission.name}</strong>
+            </div>
+          </div>
+          <dl>
+            <div><dt>Run state</dt><dd>{displayedRunState}</dd></div>
+            <div><dt>Plan revision</dt><dd>{plan.metadata.incidentResponse?.incidentRevision ?? "—"}</dd></div>
+            <div><dt>Current revision</dt><dd>{responseIncident?.revision ?? "Loading"}</dd></div>
+            <div><dt>Safety alert</dt><dd>{highestAlert ? `${highestAlert.severity} · ${highestAlert.title}` : "No active response alert"}</dd></div>
+          </dl>
+          <div className="execution-response-context__controls">
+            <button type="button" disabled={selectedRun?.status !== "RUNNING" || Boolean(pendingOperation)} onClick={() => void control("pause")}>Hold</button>
+            <button type="button" disabled={!selectedRun || !["RUNNING", "PAUSED"].includes(selectedRun.status) || Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>RTL</button>
+            <button type="button" className="execution-response-context__land" disabled={!selectedRun || terminalStates.has(selectedRun.status) || targetAircraft?.connectionStatus !== "connected" || targetAircraft.telemetry?.status !== "live" || targetAircraft.telemetry.inAir !== true || Boolean(pendingOperation)} onClick={() => void landAircraft()}>Land</button>
+            <small>{safetyCommandResult || "Safety actions remain available in every response layout."}</small>
+          </div>
+        </section>
+      )}
+
       <section className="execution-live-grid" aria-label="Live mission operation">
         <div className="execution-map-column">
-          {liveSurface === "map" ? (
-            <OperationalMissionMap
-              mode="track"
-              templateType={mission.templateType}
-              planWaypoints={plan.generatedWaypoints}
-              currentWaypoint={selectedRun?.currentWaypoint}
-              aircraft={trackedAircraft}
-              home={trackedHome}
-              aircraftTrail={aircraftTrail}
-              followAircraft={followAircraft}
-              payloadTarget={payloadTarget}
-              selectingPayloadTarget={selectingPayloadTarget}
-              onPayloadTargetSelect={(target) => {
-                setPayloadTarget(target);
-                setSelectingPayloadTarget(false);
-              }}
-            />
-          ) : (
-            <LiveVideo nativeAvailable={nativeAvailable} droneId={targetDroneId || undefined} />
-          )}
+          <div className={`execution-live-surfaces execution-live-surfaces--${liveSurface}`} data-execution-layout={liveSurface}>
+            <div className="execution-live-panel execution-live-panel--map">
+              <OperationalMissionMap
+                mode="track"
+                templateType={mission.templateType}
+                planWaypoints={plan.generatedWaypoints}
+                currentWaypoint={selectedRun?.currentWaypoint}
+                aircraft={trackedAircraft}
+                home={trackedHome}
+                aircraftTrail={aircraftTrail}
+                followAircraft={followAircraft}
+                payloadTarget={payloadTarget}
+                selectingPayloadTarget={selectingPayloadTarget}
+                onPayloadTargetSelect={(target) => {
+                  setPayloadTarget(target);
+                  setSelectingPayloadTarget(false);
+                }}
+              />
+            </div>
+            <div className="execution-live-panel execution-live-panel--video">
+              <LiveVideo
+                nativeAvailable={nativeAvailable}
+                droneId={targetDroneId || undefined}
+                aircraft={targetAircraft}
+                highestAlert={highestAlert}
+                recordingPlanned={recordingPlanned}
+                recordingContext={{
+                  incidentId: responseIncidentId,
+                  missionId,
+                  missionRunId: selectedRun?.id,
+                }}
+                compact={liveSurface === "map"}
+              />
+            </div>
+          </div>
           <div className="execution-map-toolbar">
             <div className="execution-surface-switch" role="group" aria-label="Live operation view">
-              <button type="button" className={liveSurface === "map" ? "execution-surface-switch--active" : ""} onClick={() => setLiveSurface("map")}>Mission map</button>
-              <button type="button" className={liveSurface === "camera" ? "execution-surface-switch--active" : ""} onClick={() => setLiveSurface("camera")} disabled={!targetDroneId}>Camera & perception</button>
+              {(["map", "video", "split"] as ResponseLayout[]).map((option) => (
+                <button key={option} type="button" className={liveSurface === option ? "execution-surface-switch--active" : ""} aria-pressed={liveSurface === option} onClick={() => setLiveSurface(option)}>{option === "map" ? "Mission map" : option === "video" ? "Video + perception" : "Split"}</button>
+              ))}
             </div>
-            {liveSurface === "map" ? (
-              <>
-                <button type="button" className={followAircraft ? "follow-control follow-control--active" : "follow-control"} onClick={() => setFollowAircraft((current) => !current)} disabled={!trackedAircraft}>
-                  {followAircraft ? "Following aircraft" : "Follow aircraft"}
-                </button>
-                <span>{trackedAircraft ? `${trackedAircraft.latitude.toFixed(6)}, ${trackedAircraft.longitude.toFixed(6)}` : "Waiting for aircraft position"}</span>
-              </>
-            ) : <span>{targetAircraft?.droneName || targetDroneId || "Select an aircraft"}</span>}
+            <button type="button" className={followAircraft ? "follow-control follow-control--active" : "follow-control"} onClick={() => setFollowAircraft((current) => !current)} disabled={!trackedAircraft}>
+              {followAircraft ? "Following aircraft" : "Follow aircraft"}
+            </button>
+            <span>{trackedAircraft ? `${trackedAircraft.latitude.toFixed(6)}, ${trackedAircraft.longitude.toFixed(6)}` : targetAircraft?.droneName || targetDroneId || "Waiting for aircraft position"}</span>
           </div>
           <div className="execution-telemetry-strip" aria-label="Live aircraft telemetry">
             <Metric label="Waypoint" value={selectedRun ? waypointLabel(selectedRun) : `— / ${plan.generatedWaypoints.length}`} />
@@ -369,13 +483,14 @@ function ArrivalActionRuntime({ run }: { run: MissionRun }) {
             <div>
               <strong>{actionLabel(action.actionType)}</strong>
               <small>{actionStateDetail(action.state, action.attempt, action.maxAttempts)}</small>
+              <small>{formatActionRuntimePolicy(action)}</small>
               {action.errorMessage && <small className="arrival-runtime__error">{action.errorMessage}</small>}
             </div>
           </li>
         ))}
       </ol>
       <p><span>Reviewed failure policy</span><strong>{failurePolicyLabel(hold?.failurePolicy)}</strong></p>
-      <small className="arrival-runtime__boundary">Final-waypoint progress cannot set ON SCENE. Only the durable Hold acknowledgement can.</small>
+      <small className="arrival-runtime__boundary">Waypoint progress cannot set ON SCENE. Only the durable Hold acknowledgement can.</small>
     </section>
   );
 }
@@ -422,6 +537,25 @@ function preflightState(aircraft?: FleetAircraft) {
   return { checks, ready: checks.every((check) => check.ok) };
 }
 
+function storedExecutionLayout(): ResponseLayout {
+  try {
+    const stored = window.localStorage.getItem("atlas.execution.responseLayout");
+    return stored === "map" || stored === "video" || stored === "split" ? stored : "map";
+  } catch {
+    return "map";
+  }
+}
+
+async function awaitVehicleCommand(initial: VehicleCommandReceipt) {
+  let current = initial;
+  while (!terminalCommandStates.has(current.status) && Date.now() <= initial.deadlineAtUnixMs + 1_500) {
+    await new Promise((resolve) => window.setTimeout(resolve, 200));
+    current = await invoke<VehicleCommandReceipt>("vehicle_command_detail", { commandId: initial.id });
+  }
+  if (!terminalCommandStates.has(current.status)) throw new Error("Land command did not reach a terminal state before its deadline.");
+  return current;
+}
+
 function messageFrom(reason: unknown) { return reason instanceof Error ? reason.message : String(reason); }
 function shortId(value: string) { return value.slice(0, 8).toUpperCase(); }
 
@@ -458,7 +592,7 @@ function translationWarnings(run?: MissionRun) {
 }
 
 function actionLabel(actionType: string) {
-  return actionType === "HOLD_AT_ARRIVAL" ? "Hold at arrival" : actionType === "POINT_GIMBAL_AT_INCIDENT" ? "Point gimbal at incident" : actionType.replace(/_/g, " ");
+  return actionType === "HOLD_AT_ARRIVAL" ? "Hold at arrival" : actionType === "POINT_GIMBAL_AT_INCIDENT" ? "Point gimbal at incident" : actionType === "RESUME_AFTER_ARRIVAL" ? "Resume operational pattern" : actionType.replace(/_/g, " ");
 }
 
 function displayActionState(state: string) {
@@ -475,5 +609,21 @@ function actionStateDetail(state: string, attempt: number, maximum: number) {
 }
 
 function failurePolicyLabel(policy?: string) {
-  return policy === "RETURN_TO_LAUNCH" ? "Return to launch" : policy === "OPERATOR_INTERVENTION" ? "Operator intervention" : "—";
+  return policy === "RETURN_TO_LAUNCH"
+    ? "Return to launch"
+    : policy === "OPERATOR_INTERVENTION"
+      ? "Operator intervention"
+      : policy === "SKIP_OPTIONAL_AND_NOTIFY"
+        ? "Skip optional action and notify"
+        : "—";
+}
+
+function formatActionRuntimePolicy(action: MissionRun["actions"][number]) {
+  const timing = `${Math.round(action.timeoutMs / 1_000)} s timeout · ${Math.round(action.retryInitialDelayMs / 1_000)} s retry ×${action.retryBackoffMultiplier.toFixed(1)}`;
+  const deadline = action.state === "RUNNING" && action.attemptDeadlineAtUnixMs
+    ? ` · deadline ${formatDate(action.attemptDeadlineAtUnixMs)}`
+    : action.state === "RETRYING" && action.nextAttemptAtUnixMs
+      ? ` · next ${formatDate(action.nextAttemptAtUnixMs)}`
+      : "";
+  return `${timing} · ${failurePolicyLabel(action.failurePolicy)}${deadline}`;
 }

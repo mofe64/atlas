@@ -17,9 +17,11 @@ flowchart TB
         Rust["Rust operational host"]
         DB[("SQLite")]
         FFmpeg["Supervised FFmpeg decoder"]
+        Recorder["Supervised evidence recorder"]
         UI -->|"Tauri IPC"| Rust
         Rust --> DB
         Rust --> FFmpeg
+        Rust --> Recorder
     end
 
     subgraph Aircraft["Aircraft / onboard computer"]
@@ -37,6 +39,7 @@ flowchart TB
     Agent -->|"outbound control + telemetry gRPC"| Rust
     Agent -->|"separate perception gRPC"| Rust
     Camera -->|"clean RTSP over HM30/Ethernet"| FFmpeg
+    Camera -->|"source RTSP over HM30/Ethernet"| Recorder
 
     subgraph Optional["Separate coordinated-services stack"]
         API["Atlas Backend"]
@@ -49,15 +52,19 @@ flowchart TB
 
 The shared transport contract is
 [`proto/atlas/ground_station.proto`](../proto/atlas/ground_station.proto).
+Detailed operational behavior is split into
+[mission types and flight patterns](mission-types-and-flight-patterns.md),
+[incident dispatch](incident-dispatch.md), and
+[inference, tracking, geolocation, and follow](inference-tracking-and-follow.md).
 
 ## Component responsibilities
 
 | Component | Owns | Deliberately does not own |
 | --- | --- | --- |
 | React UI | Operator navigation, forms, map interaction, rendering, polling Native state | Network sessions, durable policy, direct MAVSDK or PX4 access |
-| Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission planning records, video decoding, perception alignment | Physical flight-controller, gimbal, camera, or accelerator drivers |
-| SQLite | Local operational source of truth and audit history | Multi-user tenancy or cross-ground-station synchronization |
-| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, payload ownership, perception supervision | Operator workflow, mission-definition editing, local ground-station history |
+| Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog | Physical flight-controller, gimbal, camera, or accelerator drivers |
+| SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history | Multi-user tenancy or cross-ground-station synchronization |
+| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history |
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
@@ -131,9 +138,15 @@ Atlas uses different delivery semantics for different kinds of information:
 | PX4 status text | Discrete events | Warnings and failsafe text must not be overwritten by the next sample |
 | Vehicle commands | Durable intent plus append-only lifecycle events | Safety, retry visibility, idempotency, and auditability |
 | Mission operations | Durable run plus append-only progress/lifecycle events | One execution must remain explainable after completion |
+| Incident dispatch | Revision-bound preview plus atomic plan/assignment preparation | A changed incident or conflicting reservation must not reuse stale review |
+| Arrival actions | Durable request/attempt/acknowledgement/policy events | Waypoint progress alone is not proof that Hold or on-scene behavior succeeded |
 | Perception health | Continuous latest health | Operators need runtime readiness even with no live viewer |
 | Perception frames | Demand-leased, latest-biased, separate gRPC stream | High-rate metadata must not delay command acknowledgements |
+| Track lifecycle and selection | Session-scoped IDs plus durable significant events and exact selection | Control must not jump to a different association after a reset or loss |
+| Geolocation temporal context | Bounded onboard aircraft/gimbal timelines correlated to pre-inference video timing | Physical interpolation must use monotonic sample time, never detection completion or UI receipt time |
+| Aircraft follow | Short operator lease and latest validated target updates; high-rate setpoints stay onboard | Ground loss must stop Offboard through the Agent watchdog without a final UI message |
 | Video frames | Bounded delayed buffer in Native | Match detections while avoiding a growing live backlog |
+| Evidence recording | Segmented source-RTSP media files plus SQLite session/segment/gap manifests | Large bytes remain outside SQLite while finalization, integrity, associations, and gaps remain auditable |
 
 ## Runtime startup
 
@@ -146,9 +159,11 @@ desktop host:
 2. Open and migrate SQLite.
 3. Create the in-memory command router and perception store.
 4. Load video configuration.
-5. Start the Agent-facing gRPC server.
-6. Start the one-second command-expiration task.
-7. Register Tauri commands and window cleanup.
+5. Validate the local evidence root, recover interrupted recorder state, and load source-RTSP recorder policy.
+6. Start the Agent-facing gRPC server.
+7. Start operational-alert refresh (two seconds), command expiration (one
+   second), aircraft-follow watchdog (250 ms), and evidence retention (hourly).
+8. Register Tauri commands and graceful video/recorder window cleanup.
 
 ### Agent
 
@@ -187,6 +202,24 @@ These rules explain many implementation choices:
 9. **Live media is latest-biased.** Slow consumers cause old frames to be
    dropped, not accumulated.
 10. **Backend availability must not determine local flight continuity.**
+11. **Arrival is an explicit mission phase.** Pattern missions Hold and perform
+    reviewed arrival actions at their immutable waypoint trigger, then resume
+    through a separate acknowledged action before later pattern waypoints.
+    Hold at Staging is intentionally different: acknowledged Hold pauses the
+    run and preserves `STAGED` until an explicit operator decision; it does not
+    imply `ON_SCENE` or incident gimbal targeting.
+12. **Evidence success proves finalization.** Recorder setup failures become
+    terminal sessions, and SQLite cannot transition a recording to `SUCCEEDED`
+    while a segment is still `FINALIZING`.
+13. **Incident review is revision-bound.** Updating an incident stales an
+    unuploaded prepared assignment; an airborne immutable plan is alerted, not
+    rewritten.
+14. **Track selection is exact.** Control names a track session and Atlas track
+    ID and never transfers automatically to a nearby or newly associated box.
+15. **Camera and aircraft follow are separate authorities.** Camera follow owns
+    leased gimbal rates in image space. Follow from standoff owns PX4 Offboard
+    movement from a filtered world-space estimate and falls back to Hold, never
+    implicit RTL or Land.
 
 ## Failure behavior
 
@@ -199,6 +232,11 @@ These rules explain many implementation choices:
 | MAVSDK unavailable | The Go clients can start before the server is reachable. Telemetry subscriptions retry, while commands and mission operations fail until MAVSDK returns. Packaged services order Agent after MAVSDK, and `atlas-setup doctor` exposes connectivity failures. |
 | Command result misses deadline | Native expires it to `timed_out`; the result code distinguishes delivery timeout from execution timeout. |
 | Mission start fails after arm | Agent requests PX4 Hold and reports the start failure. |
+| Arrival action or post-arrival resume fails | Agent exhausts only the reviewed retry budget, then applies the immutable RTL or operator-intervention policy. |
+| Staging Hold succeeds | Agent reports `PAUSED`; Native preserves a non-terminal `STAGED` assignment until an explicit mission Resume, RTL, or Cancel decision. Land remains an independent immediate safety command and does not close the run by itself. |
+| Incident changes after preparation | An unuploaded assignment becomes `STALE` and must be previewed/prepared again; an active run keeps its immutable route and raises an operational alert. |
+| Aircraft-follow lease, target, or runtime gate fails | Agent sends zero velocity, stops PX4 Offboard, commands Hold, and records the reason; it does not infer RTL or Land. |
+| Recorder setup or final segment processing fails | Native records a failed session and evidence gap; the database refuses false success with a `FINALIZING` segment. |
 | Manual payload lease expires | Inspection movement stops and ownership releases; mission override restores the current mission payload intent. |
 | Perception stream fails | Agent reconnects it separately; command and telemetry traffic remain isolated. |
 | Video decoder fails | Native reports video error state without changing the aircraft-control session. |

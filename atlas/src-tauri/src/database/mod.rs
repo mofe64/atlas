@@ -1,33 +1,70 @@
+mod aircraft_follow;
+mod alerts;
 mod commands;
 mod drones;
 mod events;
+mod evidence_assets;
 mod history;
 mod incidents;
+mod known_buildings;
 mod migrations;
 mod mission_actions;
 mod mission_runs;
 mod missions;
+mod perception_geolocations;
+mod perception_operations;
+mod perception_tracks;
+mod recordings;
 mod registration;
 mod sessions;
 mod snapshots;
 mod telemetry;
 
 pub(crate) use events::{StatusEventInput, StatusEventSnapshot};
+pub(crate) use evidence_assets::{
+    AnnotateEvidenceAssetInput, CaptureEvidenceStillInput, CreateEvidenceStillAssetInput,
+    EvidenceAssetFileInput, EvidenceAssetListInput, EvidenceAssetSnapshot,
+    EvidenceRetentionPolicySnapshot, QueueEvidenceEventClipInput, RestoreEvidenceAssetInput,
+    ReviewEvidenceAssetInput, TrashEvidenceAssetInput, UpdateEvidenceAssetRetentionInput,
+    UpdateEvidenceRetentionPolicyInput,
+};
 pub(crate) use history::{
     HistoryOverview, TelemetryChartSeries, TelemetryHistoryCursor, TelemetryHistoryPage,
     TelemetryHistoryQuery,
 };
+#[cfg(test)]
+pub(crate) use incidents::PrepareIncidentResponseInput;
 pub(crate) use incidents::{
-    CreateIncidentInput, IncidentDetailSnapshot, IncidentSnapshot, PrepareIncidentResponseInput,
+    AbandonPreparedResponseInput, CreateIncidentInput, ExpandedPrepareIncidentResponseInput,
+    IncidentDetailSnapshot, IncidentResponseAircraftSuitabilityInput,
+    IncidentResponseAircraftSuitabilitySnapshot, IncidentResponsePlanPreview, IncidentSnapshot,
     PreparedIncidentResponse, UpdateIncidentInput,
 };
 pub(crate) use mission_actions::{MissionActionExecutionSnapshot, MissionActionUpdateInput};
 pub(crate) use mission_runs::{MissionRunSnapshot, MissionRunUpdateInput};
-#[cfg(test)]
-pub(crate) use missions::MissionWaypoint;
 pub(crate) use missions::{
-    templates as mission_templates, ApplyTerrainProfileInput, CreateMissionInput,
-    MissionPlanSnapshot, MissionSnapshot, MissionTemplate,
+    mission_plan_json_for_agent, templates as mission_templates, ApplyTerrainProfileInput,
+    CreateMissionInput, MissionAction, MissionPlanSnapshot, MissionSnapshot, MissionTemplate,
+    MissionWaypoint,
+};
+#[cfg(test)]
+pub(crate) use perception_geolocations::TerrainSampleInput;
+pub(crate) use perception_geolocations::{
+    OperationalTrackGeolocationSnapshot, TerrainRefinementInput, TrackGeolocationSnapshot,
+};
+#[cfg(test)]
+pub(crate) use perception_operations::CountingPoint;
+pub(crate) use perception_operations::{
+    CountingRuleSnapshot, PerceptionCountSnapshot, SelectTrackInput, TrackAnnotationInput,
+    TrackAnnotationSnapshot, TrackSampleSnapshot, TrackSelectionSnapshot, UpsertCountingRuleInput,
+};
+pub(crate) use perception_tracks::{
+    PerceptionTrackBatchInput, PerceptionTrackRecordSnapshot, PerceptionTrackUpdateInput,
+    TrackBoundingBoxInput, TrackCountEventInput, TrackRuleCountInput,
+};
+pub(crate) use recordings::{
+    CreateEvidenceRecordingInput, EvidenceRecordingSegmentSnapshot,
+    EvidenceRecordingSessionSnapshot, SegmentFinalizationInput, StartEvidenceRecordingInput,
 };
 pub(crate) use registration::{RegisteredSession, RegistrationInput, ARCHIVED_REGISTRATION_ERROR};
 pub(crate) use snapshots::AircraftTelemetrySnapshot;
@@ -130,4 +167,10 @@ pub(crate) fn unix_time_ms() -> i64 {
 
 #[cfg(test)]
 mod tests;
+pub(crate) use aircraft_follow::{
+    AircraftFollowAgentUpdateInput, AircraftFollowSessionSnapshot,
+    CreateAircraftFollowSessionInput, EndAircraftFollowSessionInput,
+    RenewAircraftFollowSessionInput,
+};
+pub(crate) use alerts::{AlertObservation, OperationalAlertListSnapshot, OperationalAlertSnapshot};
 pub(crate) use commands::{VehicleCommandSnapshot, VehicleCommandUpdateInput};

@@ -49,7 +49,7 @@ fi
 printf 'GSTREAMER_READY=%s\n' "$gstreamer_ready"
 
 python_ready=false
-if python3 -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo" >/dev/null 2>&1; then
+if python3 -c "import gi; gi.require_version('Gst', '1.0'); from gi.repository import Gst; import hailo; import cv2; import numpy" >/dev/null 2>&1; then
     python_ready=true
 else
     result=1

@@ -3,7 +3,8 @@
 This directory is the starting point for understanding and contributing to the
 current Atlas system. It documents the code that exists at this checkpoint,
 including Atlas Native, Atlas Agent, their direct transport, aircraft operations,
-video and perception, and the separate Atlas Backend foundation.
+mission patterns, incident dispatch, perception and follow controllers, evidence,
+and the separate Atlas Backend foundation.
 
 The shortest correct mental model is:
 
@@ -35,10 +36,13 @@ and Agent.
 | 2 | [Atlas Native](atlas-native.md) | How does the desktop application, Rust host, SQLite, and React UI work? |
 | 3 | [Atlas Agent](atlas-agent.md) | How does the onboard runtime integrate with MAVSDK, PX4, payload hardware, and perception? |
 | 4 | [Native-Agent protocol](native-agent-protocol.md) | How do registration, telemetry, commands, missions, perception, and reconnects cross the network? |
-| 5 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the command, mission, lifecycle, safety, and failure-state rules? |
-| 6 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, and rendered? |
-| 7 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
-| 8 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
+| 5 | [Mission types and flight patterns](mission-types-and-flight-patterns.md) | How does editable mission intent become immutable waypoints, actions, terrain profiles, and runs? |
+| 6 | [Incident dispatch](incident-dispatch.md) | How are incidents reviewed, assigned, safety-assessed, flown, and audited across each response mode? |
+| 7 | [Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md) | How do detections become tracks and coordinates, and how do camera and aircraft follow differ? |
+| 8 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the general command, lifecycle, safety, and failure-state rules? |
+| 9 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, rendered, and retained? |
+| 10 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
+| 11 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
 
 The [feature gap assessment](feature-gap-assessment.md) is a product-direction
 document. It describes possible future work and must not be treated as shipped
@@ -99,13 +103,19 @@ These are architectural facts at this checkpoint:
 - Atlas Native has no operator login, organization, or backend dependency.
 - The current design assumes one Native authority for a directly connected
   aircraft. Multi-ground-station command arbitration is not implemented.
-- Perception frames and health are held in bounded memory for live use; they are
-  not persisted as a historical perception dataset.
-- Native displays clean video and optional metadata overlays, but it does not
-  currently provide an archival media/evidence store.
-- Mission actions such as recording and perception selection are represented in
-  plans, but MAVSDK Mission v1 cannot execute every semantic Atlas action. The
-  Agent reports translation warnings rather than claiming unsupported behavior.
+- Native keeps only a bounded live frame history rather than persisting every
+  detection box. It does persist track/session summaries, lifecycle events,
+  selections, counts, geolocation results, and explicitly captured evidence.
+- Native supports local segmented recording plus verified evidence stills and
+  bounded event clips with provenance and retention. Remote evidence replication
+  and a complete export workflow are separate future concerns.
+- Camera behavior is constrained by the physical payload and MAVSDK Mission v1.
+  Perception start and stop are separately executed as durable Agent actions:
+  required inference is acknowledged before arming and released during terminal
+  cleanup.
+- Aircraft Follow from standoff is an unverified, commissioned capability and is
+  disabled by default. Enabling its feature flag does not replace airframe/site
+  validation or the required runtime capability references.
 - Agent command idempotency receipts are in memory. Native command and mission
   events are durable and deduplicated, but an Agent process restart clears its
   local receipt cache.
@@ -124,8 +134,15 @@ These are architectural facts at this checkpoint:
 | **Mission definition** | Editable operator intent and template parameters. |
 | **Mission plan** | An immutable generated set of waypoints and semantic actions. |
 | **Mission run** | One upload/execution history for one plan on one aircraft. |
+| **Incident** | A revisioned operational event and target location that may need an aircraft response. |
+| **Incident assignment** | The durable reservation linking an incident, selected aircraft, response plan, and execution state. |
+| **Response pattern** | The reviewed incident-specific geometry and arrival behavior, such as staging, offset observation, area scan, or orbit. |
 | **Payload control lease** | Short-lived ownership of gimbal/camera manual control. |
 | **Perception source** | An accelerator-neutral stream of health and normalized detections for one camera source ID. |
+| **Track session** | A continuity boundary within which Atlas-owned track IDs are meaningful. |
+| **Camera follow** | Image-space controller that moves only the gimbal to center an exact selected track. |
+| **Follow from standoff** | Geographic-space PX4 Offboard controller that moves the aircraft using a filtered selected-target estimate. |
+| **Evidence** | Explicitly retained still or event media plus provenance; distinct from the bounded live frame history. |
 
 ## How to use these docs while changing code
 
@@ -143,4 +160,3 @@ These are architectural facts at this checkpoint:
 The code is authoritative when documentation and implementation disagree. Treat
 that disagreement as a documentation bug unless the implementation is itself
 being corrected.
-

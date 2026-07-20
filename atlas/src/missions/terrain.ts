@@ -3,6 +3,7 @@ import type { MissionPlan, MissionSettings, MissionWaypoint } from "./missionTyp
 const EARTH_RADIUS_METERS = 6_371_000;
 const DEFAULT_TILE_TEMPLATE = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
 const DEFAULT_ZOOM = 12;
+const DEFAULT_VERTICAL_UNCERTAINTY_METERS = 10;
 const TILE_SIZE = 256;
 const MAX_MERCATOR_LATITUDE = 85.05112878;
 
@@ -15,6 +16,7 @@ export type TerrainSource = {
   encoding: TerrainEncoding;
   zoom: number;
   tileSize: number;
+  verticalUncertaintyMeters: number;
   attribution: string;
 };
 
@@ -56,6 +58,7 @@ const tileCache = new Map<string, Promise<DecodedTile>>();
 export function terrainSource(): TerrainSource {
   const encoding = import.meta.env.VITE_ATLAS_TERRAIN_ENCODING === "mapbox" ? "mapbox" : "terrarium";
   const configuredZoom = Number(import.meta.env.VITE_ATLAS_TERRAIN_ZOOM);
+  const configuredVerticalUncertainty = Number(import.meta.env.VITE_ATLAS_TERRAIN_VERTICAL_UNCERTAINTY_METERS);
   return {
     datasetId: import.meta.env.VITE_ATLAS_TERRAIN_DATASET_ID || "mapzen-aws-terrain-tiles",
     displayName: import.meta.env.VITE_ATLAS_TERRAIN_NAME || "Mapzen Terrain Tiles on AWS",
@@ -63,8 +66,17 @@ export function terrainSource(): TerrainSource {
     encoding,
     zoom: Number.isInteger(configuredZoom) && configuredZoom >= 0 && configuredZoom <= 22 ? configuredZoom : DEFAULT_ZOOM,
     tileSize: TILE_SIZE,
+    verticalUncertaintyMeters: Number.isFinite(configuredVerticalUncertainty)
+      && configuredVerticalUncertainty >= 0
+      && configuredVerticalUncertainty <= 100
+      ? configuredVerticalUncertainty
+      : DEFAULT_VERTICAL_UNCERTAINTY_METERS,
     attribution: 'Terrain: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank">Mapzen / AWS Open Data</a>',
   };
+}
+
+export function terrainSourceVersion(source = terrainSource()): string {
+  return `${source.datasetId}:${source.encoding}:z${source.zoom}:px${source.tileSize}`;
 }
 
 export async function sampleTerrainElevation(

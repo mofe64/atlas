@@ -41,6 +41,9 @@ This separation is intentional:
 | `scripts/reset-databases.sh` | Destructive reset for current local development databases |
 | `scripts/archive/deprecated-stack/` | Unsupported historical scripts; never used by current workflows |
 | `docs/aircraft-operations-implementation.md` | Shipped aircraft workspace contracts and safety invariants |
+| `docs/mission-types-and-flight-patterns.md` | Mission geometry, terrain profiling, action ordering, and run lifecycle |
+| `docs/incident-dispatch.md` | Incident response patterns, suitability, review, assignment, and arrival actions |
+| `docs/inference-tracking-and-follow.md` | Inference, tracking, geolocation, camera follow, and aircraft follow |
 | `third_party/mavsdk-proto/` | Pinned MAVSDK protobuf submodule used for code generation |
 
 ## Developer documentation
@@ -52,6 +55,9 @@ repository map. The detailed architecture set covers:
 - [Atlas Native internals](docs/atlas-native.md)
 - [Atlas Agent internals](docs/atlas-agent.md)
 - [The Native-Agent protocol](docs/native-agent-protocol.md)
+- [Mission types and flight-pattern logic](docs/mission-types-and-flight-patterns.md)
+- [Incident dispatch architecture and response modes](docs/incident-dispatch.md)
+- [Inference, tracking, geolocation, and follow modes](docs/inference-tracking-and-follow.md)
 - [Aircraft operations, missions, commands, and safety](docs/aircraft-operations-implementation.md)
 - [Video and perception](docs/video-perception.md)
 - [The separate Atlas Backend](docs/atlas-backend.md)
@@ -66,16 +72,25 @@ future direction remain separate in
 - Stable local drone and Agent identities with direct registration.
 - Fleet monitoring, readiness, telemetry, PX4 status events, and seven-day
   history.
-- Aircraft workspaces for Overview, Live inspection, Missions, History, and
-  Settings.
+- Global Evidence, Operations, Follow, Fleet, Missions, and History workspaces,
+  plus per-aircraft operational detail and mission-execution views.
 - Safe drone archive/restore with retained operational history and rejected
   reconnect auditing while archived.
 - Clean A8 video decoded by Native, optional frame-aligned Hailo detections,
-  and continuous perception health.
+  Atlas-owned ByteTrack identities, counting, geolocation, and continuous
+  perception health.
+- Explicit evidence still/event-clip capture with local provenance, segmented
+  recording, integrity verification, and retention handling.
+- Camera follow that moves the gimbal in image space, plus commissioned and
+  default-disabled aircraft Follow from standoff using filtered geographic
+  target motion.
 - Leased inspection gimbal/zoom control while the aircraft is freshly known to
   be disarmed and on the ground.
 - Waypoint, area-scan, and route-scan planning; immutable plans; terrain
   profiling; upload; execution; mission-scoped payload override; and reports.
+- Manual incident intake, aircraft suitability and reservation, reviewed
+  Hold-at-Staging, Offset-Observe, Bounded-Area-Scan, and single-level
+  Bounded-Orbit response plans with durable arrival actions.
 - Durable Hold, Return-to-Launch, Land, mission, gimbal, and zoom command
   lifecycles.
 
@@ -87,7 +102,8 @@ The detailed component contracts and configuration live in
 
 Install only what the workflow you are running needs:
 
-- Node.js `22.13.1`, npm, Rust, and Tauri platform dependencies for Native.
+- Node.js `22.13.1`, npm, Rust `1.97.0` (the toolchain validated against the
+  current lockfile), and Tauri platform dependencies for Native.
 - Go `1.25` for the Agent and Backend.
 - FFmpeg for Native A8 video decoding.
 - Docker with Compose for the optional Backend.
@@ -139,7 +155,8 @@ will otherwise continue reconnecting while reporting the unavailable runtime.
 The launcher starts the supported development path:
 
 ```text
-PX4 Gazebo -> mavsdk_server -> Atlas Agent -> Atlas Native
+PX4 Gazebo camera -> local H.264 RTSP stream -> Atlas Native video
+PX4 MAVLink        -> mavsdk_server -> Atlas Agent -> Atlas Native
 ```
 
 From the repository root:
@@ -162,11 +179,33 @@ Useful options include:
 scripts/start-sitl.sh --px4-model gz_x500_gimbal --world baylands
 scripts/start-sitl.sh --mavlink-router mavproxy --qgc-out udp:127.0.0.1:14550
 scripts/start-sitl.sh --skip-px4 --skip-mavsdk
+scripts/start-sitl.sh --skip-video
 ```
 
 The launcher stores Native and Agent state under `.atlas-run/state/sitl/`,
 writes process logs under `.atlas-run/logs/`, and stops its child processes on
-exit. Run `scripts/start-sitl.sh --help` for the full override list.
+exit. With the default `gz_x500_gimbal` model, it also builds the local
+Gazebo-to-GStreamer bridge, publishes the simulated camera at
+`rtsp://127.0.0.1:8554/main.264`, and passes that URL to Atlas as the
+`sitl-gimbal` video source. The bridge requires the Gazebo Transport / Messages
+and GStreamer app / RTSP-server development packages discoverable through
+`pkg-config`; it uses an installed `x264enc`, `vtenc_h264`, or `openh264enc`
+H.264 encoder. Run `scripts/start-sitl.sh --help` for video topic, port, path,
+bitrate, and source-ID overrides.
+
+To fly the serial Hold at Staging, Bounded Area Scan, and single-level Orbit
+acceptance matrix against that stack, launch the simulator without its normal
+Native and Agent processes, then run the dedicated wrapper in another terminal:
+
+```sh
+scripts/start-sitl.sh --skip-native --skip-agent
+scripts/test-sitl-response-patterns.sh
+```
+
+The test owns the shared aircraft, pulls RTSP video before and during every
+flight, and returns to launch between cases. See
+[`docs/development-guide.md`](docs/development-guide.md#incident-response-flight-acceptance)
+for the exact assertions and endpoint overrides.
 
 ## Install or upgrade the onboard Agent
 

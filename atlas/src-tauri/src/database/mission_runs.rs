@@ -2,11 +2,13 @@ use rusqlite::{params, OptionalExtension, Transaction};
 use serde::Serialize;
 
 use super::{
+    alerts::reconcile_mission_run_alerts,
     incidents::{
         link_incident_assignment_run, sync_incident_assignment_run_state,
         validate_incident_assignment_upload,
     },
     mission_actions::{create_mission_action_executions, read_mission_action_executions},
+    missions::{mission_plan_json_for_agent, read_plan},
     unix_time_ms, LocalDatabase, MissionActionExecutionSnapshot,
 };
 
@@ -78,6 +80,12 @@ pub(crate) struct MissionRunUpdateInput {
 pub(crate) struct MissionOperationDispatch {
     pub run: MissionRunSnapshot,
     pub operation_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct MissionReconciliationSnapshot {
+    pub run: MissionRunSnapshot,
+    pub mission_plan_json: String,
 }
 
 impl LocalDatabase {
@@ -228,6 +236,34 @@ impl LocalDatabase {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|error| format!("read mission run identifiers: {error}"))?;
         ids.iter().map(|id| read_run(&connection, id)).collect()
+    }
+
+    pub(crate) fn mission_reconciliation(
+        &self,
+        drone_id: &str,
+    ) -> Result<Option<MissionReconciliationSnapshot>, String> {
+        let connection = self
+            .connection
+            .lock()
+            .map_err(|_| "local SQLite mutex was poisoned".to_string())?;
+        let run_id: Option<String> = connection
+            .query_row(
+                "SELECT id FROM mission_runs WHERE drone_id = ?1 AND completed_at_unix_ms IS NULL ORDER BY created_at_unix_ms DESC LIMIT 1",
+                [drone_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|error| format!("find unfinished mission for reconciliation: {error}"))?;
+        let Some(run_id) = run_id else {
+            return Ok(None);
+        };
+        let run = read_run(&connection, &run_id)?;
+        let plan = read_plan(&connection, &run.mission_plan_id)?;
+        let mission_plan_json = mission_plan_json_for_agent(plan)?;
+        Ok(Some(MissionReconciliationSnapshot {
+            run,
+            mission_plan_json,
+        }))
     }
 
     pub(crate) fn record_mission_operation_requested(
@@ -383,6 +419,7 @@ impl LocalDatabase {
                 | "completed"
                 | "cancelled"
                 | "rtl_started"
+                | "reconciliation_accepted"
         );
         tx.execute(
             "UPDATE mission_runs SET status = ?2, current_waypoint = COALESCE(?3, current_waypoint), total_waypoints = COALESCE(?4, total_waypoints), upload_progress_percent = COALESCE(?5, upload_progress_percent), progress_percent = COALESCE(?6, progress_percent), updated_at_unix_ms = ?7, uploaded_at_unix_ms = CASE WHEN ?2 = 'READY' THEN COALESCE(uploaded_at_unix_ms, ?7) ELSE uploaded_at_unix_ms END, started_at_unix_ms = CASE WHEN ?2 = 'RUNNING' THEN COALESCE(started_at_unix_ms, ?7) ELSE started_at_unix_ms END, paused_at_unix_ms = CASE WHEN ?2 = 'PAUSED' THEN ?7 ELSE paused_at_unix_ms END, completed_at_unix_ms = CASE WHEN ?8 THEN COALESCE(completed_at_unix_ms, ?7) ELSE completed_at_unix_ms END, error_code = CASE WHEN ?9 <> '' THEN ?9 WHEN ?11 THEN '' ELSE error_code END, error_message = CASE WHEN ?9 <> '' THEN ?10 WHEN ?11 THEN '' ELSE error_message END WHERE id = ?1",
@@ -416,6 +453,7 @@ impl LocalDatabase {
             &input.message,
             input.evidence_json.as_deref(),
         )?;
+        reconcile_mission_run_alerts(&tx, input, terminal)?;
         tx.commit()
             .map_err(|error| format!("commit mission run update: {error}"))?;
         drop(connection);

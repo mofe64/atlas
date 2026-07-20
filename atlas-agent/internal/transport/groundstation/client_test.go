@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"testing"
 	"time"
 
@@ -29,7 +30,12 @@ type recordingGroundStation struct {
 }
 
 type fakeCommandExecutor struct{}
+
+type evidenceCommandExecutor struct{}
 type fakeMissionExecutor struct{ updates chan vehicle.MissionUpdate }
+type fakeAircraftFollowExecutor struct {
+	updates chan vehicle.AircraftFollowUpdate
+}
 type deadlineCommandExecutor struct{}
 
 type recordingPerceptionGroundStation struct {
@@ -39,6 +45,13 @@ type recordingPerceptionGroundStation struct {
 
 func (fakeCommandExecutor) Execute(context.Context, string, string, string) (vehicle.CommandResult, error) {
 	return vehicle.CommandResult{Code: "RESULT_SUCCESS", Message: "success"}, nil
+}
+
+func (evidenceCommandExecutor) Execute(context.Context, string, string, string) (vehicle.CommandResult, error) {
+	return vehicle.CommandResult{Code: "TRACK_GEOLOCATION_ESTIMATED", Message: "estimated", EvidenceJSON: `{"schemaVersion":1}`}, nil
+}
+func (evidenceCommandExecutor) Capabilities() []string {
+	return []string{"command:geolocate_selected_track"}
 }
 func (fakeCommandExecutor) Capabilities() []string { return []string{"command:hold"} }
 func (deadlineCommandExecutor) Execute(ctx context.Context, _, _, _ string) (vehicle.CommandResult, error) {
@@ -59,8 +72,70 @@ func (executor fakeMissionExecutor) Execute(ctx context.Context, operation vehic
 		}
 	}
 }
+
+func (executor fakeMissionExecutor) Reconcile(ctx context.Context, reconciliation vehicle.MissionReconciliation) {
+	executor.updates <- vehicle.MissionUpdate{
+		EventID:     "reconciled-1",
+		OperationID: reconciliation.ReconciliationID,
+		RunID:       reconciliation.RunID,
+		Type:        "reconciliation_accepted",
+		State:       reconciliation.State,
+		ObservedAt:  time.Now().UTC(),
+	}
+}
 func (executor fakeMissionExecutor) Updates() <-chan vehicle.MissionUpdate { return executor.updates }
 func (fakeMissionExecutor) Capabilities() []string                         { return []string{"mission:upload"} }
+func (executor fakeAircraftFollowExecutor) Apply(context.Context, vehicle.AircraftFollowOperation) {
+}
+func (fakeAircraftFollowExecutor) GroundLinkLost() {}
+func (executor fakeAircraftFollowExecutor) Updates() <-chan vehicle.AircraftFollowUpdate {
+	return executor.updates
+}
+func (fakeAircraftFollowExecutor) Capabilities() []string {
+	return []string{"aircraft_follow:standoff:v1:unverified"}
+}
+
+func TestAircraftFollowOperationPreservesReviewedEnvelopeAndExactTrack(t *testing.T) {
+	request := &pb.AircraftFollowControlRequest{
+		OperationId: "operation-1", FollowSessionId: "follow-1", DroneId: "drone-1",
+		Action: pb.AircraftFollowControlAction_AIRCRAFT_FOLLOW_CONTROL_ACTION_RENEW,
+		Envelope: &pb.AircraftFollowEnvelope{
+			StandoffM: 40, AltitudeRelativeM: 30, MinimumAltitudeRelativeM: 20,
+			MaximumAltitudeRelativeM: 45, MaximumGroundSpeedMS: 8,
+			MaximumAccelerationMS2: 1.5, MaximumDurationMs: 300_000,
+			BoundaryCenterLatitude: 51.5, BoundaryCenterLongitude: -0.14,
+			BoundaryRadiusM: 500, MinimumBatteryPercent: 30,
+			MinimumTrackConfidence: 0.7, MaximumGeolocationUncertaintyM: 20,
+			MaximumVelocityUncertaintyMS: 5,
+		},
+		Target: &pb.AircraftFollowTargetState{
+			GeolocationId: "geo-1", SelectionId: "selection-1", SourceId: "a8-main",
+			TrackSessionId: "track-session-1", TrackId: "track-1", ObservedAtUnixMs: 1_000,
+			Latitude: 51.5002, Longitude: -0.14, AltitudeAmslM: 80,
+			VelocityNorthMS: 1.2, VelocityEastMS: 0.1,
+			HorizontalUncertaintyM: 4, VelocityUncertaintyMS: 0.8,
+			TrackConfidence: 0.92, LifecycleState: "ACTIVE", MotionStatus: "FILTERED",
+		},
+		OperatorLeaseExpiresAtUnixMs: 4_000,
+		ValidationReference:          "sitl-hil-flight/accepted-1",
+	}
+	operation, err := aircraftFollowOperation(request)
+	if err != nil {
+		t.Fatalf("translate follow operation: %v", err)
+	}
+	if operation.Action != "renew" || operation.SessionID != "follow-1" || operation.DroneID != "drone-1" {
+		t.Fatalf("operation identity = %#v", operation)
+	}
+	if operation.Envelope.StandoffM != 40 || operation.Envelope.MaximumAccelerationMPS2 != 1.5 || operation.Envelope.MaximumDuration != 300*time.Second {
+		t.Fatalf("reviewed envelope = %#v", operation.Envelope)
+	}
+	if operation.Target.SelectionID != "selection-1" || operation.Target.TrackSessionID != "track-session-1" || operation.Target.TrackID != "track-1" || operation.Target.MotionStatus != "FILTERED" {
+		t.Fatalf("exact target = %#v", operation.Target)
+	}
+	if operation.ValidationReference != "sitl-hil-flight/accepted-1" {
+		t.Fatalf("validation reference = %q", operation.ValidationReference)
+	}
+}
 
 func (s *recordingGroundStation) OpenSession(stream pb.GroundStationService_OpenSessionServer) error {
 	registration, err := stream.Recv()
@@ -203,6 +278,7 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			ObservedAt: time.Now().UTC(), Source: "mavsdk", Severity: "WARNING", Text: "Battery temperature high",
 		}
 		missionExecutor := fakeMissionExecutor{updates: make(chan vehicle.MissionUpdate, 2)}
+		followExecutor := fakeAircraftFollowExecutor{updates: make(chan vehicle.AircraftFollowUpdate)}
 		done <- connect(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), config.Config{
 			GroundStationAddress: listener.Addr().String(),
 			DroneName:            "Test Drone",
@@ -210,7 +286,7 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			ProtocolVersion:      "1",
 			HeartbeatInterval:    10 * time.Millisecond,
 			VehicleType:          "multicopter",
-		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor, newFrameDemand())
+		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor, followExecutor, newFrameDemand())
 	}()
 
 	select {
@@ -337,13 +413,15 @@ func TestPerceptionUsesIndependentHardwareNeutralStream(t *testing.T) {
 	}
 	go func() {
 		done <- streamPerception(ctx, pb.NewGroundStationServiceClient(connection), config.Config{
-			PerceptionProvider: "deepstream",
+			PerceptionProvider: "deepstream", TrackerAlgorithm: "byte_track_cmc",
 		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, "session-1", perception.Outputs{Frames: frames, Health: health}, demand)
 	}()
 
 	registration := <-recorder.messages
 	if got := registration.GetRegistration(); got == nil || got.GetProvider() != "deepstream" || got.GetInstallationId() != "agent-1" {
 		t.Fatalf("perception registration = %#v", got)
+	} else if !slices.Contains(got.GetCapabilities(), "tracker:byte_track_cmc:atlas:v1") || !slices.Contains(got.GetCapabilities(), "camera_motion:sparse_optical_flow:v1") || !slices.Contains(got.GetCapabilities(), "reid:disabled") {
+		t.Fatalf("perception capabilities = %#v", got.GetCapabilities())
 	}
 	seenFrame := false
 	seenHealth := false
@@ -375,6 +453,62 @@ func TestPerceptionHealthOmitsUnknownModel(t *testing.T) {
 	}
 }
 
+func TestPerceptionHealthCarriesTrackingSessionEvidence(t *testing.T) {
+	message := perceptionHealthMessage("session-1", "drone-1", perception.Health{
+		SourceID: "a8-main", Provider: "hailo", ObservedAt: time.Now().UTC(),
+		Tracking: &perception.TrackingHealth{
+			Algorithm: perception.TrackerAlgorithmByteTrackCMC, State: "ACTIVE",
+			SessionID: "tracking-session-1", LastResetReason: perception.TrackingResetActivated,
+			ResetCount: 2, CameraMotionState: "ACTIVE", CameraMotionMethod: "SPARSE_OPTICAL_FLOW",
+			CameraMotionConfidence: 0.92,
+		},
+	})
+	tracking := message.GetHealth().GetTracking()
+	if tracking.GetAlgorithm() != "BYTE_TRACK_CMC" || tracking.GetSessionId() != "tracking-session-1" || tracking.GetResetCount() != 2 || tracking.GetCameraMotionState() != "ACTIVE" || tracking.GetReIdEnabled() {
+		t.Fatalf("tracking health = %#v", tracking)
+	}
+}
+
+func TestPerceptionTrackLifecycleMessageCarriesDurableSummary(t *testing.T) {
+	observedAt := time.Now().UTC().Truncate(time.Millisecond)
+	predicted := perception.BoundingBox{X: 0.12, Y: 0.2, Width: 0.1, Height: 0.2}
+	message := perceptionTrackUpdateMessage("session-1", "drone-1", perception.TrackUpdateBatch{
+		SourceID: "a8-main", StreamEpoch: "epoch-1", TrackSessionID: "track-session-1",
+		TrackerType: perception.TrackerAlgorithmByteTrackCMC, ObservedAt: observedAt,
+		SessionStarted: true, CurrentVisible: 1, UniqueConfirmed: 4,
+		Tracks: []perception.TrackSnapshot{{
+			TrackID: "atlas:track-session-1:1", TrackSessionID: "track-session-1",
+			TrackerType:    perception.TrackerAlgorithmByteTrackCMC,
+			LifecycleState: perception.TrackLifecycleTemporarilyOccluded,
+			Revision:       3, AgeFrames: 4, ObservationCount: 3,
+			FirstObservedAt: observedAt.Add(-time.Second), LastObservedAt: observedAt.Add(-100 * time.Millisecond),
+			LatestConfirmedBox:        perception.BoundingBox{X: 0.1, Y: 0.2, Width: 0.1, Height: 0.2},
+			LatestDetectionConfidence: 0.9, PredictedBox: &predicted, PredictionConfidence: 0.72,
+			ClassID: 0, ClassLabel: "person", UpdateReason: perception.TrackUpdateStateChanged,
+		}},
+		RuleCounts: []perception.TrackRuleCount{{
+			RuleID: "gate", RuleRevision: 2, RuleType: perception.CountingRuleLine, LineForward: 3, LineReverse: 1,
+		}},
+		CountEvents: []perception.TrackCountEvent{{
+			EventID: "event-1", RuleID: "gate", RuleRevision: 2,
+			TrackSessionID: "track-session-1", TrackID: "atlas:track-session-1:1",
+			EventType: perception.TrackCountLineForward, ObservedAt: observedAt,
+			Anchor: perception.NormalizedPoint{X: .5, Y: .4},
+		}},
+	})
+	batch := message.GetTrackUpdates()
+	if batch.GetTrackSessionId() != "track-session-1" || !batch.GetSessionStarted() || batch.GetTrackerType() != "BYTE_TRACK_CMC" || len(batch.GetTracks()) != 1 {
+		t.Fatalf("track batch = %#v", batch)
+	}
+	track := batch.GetTracks()[0]
+	if track.GetLifecycleState() != "TEMPORARILY_OCCLUDED" || track.GetRevision() != 3 || track.GetPredictedBox() == nil || track.GetPredictionConfidence() != 0.72 || track.GetFirstObservedAtUnixMs() != observedAt.Add(-time.Second).UnixMilli() {
+		t.Fatalf("track snapshot = %#v", track)
+	}
+	if batch.GetCurrentVisible() != 1 || batch.GetUniqueConfirmed() != 4 || len(batch.GetRuleCounts()) != 1 || batch.GetRuleCounts()[0].GetLineForward() != 3 || len(batch.GetCountEvents()) != 1 || batch.GetCountEvents()[0].GetAnchor().GetX() != .5 {
+		t.Fatalf("track count payload = %#v", batch)
+	}
+}
+
 func TestExecuteCommandReportsMAVSDKDeadline(t *testing.T) {
 	updates := make(chan commandExecutionUpdate, 1)
 	command := &pb.VehicleCommandRequest{
@@ -388,5 +522,18 @@ func TestExecuteCommandReportsMAVSDKDeadline(t *testing.T) {
 	}
 	if update.resultCode != "MAVSDK_DEADLINE_EXCEEDED" {
 		t.Fatalf("result code = %q", update.resultCode)
+	}
+}
+
+func TestExecuteCommandRetainsStructuredEvidenceForNative(t *testing.T) {
+	updates := make(chan commandExecutionUpdate, 1)
+	command := &pb.VehicleCommandRequest{
+		CommandId:        "command-evidence",
+		DeadlineAtUnixMs: time.Now().Add(time.Second).UnixMilli(),
+	}
+	executeCommand(context.Background(), command, "geolocate_selected_track", evidenceCommandExecutor{}, updates)
+	update := <-updates
+	if update.updateType != pb.VehicleCommandUpdateType_VEHICLE_COMMAND_UPDATE_TYPE_SUCCEEDED || update.evidenceJSON != `{"schemaVersion":1}` {
+		t.Fatalf("evidence update = %#v", update)
 	}
 }

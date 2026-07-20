@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sunnyside/atlas/atlas-agent/internal/geolocation"
 	telemetrypb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/telemetry"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	"google.golang.org/grpc"
@@ -77,6 +78,15 @@ func (fakeTelemetryServer) SubscribeRawGps(_ *telemetrypb.SubscribeRawGpsRequest
 	return stream.Send(&telemetrypb.RawGpsResponse{RawGps: &telemetrypb.RawGps{Hdop: 0.8, Vdop: 1.2, HorizontalUncertaintyM: 0.4, VerticalUncertaintyM: 0.7, VelocityUncertaintyMS: 0.1, CogDeg: 26.6}})
 }
 
+func (fakeTelemetryServer) SubscribeAttitudeQuaternion(_ *telemetrypb.SubscribeAttitudeQuaternionRequest, stream grpc.ServerStreamingServer[telemetrypb.AttitudeQuaternionResponse]) error {
+	time.Sleep(50 * time.Millisecond)
+	return stream.Send(&telemetrypb.AttitudeQuaternionResponse{AttitudeQuaternion: &telemetrypb.Quaternion{W: 1, TimestampUs: 1_000_000}})
+}
+
+func (fakeTelemetryServer) SubscribeUnixEpochTime(_ *telemetrypb.SubscribeUnixEpochTimeRequest, stream grpc.ServerStreamingServer[telemetrypb.UnixEpochTimeResponse]) error {
+	return stream.Send(&telemetrypb.UnixEpochTimeResponse{TimeUs: 1_700_000_000_000_000})
+}
+
 func (fakeTelemetryServer) SubscribeStatusText(_ *telemetrypb.SubscribeStatusTextRequest, stream grpc.ServerStreamingServer[telemetrypb.StatusTextResponse]) error {
 	return stream.Send(&telemetrypb.StatusTextResponse{StatusText: &telemetrypb.StatusText{Type: telemetrypb.StatusTextType_STATUS_TEXT_TYPE_WARNING, Text: "Battery temperature high"}})
 }
@@ -141,7 +151,11 @@ func TestStartAggregatesMAVSDKStreams(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	outputs, err := Start(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), listener.Addr().String(), 10*time.Millisecond)
+	foundation, err := geolocation.NewFoundation(geolocation.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	outputs, err := StartWithGeolocation(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), listener.Addr().String(), 10*time.Millisecond, foundation)
 	if err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -167,5 +181,38 @@ statusText:
 		}
 	case <-ctx.Done():
 		t.Fatal("MAVSDK status text was not published")
+	}
+	for foundation.Health().PoseSamples == 0 {
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatal("high-rate timestamped aircraft pose was not buffered")
+		}
+	}
+}
+
+func TestRecordAircraftPoseFusesTimestampedAttitudeWithAgedNavigationState(t *testing.T) {
+	foundation, err := geolocation.NewFoundation(geolocation.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &source{
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), geolocation: foundation,
+		pose: aircraftPoseState{
+			positionReceivedMonotonicNS: 9_980_000_000, velocityReceivedMonotonicNS: 9_990_000_000,
+			latitudeDeg: 51.5074, longitudeDeg: -0.1278, absoluteAltitudeM: 72, relativeAltitudeM: 40,
+			positionValid: true, velocityNEDMPS: geolocation.Vector3{X: 4, Y: 2, Z: -0.5}, velocityValid: true,
+			health: telemetry.VehicleHealth{GlobalPositionOK: true, LocalPositionOK: true}, healthValid: true,
+		},
+	}
+	s.recordAircraftPose(&telemetrypb.Quaternion{W: 1, TimestampUs: 1_000_000}, geolocation.CompanionTime{
+		MonotonicNS: 10_000_000_000, UnixNS: 1_700_000_000_000_000_000,
+	})
+	pose, err := foundation.PoseAt(10_000_000_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pose.LatitudeDeg != 51.5074 || pose.Quality.PositionAge != 20*time.Millisecond || pose.Quality.VelocityAge != 10*time.Millisecond || !pose.Quality.GlobalPositionOK {
+		t.Fatalf("pose = %#v", pose)
 	}
 }

@@ -220,12 +220,12 @@ const ROUTE_VIEW_DEFAULTS: ViewDefaults = ViewDefaults {
     yaw_mode: "FOLLOW_ROUTE_BEARING",
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct PlannedMission {
-    waypoints: Vec<MissionWaypoint>,
-    actions: Vec<MissionAction>,
-    metadata: Value,
-    warnings: Vec<String>,
+    pub(super) waypoints: Vec<MissionWaypoint>,
+    pub(super) actions: Vec<MissionAction>,
+    pub(super) metadata: Value,
+    pub(super) warnings: Vec<String>,
 }
 
 pub(crate) fn templates() -> Vec<MissionTemplate> {
@@ -530,7 +530,10 @@ fn read_mission(connection: &rusqlite::Connection, id: &str) -> Result<MissionSn
     }).optional().map_err(|error| format!("read mission: {error}"))?.ok_or_else(|| format!("mission {id} was not found"))
 }
 
-fn read_plan(connection: &rusqlite::Connection, id: &str) -> Result<MissionPlanSnapshot, String> {
+pub(super) fn read_plan(
+    connection: &rusqlite::Connection,
+    id: &str,
+) -> Result<MissionPlanSnapshot, String> {
     let (mission_id, template_type, pattern_type, status, metadata_json, warnings_json, created_at, updated_at): (String, String, String, String, String, String, i64, i64) = connection.query_row("SELECT mission_id, template_type, pattern_type, status, metadata_json, validation_warnings_json, created_at_unix_ms, updated_at_unix_ms FROM mission_plans WHERE id = ?1", [id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?))).map_err(|error| format!("read mission plan: {error}"))?;
     let mut item_statement = connection.prepare("SELECT sequence, latitude, longitude, altitude_meters, speed_mps, heading_degrees, hold_seconds, action_refs_json FROM mission_items WHERE mission_plan_id = ?1 ORDER BY sequence").map_err(|error| format!("prepare mission items: {error}"))?;
     let generated_waypoints = item_statement
@@ -578,6 +581,20 @@ fn read_plan(connection: &rusqlite::Connection, id: &str) -> Result<MissionPlanS
     })
 }
 
+pub(crate) fn mission_plan_json_for_agent(mut plan: MissionPlanSnapshot) -> Result<String, String> {
+    if let Some(metadata) = plan.metadata.as_object_mut() {
+        metadata.remove("terrainProfileEvidence");
+        if let Some(profile) = metadata
+            .get_mut("terrainProfile")
+            .and_then(Value::as_object_mut)
+        {
+            profile.remove("profilePoints");
+        }
+    }
+    serde_json::to_string(&plan)
+        .map_err(|error| format!("serialize mission plan for Atlas Agent: {error}"))
+}
+
 fn template_for(template_type: &str) -> Result<MissionTemplate, String> {
     templates()
         .into_iter()
@@ -601,6 +618,10 @@ fn validate_mission_input(
     // Planning before persistence makes invalid input a side-effect-free failure.
     let planned = plan_mission(template.template_type, pattern, &input.params)?;
     Ok((template, name.to_string(), pattern.to_string(), planned))
+}
+
+pub(super) fn preview_ready_mission(input: &CreateMissionInput) -> Result<PlannedMission, String> {
+    validate_mission_input(input).map(|(_, _, _, planned)| planned)
 }
 
 fn validate_pattern(template: &MissionTemplate, pattern: &str) -> Result<(), String> {
@@ -1355,7 +1376,17 @@ fn common_actions(
         .cloned()
         .unwrap_or_default();
     if !detections.is_empty() {
-        push("START_PERCEPTION", json!({"detectionClasses": detections}));
+        push(
+            "START_PERCEPTION",
+            json!({
+                "detectionClasses": detections,
+                "maxAttempts": 3,
+                "failurePolicy": "OPERATOR_INTERVENTION",
+                "timeoutMs": 20000,
+                "retryInitialDelayMs": 2000,
+                "retryBackoffMultiplier": 2
+            }),
+        );
     }
     for (index, waypoint) in waypoints.iter().enumerate() {
         push(
@@ -1380,7 +1411,16 @@ fn common_actions(
         }
     }
     if !detections.is_empty() {
-        push("STOP_PERCEPTION", json!({}));
+        push(
+            "STOP_PERCEPTION",
+            json!({
+                "maxAttempts": 2,
+                "failurePolicy": "SKIP_OPTIONAL_AND_NOTIFY",
+                "timeoutMs": 10000,
+                "retryInitialDelayMs": 1000,
+                "retryBackoffMultiplier": 2
+            }),
+        );
     }
     if record {
         push("STOP_RECORDING", json!({}));
@@ -1406,10 +1446,9 @@ fn append_runtime_arrival_actions(
     let actions = value
         .as_array()
         .ok_or_else(|| "arrivalActions must be an array".to_string())?;
-    if actions.is_empty() || actions.len() > 2 {
+    if actions.is_empty() || actions.len() > 3 {
         return Err(
-            "arrivalActions must contain HOLD_AT_ARRIVAL and at most one optional gimbal action"
-                .to_string(),
+            "arrivalActions must contain Hold, at most one optional gimbal action, and at most one final Resume action".to_string(),
         );
     }
     if params
@@ -1425,6 +1464,8 @@ fn append_runtime_arrival_actions(
 
     let mut saw_hold = false;
     let mut saw_gimbal = false;
+    let mut saw_resume = false;
+    let mut trigger_after_waypoint_sequence = None;
     for (index, value) in actions.iter().enumerate() {
         let object = value
             .as_object()
@@ -1437,10 +1478,28 @@ fn append_runtime_arrival_actions(
             .get("failurePolicy")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("arrivalActions[{index}].failurePolicy is required"))?;
-        if !matches!(failure_policy, "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION") {
+        if !matches!(failure_policy, "RETURN_TO_LAUNCH" | "OPERATOR_INTERVENTION")
+            && !(action_type == "POINT_GIMBAL_AT_INCIDENT"
+                && failure_policy == "SKIP_OPTIONAL_AND_NOTIFY")
+        {
             return Err(format!(
-                "arrivalActions[{index}].failurePolicy must be RETURN_TO_LAUNCH or OPERATOR_INTERVENTION"
+                "arrivalActions[{index}].failurePolicy is not supported for {action_type}"
             ));
+        }
+        let action_trigger = object
+            .get("triggerAfterWaypointSequence")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                format!("arrivalActions[{index}].triggerAfterWaypointSequence is required")
+            })?;
+        match trigger_after_waypoint_sequence {
+            Some(expected) if expected != action_trigger => {
+                return Err(
+                    "all arrivalActions must use the same triggerAfterWaypointSequence".to_string(),
+                )
+            }
+            None => trigger_after_waypoint_sequence = Some(action_trigger),
+            _ => {}
         }
         let max_attempts = object
             .get("maxAttempts")
@@ -1448,6 +1507,27 @@ fn append_runtime_arrival_actions(
             .filter(|attempts| (1..=5).contains(attempts))
             .ok_or_else(|| {
                 format!("arrivalActions[{index}].maxAttempts must be between 1 and 5")
+            })?;
+        let timeout_ms = object
+            .get("timeoutMs")
+            .and_then(Value::as_u64)
+            .filter(|value| (1_000..=120_000).contains(value))
+            .ok_or_else(|| {
+                format!("arrivalActions[{index}].timeoutMs must be between 1000 and 120000")
+            })?;
+        let retry_initial_delay_ms = object
+            .get("retryInitialDelayMs")
+            .and_then(Value::as_u64)
+            .filter(|value| *value <= 60_000)
+            .ok_or_else(|| {
+                format!("arrivalActions[{index}].retryInitialDelayMs must be between 0 and 60000")
+            })?;
+        let retry_backoff_multiplier = object
+            .get("retryBackoffMultiplier")
+            .and_then(Value::as_f64)
+            .filter(|value| value.is_finite() && (1.0..=5.0).contains(value))
+            .ok_or_else(|| {
+                format!("arrivalActions[{index}].retryBackoffMultiplier must be between 1 and 5")
             })?;
         match action_type {
             "HOLD_AT_ARRIVAL" if index == 0 && !saw_hold => saw_hold = true,
@@ -1485,6 +1565,15 @@ fn append_runtime_arrival_actions(
                         .to_string(),
                 )
             }
+            "RESUME_AFTER_ARRIVAL" if saw_hold && !saw_resume && index + 1 == actions.len() => {
+                saw_resume = true;
+            }
+            "RESUME_AFTER_ARRIVAL" => {
+                return Err(
+                    "RESUME_AFTER_ARRIVAL must be the final acknowledged arrival action and appear once"
+                        .to_string(),
+                )
+            }
             _ => {
                 return Err(format!(
                     "unsupported acknowledged arrival action {action_type}"
@@ -1494,6 +1583,15 @@ fn append_runtime_arrival_actions(
         let mut action_params = object.clone();
         action_params.remove("actionType");
         action_params.insert("maxAttempts".to_string(), json!(max_attempts));
+        action_params.insert("timeoutMs".to_string(), json!(timeout_ms));
+        action_params.insert(
+            "retryInitialDelayMs".to_string(),
+            json!(retry_initial_delay_ms),
+        );
+        action_params.insert(
+            "retryBackoffMultiplier".to_string(),
+            json!(retry_backoff_multiplier),
+        );
         push(action_type, Value::Object(action_params));
     }
     if !saw_hold {
@@ -1745,10 +1843,25 @@ mod tests {
         let plan = plan_mission("WAYPOINT", "DIRECT_WAYPOINTS", &json!({"defaultAltitudeMeters": 30, "defaultSpeedMps": 4, "detectionClasses": ["person"], "waypoints": [{"latitude": 51.0, "longitude": -0.1}]})).unwrap();
         assert_eq!(plan.waypoints[0].altitude_meters, 30.0);
         assert_eq!(plan.waypoints[0].speed_mps, Some(4.0));
-        assert!(plan
+        let start_perception = plan
             .actions
             .iter()
-            .any(|action| action.action_type == "START_PERCEPTION"));
+            .find(|action| action.action_type == "START_PERCEPTION")
+            .expect("start perception action");
+        assert_eq!(
+            start_perception.params["failurePolicy"],
+            "OPERATOR_INTERVENTION"
+        );
+        assert_eq!(start_perception.params["maxAttempts"], 3);
+        let stop_perception = plan
+            .actions
+            .iter()
+            .find(|action| action.action_type == "STOP_PERCEPTION")
+            .expect("stop perception action");
+        assert_eq!(
+            stop_perception.params["failurePolicy"],
+            "SKIP_OPTIONAL_AND_NOTIFY"
+        );
         let camera = plan
             .actions
             .iter()

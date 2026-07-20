@@ -49,8 +49,25 @@ Run these commands on a Linux development or build computer:
 cd /path/to/sunnyside/atlas/atlas-agent
 
 export ATLAS_RELEASE_VERSION=0.1.0
+sudo apt install cmake libeigen3-dev g++
 ./packaging/build-deb.sh
 ```
+
+The package build automatically finds a cached Linux-arm64 worker under
+`dist/`, builds it natively on Linux arm64, or cross-builds it when
+`aarch64-linux-gnu-g++` is installed. On macOS and other hosts it can also use
+Docker Buildx with the Linux-arm64 worker build container. `ATLAS_BYTETRACK_WORKER_BIN`
+remains an optional CI override, not a required input. Every discovered or
+generated worker is checked for both the Linux-arm64 executable format and the
+Atlas worker identity before it is placed in the package.
+
+On an x86-64 Linux build host, install `g++-aarch64-linux-gnu` in addition to
+CMake and the Eigen 3 headers. On the target Raspberry Pi or another Linux
+arm64 host, the normal `g++` package is sufficient.
+
+The package preserves FoundationVision's MIT license under
+`/usr/share/doc/atlas-agent/third-party/bytetrack/`. Do not place a macOS or
+x86-64 worker in an arm64 Debian package.
 
 The build produces:
 
@@ -213,6 +230,86 @@ Follow Hailo adapter and inference logs:
 ```sh
 journalctl -u atlas-hailo-adapter.service -f
 ```
+
+## 6. Commission geolocation boresight alignment
+
+Atlas cannot infer physical camera-to-gimbal alignment from telemetry. A new
+installation therefore advertises `geolocation:boresight_alignment:unverified`
+and every estimate records `UNVERIFIED`, even though the default conservative
+static angular allowance is 10 degrees.
+
+Commission the installed camera, gimbal, mount, and aircraft as one assembly:
+
+1. Use a surveyed, visually unambiguous ground target and a terrain source with
+   known vertical datum and accuracy.
+2. Collect centred-target estimates across the intended pitch/yaw envelope,
+   approach directions, representative ranges, zoom settings, temperatures,
+   and both directions of gimbal travel so backlash is exercised.
+3. Compare each synchronized observation ray with the surveyed target ray.
+   Retain the raw observations, mount serials, software version, method, and
+   computed angular residuals as an immutable commissioning artifact.
+4. Choose a static angular bound no smaller than the accepted worst-case error
+   plus the deployment's reviewed safety margin. Do not use the residual mean
+   as the bound.
+5. Only after that artifact passes the deployment's accuracy criteria, add its
+   identifier and the accepted bound to `/etc/atlas-agent/atlas-agent.env`:
+
+   ```text
+   ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE=commissioning/<artifact-id>
+   ATLAS_GEOLOCATION_BORESIGHT_ANGULAR_UNCERTAINTY_DEG=<accepted-bound>
+   ```
+
+6. Restart Agent and confirm Native shows the reference, configured bound, and
+   `VERIFIED` on a new estimate. Existing evidence remains unchanged.
+
+This configuration records the reviewed physical claim; it does not perform or
+replace the survey. Repeat commissioning after camera, gimbal, mount, damping,
+or alignment-affecting firmware changes. Leave the reference empty when the
+physical test has not been completed.
+
+## 7. Accept Follow from standoff flight control
+
+Follow from standoff controls aircraft translation through PX4 Offboard. A new
+or upgraded installation must leave `ATLAS_AIRCRAFT_FOLLOW_ENABLED=false` until
+the exact aircraft/controller/companion/radio/software combination passes the
+deployment acceptance process. Boresight commissioning above is a prerequisite,
+not a substitute for flight-control validation.
+
+Build one immutable acceptance record that includes airframe/controller and
+companion identities, PX4/MAVSDK/Agent/Native versions, reviewed test envelopes,
+logs, expected/observed Hold transitions, anomalies, reviewer, and approval
+date. At minimum:
+
+1. In PX4 SITL, exercise start/acquire/follow/end plus operator-lease expiry,
+   stale/lost target, malformed or identity-changing target updates, telemetry
+   loss, low battery, position-health loss, altitude/geofence violation,
+   maximum duration, ground-link loss, and PX4 Offboard loss. Confirm zero
+   setpoint, Offboard stop, and explicit PX4 Hold for every degraded path.
+2. In HIL on the intended controller and companion, repeat timing and
+   communication-loss cases, Agent/Native termination/restart, HM30 packet loss,
+   RC takeover, and independent PX4 failsafes. Verify no second setpoint owner
+   can coexist and no renewal can expand the original envelope.
+3. In a protected controlled-flight area with a safety pilot, begin with a
+   stationary surveyed target and conservative speed/acceleration/boundary.
+   Progress to bounded moving targets only after each prior case is reviewed.
+   Exercise operator Stop, lease/link loss, track loss, and RC takeover in the
+   approved sequence.
+4. Compare actual separation, speed, acceleration, altitude, boundary, target
+   error, and Hold response latency with the reviewed acceptance criteria.
+   Reject the installation on unexplained excursions or missing evidence.
+
+Only after the record is accepted may `/etc/atlas-agent/atlas-agent.env` contain:
+
+```text
+ATLAS_AIRCRAFT_FOLLOW_ENABLED=true
+ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE=commissioning/follow/<artifact-id>
+```
+
+Restart Agent and confirm Native displays `VERIFIED` with both the follow and
+boresight references before any operational request. Placeholder references do
+not constitute acceptance. Disable and repeat validation after changes to PX4,
+MAVSDK, Agent navigation control, airframe dynamics, companion/controller/radio
+hardware, or other behavior that can invalidate the evidence.
 
 ## Upgrading or replacing an existing Atlas Agent installation
 

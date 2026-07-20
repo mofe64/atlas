@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sunnyside/atlas/atlas-agent/internal/geolocation"
 	corepb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/core"
 	telemetrypb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/telemetry"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
@@ -19,9 +20,30 @@ import (
 )
 
 const (
-	streamRetryDelay = 2 * time.Second
-	mavsdkRateHz     = 2.0
+	streamRetryDelay       = 2 * time.Second
+	mavsdkRateHz           = 2.0
+	aircraftAttitudeRateHz = 30.0
+	aircraftPositionRateHz = 10.0
+	aircraftVelocityRateHz = 20.0
+	autopilotTimeRateHz    = 2.0
+	rateRefreshInterval    = 30 * time.Second
 )
+
+type aircraftPoseState struct {
+	positionReceivedMonotonicNS int64
+	velocityReceivedMonotonicNS int64
+	latitudeDeg                 float64
+	longitudeDeg                float64
+	absoluteAltitudeM           float64
+	relativeAltitudeM           float64
+	positionValid               bool
+	velocityNEDMPS              geolocation.Vector3
+	velocityValid               bool
+	health                      telemetry.VehicleHealth
+	healthValid                 bool
+	gpsQuality                  telemetry.GPSQuality
+	gpsQualityValid             bool
+}
 
 type source struct {
 	logger    *slog.Logger
@@ -34,17 +56,27 @@ type source struct {
 	connectionKnown bool
 	connected       bool
 	batteries       map[uint32]telemetry.Battery
+	pose            aircraftPoseState
+	geolocation     *geolocation.Foundation
 }
 
 type Outputs struct {
 	Snapshots   <-chan telemetry.Snapshot
 	StatusTexts <-chan telemetry.StatusTextEvent
+	Latest      func() (telemetry.Snapshot, bool)
 }
 
 // Start begins the MAVSDK subscriptions and returns a latest-only stream at the
 // requested publish interval. A slow ground-station link never queues stale
 // flight data.
 func Start(ctx context.Context, logger *slog.Logger, address string, publishInterval time.Duration) (Outputs, error) {
+	return StartWithGeolocation(ctx, logger, address, publishInterval, nil)
+}
+
+// StartWithGeolocation adds high-rate timestamped pose publication without
+// changing the latest-only operator telemetry channel. Geolocation buffering
+// is local and bounded, so a slow ground-station link cannot affect it.
+func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address string, publishInterval time.Duration, foundation *geolocation.Foundation) (Outputs, error) {
 	if address == "" {
 		return Outputs{}, errors.New("MAVSDK gRPC address is required")
 	}
@@ -66,7 +98,8 @@ func Start(ctx context.Context, logger *slog.Logger, address string, publishInte
 		snapshot: telemetry.Snapshot{
 			Source: "mavsdk",
 		},
-		batteries: make(map[uint32]telemetry.Battery),
+		batteries:   make(map[uint32]telemetry.Battery),
+		geolocation: foundation,
 	}
 
 	go s.bestEffortSetRates(ctx)
@@ -85,6 +118,10 @@ func Start(ctx context.Context, logger *slog.Logger, address string, publishInte
 	go s.streamRCStatus(ctx)
 	go s.streamHome(ctx)
 	go s.streamRawGPS(ctx)
+	if foundation != nil {
+		go s.streamAttitudeQuaternion(ctx)
+		go s.streamUnixEpochTime(ctx)
+	}
 
 	updates := make(chan telemetry.Snapshot, 1)
 	statusTexts := make(chan telemetry.StatusTextEvent, 64)
@@ -94,7 +131,7 @@ func Start(ctx context.Context, logger *slog.Logger, address string, publishInte
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
-	return Outputs{Snapshots: updates, StatusTexts: statusTexts}, nil
+	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current}, nil
 }
 
 func (s *source) publish(ctx context.Context, updates chan telemetry.Snapshot, interval time.Duration) {
@@ -148,19 +185,49 @@ func emitLatest(updates chan telemetry.Snapshot, snapshot telemetry.Snapshot) {
 }
 
 func (s *source) bestEffortSetRates(ctx context.Context) {
-	rateCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	for ctx.Err() == nil {
+		s.setRatesOnce(ctx)
+		timer := time.NewTimer(rateRefreshInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *source) setRatesOnce(ctx context.Context) {
+	rateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	_, _ = s.telemetry.SetRatePosition(rateCtx, &telemetrypb.SetRatePositionRequest{RateHz: mavsdkRateHz})
+	positionRate, velocityRate := mavsdkRateHz, mavsdkRateHz
+	if s.geolocation != nil {
+		positionRate, velocityRate = aircraftPositionRateHz, aircraftVelocityRateHz
+		response, err := s.telemetry.SetRateAttitudeQuaternion(rateCtx, &telemetrypb.SetRateAttitudeQuaternionRequest{RateHz: aircraftAttitudeRateHz})
+		if err != nil || response.GetTelemetryResult().GetResult() != telemetrypb.TelemetryResult_RESULT_SUCCESS {
+			s.logger.Debug("high-rate aircraft attitude request was not accepted", "rate_hz", aircraftAttitudeRateHz, "error", err)
+		}
+		_, _ = s.telemetry.SetRateUnixEpochTime(rateCtx, &telemetrypb.SetRateUnixEpochTimeRequest{RateHz: autopilotTimeRateHz})
+	}
+	positionResponse, positionErr := s.telemetry.SetRatePosition(rateCtx, &telemetrypb.SetRatePositionRequest{RateHz: positionRate})
 	_, _ = s.telemetry.SetRateBattery(rateCtx, &telemetrypb.SetRateBatteryRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateGpsInfo(rateCtx, &telemetrypb.SetRateGpsInfoRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateInAir(rateCtx, &telemetrypb.SetRateInAirRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateAltitude(rateCtx, &telemetrypb.SetRateAltitudeRequest{RateHz: mavsdkRateHz})
-	_, _ = s.telemetry.SetRateVelocityNed(rateCtx, &telemetrypb.SetRateVelocityNedRequest{RateHz: mavsdkRateHz})
+	velocityResponse, velocityErr := s.telemetry.SetRateVelocityNed(rateCtx, &telemetrypb.SetRateVelocityNedRequest{RateHz: velocityRate})
 	_, _ = s.telemetry.SetRateHealth(rateCtx, &telemetrypb.SetRateHealthRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateLandedState(rateCtx, &telemetrypb.SetRateLandedStateRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateRcStatus(rateCtx, &telemetrypb.SetRateRcStatusRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateHome(rateCtx, &telemetrypb.SetRateHomeRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateRawGps(rateCtx, &telemetrypb.SetRateRawGpsRequest{RateHz: mavsdkRateHz})
+	if s.geolocation != nil {
+		if positionErr != nil || positionResponse.GetTelemetryResult().GetResult() != telemetrypb.TelemetryResult_RESULT_SUCCESS {
+			s.logger.Debug("high-rate aircraft position request was not accepted", "rate_hz", positionRate, "error", positionErr)
+		}
+		if velocityErr != nil || velocityResponse.GetTelemetryResult().GetResult() != telemetrypb.TelemetryResult_RESULT_SUCCESS {
+			s.logger.Debug("high-rate aircraft velocity request was not accepted", "rate_hz", velocityRate, "error", velocityErr)
+		}
+	}
 }
 
 func (s *source) streamConnectionState(ctx context.Context) {
@@ -197,6 +264,7 @@ func (s *source) streamPosition(ctx context.Context) {
 				break
 			}
 			position := response.GetPosition()
+			received := geolocation.Now()
 			s.update(func(snapshot *telemetry.Snapshot) {
 				if latitude := position.GetLatitudeDeg(); finite(latitude) && latitude >= -90 && latitude <= 90 {
 					snapshot.Latitude = pointer(latitude)
@@ -211,6 +279,16 @@ func (s *source) streamPosition(ctx context.Context) {
 					snapshot.AbsoluteAltitudeM = pointer(altitude)
 				}
 				setHomeFromCurrentPosition(snapshot)
+				latitude, longitude := position.GetLatitudeDeg(), position.GetLongitudeDeg()
+				absolute, relative := float64(position.GetAbsoluteAltitudeM()), float64(position.GetRelativeAltitudeM())
+				if latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && finite(latitude) && finite(longitude) && finite(absolute) && finite(relative) {
+					s.pose.latitudeDeg = latitude
+					s.pose.longitudeDeg = longitude
+					s.pose.absoluteAltitudeM = absolute
+					s.pose.relativeAltitudeM = relative
+					s.pose.positionReceivedMonotonicNS = received.MonotonicNS
+					s.pose.positionValid = true
+				}
 			})
 		}
 		sleepOrDone(ctx, streamRetryDelay)
@@ -367,6 +445,7 @@ func (s *source) streamVelocity(ctx context.Context) {
 				break
 			}
 			velocity := response.GetVelocityNed()
+			received := geolocation.Now()
 			north, east, down := float64(velocity.GetNorthMS()), float64(velocity.GetEastMS()), float64(velocity.GetDownMS())
 			s.update(func(snapshot *telemetry.Snapshot) {
 				if finite(north) && finite(east) {
@@ -381,6 +460,11 @@ func (s *source) streamVelocity(ctx context.Context) {
 				if finite(down) {
 					snapshot.VelocityDownMPS = pointer(down)
 					snapshot.ClimbRateMPS = pointer(-down)
+				}
+				if finite(north) && finite(east) && finite(down) {
+					s.pose.velocityNEDMPS = geolocation.Vector3{X: north, Y: east, Z: down}
+					s.pose.velocityReceivedMonotonicNS = received.MonotonicNS
+					s.pose.velocityValid = true
 				}
 			})
 		}
@@ -446,6 +530,8 @@ func (s *source) streamHealth(ctx context.Context) {
 			s.update(func(snapshot *telemetry.Snapshot) {
 				snapshot.HomePositionSet = pointer(value.HomePositionOK)
 				snapshot.Health = pointer(value)
+				s.pose.health = value
+				s.pose.healthValid = true
 				setHomeFromCurrentPosition(snapshot)
 			})
 		}
@@ -566,10 +652,110 @@ func (s *source) streamRawGPS(ctx context.Context) {
 				VelocityUncertaintyMPS:  nonNegativePointer(float64(raw.GetVelocityUncertaintyMS())),
 				CourseOverGroundDegrees: boundedPointer(float64(raw.GetCogDeg()), 0, 360),
 			}
-			s.update(func(snapshot *telemetry.Snapshot) { snapshot.GPSQuality = pointer(value) })
+			s.update(func(snapshot *telemetry.Snapshot) {
+				snapshot.GPSQuality = pointer(value)
+				s.pose.gpsQuality = value
+				s.pose.gpsQualityValid = true
+			})
 		}
 		sleepOrDone(ctx, streamRetryDelay)
 	}
+}
+
+func (s *source) streamAttitudeQuaternion(ctx context.Context) {
+	for ctx.Err() == nil {
+		stream, err := s.telemetry.SubscribeAttitudeQuaternion(ctx, &telemetrypb.SubscribeAttitudeQuaternionRequest{})
+		if err != nil {
+			s.retry(ctx, "attitude quaternion", err)
+			continue
+		}
+		for ctx.Err() == nil {
+			response, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			attitude := response.GetAttitudeQuaternion()
+			received := geolocation.Now()
+			s.recordAircraftPose(attitude, received)
+		}
+		sleepOrDone(ctx, streamRetryDelay)
+	}
+}
+
+func (s *source) recordAircraftPose(attitude *telemetrypb.Quaternion, received geolocation.CompanionTime) {
+	if attitude == nil || attitude.GetTimestampUs() == 0 || s.geolocation == nil {
+		if s.geolocation != nil {
+			s.geolocation.DropAircraftPose()
+		}
+		return
+	}
+	s.mu.RLock()
+	state := s.pose
+	s.mu.RUnlock()
+	if !state.positionValid {
+		s.geolocation.DropAircraftPose()
+		return
+	}
+	quality := geolocation.PoseQuality{
+		GlobalPositionOK: state.healthValid && state.health.GlobalPositionOK,
+		LocalPositionOK:  state.healthValid && state.health.LocalPositionOK,
+		VelocityValid:    state.velocityValid,
+		PositionAge:      durationBetweenMonotonic(received.MonotonicNS, state.positionReceivedMonotonicNS),
+		VelocityAge:      durationBetweenMonotonic(received.MonotonicNS, state.velocityReceivedMonotonicNS),
+	}
+	if state.gpsQualityValid {
+		quality.HorizontalUncertaintyM = pointerValue(state.gpsQuality.HorizontalUncertaintyM)
+		quality.VerticalUncertaintyM = pointerValue(state.gpsQuality.VerticalUncertaintyM)
+		quality.VelocityUncertaintyMPS = pointerValue(state.gpsQuality.VelocityUncertaintyMPS)
+	}
+	err := s.geolocation.RecordAircraftPose(geolocation.AircraftPoseMeasurement{
+		AutopilotTimestampUS: attitude.GetTimestampUs(), Received: received,
+		LatitudeDeg: state.latitudeDeg, LongitudeDeg: state.longitudeDeg,
+		AltitudeAMSLM: state.absoluteAltitudeM, RelativeAltitudeM: state.relativeAltitudeM,
+		Attitude: geolocation.Quaternion{
+			W: float64(attitude.GetW()), X: float64(attitude.GetX()),
+			Y: float64(attitude.GetY()), Z: float64(attitude.GetZ()),
+		},
+		VelocityNEDMPS: state.velocityNEDMPS, Quality: quality,
+	})
+	if err != nil {
+		s.geolocation.DropAircraftPose()
+		s.logger.Debug("discard invalid geolocation aircraft pose", "error", err)
+	}
+}
+
+func (s *source) streamUnixEpochTime(ctx context.Context) {
+	for ctx.Err() == nil {
+		stream, err := s.telemetry.SubscribeUnixEpochTime(ctx, &telemetrypb.SubscribeUnixEpochTimeRequest{})
+		if err != nil {
+			s.retry(ctx, "unix epoch time", err)
+			continue
+		}
+		for ctx.Err() == nil {
+			response, err := stream.Recv()
+			if err != nil {
+				break
+			}
+			if err := s.geolocation.ObserveAutopilotUnixTime(response.GetTimeUs(), geolocation.Now()); err != nil {
+				s.logger.Debug("discard invalid autopilot unix time", "error", err)
+			}
+		}
+		sleepOrDone(ctx, streamRetryDelay)
+	}
+}
+
+func durationBetweenMonotonic(current, previous int64) time.Duration {
+	if current <= 0 || previous <= 0 || current < previous {
+		return time.Duration(math.MaxInt64)
+	}
+	return time.Duration(current - previous)
+}
+
+func pointerValue(value *float64) float64 {
+	if value == nil || !finite(*value) || *value < 0 {
+		return 0
+	}
+	return *value
 }
 
 func (s *source) streamStatusText(ctx context.Context, events chan telemetry.StatusTextEvent) {

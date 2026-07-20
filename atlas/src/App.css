@@ -1201,6 +1201,9 @@ summary {
 
   .workspace-nav button {
     flex: 1;
+    min-width: 0;
+    padding-inline: 0.25rem;
+    font-size: 0.58rem;
   }
 
   .wordmark small,

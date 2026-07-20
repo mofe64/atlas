@@ -33,6 +33,7 @@ type Paths struct {
 	SetupBinary           string
 	MAVSDKBinary          string
 	HailoAdapter          string
+	ByteTrackWorker       string
 	HailoSetupBinary      string
 	HailoContainerEnv     string
 	HailoContainerService string
@@ -59,6 +60,7 @@ func DefaultPaths(root string) Paths {
 		SetupBinary:           rooted("/usr/bin/atlas-setup"),
 		MAVSDKBinary:          rooted("/usr/libexec/atlas-agent/mavsdk_server"),
 		HailoAdapter:          rooted("/usr/libexec/atlas-agent/atlas-hailort-adapter"),
+		ByteTrackWorker:       rooted("/usr/libexec/atlas-agent/atlas-bytetrack-worker"),
 		HailoSetupBinary:      rooted("/usr/sbin/atlas-hailo-setup"),
 		HailoContainerEnv:     rooted("/etc/atlas-agent/hailo-container.env"),
 		HailoContainerService: rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),

@@ -4,7 +4,7 @@ Section: utils
 Priority: optional
 Architecture: arm64
 Maintainer: Sunnyside <engineering@sunnyside.local>
-Depends: ca-certificates, ffmpeg, gir1.2-gstreamer-1.0, gstreamer1.0-libav, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-tools, pciutils, python3, python3-gi, systemd, util-linux
+Depends: ca-certificates, ffmpeg, gir1.2-gstreamer-1.0, gstreamer1.0-libav, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-tools, libstdc++6, pciutils, python3, python3-gi, systemd, util-linux
 Suggests: dkms, docker.io
 Description: Atlas onboard vehicle agent and interactive setup
  Atlas Agent connects PX4/MAVSDK telemetry, missions, payload control, and

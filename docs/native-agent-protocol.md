@@ -195,6 +195,36 @@ The current Agent rejects cancellation after delivery with
 `CANCELLATION_REJECTED`; the cancellation message exists in the protocol for
 future cancellable operations.
 
+## Aircraft follow control lifecycle
+
+Follow from standoff uses dedicated messages rather than ordinary one-shot
+vehicle commands. `AircraftFollowControlRequest` carries the operation/session
+identity, action (`START`, `RENEW`, `HOLD`, or `END`), exact selected-track world
+state, immutable reviewed envelope, short operator-lease expiry, and the
+commissioning validation reference. `AircraftFollowSessionUpdate` returns the
+Agent state and explicit reason/evidence.
+
+```mermaid
+stateDiagram-v2
+    [*] --> REQUESTED
+    REQUESTED --> VALIDATING
+    VALIDATING --> ACQUIRING
+    ACQUIRING --> FOLLOWING
+    VALIDATING --> DEGRADED_HOLD
+    ACQUIRING --> DEGRADED_HOLD
+    FOLLOWING --> DEGRADED_HOLD
+    FOLLOWING --> ENDED
+    DEGRADED_HOLD --> ENDED
+```
+
+Native persists the authorization before delivery. Renewals retain the same
+drone, selection, source, track session, track, commissioning reference, and
+reviewed limits. The Agent owns the high-rate MAVSDK Offboard loop and treats
+stream loss, lease expiry, stale geolocation/telemetry, position or battery
+degradation, boundary/altitude violation, and Offboard loss as Hold conditions.
+Agent event IDs make state updates idempotent. Gimbal follow messages remain in
+the payload-control path and do not confer aircraft navigation authority.
+
 ## Mission operation lifecycle
 
 Mission operations use their own request and update messages because they carry

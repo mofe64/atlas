@@ -61,11 +61,18 @@ struct DecodedFrame {
     jpeg: Arc<Vec<u8>>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct CapturedVideoFrame {
+    pub(crate) source_id: String,
+    pub(crate) observed_at_unix_ms: i64,
+    pub(crate) jpeg: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VideoStreamSnapshot {
-    status: String,
-    drone_id: Option<String>,
+    pub(crate) status: String,
+    pub(crate) drone_id: Option<String>,
     source_id: String,
     width: u32,
     height: u32,
@@ -73,11 +80,19 @@ pub(crate) struct VideoStreamSnapshot {
     playout_delay_ms: i64,
     alignment_tolerance_ms: i64,
     overlay_offset_ms: i64,
-    started_at_unix_ms: Option<i64>,
-    last_frame_at_unix_ms: Option<i64>,
+    pub(crate) started_at_unix_ms: Option<i64>,
+    pub(crate) last_frame_at_unix_ms: Option<i64>,
     latest_sequence: u64,
     dropped_frames: u64,
-    last_error: Option<String>,
+    pub(crate) last_error: Option<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct VideoSourceConfig {
+    pub(crate) rtsp_url: String,
+    pub(crate) rtsp_transport: String,
+    pub(crate) decoder_path: String,
+    pub(crate) source_id: String,
 }
 
 #[derive(Serialize)]
@@ -202,6 +217,31 @@ impl VideoManager {
     pub(crate) fn snapshot(&self) -> Result<VideoStreamSnapshot, String> {
         let state = self.lock_state()?;
         Ok(self.snapshot_from(&state))
+    }
+
+    pub(crate) fn source_config(&self) -> VideoSourceConfig {
+        VideoSourceConfig {
+            rtsp_url: self.config.rtsp_url.clone(),
+            rtsp_transport: self.config.rtsp_transport.clone(),
+            decoder_path: self.config.decoder_path.clone(),
+            source_id: self.config.source_id.clone(),
+        }
+    }
+
+    pub(crate) fn latest_frame(&self, drone_id: &str) -> Result<CapturedVideoFrame, String> {
+        let state = self.lock_state()?;
+        if state.drone_id.as_deref() != Some(drone_id) || state.status != "playing" {
+            return Err("still capture requires the aircraft's live video stream".into());
+        }
+        let frame = state
+            .frames
+            .back()
+            .ok_or_else(|| "still capture requires a decoded video frame".to_string())?;
+        Ok(CapturedVideoFrame {
+            source_id: self.config.source_id.clone(),
+            observed_at_unix_ms: frame.received_at_unix_ms,
+            jpeg: frame.jpeg.as_ref().clone(),
+        })
     }
 
     pub(crate) fn frame_packet(
