@@ -71,11 +71,14 @@ sudo apt install ./atlas-agent_<version>_arm64.deb
 sudo atlas-setup
 ```
 
-`atlas-setup` discovers DepthAI devices by USB vendor ID, records the stable
-device ID and current USB transport, asks whether to enable the front spatial
-camera, ensures Docker and the release-versioned image are present, writes
-the image's immutable `sha256:` ID to `/etc/atlas-agent/spatial.env`, and
-enables the service. If no preloaded image
+`atlas-setup` discovers DepthAI devices by USB vendor ID, records a stable
+device ID when the current boot state exposes one, records the observed USB
+transport, asks whether to enable the front spatial camera, ensures Docker and
+the release-versioned image are present, writes the image's immutable
+`sha256:` ID to `/etc/atlas-agent/spatial.env`, and enables the service. A
+waiting device can expose the synthetic serial `03e72485`; setup recognizes it
+as the `03e7:2485` boot state and does not persist it as a camera MXID. If no
+preloaded image
 archive is packaged yet, this first implementation builds the bundled context
 on the Pi; that first build requires internet access and can take several
 minutes. A release pipeline should later publish or preload the same image so
@@ -98,6 +101,42 @@ limit RGB-D throughput. An unbooted DepthAI device can initially report 480
 Mb/s even on USB 3, so setup labels that state unverified and `doctor` checks it
 again while the runtime is active. Use a direct Pi USB 3 port and a USB 3 cable
 for the target configuration.
+
+### DepthAI container USB handoff
+
+The DepthAI ROS binary packages link to Ubuntu's system libusb. On the Pi, its
+udev-backed discovery path can lose the OAK between the unbooted device and the
+firmware-booted device, even though both the camera and the USB 3 connection are
+healthy. The runtime image therefore supplies the Luxonis libusb revision
+pinned by DepthAI 3.6.1, built with its Linux netlink backend rather than udev,
+and exposes it only through the container's `LD_LIBRARY_PATH`. This keeps the
+workaround inside the camera failure boundary and avoids changing host USB
+libraries.
+
+The image build verifies that `libdepthai_v3-core.so` resolves this private
+library and rejects DepthAI core or ROS driver package versions other than the
+validated 3.6.1/3.2.1 pair. When either package is upgraded, re-test firmware
+re-enumeration and synchronized RGB-D on the Pi before updating those guards or
+removing the override.
+
+### Validated OAK-D Lite profile
+
+Release 0.1.8 was hardware-validated on 21 July 2026 with the purchased 2021
+OAK-D Lite connected directly to a Raspberry Pi 5 USB 3 port. Runtime discovery
+confirmed three camera sockets and a BMI270 IMU. After firmware upload the
+device ran at `UsbSpeed.SUPER`; Atlas published synchronized 640x400 color and
+aligned `32FC1` metre depth with calibration and zero measured timestamp skew.
+The production container passed with a read-only root filesystem, all Linux
+capabilities dropped, and only the USB character-device boundary exposed.
+
+This validation does not make the camera a flight-position source. Contract v1
+publishes RGB-D but not IMU samples, so its health response intentionally
+reports `capabilities.imu=false`. A future VIO slice must define and validate
+camera/IMU timestamp alignment, camera-to-body extrinsics, covariance,
+initialization, failure detection, and PX4 estimator integration before using
+the BMI270 for navigation. The forward-only camera also leaves side, rear, up,
+and most down geometry unobserved, so it does not change the initial bounded
+2.5D navigation architecture into full 3D autonomy.
 
 ## Failure and replacement model
 
@@ -122,7 +161,8 @@ provider is confined to discovery, setup validation, and provider launch code.
 The stable progression is:
 
 1. Record synchronized RGB-D plus calibration to MCAP and replay it.
-2. Add visual-inertial odometry and a versioned pose/TF contract.
+2. Add validated visual-inertial odometry using the discovered BMI270 and a
+   versioned pose/TF contract.
 3. Build local point clouds and an RTAB-Map map on the Pi.
 4. Define a bandwidth-bounded map/point-cloud transport to Atlas Native.
 5. Add costmaps and planning, then gate any aircraft motion behind explicit

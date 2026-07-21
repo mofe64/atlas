@@ -229,7 +229,7 @@ build machine with Go 1.25 and Debian packaging tools:
 
 ```sh
 cd atlas-agent
-ATLAS_RELEASE_VERSION=0.1.0 packaging/build-deb.sh
+ATLAS_RELEASE_VERSION=0.1.8 packaging/build-deb.sh
 ```
 
 The package builder cross-compiles `atlas-agent` and `atlas-setup`, downloads
@@ -238,7 +238,7 @@ metadata-only Hailo adapter and a checksum-pinned Hailo-8L HEF. To build for a
 26 TOPS Hailo-8 AI HAT+, provide a compatible HEF and identify its target:
 
 ```sh
-ATLAS_RELEASE_VERSION=0.1.0 \
+ATLAS_RELEASE_VERSION=0.1.8 \
 ATLAS_HEF_MODEL_PATH=/path/to/objects-h8.hef \
 ATLAS_MODEL_ACCELERATOR=hailo-8 \
 packaging/build-deb.sh

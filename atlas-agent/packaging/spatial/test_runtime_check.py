@@ -44,6 +44,36 @@ class RuntimeCheckTests(unittest.TestCase):
         self.assertTrue(result["OTHER_DEVICE_PRESENT"])
         self.assertEqual(result["DEVICE_ID"], "configured-device")
 
+    def test_bootloader_usb_identity_is_not_used_as_depthai_device_id(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            device = Path(temporary) / "bus" / "usb" / "devices" / "4-1"
+            device.mkdir(parents=True)
+            (device / "idVendor").write_text("03e7\n", encoding="utf-8")
+            (device / "idProduct").write_text("2485\n", encoding="utf-8")
+            (device / "serial").write_text("03e72485\n", encoding="utf-8")
+            (device / "product").write_text("Movidius MyriadX\n", encoding="utf-8")
+            (device / "speed").write_text("480\n", encoding="utf-8")
+
+            result = runtime_check.discover(Path(temporary))
+
+        self.assertTrue(result["DEVICE_PRESENT"])
+        self.assertEqual(result["DEVICE_ID"], "")
+        self.assertEqual(result["USB_IDENTITY"], "03e72485")
+        self.assertEqual(result["USB_TRANSPORT"], "usb2-or-unbooted")
+
+    def test_existing_bootloader_identity_is_healed_on_rediscovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            device = Path(temporary) / "bus" / "usb" / "devices" / "4-1"
+            device.mkdir(parents=True)
+            (device / "idVendor").write_text("03e7\n", encoding="utf-8")
+            (device / "idProduct").write_text("2485\n", encoding="utf-8")
+            (device / "serial").write_text("03e72485\n", encoding="utf-8")
+
+            result = runtime_check.discover(Path(temporary), "03e72485")
+
+        self.assertTrue(result["DEVICE_PRESENT"])
+        self.assertEqual(result["DEVICE_ID"], "")
+
     def test_probe_uses_versioned_contract_and_flattens_nested_streams(self):
         response_payload = {
             "protocolVersion": "1",

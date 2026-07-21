@@ -172,8 +172,25 @@ func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(launcher), "/usr/bin/install -d -m 0750 -o atlas-agent -g atlas-agent") {
+	launcherText := string(launcher)
+	if !strings.Contains(launcherText, "/usr/bin/install -d -m 0750 -o atlas-agent -g atlas-agent") {
 		t.Fatalf("spatial launcher does not recreate its runtime path independently:\n%s", launcher)
+	}
+	if strings.Contains(launcherText, "--env-file /etc/atlas-agent/spatial.env") {
+		t.Fatalf("spatial launcher passes systemd quoting through Docker's incompatible env-file parser:\n%s", launcher)
+	}
+	for _, expected := range []string{
+		`--env "ATLAS_SPATIAL_CONTRACT_VERSION=`,
+		`--env "ATLAS_SPATIAL_PROVIDER=`,
+		`--env "ATLAS_SPATIAL_DEVICE_ID=`,
+		`--env "ATLAS_SPATIAL_SOCKET_PATH=`,
+	} {
+		if !strings.Contains(launcherText, expected) {
+			t.Fatalf("spatial launcher does not explicitly pass parsed environment %q:\n%s", expected, launcher)
+		}
+	}
+	if !strings.Contains(unit, "docker image inspect --format={{.Id}}") {
+		t.Fatalf("spatial unit emits the entire image manifest on every restart:\n%s", unit)
 	}
 }
 
@@ -195,6 +212,44 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 	} {
 		if !strings.Contains(build, expected) {
 			t.Fatalf("package build is missing %q", expected)
+		}
+	}
+
+	entrypointPath := filepath.Join("..", "..", "..", "atlas-spatial-runtime", "packaging", "entrypoint.sh")
+	entrypoint, err := os.ReadFile(entrypointPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entrypointText := string(entrypoint)
+	disableNounset := strings.Index(entrypointText, "set +u")
+	rosSetup := strings.Index(entrypointText, ". /opt/ros/jazzy/setup.sh")
+	restoreNounset := strings.LastIndex(entrypointText, "set -u")
+	if disableNounset < 0 || rosSetup <= disableNounset || restoreNounset <= rosSetup {
+		t.Fatalf("spatial entrypoint must suspend nounset while sourcing ROS setup files:\n%s", entrypoint)
+	}
+	deviceGuard := strings.Index(entrypointText, `if [ -n "${ATLAS_SPATIAL_DEVICE_ID:-}" ]; then`)
+	deviceArgument := strings.Index(entrypointText, `"device_id:=${ATLAS_SPATIAL_DEVICE_ID}"`)
+	if deviceGuard < 0 || deviceArgument <= deviceGuard {
+		t.Fatalf("spatial entrypoint must omit an unknown device ID instead of emitting device_id:=:\n%s", entrypoint)
+	}
+	if strings.Contains(entrypointText, `device_id:="${ATLAS_SPATIAL_DEVICE_ID:-}"`) {
+		t.Fatalf("spatial entrypoint passes an explicitly empty ROS launch argument:\n%s", entrypoint)
+	}
+
+	dockerfilePath := filepath.Join("..", "..", "..", "atlas-spatial-runtime", "packaging", "Dockerfile")
+	dockerfile, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dockerfileText := string(dockerfile)
+	for _, expected := range []string{
+		"ARG DEPTHAI_LIBUSB_REF=d631db2d91ce72f79ac296e3ff724eee98ad0c46",
+		"-DWITH_UDEV=OFF",
+		"ENV LD_LIBRARY_PATH=/opt/atlas-depthai-libusb/lib",
+		"grep -F '/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0'",
+	} {
+		if !strings.Contains(dockerfileText, expected) {
+			t.Fatalf("spatial image does not preserve the validated DepthAI USB handoff %q:\n%s", expected, dockerfile)
 		}
 	}
 }

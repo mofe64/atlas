@@ -144,10 +144,12 @@ The agreed MVP operations and payload direction is:
 - Use OS NGD building features and OS Building Height Attribute as an MVP
   known-building warning layer, not as proof that a route is obstacle-free.
 - Treat the A8 visible gimbal as the only currently installed mission payload.
-  The purchased 2021 OAK-D Lite and planned downward Holybro H-Flow must remain
-  disabled until installed, calibrated, and validated. The supplied OAK-D Lite
-  datasheet does not list an IMU, so Atlas must assume that unit has no onboard
-  IMU unless hardware discovery proves otherwise.
+  The purchased 2021 OAK-D Lite is installed and its USB 3 RGB-D runtime is
+  validated, but it is not yet an autonomous-navigation or automatic-Hold
+  authority. Hardware discovery confirmed a BMI270 IMU; Atlas still requires
+  timestamp, extrinsic, covariance, estimator, and flight validation before
+  claiming VIO. The planned downward Holybro H-Flow remains unavailable until
+  installed, calibrated, and validated through PX4.
 - Add GPS-denied indoor mapping and bounded autonomous exploration only as a
   late-stage demonstrator. The operator approves the mission envelope once;
   the onboard computer selects and executes short routes through known free
@@ -255,7 +257,7 @@ Relevant implementation references:
 | Authentication and organizations | Backend foundation only; not in Native control path | Multi-user operational systems | Needed for coordinated deployments, but not for local control continuity. |
 | Video street/address projection | Not supported | Street labels projected into live imagery | Low priority and technically risky. |
 | Thermal source switching | No thermal payload is installed | Visible in some reference interfaces | Do not expose thermal controls. The current A8 is visible-only. |
-| Forward depth and obstacle sensing | A 2021 OAK-D Lite has been purchased but is not installed | Integrated local obstacle awareness | Hide the capability until installed and validated; begin in advisory mode and assume no onboard IMU unless discovery proves otherwise. |
+| Forward depth and obstacle sensing | The 2021 OAK-D Lite is installed; USB 3 RGB-D, calibration, synchronization, and its BMI270 identity are validated in the independent spatial runtime | Integrated local obstacle awareness | Expose RGB-D health, but keep obstacle action advisory until mounting extrinsics, distance/latency, stopping-envelope, and automatic-Hold acceptance pass. The discovered IMU is not yet a VIO source. |
 | Optical-flow and range aiding | Holybro H-Flow is planned but not installed | Improved local navigation | Integrate through DroneCAN and PX4 first; Atlas observes estimator health after installation. |
 | GPS-denied indoor mapping and navigation | Not supported | Indoor inspection and mapping | Add later as a bounded 2.5D demonstrator using PX4/H-Flow for local flight, OAK stereo depth for mapping, onboard frontier planning, and Hold-before-operator-deferral. This first stage does not deliberately climb or descend around obstacles. |
 | Full 3D indoor autonomy | Not supported and outside the current hardware plan | Autonomous exploration through volumetric free space | Treat as a future funded program: GPU-class companion compute, 360-degree 3D lidar, synchronized IMU-equipped stereo, upward/downward coverage, ROS 2 autonomy runtime, 3D mapping, 3D trajectory planning, and independent reactive collision monitoring. |
@@ -450,16 +452,18 @@ margins, and all unresolved features.
 The current mission payload is the visible-light SIYI A8 gimbal. Atlas should
 not expose a thermal source.
 
-The purchased 2021 OAK-D Lite will provide near-field stereo depth, obstacle
-candidates, and mapping frames to a companion-computer safety and mapping
-service. Its supplied datasheet lists dual OV7251 global-shutter stereo cameras
-and an IMX214 colour camera but does not list an IMU. Atlas must therefore treat
-the camera as having no onboard IMU unless runtime discovery proves otherwise.
+The purchased 2021 OAK-D Lite now provides synchronized near-field stereo
+depth, color, calibration, and health to the independent spatial runtime.
+Runtime discovery confirmed the dual mono cameras, color camera, and a BMI270
+IMU even though the supplied datasheet did not list the IMU. Atlas records that
+hardware fact without treating the unit as a validated VIO or flight-position
+source.
 
 The planned downward Holybro H-Flow will provide DroneCAN optical-flow and
-distance measurements to the PX4 estimator. Neither device is currently
-installed, so neither may be advertised as an available capability or used in
-a safety decision.
+distance measurements to the PX4 estimator. It is not currently installed and
+may not be advertised as an available capability or used in a safety decision.
+The installed OAK may advertise only its validated RGB-D health; it is not yet
+an obstacle-response or navigation authority.
 
 #### Late-stage indoor mapping and navigation
 
@@ -1235,9 +1239,10 @@ Atlas currently assumes one configured primary video source. Reference products
 show visible, thermal, forward, and gimbal-camera switching.
 
 The only currently installed mission payload is the visible-light SIYI A8
-gimbal. A 2021 OAK-D Lite has been purchased but is not installed. The downward
-Holybro H-Flow is planned hardware. Neither sensor is a current Atlas
-capability.
+gimbal. The 2021 OAK-D Lite is installed as an independent spatial sensor and
+its RGB-D health contract is active, but obstacle response, mapping, VIO, and
+navigation are not current capabilities. The downward Holybro H-Flow remains
+planned hardware and is not a current Atlas capability.
 
 #### Recommended behavior
 
@@ -1294,13 +1299,15 @@ health monitoring. It must not initially steer around obstacles.
 The Phase 8 indoor planner may command validated routes only after the advisory
 and automatic-Hold stages have passed their defined validation gates.
 
-The supplied December 2021 OAK-D Lite datasheet does not list an onboard IMU.
-Atlas must report `imu_present: false` for the navigation camera unless device
-discovery demonstrates otherwise. The absence of a camera-synchronized IMU does
-not prevent depth mapping or stereo visual odometry, but it prevents Atlas from
-claiming that this unit provides a validated VIO source. H-Flow or PX4 IMU data
-is not a drop-in replacement without clock synchronization, frame transforms,
-extrinsic calibration, latency measurement, and estimator validation.
+Runtime discovery has demonstrated that this OAK-D Lite contains a BMI270 IMU,
+despite the supplied December 2021 datasheet not listing one. Hardware
+inventory should therefore report the IMU as present. Spatial contract v1 still
+reports `capabilities.imu=false` because it publishes RGB-D only and does not
+yet expose synchronized IMU samples. Presence alone does not establish a
+validated VIO source: clock synchronization, frame transforms, extrinsic
+calibration, covariance, latency, failure behavior, and estimator validation
+remain required. H-Flow or PX4 IMU data is likewise not a drop-in replacement
+without those contracts.
 
 A forward-only OAK-D Lite does not provide side, rear, or upward coverage.
 Automated movement must not assume omnidirectional protection. During an orbit,
@@ -1946,8 +1953,8 @@ Atlas Native
 
 PX4 remains responsible for stabilization, local position control, and
 failsafes. H-Flow/PX4 odometry is the initial continuous flight-control frame.
-The OAK mapping stack may improve mapping and loop closure, but stereo-only
-odometry from the purchased no-IMU-assumed unit is not the sole flight-position
+The OAK mapping stack may improve mapping and loop closure, but neither stereo
+odometry nor the discovered but unintegrated BMI270 is the sole flight-position
 authority.
 
 The supported Atlas onboard profile is currently Raspberry Pi 5 with a Hailo
@@ -2581,9 +2588,11 @@ The following invariants should remain true:
 24. **Known-building clearance is not obstacle clearance.** OS-derived checks
     retain source, age, unknowns, margins, and overrides and use language that
     does not imply complete route safety.
-25. **Uninstalled hardware is not a current capability.** OAK-D Lite, H-Flow,
-    and thermal functions remain unavailable until the corresponding hardware
-    is installed, discovered, calibrated, and validated.
+25. **Hardware presence is not operational authority.** OAK-D Lite RGB-D is
+    installed and healthy, but mapping, obstacle action, VIO, and navigation
+    remain unavailable until their separate calibration and validation gates
+    pass. H-Flow and thermal functions remain unavailable because that hardware
+    is not installed and validated.
 26. **Indoor autonomy cannot expand its envelope.** The onboard planner may
     choose routes only inside the immutable boundary, altitude band, no-go
     volumes, speed, clearance, duration, battery, and recovery policy approved
@@ -2597,10 +2606,11 @@ The following invariants should remain true:
     frame remains separate from the continuous PX4 `odom` control frame. A
     loop-closure update may change their transform but cannot discontinuously
     move an active setpoint.
-30. **The purchased OAK-D Lite is not assumed to provide VIO.** Its supplied
-    2021 datasheet does not list an IMU. Stereo odometry may assist mapping, but
-    the camera is not a validated visual-inertial flight-position source unless
-    hardware discovery and flight testing establish that capability.
+30. **The purchased OAK-D Lite is not assumed to provide VIO.** Runtime
+    discovery confirmed a BMI270, but spatial contract v1 does not expose it and
+    no camera/IMU timing, extrinsic, estimator, or flight acceptance has been
+    completed. Stereo odometry may assist mapping, but the camera is not yet a
+    validated visual-inertial flight-position source.
 31. **Indoor recovery does not use ordinary GPS RTL.** Autonomous return must
     follow a currently validated local free-space or breadcrumb path; otherwise
     Atlas Holds and applies the approved indoor landing or operator-deferral
@@ -2730,13 +2740,14 @@ The following invariants should remain true:
 - Dataset provenance and route evidence.
 - Optional 3D route-review interface.
 - Install and validate H-Flow through DroneCAN and the PX4 estimator.
-- Install, calibrate, and evaluate OAK-D Lite in advisory mode before allowing
-  automatic Hold decisions.
+- Complete OAK-D Lite mounting extrinsics and advisory-mode distance, latency,
+  and stopping-envelope evaluation before allowing automatic Hold decisions.
 
 ### Phase 8: Bounded Indoor Mapping Demonstrator
 
-- Add OAK and H-Flow capability discovery with explicit no-IMU handling for the
-  purchased OAK-D Lite.
+- Extend the implemented OAK RGB-D discovery with a synchronized BMI270 stream
+  and explicit VIO-readiness state; add H-Flow capability discovery after its
+  DroneCAN/PX4 installation.
 - Add high-rate PX4 local odometry, flow, range, transform, and sensor-quality
   telemetry on the companion computer.
 - Add an onboard indoor mapping and autonomy service with a supervised Atlas
@@ -2908,11 +2919,10 @@ Guardrails:
    route validation.
 10. The SIYI A8 visible gimbal is the current mission payload. No thermal source
     is installed.
-11. A 2021 OAK-D Lite has been purchased but is not installed; its supplied
-    datasheet does not list an IMU, so Atlas assumes no onboard IMU until device
-    discovery proves otherwise. The downward Holybro H-Flow is planned and not
-    installed. Both remain unavailable until discovered, calibrated, and
-    validated.
+11. The 2021 OAK-D Lite is installed and its USB 3 RGB-D contract is validated.
+    Runtime discovery confirmed a BMI270, but IMU publication, VIO, obstacle
+    action, mapping, and navigation remain gated by their own calibration and
+    acceptance work. The downward Holybro H-Flow is planned and not installed.
 12. Indoor navigation is a late-stage bounded autonomous mapping demonstrator,
     not an immediate MVP feature or a claim of unrestricted indoor autonomy.
 13. The operator approves one immutable indoor mission envelope. The onboard

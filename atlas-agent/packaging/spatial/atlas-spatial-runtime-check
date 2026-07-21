@@ -25,8 +25,18 @@ def discover(sysfs_root: Path, preferred_device_id: str = "") -> dict[str, objec
     devices = sysfs_root / "bus" / "usb" / "devices"
     found = []
     for candidate in sorted(devices.glob("*")):
-        if _read(candidate / "idVendor").lower() != DEPTHAI_VENDOR_ID:
+        vendor_id = _read(candidate / "idVendor").lower()
+        if vendor_id != DEPTHAI_VENDOR_ID:
             continue
+        product_id = _read(candidate / "idProduct").lower()
+        usb_identity = _read(candidate / "serial")
+        # A waiting DepthAI device commonly reports a synthetic USB serial
+        # made by concatenating VID and PID (for example 03e7:2485 becomes
+        # 03e72485). That identifies a boot state, not a particular camera,
+        # and must not be passed to the ROS driver's i_device_id/MXID field.
+        device_id = usb_identity
+        if usb_identity.lower() == vendor_id + product_id:
+            device_id = ""
         speed_text = _read(candidate / "speed")
         try:
             speed_mbps = int(float(speed_text))
@@ -44,20 +54,24 @@ def discover(sysfs_root: Path, preferred_device_id: str = "") -> dict[str, objec
         found.append({
             "DEVICE_PRESENT": True,
             "PROVIDER": "depthai",
-            "DEVICE_ID": _read(candidate / "serial"),
+            "DEVICE_ID": device_id,
+            "USB_IDENTITY": usb_identity,
             "MODEL": _read(candidate / "product") or "DepthAI camera",
             "USB_TRANSPORT": transport,
             "USB_SPEED_MBPS": speed_mbps,
         })
     if preferred_device_id:
         for device in found:
-            if device["DEVICE_ID"] == preferred_device_id:
+            if device["DEVICE_ID"] == preferred_device_id or (
+                not device["DEVICE_ID"] and device["USB_IDENTITY"] == preferred_device_id
+            ):
                 return device
         return {
             "DEVICE_PRESENT": False,
             "OTHER_DEVICE_PRESENT": bool(found),
             "PROVIDER": "depthai",
             "DEVICE_ID": preferred_device_id,
+            "USB_IDENTITY": "",
             "MODEL": "",
             "USB_TRANSPORT": "unknown",
             "USB_SPEED_MBPS": 0,
@@ -69,6 +83,7 @@ def discover(sysfs_root: Path, preferred_device_id: str = "") -> dict[str, objec
         "OTHER_DEVICE_PRESENT": False,
         "PROVIDER": "",
         "DEVICE_ID": "",
+        "USB_IDENTITY": "",
         "MODEL": "",
         "USB_TRANSPORT": "unknown",
         "USB_SPEED_MBPS": 0,

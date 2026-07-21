@@ -7,7 +7,7 @@ ConditionPathExists=/etc/atlas-agent/spatial.env
 [Service]
 Type=simple
 EnvironmentFile=/etc/atlas-agent/spatial.env
-ExecStartPre=/usr/bin/docker image inspect ${ATLAS_SPATIAL_CONTAINER_IMAGE}
+ExecStartPre=/usr/bin/docker image inspect --format={{.Id}} ${ATLAS_SPATIAL_CONTAINER_IMAGE}
 ExecStartPre=-/usr/bin/docker rm -f ${ATLAS_SPATIAL_CONTAINER_NAME}
 ExecStart=/usr/libexec/atlas-agent/atlas-spatial-container-run
 ExecStop=/usr/bin/docker stop --timeout 10 ${ATLAS_SPATIAL_CONTAINER_NAME}

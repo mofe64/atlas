@@ -10,10 +10,14 @@ camera services.
 - Raspberry Pi AI HAT+ with Hailo-8L
 - SIYI A8 camera reachable over its onboard Ethernet network
 - PX4 flight controller connected through a stable serial device
-- Optional DepthAI USB depth camera connected to a Pi USB 3 port
+- Optional DepthAI USB depth camera connected directly to a Pi USB 3 port with
+  a USB 3 cable. The validated OAK-D Lite installation does not require an
+  external powered hub.
 
-The commands use `0.1.0` as an example release. Replace that value with the
-release being deployed.
+The clean-system commands use `0.1.8`, the release hardware-validated on the
+Pi/OAK-D Lite profile on 21 July 2026. Replace that value with the release being
+deployed, and retain the previous package until the new installation passes
+the validation section.
 
 ## Camera transport contract
 
@@ -50,10 +54,28 @@ Run these commands on a Linux development or build computer:
 ```sh
 cd /path/to/sunnyside/atlas/atlas-agent
 
-export ATLAS_RELEASE_VERSION=0.1.0
+export ATLAS_RELEASE_VERSION=0.1.8
 sudo apt install cmake libeigen3-dev g++
 ./packaging/build-deb.sh
 ```
+
+The same build is supported on the Atlas development Mac used for release
+0.1.8. Install Go 1.25 (or enable Go's matching toolchain download), CMake,
+`dpkg-deb`, GNU `sha256sum`, and Docker Desktop with Buildx. Before relying on
+the Mac path, verify the required tools and that Docker is running:
+
+```sh
+for command in go git dpkg-deb curl file cmake sha256sum docker; do
+  command -v "${command}"
+done
+docker info >/dev/null
+docker buildx version
+```
+
+On a clean checkout, Buildx creates the Linux-arm64 ByteTrack worker. Retain
+`dist/atlas-bytetrack-worker-linux-arm64` between releases to reuse the
+validated worker and avoid rebuilding it unnecessarily. Never substitute a
+macOS executable for that Linux-arm64 artifact.
 
 The package build automatically finds a cached Linux-arm64 worker under
 `dist/`, builds it natively on Linux arm64, or cross-builds it when
@@ -74,14 +96,14 @@ x86-64 worker in an arm64 Debian package.
 The build produces:
 
 ```text
-dist/atlas-agent_0.1.0_arm64.deb
-dist/atlas-agent_0.1.0_arm64.deb.sha256
+dist/atlas-agent_0.1.8_arm64.deb
+dist/atlas-agent_0.1.8_arm64.deb.sha256
 ```
 
 Transfer both files to the onboard computer:
 
 ```sh
-export ATLAS_RELEASE_VERSION=0.1.0
+export ATLAS_RELEASE_VERSION=0.1.8
 export ATLAS_PI_HOST=<pi-user>@<pi-address>
 
 scp \
@@ -100,7 +122,7 @@ On the onboard computer, verify and install the transferred package:
 ```sh
 cd /tmp
 
-export ATLAS_RELEASE_VERSION=0.1.0
+export ATLAS_RELEASE_VERSION=0.1.8
 sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
 sudo apt install "./atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb"
 ```
@@ -185,7 +207,17 @@ The installer will:
 When spatial support is selected, setup checks for the release-versioned
 container image. This first implementation builds the bundled ROS 2 Jazzy
 context on the Pi when no preloaded image is available, so the first run needs
-internet access and can take several minutes. Later runs reuse the image.
+internet access to the Ubuntu/ROS package repositories and GitHub and can take
+several minutes. Later runs reuse the image. The build deliberately stops if
+the available DepthAI core and ROS driver are not the validated 3.6.1/3.2.1
+pair.
+
+A waiting OAK can enumerate as `03e7:2485`, expose the synthetic USB identity
+`03e72485`, and report 480 Mb/s even while connected by USB 3. `atlas-setup`
+does not treat that boot-state identity as the camera MXID. The runtime uploads
+firmware, the camera re-enumerates, and `atlas-setup doctor` performs the
+authoritative live USB transport and MXID check while the service owns the
+device. Do not copy `03e72485` into `ATLAS_SPATIAL_DEVICE_ID`.
 
 For the pinned Hailo profile, confirm that the installation plan shows
 `hailo (container)` perception and these services:
@@ -224,6 +256,45 @@ For container-backed Hailo, the doctor verifies:
 - spatial container/image state, USB device and USB 2/3 transport;
 - fresh synchronized color/depth frames, metre depth encoding, and calibration
   identity.
+
+For the hardware-validated DepthAI profile, also verify the immutable image,
+production security boundary, private libusb selection, and versioned health
+contract:
+
+```sh
+grep '^ATLAS_SPATIAL_CONTAINER_IMAGE=' /etc/atlas-agent/spatial.env
+lsusb -t
+
+sudo docker inspect \
+  --format 'image={{.Image}} privileged={{.HostConfig.Privileged}} readonly={{.HostConfig.ReadonlyRootfs}} capdrop={{json .HostConfig.CapDrop}}' \
+  atlas-spatial-runtime
+
+sudo docker exec atlas-spatial-runtime /bin/bash -lc '
+  core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)"
+  ldd "${core}" | grep libusb
+
+  set +u
+  . /opt/ros/jazzy/setup.sh
+  . /opt/atlas-spatial-runtime/setup.sh
+  set -u
+
+  ros2 run atlas_spatial_runtime atlas-spatial-probe \
+    --socket /run/atlas-agent/spatial.sock \
+    --json
+'
+```
+
+Acceptance requires all spatial doctor checks to pass, the live USB tree to
+show the booted device at 5000 Mb/s, the DepthAI core to resolve
+`/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0`, and the probe to report fresh
+color plus `32FC1` metre depth, calibration, `synchronized=true`, and
+`ready=true`. The container must report `privileged=false`, `readonly=true`,
+and `capdrop=["ALL"]`.
+
+The probe's device description is setup-time provenance and can retain
+`usb2-or-unbooted` or the bootloader product name from pre-boot discovery. The
+live `spatial USB camera` and `spatial USB transport` doctor checks are
+authoritative for the current MXID and USB 3 connection.
 
 Inspect all service states:
 
@@ -351,13 +422,13 @@ A new Debian version is strongly recommended because package state, Atlas
 Native, logs, and rollback artifacts can then distinguish the builds:
 
 ```sh
-export ATLAS_RELEASE_VERSION=0.1.1
+export ATLAS_RELEASE_VERSION=0.1.9
 ```
 
 For a development replacement that deliberately keeps the installed version:
 
 ```sh
-export ATLAS_RELEASE_VERSION=0.1.0
+export ATLAS_RELEASE_VERSION=0.1.8
 ```
 
 Debian and Atlas will report the same version before and after a same-version
@@ -420,7 +491,7 @@ On the onboard computer:
 
 ```sh
 cd /tmp
-export ATLAS_RELEASE_VERSION=0.1.1  # Use the exact version selected for this build.
+export ATLAS_RELEASE_VERSION=0.1.9  # Use the exact version selected for this build.
 sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
 ```
 
@@ -624,7 +695,7 @@ sudo systemctl stop \
 When rolling back to an older Debian version:
 
 ```sh
-export ATLAS_PREVIOUS_VERSION=0.1.0
+export ATLAS_PREVIOUS_VERSION=0.1.8
 sudo apt install --allow-downgrades \
   "/tmp/atlas-agent_${ATLAS_PREVIOUS_VERSION}_arm64.deb"
 ```
@@ -671,6 +742,34 @@ sudo systemctl restart atlas-hailo-adapter.service
 systemctl --no-pager --full status atlas-hailo-adapter.service
 journalctl -u atlas-hailo-adapter.service -n 200 --no-pager
 ```
+
+### The OAK firmware boots but RGB-D topics never become ready
+
+The validated failure signature is a DepthAI log that reports firmware boot
+success and then `X_LINK_DEVICE_NOT_FOUND`. That is a container USB
+re-enumeration failure, not evidence that the camera or USB 3 cable is bad.
+Confirm that the installed release selected the expected image and private
+library:
+
+```sh
+dpkg-query -W -f='${Package} ${Version}\n' atlas-agent
+grep '^ATLAS_SPATIAL_CONTAINER_IMAGE=' /usr/share/atlas-agent/release.env
+grep '^ATLAS_SPATIAL_CONTAINER_IMAGE=' /etc/atlas-agent/spatial.env
+
+sudo docker exec atlas-spatial-runtime /bin/bash -lc '
+  core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)"
+  ldd "${core}" | grep libusb
+'
+
+sudo journalctl -u atlas-spatial-runtime.service -n 200 --no-pager
+```
+
+The linkage must resolve `/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0`.
+Installing `udev` in the runtime image or forcing the driver to USB 2 did not
+fix this failure and is not the supported recovery. Install a release that
+contains the pinned private-lib workaround, run `sudo atlas-setup` so its
+release-versioned image is built and pinned, and validate USB 3 while the
+runtime is active.
 
 ### Atlas is not configured
 

@@ -40,7 +40,13 @@ set -- \
     --name "${ATLAS_SPATIAL_CONTAINER_NAME}" \
     --network none \
     --user "${agent_uid}:${agent_gid}" \
-    --env-file /etc/atlas-agent/spatial.env \
+    --env "ATLAS_SPATIAL_CONTRACT_VERSION=${ATLAS_SPATIAL_CONTRACT_VERSION:-1}" \
+    --env "ATLAS_SPATIAL_PROVIDER=${ATLAS_SPATIAL_PROVIDER}" \
+    --env "ATLAS_SPATIAL_SOURCE_ID=${ATLAS_SPATIAL_SOURCE_ID:-front-depth}" \
+    --env "ATLAS_SPATIAL_DEVICE_ID=${ATLAS_SPATIAL_DEVICE_ID:-}" \
+    --env "ATLAS_SPATIAL_MODEL=${ATLAS_SPATIAL_MODEL:-}" \
+    --env "ATLAS_SPATIAL_USB_TRANSPORT=${ATLAS_SPATIAL_USB_TRANSPORT:-unknown}" \
+    --env "ATLAS_SPATIAL_SOCKET_PATH=${ATLAS_SPATIAL_SOCKET_PATH:-/run/atlas-agent/spatial.sock}" \
     --env HOME=/var/lib/atlas-agent/spatial \
     --env ROS_LOG_DIR=/var/lib/atlas-agent/spatial/log \
     --read-only \
