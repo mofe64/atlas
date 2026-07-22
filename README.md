@@ -9,6 +9,7 @@ path does not require the Atlas Backend or an internet connection.
 
 ```text
 PX4 flight controller
+    <- DroneCAN H-Flow optical flow and range
     -> mavsdk_server on the onboard computer
         -> Atlas Agent
             -> agent-initiated gRPC session over HM30/Ethernet
@@ -17,6 +18,7 @@ PX4 flight controller
 
 SIYI A8 clean RTSP stream -------------------------> Atlas Native/FFmpeg
 SIYI A8 stream -> Hailo inference -> Atlas Agent --> perception metadata
+OAK-D Lite -> independent Atlas Spatial Runtime ----> local RGB-D health
 ```
 
 This separation is intentional:
@@ -25,6 +27,9 @@ This separation is intentional:
   mission records, SQLite, RTSP decoding, and the ground-station gRPC server.
 - **Atlas Agent** owns PX4/MAVSDK integration, physical gimbal and camera
   control, perception-runtime supervision, and the outbound Native session.
+- **Atlas Spatial Runtime** independently owns the OAK RGB-D driver, normalized
+  topics, calibration identity, and local health. It does not own H-Flow/PX4
+  estimation, mapping, or aircraft movement.
 - **Atlas Backend** is a separate Go/Gin/PostgreSQL foundation for identity and
   future coordinated services. It is not on the current aircraft-control path.
 
@@ -34,6 +39,7 @@ This separation is intentional:
 | --- | --- |
 | `atlas/` | React + Tauri v2 Native ground station |
 | `atlas-agent/` | Go onboard Agent, setup tools, systemd units, and Debian packaging |
+| `atlas-spatial-runtime/` | Independent ROS 2 RGB-D runtime, provider adapters, health contract, and container |
 | `atlas-backend/` | Optional Go/Gin/PostgreSQL backend foundation |
 | `proto/atlas/ground_station.proto` | Shared Native/Agent transport contract |
 | `scripts/start-sitl.sh` | Complete local PX4 Gazebo development stack |
@@ -60,6 +66,8 @@ repository map. The detailed architecture set covers:
 - [Inference, tracking, geolocation, and follow modes](docs/inference-tracking-and-follow.md)
 - [Aircraft operations, missions, commands, and safety](docs/aircraft-operations-implementation.md)
 - [Video and perception](docs/video-perception.md)
+- [Spatial camera runtime](docs/spatial-runtime.md)
+- [Indoor navigation sensor commissioning](docs/indoor-navigation-commissioning.md)
 - [The separate Atlas Backend](docs/atlas-backend.md)
 - [Development, validation, and debugging workflows](docs/development-guide.md)
 
@@ -93,6 +101,8 @@ future direction remain separate in
   Bounded-Orbit response plans with durable arrival actions.
 - Durable Hold, Return-to-Launch, Land, mission, gimbal, and zoom command
   lifecycles.
+- A hardware-accepted, independent OAK-D Lite USB 3 RGB-D runtime. The installed
+  PX4-configured H-Flow and OAK runtime are not yet indoor-navigation authority.
 
 The detailed component contracts and configuration live in
 [`atlas/README.md`](atlas/README.md) and

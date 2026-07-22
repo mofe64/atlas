@@ -27,10 +27,13 @@ point-cloud map, or issue navigation commands. It proves the prerequisite:
 repeatable Pi installation, stable RGB-D topics, calibration identity, measured
 frame health, and an independently supervised failure boundary.
 
-The H-Flow is also intentionally not fused in this slice. Its velocity/range
-observations belong in the later odometry/localization layer; they should not be
-hidden inside a camera driver or used for navigation before their frame,
-timestamp, covariance, and mounting transform are explicit.
+The installed H-Flow is also intentionally not fused in this slice. Its
+DroneCAN/PX4 parameters have been configured through QGroundControl, but its
+velocity/range and estimator observations belong in the later
+odometry/localization layer. They must not be hidden inside a camera driver or
+used for navigation before firmware/parameter evidence, frame, timestamp,
+quality, covariance, mounting transform, and GPS-denied position-hold
+acceptance are explicit.
 
 ## Stable contract
 
@@ -137,6 +140,12 @@ initialization, failure detection, and PX4 estimator integration before using
 the BMI270 for navigation. The forward-only camera also leaves side, rear, up,
 and most down geometry unobserved, so it does not change the initial bounded
 2.5D navigation architecture into full 3D autonomy.
+
+Exact package, source, image, MXID, calibration, H-Flow, and open endurance
+evidence is maintained in
+[Indoor Navigation Sensor Commissioning](indoor-navigation-commissioning.md).
+The live OAK acceptance passed; timed soak, physical disconnect/reconnect, and
+cold-reboot endurance remain pending and must not be inferred from that result.
 
 ## Failure and replacement model
 

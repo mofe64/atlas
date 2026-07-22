@@ -13,6 +13,10 @@ camera services.
 - Optional DepthAI USB depth camera connected directly to a Pi USB 3 port with
   a USB 3 cable. The validated OAK-D Lite installation does not require an
   external powered hub.
+- Optional downward Holybro H-Flow connected through DroneCAN to PX4. Atlas
+  setup does not configure or validate H-Flow; configure it for the installed
+  PX4 release through QGroundControl and retain the separate firmware,
+  parameter, estimator, and flight-acceptance evidence.
 
 The clean-system commands use `0.1.8`, the release hardware-validated on the
 Pi/OAK-D Lite profile on 21 July 2026. Replace that value with the release being
@@ -290,6 +294,14 @@ show the booted device at 5000 Mb/s, the DepthAI core to resolve
 color plus `32FC1` metre depth, calibration, `synchronized=true`, and
 `ready=true`. The container must report `privileged=false`, `readonly=true`,
 and `capdrop=["ALL"]`.
+
+The accepted OAK deployment identifiers, the configured-but-not-yet-accepted
+H-Flow state, and the remaining soak/disconnect/reboot procedures are recorded
+in
+[`docs/indoor-navigation-commissioning.md`](../docs/indoor-navigation-commissioning.md).
+`atlas-setup doctor` does not currently inspect H-Flow, its PX4 parameter set,
+optical-flow/range quality, or EKF fusion state; a passing Atlas doctor must not
+be presented as H-Flow or GPS-denied position-hold acceptance.
 
 The probe's device description is setup-time provenance and can retain
 `usb2-or-unbooted` or the bootloader product name from pre-boot discovery. The

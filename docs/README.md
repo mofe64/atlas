@@ -16,6 +16,7 @@ flowchart LR
     Agent["Atlas Agent on aircraft"] -->|"agent-initiated gRPC"| Host
     Agent -->|"local gRPC"| MAVSDK["mavsdk_server"]
     MAVSDK -->|"MAVLink"| PX4["PX4 flight controller"]
+    HFlow["Downward H-Flow"] -->|"DroneCAN flow + range"| PX4
     Camera["SIYI A8 camera"] -->|"clean RTSP"| Host
     Camera --> Inference["Hailo inference runtime"]
     Inference -->|"normalized metadata"| Agent
@@ -44,8 +45,10 @@ and Agent.
 | 8 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the general command, lifecycle, safety, and failure-state rules? |
 | 9 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, rendered, and retained? |
 | 10 | [Spatial camera runtime](spatial-runtime.md) | How is USB RGB-D hardware installed behind a vendor-neutral Pi boundary? |
-| 11 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
-| 12 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
+| 11 | [H-Flow PX4 setup and verification](h-flow-px4-setup-and-verification.md) | How do we reproduce the installed H-Flow integration on another aircraft? |
+| 12 | [Indoor navigation sensor commissioning](indoor-navigation-commissioning.md) | Which OAK/H-Flow facts are accepted, configured, pending, or not implemented? |
+| 13 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
+| 14 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
 
 The [feature gap assessment](feature-gap-assessment.md) is a product-direction
 document. It describes possible future work and must not be treated as shipped

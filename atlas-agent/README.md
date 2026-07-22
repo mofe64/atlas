@@ -282,6 +282,13 @@ In container mode systemd supervises `atlas-hailo-adapter.service`, and the
 Agent owns the protected perception socket. Native decodes the A8 RTSP stream
 directly, while the Agent talks to the local `mavsdk_server` gRPC endpoint.
 
+The installed H-Flow is configured through QGroundControl and fused by PX4; it
+is not owned by the spatial camera container. `atlas-setup doctor` does not yet
+validate H-Flow firmware, PX4 parameters, flow/range quality, or EKF fusion.
+Accepted OAK identifiers and the remaining H-Flow/endurance evidence are listed
+in
+[`docs/indoor-navigation-commissioning.md`](../docs/indoor-navigation-commissioning.md).
+
 Run the field diagnostic at any time:
 
 ```sh

@@ -2,7 +2,7 @@
 
 **Status:** Living roadmap and gap assessment; not the shipped-behavior reference
 **Assessment date:** 16 July 2026  
-**Last updated:** 20 July 2026
+**Last updated:** 21 July 2026
 
 **Scope:** Atlas Native, Atlas Agent, and the future coordinated-services boundary  
 **Reference material:** Supplied screenshots of public-safety drone dispatch and
@@ -148,16 +148,22 @@ The agreed MVP operations and payload direction is:
   validated, but it is not yet an autonomous-navigation or automatic-Hold
   authority. Hardware discovery confirmed a BMI270 IMU; Atlas still requires
   timestamp, extrinsic, covariance, estimator, and flight validation before
-  claiming VIO. The planned downward Holybro H-Flow remains unavailable until
-  installed, calibrated, and validated through PX4.
+  claiming VIO. The downward Holybro H-Flow is installed and its required PX4
+  parameters were configured through QGroundControl on 21 July 2026. The exact
+  PX4 identity and corrected full parameter-export identity were retained on 22
+  July 2026, together with clean disarmed flow/range and EKF-fusion ULog
+  evidence. H-Flow firmware identity, physical offset/sign validation, dynamic
+  rejection behavior, and GPS-denied position-hold acceptance still need to be
+  retained before Atlas treats it as navigation-ready.
 - Add GPS-denied indoor mapping and bounded autonomous exploration only as a
   late-stage demonstrator. The operator approves the mission envelope once;
   the onboard computer selects and executes short routes through known free
   space and enters Hold before requesting operator help when no validated route
   remains.
 - Keep the indoor roadmap in two explicit stages. The agreed demonstrator is a
-  fixed- or tightly bounded-altitude **2.5D** system using the planned OAK-D
-  Lite and H-Flow integrations. A later funded **full 3D** system adds
+  fixed- or tightly bounded-altitude **2.5D** system using the installed OAK-D
+  Lite and H-Flow hardware through software integrations that remain to be
+  completed. A later funded **full 3D** system adds
   all-direction geometry sensing, an IMU-equipped stereo source, GPU-class
   companion compute, ROS 2 localization/mapping/planning, and deliberate
   climb/descent through validated free-space corridors. Neither stage is a
@@ -258,7 +264,7 @@ Relevant implementation references:
 | Video street/address projection | Not supported | Street labels projected into live imagery | Low priority and technically risky. |
 | Thermal source switching | No thermal payload is installed | Visible in some reference interfaces | Do not expose thermal controls. The current A8 is visible-only. |
 | Forward depth and obstacle sensing | The 2021 OAK-D Lite is installed; USB 3 RGB-D, calibration, synchronization, and its BMI270 identity are validated in the independent spatial runtime | Integrated local obstacle awareness | Expose RGB-D health, but keep obstacle action advisory until mounting extrinsics, distance/latency, stopping-envelope, and automatic-Hold acceptance pass. The discovered IMU is not yet a VIO source. |
-| Optical-flow and range aiding | Holybro H-Flow is planned but not installed | Improved local navigation | Integrate through DroneCAN and PX4 first; Atlas observes estimator health after installation. |
+| Optical-flow and range aiding | Holybro H-Flow is installed and configured through QGroundControl for DroneCAN/PX4 flow and range aiding. The commissioning register records the PX4 1.17.0 build identity, corrected full parameter-export hash, configured rotation/offsets, node-125 discovery, and a clean 72.646 s disarmed ULog with live flow/range and fusion. H-Flow firmware identity, physical offset/sign validation, transient rejection characterization, and GPS-denied position-hold acceptance remain open. | Improved local navigation | Complete those commissioning artifacts and validate PX4 estimator behavior before Atlas advertises navigation readiness; Agent capability discovery and high-rate estimator health remain future work. |
 | GPS-denied indoor mapping and navigation | Not supported | Indoor inspection and mapping | Add later as a bounded 2.5D demonstrator using PX4/H-Flow for local flight, OAK stereo depth for mapping, onboard frontier planning, and Hold-before-operator-deferral. This first stage does not deliberately climb or descend around obstacles. |
 | Full 3D indoor autonomy | Not supported and outside the current hardware plan | Autonomous exploration through volumetric free space | Treat as a future funded program: GPU-class companion compute, 360-degree 3D lidar, synchronized IMU-equipped stereo, upward/downward coverage, ROS 2 autonomy runtime, 3D mapping, 3D trajectory planning, and independent reactive collision monitoring. |
 | Audio/talk-down | Not supported | Visible in one reference interface | Skip unless the payload roadmap explicitly requires it. |
@@ -459,11 +465,18 @@ IMU even though the supplied datasheet did not list the IMU. Atlas records that
 hardware fact without treating the unit as a validated VIO or flight-position
 source.
 
-The planned downward Holybro H-Flow will provide DroneCAN optical-flow and
-distance measurements to the PX4 estimator. It is not currently installed and
-may not be advertised as an available capability or used in a safety decision.
-The installed OAK may advertise only its validated RGB-D health; it is not yet
-an obstacle-response or navigation authority.
+The downward Holybro H-Flow is installed and configured through QGroundControl
+to provide DroneCAN optical-flow and distance measurements to the PX4
+estimator. That closes physical installation and initial parameter setup, not
+flight acceptance. The exact PX4 1.17.0 identity and corrected complete
+parameter-export hash are now retained. Atlas still needs the H-Flow firmware
+identity, physically verified offsets and motion-axis signs, durable live
+flow/range and estimator evidence beyond the retained disarmed ULog, measured
+GPS-denied drift/height behavior, and failure-response acceptance before using
+it in a safety decision. The installed OAK may advertise only its validated
+RGB-D health; it is not yet an obstacle-response or navigation authority. The
+current evidence register is
+[Indoor Navigation Sensor Commissioning](indoor-navigation-commissioning.md).
 
 #### Late-stage indoor mapping and navigation
 
@@ -1241,8 +1254,9 @@ show visible, thermal, forward, and gimbal-camera switching.
 The only currently installed mission payload is the visible-light SIYI A8
 gimbal. The 2021 OAK-D Lite is installed as an independent spatial sensor and
 its RGB-D health contract is active, but obstacle response, mapping, VIO, and
-navigation are not current capabilities. The downward Holybro H-Flow remains
-planned hardware and is not a current Atlas capability.
+navigation are not current capabilities. The downward Holybro H-Flow is also
+installed and PX4-configured, but Atlas does not yet discover it or expose its
+flow, range, estimator, or navigation-readiness state.
 
 #### Recommended behavior
 
@@ -1290,10 +1304,11 @@ Downward Holybro H-Flow
     -> PX4 estimator velocity and height aiding
 ```
 
-Until installed, capability discovery must report no forward depth, no optical
-flow/range module, and no thermal source. After installation, H-Flow should be
-validated in PX4 independently before Atlas relies on its estimator state. The
-OAK-D Lite should begin in advisory mode; automatic Hold based on depth requires
+Capability discovery may expose only separately verified states. OAK RGB-D may
+be reported healthy; H-Flow hardware/configuration may be recorded as present,
+but navigation readiness remains false until its PX4 estimator and GPS-denied
+position-hold gates pass. No thermal source is installed. The OAK-D Lite should
+begin in advisory mode; automatic Hold based on depth requires
 validated detection distance, latency, stopping envelope, calibration, and
 health monitoring. It must not initially steer around obstacles.
 The Phase 8 indoor planner may command validated routes only after the advisory
@@ -1675,8 +1690,9 @@ release or retrieval time, feature IDs, height source, clearance margins,
 unknowns, warnings, and overrides.
 
 The MVP does not perform in-flight obstacle avoidance or automatic replanning.
-The future OAK-D Lite and H-Flow integrations do not change this claim until
-they are installed and separately validated.
+The installed OAK-D Lite and H-Flow hardware does not change this claim; their
+mapping, estimator-observation, planning, and movement-authority integrations
+remain separately gated and unimplemented.
 
 ## 8. Priority 2: Advanced Capabilities
 
@@ -2588,11 +2604,12 @@ The following invariants should remain true:
 24. **Known-building clearance is not obstacle clearance.** OS-derived checks
     retain source, age, unknowns, margins, and overrides and use language that
     does not imply complete route safety.
-25. **Hardware presence is not operational authority.** OAK-D Lite RGB-D is
-    installed and healthy, but mapping, obstacle action, VIO, and navigation
-    remain unavailable until their separate calibration and validation gates
-    pass. H-Flow and thermal functions remain unavailable because that hardware
-    is not installed and validated.
+25. **Hardware presence and parameter setup are not operational authority.**
+    OAK-D Lite RGB-D is installed and healthy, while H-Flow is installed and
+    configured through QGroundControl. Mapping, obstacle action, VIO, H-Flow
+    navigation readiness, and indoor navigation remain unavailable until their
+    separate evidence, calibration, software-integration, and validation gates
+    pass. No thermal hardware is installed.
 26. **Indoor autonomy cannot expand its envelope.** The onboard planner may
     choose routes only inside the immutable boundary, altitude band, no-go
     volumes, speed, clearance, duration, battery, and recovery policy approved
@@ -2739,15 +2756,17 @@ The following invariants should remain true:
 - Obstacle-aware route planning.
 - Dataset provenance and route evidence.
 - Optional 3D route-review interface.
-- Install and validate H-Flow through DroneCAN and the PX4 estimator.
+- Preserve the installed H-Flow's firmware identities and complete PX4
+  parameter export, then validate live DroneCAN flow/range, estimator fusion,
+  GPS-denied position hold, degradation, and recovery behavior.
 - Complete OAK-D Lite mounting extrinsics and advisory-mode distance, latency,
   and stopping-envelope evaluation before allowing automatic Hold decisions.
 
 ### Phase 8: Bounded Indoor Mapping Demonstrator
 
 - Extend the implemented OAK RGB-D discovery with a synchronized BMI270 stream
-  and explicit VIO-readiness state; add H-Flow capability discovery after its
-  DroneCAN/PX4 installation.
+  and explicit VIO-readiness state; add H-Flow capability discovery and
+  estimator-health reporting for the installed DroneCAN/PX4 configuration.
 - Add high-rate PX4 local odometry, flow, range, transform, and sensor-quality
   telemetry on the companion computer.
 - Add an onboard indoor mapping and autonomy service with a supervised Atlas
@@ -2922,7 +2941,9 @@ Guardrails:
 11. The 2021 OAK-D Lite is installed and its USB 3 RGB-D contract is validated.
     Runtime discovery confirmed a BMI270, but IMU publication, VIO, obstacle
     action, mapping, and navigation remain gated by their own calibration and
-    acceptance work. The downward Holybro H-Flow is planned and not installed.
+    acceptance work. The downward Holybro H-Flow is installed and configured
+    through QGroundControl; firmware/parameter evidence, estimator validation,
+    GPS-denied position hold, and Atlas health integration remain open.
 12. Indoor navigation is a late-stage bounded autonomous mapping demonstrator,
     not an immediate MVP feature or a claim of unrestricted indoor autonomy.
 13. The operator approves one immutable indoor mission envelope. The onboard
@@ -3076,14 +3097,17 @@ The bounded pose/gimbal timeline and initial video/autopilot clock correlation
 are now implemented; calibrated projection, complete uncertainty, surveyed
 validation, and the aircraft-control boundary remain open.
 
-The OAK-D Lite and H-Flow integrations start only after the physical hardware is
-installed. Their future presence must not be assumed by the MVP route planner,
-known-building assessment, orbit generator, or Follow from Standoff design.
+The OAK-D Lite and H-Flow hardware is now installed. Their presence still must
+not be treated as mapping, obstacle, localization, or movement authority by the
+MVP route planner, known-building assessment, orbit generator, or Follow from
+Standoff design.
 
 The bounded indoor mapping demonstrator is also outside the immediate scope. It
-begins only after independent OAK depth and H-Flow/PX4 commissioning and follows
-the Phase 8 validation progression. Its design should not delay the incident
-operations or tracking foundation slices.
+begins only after the retained OAK acceptance is supplemented by mounting
+extrinsics and record/replay, and after H-Flow/PX4 estimator and GPS-denied
+position-hold acceptance. It then follows the Phase 8 validation progression.
+Its design should not delay the incident operations or tracking foundation
+slices.
 
 The Phase 9 full 3D reference stack is a future funding and architecture plan,
 not a dependency of the 2.5D demonstrator. The 2.5D work should preserve the

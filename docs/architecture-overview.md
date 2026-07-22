@@ -28,12 +28,17 @@ flowchart TB
         Agent["Atlas Agent"]
         MAVSDK["mavsdk_server"]
         Perception["Hailo or other perception runtime"]
+        Spatial["Atlas Spatial Runtime"]
         PX4["PX4 flight controller"]
         Camera["SIYI A8 camera"]
+        OAK["OAK-D Lite"]
+        HFlow["Downward H-Flow"]
         Agent -->|"local gRPC"| MAVSDK
         MAVSDK -->|"MAVLink"| PX4
         Perception -->|"protected Unix socket"| Agent
         Camera -->|"RTSP"| Perception
+        OAK -->|"USB 3 RGB-D"| Spatial
+        HFlow -->|"DroneCAN flow + range"| PX4
     end
 
     Agent -->|"outbound control + telemetry gRPC"| Rust
@@ -68,6 +73,7 @@ Detailed operational behavior is split into
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
+| Spatial runtime | Independent OAK RGB-D ownership, normalized color/depth/calibration topics, and bounded local health | H-Flow/PX4 estimation, mapping, navigation, or aircraft commands |
 | Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
 
 ## Deployment topology
@@ -82,9 +88,14 @@ RTSP + SIYI UDP             Atlas Agent                  Atlas Native :7443
        \________________ HM30 air/ground Ethernet link ________________/
 
 PX4 flight controller
+    <- DroneCAN H-Flow optical flow and range
     -> serial TELEM2
         -> mavsdk_server on the Raspberry Pi
             -> Atlas Agent
+
+OAK-D Lite
+    -> direct Raspberry Pi USB 3
+        -> independent Atlas Spatial Runtime container
 ```
 
 Atlas Agent initiates the session to `192.168.144.50:7443`. This direction is
@@ -239,6 +250,8 @@ These rules explain many implementation choices:
 | Recorder setup or final segment processing fails | Native records a failed session and evidence gap; the database refuses false success with a `FINALIZING` segment. |
 | Manual payload lease expires | Inspection movement stops and ownership releases; mission override restores the current mission payload intent. |
 | Perception stream fails | Agent reconnects it separately; command and telemetry traffic remain isolated. |
+| OAK/spatial runtime fails | The independent systemd service degrades or restarts without stopping Agent/MAVSDK. Atlas does not yet send spatial health to Native or authorize obstacle response. |
+| H-Flow degrades | PX4 owns estimator fusion and flight-mode/failsafe behavior. Atlas does not yet expose H-Flow quality or estimator evidence as a separate capability. |
 | Video decoder fails | Native reports video error state without changing the aircraft-control session. |
 | Backend or PostgreSQL fails | Current Native-Agent aircraft operations continue because neither is in that path. |
 
