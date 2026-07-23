@@ -32,6 +32,12 @@ func TestLoadUsesExplicitAbsoluteStateDirectory(t *testing.T) {
 	if config.PerceptionSocketPath != filepath.Join(want, "perception", "runtime.sock") {
 		t.Fatalf("PerceptionSocketPath = %q", config.PerceptionSocketPath)
 	}
+	if config.NavigationSocketPath != filepath.Join(want, "navigation.sock") {
+		t.Fatalf("NavigationSocketPath = %q", config.NavigationSocketPath)
+	}
+	if config.SpatialEnabled || config.SpatialCloudSocketPath != filepath.Join(want, "spatial-cloud.sock") || config.SpatialSourceID != "front-depth" {
+		t.Fatalf("spatial defaults = %#v", config)
+	}
 	if config.PerceptionAdapterPath != "atlas-hailort-adapter" {
 		t.Fatalf("PerceptionAdapterPath = %q", config.PerceptionAdapterPath)
 	}

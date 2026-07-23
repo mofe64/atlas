@@ -14,6 +14,7 @@ use super::{
         AgentToGroundStation,
     },
     session::{self, SessionResponseStream},
+    spatial::{self, SpatialResponseStream, SpatialStore},
 };
 
 #[derive(Clone)]
@@ -21,12 +22,14 @@ struct GroundStationService {
     database: Arc<LocalDatabase>,
     command_router: CommandRouter,
     perception: PerceptionStore,
+    spatial: SpatialStore,
 }
 
 #[tonic::async_trait]
 impl GroundStationServiceContract for GroundStationService {
     type OpenSessionStream = SessionResponseStream;
     type OpenPerceptionStreamStream = PerceptionResponseStream;
+    type OpenSpatialStreamStream = SpatialResponseStream;
 
     async fn open_session(
         &self,
@@ -46,6 +49,13 @@ impl GroundStationServiceContract for GroundStationService {
     ) -> Result<Response<Self::OpenPerceptionStreamStream>, Status> {
         perception::open(Arc::clone(&self.database), self.perception.clone(), request).await
     }
+
+    async fn open_spatial_stream(
+        &self,
+        request: Request<Streaming<super::proto::pb::AgentSpatial>>,
+    ) -> Result<Response<Self::OpenSpatialStreamStream>, Status> {
+        spatial::open(Arc::clone(&self.database), self.spatial.clone(), request).await
+    }
 }
 
 pub(crate) async fn serve(
@@ -53,6 +63,7 @@ pub(crate) async fn serve(
     database: Arc<LocalDatabase>,
     command_router: CommandRouter,
     perception: PerceptionStore,
+    spatial: SpatialStore,
 ) -> Result<(), String> {
     println!("Atlas ground station listening for agents on {address}");
     Server::builder()
@@ -60,6 +71,7 @@ pub(crate) async fn serve(
             database,
             command_router,
             perception,
+            spatial,
         }))
         .serve(address)
         .await

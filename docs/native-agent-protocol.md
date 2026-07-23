@@ -22,6 +22,9 @@ service GroundStationService {
 
   rpc OpenPerceptionStream(stream AgentPerception)
       returns (stream GroundStationPerception);
+
+  rpc OpenSpatialStream(stream AgentSpatial)
+      returns (stream GroundStationSpatial);
 }
 ```
 
@@ -31,9 +34,17 @@ Both streams are initiated by Agent. Native is the server.
 | --- | --- | --- |
 | `OpenSession` | Registration, heartbeat, telemetry, status text, command updates, mission-run updates | Registration acceptance, command requests/cancellations, mission operations |
 | `OpenPerceptionStream` | Registration, detection frames, perception health | Stream acceptance, frame-subscription leases |
+| `OpenSpatialStream` | Registration, complete bounded point-cloud snapshots and current VIO pose | Stream acceptance, cloud-subscription leases |
 
 Perception is separate so a burst of detection metadata cannot head-of-line
 block a Hold, Land, mission acknowledgement, or heartbeat.
+
+Spatial is separate for the same safety reason at a larger scale. A maximum
+cloud contains 100,000 packed XYZ float32 triples (1.2 MB). Each message is a
+complete current snapshot; queues replace stale snapshots instead of
+subsetting points or building a backlog. Native stores only the latest cloud
+in memory and requests transfer through a short lease while the Indoor view is
+mounted. Spatial frames are never written to the telemetry SQLite path.
 
 `MISSION_RUN_UPDATE_TYPE_ACTION_STATE_CHANGED` carries the durable execution
 identity, action type, attempt, reviewed failure policy, and one of requested,
@@ -93,10 +104,16 @@ Registration is transactional. It:
 
 1. Upserts the durable drone.
 2. Upserts the Agent installation.
+
 3. Reuses an existing active matching binding or creates a new one.
 4. Ends conflicting current bindings.
 5. Closes superseded communication links.
 6. Creates the new link.
+
+`navigation_state:local:v1` advertises that the Agent release contains the
+onboard PX4/H-Flow query contract. This slice adds no high-rate navigation
+payload to `OpenSession`; the state remains on the protected aircraft-local
+socket for diagnostics and the future onboard Indoor Explore controller.
 
 An archived reconnect is rejected and recorded as a lifecycle event before the
 transaction commits.

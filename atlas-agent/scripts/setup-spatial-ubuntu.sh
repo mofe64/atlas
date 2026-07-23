@@ -79,12 +79,14 @@ if [[ "${BUILD_LOCAL}" != true ]]; then
   printf '%s\n' 'Provide a release image archive or retry with --build-local.' >&2
   exit 1
 fi
-[[ -r "${CONTEXT_DIR}/packaging/Dockerfile" && -d "${CONTEXT_DIR}/ros2_ws/src" ]] || {
+[[ -r "${CONTEXT_DIR}/packaging/Dockerfile" \
+  && -d "${CONTEXT_DIR}/packaging/depthai" \
+  && -d "${CONTEXT_DIR}/ros2_ws/src" ]] || {
   printf 'bundled spatial build context is incomplete: %s\n' "${CONTEXT_DIR}" >&2
   exit 1
 }
 
-printf '[atlas-spatial] building %s locally; the first build downloads ROS dependencies\n' "${IMAGE}"
+printf '[atlas-spatial] building %s locally; Docker will reuse the patched DepthAI layers when unchanged\n' "${IMAGE}"
 docker build \
   --file "${CONTEXT_DIR}/packaging/Dockerfile" \
   --build-arg "ATLAS_SPATIAL_VERSION=${IMAGE##*:}" \

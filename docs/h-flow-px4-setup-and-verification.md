@@ -9,9 +9,9 @@ authorization
 This runbook describes how Atlas installed, configured, and verified a Holybro
 H-Flow on PX4, and how to repeat that work on another aircraft.
 
-Use this document for the procedure. Record the resulting identities, hashes,
-measurements, observations, and acceptance state in
-[Indoor Navigation Sensor Commissioning](indoor-navigation-commissioning.md).
+Use this document for the installation and parameter procedure. The current
+aircraft baseline and the feature that depends on it are summarized in the
+[Indoor Operations Plan](indoor-ops-plan.md).
 
 The work has four separate gates:
 
@@ -416,8 +416,8 @@ so results can be reproduced.
 
 ## 10. Flight acceptance remains a separate gate
 
-Do not progress directly from a healthy bench log to autonomous indoor
-movement. The first GPS-denied flight stage must define and retain:
+Do not progress directly from a healthy bench log to an indoor waypoint. The
+first GPS-denied flight stage must define and retain:
 
 - the exact room boundary, floor texture, lighting, magnetic conditions, and
   usable height range;
@@ -426,13 +426,17 @@ movement. The first GPS-denied flight stage must define and retain:
 - battery reserve and abort criteria;
 - safety-pilot and RC takeover roles;
 - Hold behavior when flow, range, local position, or heading becomes invalid;
-- H-Flow disconnect/reconnect behavior; and
 - post-test parameter and ULog hashes.
 
 Start with a low, manually supervised hover/position-hold test. Autonomous
-mapping and route execution remain blocked until flight behavior, estimator
-degradation, stopping behavior, and operator takeover have separate acceptance
-evidence.
+waypoint execution remains blocked until position-hold behavior, estimator
+degradation, and operator takeover have separate acceptance evidence.
+
+Atlas exposes H-Flow/PX4 estimator state through the Agent's protected,
+read-only navigation socket. The spatial runtime deliberately does not compare
+that state with VIO or fuse VIO into PX4. Initial H-Flow position-hold
+acceptance therefore depends on PX4 estimator health and controlled flight
+evidence, not on a separate VIO/PX4 comparison subsystem.
 
 ## Per-aircraft completion record
 

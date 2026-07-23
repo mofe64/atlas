@@ -1,0 +1,89 @@
+--- a/src/basalt/BasaltVIO.cpp
++++ b/src/basalt/BasaltVIO.cpp
+@@ -1,6 +1,9 @@
+ #include "depthai/basalt/BasaltVIO.hpp"
+ 
++#include "AtlasLatestQueue.hpp"
++#include "AtlasMonotonicImuQueue.hpp"
+ #include "../utility/PimplImpl.hpp"
++#include "../utility/Logging.hpp"
+ #include "basalt/calibration/calibration.hpp"
+ #include "basalt/serialization/headers_serialization.h"
+ #include "basalt/spline/se3_spline.h"
+@@ -34,6 +37,8 @@ class BasaltVIO::Impl {
+ 
+     std::vector<int64_t> vioTNSec;
+     std::shared_ptr<basalt::PoseState<double>::SE3> localTransform;
++    atlas::depthai_patch::MonotonicImuQueue imuOrdering;
++    std::uint64_t imageQueueDropped = 0;
+ };
+ 
+ BasaltVIO::BasaltVIO() {}
+@@ -126,7 +131,19 @@ void BasaltVIO::stereoCB(std::shared_ptr<ADatatype> in) {
+     }
+     pimpl->lastImgData = data;
+     if(pimpl->imageDataQueue) {
+-        pimpl->imageDataQueue->push(data);
++        const auto queueResult = atlas::depthai_patch::tryPushLatest(*pimpl->imageDataQueue, data);
++        const auto dropped = queueResult.dropped();
++        if(dropped > 0) {
++            pimpl->imageQueueDropped += dropped;
++            const auto totalDropped = pimpl->imageQueueDropped;
++            if(totalDropped == dropped || (totalDropped & (totalDropped - 1)) == 0) {
++                logger::warn(
++                    "ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE dropped={} total_dropped={} accepted_latest={}",
++                    dropped,
++                    totalDropped,
++                    queueResult.accepted);
++            }
++        }
+     }
+ };
+ 
+@@ -136,17 +153,36 @@ void BasaltVIO::imuCB(std::shared_ptr<ADatatype> imuData) {
+         return;
+     }
+ 
+-    for(auto& imuPacket : imuPackets->packets) {
+-        basalt::ImuData<double>::Ptr data;
+-        data = std::make_shared<basalt::ImuData<double>>();
+-        auto t = imuPacket.acceleroMeter.getTimestamp();
+-        int64_t t_ns = std::chrono::time_point_cast<std::chrono::nanoseconds>(t).time_since_epoch().count();
+-
+-        data->t_ns = t_ns;
+-        data->accel = Eigen::Vector3d(imuPacket.acceleroMeter.x, imuPacket.acceleroMeter.y, imuPacket.acceleroMeter.z);
+-        data->gyro = Eigen::Vector3d(imuPacket.gyroscope.x, imuPacket.gyroscope.y, imuPacket.gyroscope.z);
+-        if(pimpl->imuDataQueue) pimpl->imuDataQueue->push(data);
++    if(!pimpl->imuDataQueue) {
++        return;
+     }
++
++    auto packets = imuPackets->packets;
++    const auto result = pimpl->imuOrdering.forward(
++        std::move(packets),
++        [](const auto& packet) {
++            const auto timestamp = packet.acceleroMeter.getTimestamp();
++            return std::chrono::time_point_cast<std::chrono::nanoseconds>(timestamp).time_since_epoch().count();
++        },
++        [this](const auto& imuPacket, int64_t timestampNs) {
++            auto data = std::make_shared<basalt::ImuData<double>>();
++            data->t_ns = timestampNs;
++            data->accel = Eigen::Vector3d(imuPacket.acceleroMeter.x, imuPacket.acceleroMeter.y, imuPacket.acceleroMeter.z);
++            data->gyro = Eigen::Vector3d(imuPacket.gyroscope.x, imuPacket.gyroscope.y, imuPacket.gyroscope.z);
++            pimpl->imuDataQueue->push(data);
++        });
++
++    if(result.dropped > 0 && (result.totalDropped == result.dropped || (result.totalDropped & (result.totalDropped - 1)) == 0)) {
++        logger::warn(
++            "ATLAS_DEPTHAI_VIO_IMU_ORDER dropped={} total_dropped={} last_forwarded_ns={}",
++            result.dropped,
++            result.totalDropped,
++            result.lastForwardedTimestampNs);
++    }
++    if(result.reordered > 0 && (result.totalReordered == result.reordered || (result.totalReordered & (result.totalReordered - 1)) == 0)) {
++        logger::warn(
++            "ATLAS_DEPTHAI_VIO_IMU_ORDER reordered={} total_reordered={}", result.reordered, result.totalReordered);
++    }
+ };
+ 
+ void BasaltVIO::stop() {

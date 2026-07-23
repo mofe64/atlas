@@ -18,7 +18,7 @@ PX4 flight controller
 
 SIYI A8 clean RTSP stream -------------------------> Atlas Native/FFmpeg
 SIYI A8 stream -> Hailo inference -> Atlas Agent --> perception metadata
-OAK-D Lite -> independent Atlas Spatial Runtime ----> local RGB-D health
+OAK-D Lite -> independent Atlas Spatial Runtime ----> RGB-D + BMI270 + live non-authoritative VIO
 ```
 
 This separation is intentional:
@@ -27,9 +27,10 @@ This separation is intentional:
   mission records, SQLite, RTSP decoding, and the ground-station gRPC server.
 - **Atlas Agent** owns PX4/MAVSDK integration, physical gimbal and camera
   control, perception-runtime supervision, and the outbound Native session.
-- **Atlas Spatial Runtime** independently owns the OAK RGB-D driver, normalized
-  topics, calibration identity, and local health. It does not own H-Flow/PX4
-  estimation, mapping, or aircraft movement.
+- **Atlas Spatial Runtime** independently owns the OAK RGB-D and BMI270 driver,
+  normalized topics, calibration/transform identity, live Basalt VIO, health,
+  and the bounded VIO-local cloud used by Indoor Explore. VIO is observational
+  only: the runtime does not fuse it into PX4 or authorize movement.
 - **Atlas Backend** is a separate Go/Gin/PostgreSQL foundation for identity and
   future coordinated services. It is not on the current aircraft-control path.
 
@@ -67,7 +68,7 @@ repository map. The detailed architecture set covers:
 - [Aircraft operations, missions, commands, and safety](docs/aircraft-operations-implementation.md)
 - [Video and perception](docs/video-perception.md)
 - [Spatial camera runtime](docs/spatial-runtime.md)
-- [Indoor navigation sensor commissioning](docs/indoor-navigation-commissioning.md)
+- [Indoor operations plan](docs/indoor-ops-plan.md)
 - [The separate Atlas Backend](docs/atlas-backend.md)
 - [Development, validation, and debugging workflows](docs/development-guide.md)
 
@@ -101,8 +102,10 @@ future direction remain separate in
   Bounded-Orbit response plans with durable arrival actions.
 - Durable Hold, Return-to-Launch, Land, mission, gimbal, and zoom command
   lifecycles.
-- A hardware-accepted, independent OAK-D Lite USB 3 RGB-D runtime. The installed
-  PX4-configured H-Flow and OAK runtime are not yet indoor-navigation authority.
+- A hardware-accepted, independent OAK-D Lite USB 3 runtime with synchronized
+  RGB-D, BMI270 health, live non-authoritative Basalt VIO, transform provenance,
+  and a bounded VIO-local point cloud. The installed PX4-configured H-Flow and
+  OAK runtime are not yet indoor-navigation authority.
 
 The detailed component contracts and configuration live in
 [`atlas/README.md`](atlas/README.md) and

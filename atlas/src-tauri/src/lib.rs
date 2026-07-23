@@ -23,12 +23,14 @@ use commands::{
     prepare_incident_response, preview_incident_response, queue_evidence_event_clip,
     refine_perception_track_geolocation, renew_aircraft_follow_session, request_vehicle_command,
     restore_drone, restore_evidence_asset, review_evidence_asset, runtime_info,
-    select_perception_track, start_evidence_recording, stop_evidence_recording,
-    trash_evidence_asset, update_evidence_asset_retention, update_evidence_retention_policy,
-    update_incident, update_mission, upload_mission, upsert_perception_counting_rule,
-    vehicle_command_detail, vehicle_command_history, vehicle_event_history,
-    vehicle_operations_snapshot, vehicle_telemetry_chart_series, vehicle_telemetry_history,
-    video_stream_frame, video_stream_snapshot, video_stream_start, video_stream_stop,
+    select_perception_track, spatial_frame, spatial_snapshot, spatial_subscription_renew,
+    spatial_subscription_start, spatial_subscription_stop, start_evidence_recording,
+    stop_evidence_recording, trash_evidence_asset, update_evidence_asset_retention,
+    update_evidence_retention_policy, update_incident, update_mission, upload_mission,
+    upsert_perception_counting_rule, vehicle_command_detail, vehicle_command_history,
+    vehicle_event_history, vehicle_operations_snapshot, vehicle_telemetry_chart_series,
+    vehicle_telemetry_history, video_stream_frame, video_stream_snapshot, video_stream_start,
+    video_stream_stop,
 };
 use database::LocalDatabase;
 use tauri::Manager;
@@ -38,6 +40,7 @@ pub(crate) struct AppState {
     listen_address: String,
     command_router: ground_station::CommandRouter,
     perception: ground_station::PerceptionStore,
+    spatial: ground_station::SpatialStore,
     recording: recording::EvidenceRecorder,
     video: video::VideoManager,
 }
@@ -66,6 +69,8 @@ pub fn run() {
             let server_command_router = command_router.clone();
             let perception = ground_station::PerceptionStore::default();
             let server_perception = perception.clone();
+            let spatial = ground_station::SpatialStore::default();
+            let server_spatial = spatial.clone();
             let video = video::VideoManager::from_environment().map_err(std::io::Error::other)?;
             let recording = recording::EvidenceRecorder::from_environment(
                 Arc::clone(&database),
@@ -84,6 +89,7 @@ pub fn run() {
                     server_database,
                     server_command_router,
                     server_perception,
+                    server_spatial,
                 )
                 .await
                 {
@@ -158,6 +164,7 @@ pub fn run() {
                 listen_address,
                 command_router,
                 perception,
+                spatial,
                 recording,
                 video,
             });
@@ -188,6 +195,11 @@ pub fn run() {
             operational_alerts,
             acknowledge_operational_alert,
             perception_snapshot,
+            spatial_snapshot,
+            spatial_frame,
+            spatial_subscription_start,
+            spatial_subscription_renew,
+            spatial_subscription_stop,
             perception_track_history,
             perception_counts,
             perception_counting_rules,

@@ -1,182 +1,140 @@
 # Spatial Camera Runtime
 
-Atlas Spatial Runtime is the onboard, vendor-neutral boundary for synchronized
-color, aligned depth, and calibration. The first implementation supports a USB
-DepthAI camera through provider `depthai`, but every Atlas-facing name uses the
-logical source `front-depth`. A later RealSense adapter can publish the same
-contract without changing setup, mapping, navigation, or Native-facing code.
+Atlas Spatial Runtime is the independently supervised OAK RGB-D/BMI270/VIO
+process used by Indoor Explore. Camera-vendor details stop at its provider
+adapter; Atlas consumers use stable `/atlas/spatial/*` topics.
 
-## First-slice boundary
+## System boundary
 
 ```mermaid
 flowchart LR
-    USB["USB depth camera"] --> Provider["Provider adapter: depthai"]
-    Provider --> RGB["/atlas/spatial/color/*"]
-    Provider --> Depth["/atlas/spatial/aligned_depth/* (32FC1 metres)"]
-    RGB --> Health["Spatial health contract"]
-    Depth --> Health
-    Health --> Socket["/run/atlas-agent/spatial.sock"]
-    Setup["atlas-setup"] --> Config["/etc/atlas-agent/spatial.env"]
-    Config --> Service["atlas-spatial-runtime.service"]
-    Service --> Provider
-    Agent["atlas-agent + MAVSDK"] -. "independent lifecycle" .- Service
+    OAK["OAK-D Lite + BMI270"] --> Provider["DepthAI provider adapter"]
+    Provider --> RGBD["Aligned RGB-D in metres"]
+    Provider --> IMU["BMI270 IMU"]
+    Provider --> VIO["Live Basalt VIO"]
+    RGBD --> Health["Bounded health service"]
+    IMU --> Health
+    VIO --> Health
+    RGBD --> Cloud["Bounded voxel cloud"]
+    VIO -->|"capture-time pose"| Cloud
+    Cloud --> PointCloud["/atlas/spatial/map/points"]
+    PointCloud --> Socket["Latest-only complete-cloud socket"]
+    Socket --> Agent["Atlas Agent spatial stream"]
+    Agent --> Native["Atlas Native React Three Fiber view"]
 ```
 
-This slice deliberately does not stream RGB-D data to Atlas Native, build a
-point-cloud map, or issue navigation commands. It proves the prerequisite:
-repeatable Pi installation, stable RGB-D topics, calibration identity, measured
-frame health, and an independently supervised failure boundary.
+PX4 continues to stabilize the aircraft using its own estimator and H-Flow
+inputs. The spatial runtime does not inject VIO into PX4 and cannot send
+movement commands.
 
-The installed H-Flow is also intentionally not fused in this slice. Its
-DroneCAN/PX4 parameters have been configured through QGroundControl, but its
-velocity/range and estimator observations belong in the later
-odometry/localization layer. They must not be hidden inside a camera driver or
-used for navigation before firmware/parameter evidence, frame, timestamp,
-quality, covariance, mounting transform, and GPS-denied position-hold
-acceptance are explicit.
-
-## Stable contract
-
-The runtime publishes:
+## Stable topics
 
 | Topic | Meaning |
 | --- | --- |
-| `/atlas/spatial/color/image_raw` | Color image from the logical front depth camera |
-| `/atlas/spatial/color/camera_info` | Color intrinsics and distortion |
-| `/atlas/spatial/aligned_depth/image_rect` | Depth aligned to color, `32FC1` metres |
-| `/atlas/spatial/aligned_depth/camera_info` | Intrinsics for the aligned depth image |
+| `/atlas/spatial/color/image_raw` | Aligned RGB image |
+| `/atlas/spatial/color/camera_info` | RGB calibration |
+| `/atlas/spatial/aligned_depth/image_rect` | Aligned `32FC1` depth in metres |
+| `/atlas/spatial/aligned_depth/camera_info` | Rectified depth projection model |
+| `/atlas/spatial/imu/data` | BMI270 acceleration and angular velocity |
+| `/atlas/spatial/vio/odometry` | Live, non-authoritative Basalt odometry |
+| `/atlas/spatial/map/points` | Bounded VIO-local `PointCloud2` |
 
-Provider-native topics stay inside
-[`launch/providers/`](../atlas-spatial-runtime/ros2_ws/src/atlas_spatial_runtime/launch/providers/).
-For DepthAI, the adapter enables its RealSense-compatible RGB-D pipeline,
-requests synchronized/aligned frames, and converts its 16-bit millimetre depth
-to the Atlas metre representation.
+The live-cloud node waits for a VIO pose near each depth capture, projects
+valid depth with the rectified camera model, applies the configured optical to
+VIO-child transform, and accumulates 5 cm voxels. It publishes at 2 Hz and caps
+the cloud at 100,000 points. When full, least-recently-observed voxels are
+evicted so new space can still appear. A VIO timestamp regression, frame
+change, or calibration change clears the cloud.
 
-The local probe protocol is versioned independently from ROS. A client sends:
+## Complete-cloud transport
+
+The cloud stream Unix socket defaults to
+`/run/atlas-agent/spatial-cloud.sock`, separately from the health-probe socket.
+Its binary frame is a bounded JSON header followed by the original tightly
+packed little-endian XYZ float32 payload from `PointCloud2`. It sends every
+point in the current map, up to 100,000 points; it does not send a 20,000-point
+preview or divide one cloud over multiple updates.
+
+The runtime, Agent, and Native each retain only the latest complete snapshot.
+When a consumer is slow, the next unsent snapshot replaces the stale one. This
+keeps realtime state current without allowing a queue of old 1.2 MB frames to
+consume memory or radio time. Agent forwards snapshots over the independent
+`OpenSpatialStream` gRPC method only while Native holds a renewable Indoor-view
+lease. Native validates the bound, exact 12-byte-per-point length, finite
+coordinates, epoch, and sequence before replacing its in-memory snapshot.
+
+## Health contract
+
+The Unix socket defaults to `/run/atlas-agent/spatial.sock`. A client sends:
 
 ```json
 {"protocolVersion":"1","type":"probe"}
 ```
 
-The response contains provider provenance, logical source ID, stream dimensions
-and encodings, measured rates, freshness, synchronization skew, USB transport,
-and a calibration hash. `ready=true` means both streams are fresh and
-synchronized and calibration has been observed; it does not mean mapping or
-navigation is ready.
+The response reports device/provider identity, USB transport, synchronized
+RGB-D state, IMU rate and timestamp anomalies, transform identity, and direct
+VIO freshness. The authority fields are invariant:
 
-## One-click Pi setup
-
-The Debian package carries the ROS workspace source, container recipe, USB udev
-rule, host probe, launcher, and systemd unit. On the Pi:
-
-```sh
-sudo apt install ./atlas-agent_<version>_arm64.deb
-sudo atlas-setup
+```text
+authoritative=false
+mappingEnabled=true
+px4FusionEnabled=false
+movementAuthority=false
 ```
 
-`atlas-setup` discovers DepthAI devices by USB vendor ID, records a stable
-device ID when the current boot state exposes one, records the observed USB
-transport, asks whether to enable the front spatial camera, ensures Docker and
-the release-versioned image are present, writes the image's immutable
-`sha256:` ID to `/etc/atlas-agent/spatial.env`, and enables the service. A
-waiting device can expose the synthetic serial `03e72485`; setup recognizes it
-as the `03e7:2485` boot state and does not persist it as a camera MXID. If no
-preloaded image
-archive is packaged yet, this first implementation builds the bundled context
-on the Pi; that first build requires internet access and can take several
-minutes. A release pipeline should later publish or preload the same image so
-normal field setup only verifies and starts it. The locally built image is
-resolved to an immutable ID on each Pi, but byte-identical fleet images are not
-guaranteed until CI publishes a digest-pinned artifact.
+`mappingEnabled` describes the VIO-local visualization map only. It does not
+grant navigation authority. The approximate Ariadne mount therefore reports
+VIO as degraded until physically verified even though prototype mapping can
+run.
 
-Use these checks on the Pi:
+## Why the standard DepthAI package is insufficient
+
+The standard Jazzy packages are API-compatible but did not stay alive on the
+actual Pi/OAK combination:
+
+- During firmware upload, the OAK disconnects and re-enumerates. Ubuntu's
+  udev-backed libusb can miss the new identity inside Docker, producing
+  `X_LINK_DEVICE_NOT_FOUND`. Atlas links the exact DepthAI-pinned libusb commit
+  built with the Linux netlink backend.
+- Real BMI270 delivery included late and duplicate timestamps. Basalt assumes
+  strictly increasing IMU time and asserted, taking down the shared camera
+  component. Atlas orders each batch and drops only non-increasing samples.
+- The Pi cannot always process visual VIO frames as fast as the driver submits
+  them. The stock blocking queue eventually stalled RGB-D for 29–63 seconds.
+  Atlas replaces it with a bounded non-blocking latest-frame queue.
+
+The fixes were accepted on aircraft release `0.1.16`: a roughly 7 minute
+23 second soak retained fresh RGB-D, about 200 Hz IMU, and live VIO with zero
+service restarts. Backpressure was observed and safely handled. The current
+source requests 20 Hz VIO visual input to leave compute for the live cloud.
+
+The normal Dockerfile rebuilds the exact DepthAI 3.6.1 source package, checks
+its source hash and Debian revision, runs focused C++ tests for both gates, and
+checks the resulting library for patch markers. This is why replacing it with
+the standard binary package would reintroduce failures already reproduced on
+the aircraft.
+
+## Installation and failure behavior
+
+`atlas-setup` discovers the OAK, seeds the transform bundle, and manages the
+independent `atlas-spatial-runtime.service`. The container has no network,
+runs read-only without Linux capabilities, and receives only the USB bus plus
+its runtime/state directories.
+
+Sustained RGB-D/IMU loss terminates the container so systemd restarts the whole
+camera boundary. Missing or stale VIO prevents new cloud integration; the
+future Indoor Explore controller must Hold rather than move without fresh
+depth and local position.
+
+Use:
 
 ```sh
 sudo atlas-setup doctor
+sudo /usr/libexec/atlas-agent/atlas-spatial-runtime-check --json
 systemctl status atlas-spatial-runtime.service
 journalctl -u atlas-spatial-runtime.service -f
-sudo /usr/libexec/atlas-agent/atlas-spatial-runtime-check --discover
-sudo /usr/libexec/atlas-agent/atlas-spatial-runtime-check
 ```
 
-USB 2 is accepted for commissioning but reported as a warning because it can
-limit RGB-D throughput. An unbooted DepthAI device can initially report 480
-Mb/s even on USB 3, so setup labels that state unverified and `doctor` checks it
-again while the runtime is active. Use a direct Pi USB 3 port and a USB 3 cable
-for the target configuration.
-
-### DepthAI container USB handoff
-
-The DepthAI ROS binary packages link to Ubuntu's system libusb. On the Pi, its
-udev-backed discovery path can lose the OAK between the unbooted device and the
-firmware-booted device, even though both the camera and the USB 3 connection are
-healthy. The runtime image therefore supplies the Luxonis libusb revision
-pinned by DepthAI 3.6.1, built with its Linux netlink backend rather than udev,
-and exposes it only through the container's `LD_LIBRARY_PATH`. This keeps the
-workaround inside the camera failure boundary and avoids changing host USB
-libraries.
-
-The image build verifies that `libdepthai_v3-core.so` resolves this private
-library and rejects DepthAI core or ROS driver package versions other than the
-validated 3.6.1/3.2.1 pair. When either package is upgraded, re-test firmware
-re-enumeration and synchronized RGB-D on the Pi before updating those guards or
-removing the override.
-
-### Validated OAK-D Lite profile
-
-Release 0.1.8 was hardware-validated on 21 July 2026 with the purchased 2021
-OAK-D Lite connected directly to a Raspberry Pi 5 USB 3 port. Runtime discovery
-confirmed three camera sockets and a BMI270 IMU. After firmware upload the
-device ran at `UsbSpeed.SUPER`; Atlas published synchronized 640x400 color and
-aligned `32FC1` metre depth with calibration and zero measured timestamp skew.
-The production container passed with a read-only root filesystem, all Linux
-capabilities dropped, and only the USB character-device boundary exposed.
-
-This validation does not make the camera a flight-position source. Contract v1
-publishes RGB-D but not IMU samples, so its health response intentionally
-reports `capabilities.imu=false`. A future VIO slice must define and validate
-camera/IMU timestamp alignment, camera-to-body extrinsics, covariance,
-initialization, failure detection, and PX4 estimator integration before using
-the BMI270 for navigation. The forward-only camera also leaves side, rear, up,
-and most down geometry unobserved, so it does not change the initial bounded
-2.5D navigation architecture into full 3D autonomy.
-
-Exact package, source, image, MXID, calibration, H-Flow, and open endurance
-evidence is maintained in
-[Indoor Navigation Sensor Commissioning](indoor-navigation-commissioning.md).
-The live OAK acceptance passed; timed soak, physical disconnect/reconnect, and
-cold-reboot endurance remain pending and must not be inferred from that result.
-
-## Failure and replacement model
-
-The spatial service requires Docker, not Atlas Agent or MAVSDK. A camera
-disconnect, ROS exception, or container restart therefore cannot stop flight
-telemetry or command handling. Systemd retries the camera runtime independently,
-and `atlas-setup doctor` reports its degraded health.
-
-To add RealSense later:
-
-1. Add a `realsense.launch.py` provider adapter.
-2. Normalize its topics, units, timestamps, and calibration to the stable
-   contract above.
-3. Add its hardware discovery rule and allow `provider=realsense`.
-4. Run the same synthetic contract, host probe, and hardware-in-loop checks.
-
-No consumer should branch on a product name such as OAK-D Lite. Branching on a
-provider is confined to discovery, setup validation, and provider launch code.
-
-## Next slices
-
-The stable progression is:
-
-1. Record synchronized RGB-D plus calibration to MCAP and replay it.
-2. Add validated visual-inertial odometry using the discovered BMI270 and a
-   versioned pose/TF contract.
-3. Build local point clouds and an RTAB-Map map on the Pi.
-4. Define a bandwidth-bounded map/point-cloud transport to Atlas Native.
-5. Add costmaps and planning, then gate any aircraft motion behind explicit
-   localization confidence, obstacle freshness, and operator policy.
-
-Mapping and navigation depend on camera-to-body extrinsics that this slice does
-not invent. Those transforms must be measured and commissioned for the actual
-mount before navigation work begins.
+The next implementation slice is the Indoor mission contract and local
+navigation controller described in the
+[Indoor Operations Plan](indoor-ops-plan.md).

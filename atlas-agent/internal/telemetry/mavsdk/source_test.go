@@ -9,13 +9,45 @@ import (
 	"time"
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/geolocation"
+	corepb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/core"
+	directpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/mavlink_direct"
 	telemetrypb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/telemetry"
+	"github.com/sunnyside/atlas/atlas-agent/internal/navigation"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	"google.golang.org/grpc"
 )
 
 type fakeTelemetryServer struct {
 	telemetrypb.UnimplementedTelemetryServiceServer
+}
+
+type fakeCoreServer struct {
+	corepb.UnimplementedCoreServiceServer
+}
+
+func (fakeCoreServer) SubscribeConnectionState(_ *corepb.SubscribeConnectionStateRequest, stream grpc.ServerStreamingServer[corepb.ConnectionStateResponse]) error {
+	return stream.Send(&corepb.ConnectionStateResponse{ConnectionState: &corepb.ConnectionState{IsConnected: true}})
+}
+
+type fakeDirectServer struct {
+	directpb.UnimplementedMavlinkDirectServiceServer
+}
+
+func (fakeDirectServer) SubscribeMessage(request *directpb.SubscribeMessageRequest, stream grpc.ServerStreamingServer[directpb.MessageResponse]) error {
+	fields := map[string]string{
+		"LOCAL_POSITION_NED": `{"time_boot_ms":1000,"x":1,"y":2,"z":-3,"vx":0.1,"vy":0.2,"vz":-0.3}`,
+		"ODOMETRY":           `{"time_usec":1000000,"frame_id":18,"child_frame_id":8,"x":1,"y":2,"z":-3,"q":[1,0,0,0],"vx":0.1,"vy":0.2,"vz":-0.3,"reset_counter":2,"quality":90}`,
+		"ESTIMATOR_STATUS":   `{"time_usec":1000000,"flags":79,"vel_ratio":0.1,"pos_horiz_ratio":0.2,"pos_vert_ratio":0.3,"hagl_ratio":0.4}`,
+		"OPTICAL_FLOW_RAD":   `{"time_usec":1000000,"sensor_id":3,"integration_time_us":14285,"integrated_x":0.01,"integrated_y":-0.02,"quality":200,"distance":1.25}`,
+		"DISTANCE_SENSOR":    `{"time_boot_ms":1000,"min_distance":8,"max_distance":3000,"current_distance":125,"id":4,"orientation":25,"signal_quality":80}`,
+	}[request.GetMessageName()]
+	return stream.Send(&directpb.MessageResponse{Message: &directpb.MavlinkMessage{
+		MessageName: request.GetMessageName(), SystemId: 1, ComponentId: 1, FieldsJson: fields,
+	}})
+}
+
+func (fakeDirectServer) SendMessage(context.Context, *directpb.SendMessageRequest) (*directpb.SendMessageResponse, error) {
+	return &directpb.SendMessageResponse{MavlinkDirectResult: &directpb.MavlinkDirectResult{Result: directpb.MavlinkDirectResult_RESULT_SUCCESS}}, nil
 }
 
 func (fakeTelemetryServer) SubscribePosition(_ *telemetrypb.SubscribePositionRequest, stream grpc.ServerStreamingServer[telemetrypb.PositionResponse]) error {
@@ -145,6 +177,8 @@ func TestStartAggregatesMAVSDKStreams(t *testing.T) {
 		t.Fatalf("listen: %v", err)
 	}
 	server := grpc.NewServer()
+	corepb.RegisterCoreServiceServer(server, fakeCoreServer{})
+	directpb.RegisterMavlinkDirectServiceServer(server, fakeDirectServer{})
 	telemetrypb.RegisterTelemetryServiceServer(server, fakeTelemetryServer{})
 	go func() { _ = server.Serve(listener) }()
 	t.Cleanup(server.Stop)
@@ -187,6 +221,13 @@ statusText:
 		case <-time.After(10 * time.Millisecond):
 		case <-ctx.Done():
 			t.Fatal("high-rate timestamped aircraft pose was not buffered")
+		}
+	}
+	for outputs.Navigation.Latest(time.Now()).Status != navigation.StatusReady {
+		select {
+		case <-time.After(10 * time.Millisecond):
+		case <-ctx.Done():
+			t.Fatalf("navigation plane did not become ready: %#v", outputs.Navigation.Latest(time.Now()))
 		}
 	}
 }

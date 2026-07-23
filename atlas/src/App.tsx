@@ -19,8 +19,9 @@ const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage"
 const OperationsPage = lazy(() => import("./operations/OperationsPage").then((module) => ({ default: module.OperationsPage })));
 const EvidencePage = lazy(() => import("./evidence/EvidencePage").then((module) => ({ default: module.EvidencePage })));
 const FollowPage = lazy(() => import("./follow/FollowPage").then((module) => ({ default: module.FollowPage })));
+const IndoorPage = lazy(() => import("./indoor/IndoorPage").then((module) => ({ default: module.IndoorPage })));
 
-type WorkspaceView = "operations" | "follow" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence" | "history";
+type WorkspaceView = "operations" | "follow" | "indoor" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence" | "history";
 type AircraftSection = "overview" | "live" | "missions" | "settings";
 
 type GroundStationSnapshot = {
@@ -267,6 +268,14 @@ function App() {
         <nav className="workspace-nav" aria-label="Atlas workspace">
           <button
             type="button"
+            className={workspaceView === "indoor" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "indoor" ? "page" : undefined}
+            onClick={() => setWorkspaceView("indoor")}
+          >
+            Indoor
+          </button>
+          <button
+            type="button"
             className={workspaceView === "evidence" ? "workspace-nav__active" : undefined}
             aria-current={workspaceView === "evidence" ? "page" : undefined}
             onClick={() => {
@@ -382,6 +391,15 @@ function App() {
           <FollowPage
             nativeAvailable={nativeState === "available"}
             fleet={{ ...fleet, aircraft: operationalAircraft }}
+          />
+        </Suspense>
+      ) : workspaceView === "indoor" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening indoor spatial view…</p></main>}>
+          <IndoorPage
+            nativeAvailable={nativeState === "available"}
+            aircraft={operationalAircraft}
+            preferredDroneId={selectedDroneId}
+            onSelectAircraft={setSelectedDroneId}
           />
         </Suspense>
       ) : workspaceView === "fleet" ? (

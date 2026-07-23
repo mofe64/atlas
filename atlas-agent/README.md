@@ -19,6 +19,10 @@ load or create stable installation + drone ids
             -> receive local agent/drone/binding/link ids
                 -> send heartbeat every five seconds
                 -> sample latest MAVSDK telemetry once per second
+                -> ingest high-rate PX4 local position, odometry, estimator,
+                   optical-flow, and range state through MavlinkDirect
+                    -> expose ready/degraded/stale/unavailable navigation health
+                    -> retain bounded capture-time history on a local Unix socket
                 -> forward PX4 status text as discrete events
                 -> discover MAVSDK gimbals and the configured camera transport
                 -> run the supervised HailoRT/TAPPAS object-detection adapter
@@ -125,8 +129,10 @@ perception claim. Stop failure is reported but cannot block cancellation, RTL,
 or normal terminal cleanup.
 
 `mavsdk_server` runs beside Atlas Agent and owns the MAVLink connection to PX4.
-Atlas Agent consumes its local gRPC API; it does not access the serial device
-directly in this slice.
+Atlas Agent consumes its typed Telemetry and MavlinkDirect gRPC APIs; it does
+not access the serial device directly. The navigation plane is read-only apart
+from requesting message intervals and contains no arming, mode, setpoint, map,
+or movement-authority API.
 
 ## Run
 
@@ -229,7 +235,7 @@ build machine with Go 1.25 and Debian packaging tools:
 
 ```sh
 cd atlas-agent
-ATLAS_RELEASE_VERSION=0.1.8 packaging/build-deb.sh
+ATLAS_RELEASE_VERSION=0.1.17 packaging/build-deb.sh
 ```
 
 The package builder cross-compiles `atlas-agent` and `atlas-setup`, downloads
@@ -238,7 +244,7 @@ metadata-only Hailo adapter and a checksum-pinned Hailo-8L HEF. To build for a
 26 TOPS Hailo-8 AI HAT+, provide a compatible HEF and identify its target:
 
 ```sh
-ATLAS_RELEASE_VERSION=0.1.8 \
+ATLAS_RELEASE_VERSION=0.1.17 \
 ATLAS_HEF_MODEL_PATH=/path/to/objects-h8.hef \
 ATLAS_MODEL_ACCELERATOR=hailo-8 \
 packaging/build-deb.sh
@@ -285,9 +291,8 @@ directly, while the Agent talks to the local `mavsdk_server` gRPC endpoint.
 The installed H-Flow is configured through QGroundControl and fused by PX4; it
 is not owned by the spatial camera container. `atlas-setup doctor` does not yet
 validate H-Flow firmware, PX4 parameters, flow/range quality, or EKF fusion.
-Accepted OAK identifiers and the remaining H-Flow/endurance evidence are listed
-in
-[`docs/indoor-navigation-commissioning.md`](../docs/indoor-navigation-commissioning.md).
+The installed sensor baseline and intended indoor mission are summarized in
+[`docs/indoor-ops-plan.md`](../docs/indoor-ops-plan.md).
 
 Run the field diagnostic at any time:
 
@@ -361,6 +366,7 @@ detected Hailo-8 accelerator; build the package with the matching HEF instead.
 | `ATLAS_MAVLINK_SYSTEM_ID` | `1` | Expected MAVLink system ID |
 | `ATLAS_MAVLINK_COMPONENT_ID` | `1` | Expected MAVLink component ID |
 | `ATLAS_MAVSDK_GRPC_ADDR` | `127.0.0.1:50051` | Local `mavsdk_server` gRPC address |
+| `ATLAS_NAVIGATION_SOCKET_PATH` | Agent state directory; packaged install uses `/run/atlas-agent/navigation.sock` | Local capture-time navigation-state query socket |
 | `ATLAS_CAMERA_TRANSPORT` | `siyi_udp` | Camera control policy: `siyi_udp`, `mavsdk`, or explicitly dual `hybrid` |
 | `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI A8 Mini UDP SDK endpoint used when the selected transport includes SIYI |
 | `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest-snapshot publish interval (minimum `100ms`) |

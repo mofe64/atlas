@@ -11,6 +11,7 @@ flowchart LR
     Agent <-->|"local gRPC"| MAVSDK["mavsdk_server"]
     MAVSDK <-->|"MAVLink"| PX4["PX4"]
     Agent <-->|"Unix socket NDJSON"| Runtime["Perception runtime"]
+    Agent -->|"future read-only navigation input"| Indoor["Indoor Explore controller"]
     Agent --> Gimbal["Gimbal through MAVSDK"]
     Agent --> Camera["Camera through MAVSDK or SIYI UDP"]
 ```
@@ -34,11 +35,13 @@ The process starts in this order:
    await the provider adapter. The adapter reports health from `READY`; it does
    not run inference until Agent grants an activation claim.
 4. Connect telemetry subscriptions to `mavsdk_server`.
-5. Create one shared payload controller.
-6. Create the action executor and mission executor using that controller.
-7. Discover gimbal and configured camera capabilities.
-8. Start the reconnecting Native session.
-9. On `SIGINT` or `SIGTERM`, cancel the root context and close clients.
+5. Start the local read-only PX4/H-Flow navigation-state query socket for
+   diagnostics and the future Indoor Explore controller.
+6. Create one shared payload controller.
+7. Create the action executor and mission executor using that controller.
+8. Discover gimbal and configured camera capabilities.
+9. Start the reconnecting Native session.
+10. On `SIGINT` or `SIGTERM`, cancel the root context and close clients.
 
 Sharing one payload controller is an important invariant. It gives mission
 automation and manual control one place to arbitrate gimbal and camera intent.
@@ -55,6 +58,7 @@ and validates process configuration. Core variables are:
 | `ATLAS_DRONE_NAME` | `Atlas Drone` | Display name sent during registration |
 | `ATLAS_AGENT_VERSION` | Build version | Version sent during registration |
 | `ATLAS_MAVSDK_GRPC_ADDR` | `127.0.0.1:50051` | Local `mavsdk_server` API |
+| `ATLAS_NAVIGATION_SOCKET_PATH` | Under Agent state; packaged install uses `/run/atlas-agent/navigation.sock` | Read-only capture-time PX4/H-Flow state query socket |
 | `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest snapshot publication interval |
 | `ATLAS_CAMERA_TRANSPORT` | `siyi_udp` | `siyi_udp`, `mavsdk`, or `hybrid` |
 | `ATLAS_SIYI_CAMERA_ADDR` | `192.168.144.25:37260` | SIYI UDP camera-control endpoint |
@@ -373,8 +377,10 @@ atlas-spatial-runtime.service (optional, independent camera/ROS lifecycle)
   Agent-owned runtime socket.
 - The spatial runtime requires Docker but not Agent or MAVSDK. Camera/ROS
   failure therefore cannot stop flight telemetry or commands. Its current
-  versioned socket exposes local RGB-D health; Native data transport is a later
-  slice.
+  versioned socket exposes local RGB-D/BMI270 health, transform provenance, and
+  live non-authoritative VIO state. It also publishes a bounded VIO-local
+  `PointCloud2`; the next milestone is to transport that map through Agent and
+  render it in Atlas Native.
 
 See the unit files in
 [`atlas-agent/packaging/systemd/`](../atlas-agent/packaging/systemd/) and the

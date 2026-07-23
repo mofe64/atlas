@@ -162,7 +162,13 @@ func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
 			t.Fatalf("spatial service is coupled to Atlas Agent through %q:\n%s", forbidden, unit)
 		}
 	}
-	for _, expected := range []string{"Requires=docker.service", "EnvironmentFile=/etc/atlas-agent/spatial.env", "ExecStart=/usr/libexec/atlas-agent/atlas-spatial-container-run"} {
+	for _, expected := range []string{
+		"Requires=docker.service",
+		"EnvironmentFile=/etc/atlas-agent/spatial.env",
+		"ExecStart=/usr/libexec/atlas-agent/atlas-spatial-container-run",
+		"ExecStop=/usr/bin/docker stop --timeout 10 ${ATLAS_SPATIAL_CONTAINER_NAME}",
+		"TimeoutStopSec=20",
+	} {
 		if !strings.Contains(unit, expected) {
 			t.Fatalf("spatial unit missing %q:\n%s", expected, unit)
 		}
@@ -184,6 +190,10 @@ func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
 		`--env "ATLAS_SPATIAL_PROVIDER=`,
 		`--env "ATLAS_SPATIAL_DEVICE_ID=`,
 		`--env "ATLAS_SPATIAL_SOCKET_PATH=`,
+		`--env "ATLAS_SPATIAL_CLOUD_SOCKET_PATH=`,
+		`--env "ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH=`,
+		`--env "ATLAS_SPATIAL_VIO_ENABLED=`,
+		`--env "ATLAS_SPATIAL_LIVE_CLOUD_ENABLED=`,
 	} {
 		if !strings.Contains(launcherText, expected) {
 			t.Fatalf("spatial launcher does not explicitly pass parsed environment %q:\n%s", expected, launcher)
@@ -207,7 +217,9 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 		"atlas-spatial-runtime-check",
 		"99-atlas-depth-camera.rules",
 		"atlas-spatial-runtime.service",
+		"atlas-navigation-probe",
 		"ATLAS_SPATIAL_CONTAINER_IMAGE",
+		"packaging/depthai/.",
 		"ros2_ws/src",
 	} {
 		if !strings.Contains(build, expected) {
@@ -235,6 +247,17 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 	if strings.Contains(entrypointText, `device_id:="${ATLAS_SPATIAL_DEVICE_ID:-}"`) {
 		t.Fatalf("spatial entrypoint passes an explicitly empty ROS launch argument:\n%s", entrypoint)
 	}
+	for _, forbidden := range []string{
+		"ATLAS_SPATIAL_RECORDING_ENABLED",
+		"ATLAS_SPATIAL_RECORDING_ROOT",
+		"ATLAS_NAVIGATION_SOCKET_PATH",
+		"recording_enabled:=",
+		"navigation_socket_path:=",
+	} {
+		if strings.Contains(entrypointText, forbidden) {
+			t.Fatalf("spatial entrypoint retains obsolete recorder/comparison wiring %q:\n%s", forbidden, entrypoint)
+		}
+	}
 
 	dockerfilePath := filepath.Join("..", "..", "..", "atlas-spatial-runtime", "packaging", "Dockerfile")
 	dockerfile, err := os.ReadFile(dockerfilePath)
@@ -247,9 +270,24 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 		"-DWITH_UDEV=OFF",
 		"ENV LD_LIBRARY_PATH=/opt/atlas-depthai-libusb/lib",
 		"grep -F '/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0'",
+		"packaging/depthai",
+		"DEPTHAI_CORE_SOURCE_SHA256=f889d96a3458f7b9589db73f5ad1b33bee362a03171720aa6021b5f4132cbc60",
+		"ATLAS_DEPTHAI_VIO_IMU_ORDER",
+		"ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE",
 	} {
 		if !strings.Contains(dockerfileText, expected) {
 			t.Fatalf("spatial image does not preserve the validated DepthAI USB handoff %q:\n%s", expected, dockerfile)
+		}
+	}
+	for _, forbidden := range []string{
+		"ATLAS_SPATIAL_NATIVE_BASE",
+		"atlas-spatial-runtime-native",
+		"Dockerfile.native",
+		"ros-jazzy-rosbag2-storage-mcap",
+		"STOPSIGNAL",
+	} {
+		if strings.Contains(dockerfileText, forbidden) {
+			t.Fatalf("normal spatial image retains obsolete release/recording behavior %q:\n%s", forbidden, dockerfile)
 		}
 	}
 }
@@ -491,6 +529,7 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 		`ATLAS_FLIGHT_CONTROLLER_ENDPOINT="/dev/serial/by-id/usb-pixhawk"`,
 		`ATLAS_MAVSDK_SYSTEM_ADDRESS="serial:///dev/serial/by-id/usb-pixhawk:921600"`,
 		`ATLAS_CAMERA_TRANSPORT="siyi_udp"`,
+		`ATLAS_SPATIAL_CLOUD_SOCKET_PATH="/run/atlas-agent/spatial-cloud.sock"`,
 		`ATLAS_PERCEPTION_PROVIDER="hailo"`,
 		`ATLAS_TRACKER_ALGORITHM="byte_track"`,
 		`ATLAS_TRACKER_CMC_MAX_DIMENSION="320"`,
@@ -531,14 +570,51 @@ func TestRenderSpatialEnvironmentUsesVendorNeutralContract(t *testing.T) {
 		`ATLAS_SPATIAL_SOURCE_ID="front-depth"`,
 		`ATLAS_SPATIAL_DEVICE_ID="device-123"`,
 		`ATLAS_SPATIAL_SOCKET_PATH="/run/atlas-agent/spatial.sock"`,
+		`ATLAS_SPATIAL_CLOUD_SOCKET_PATH="/run/atlas-agent/spatial-cloud.sock"`,
+		`ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH="/var/lib/atlas-agent/spatial/transforms.v1.json"`,
+		`ATLAS_SPATIAL_VIO_ENABLED="true"`,
+		`ATLAS_SPATIAL_LIVE_CLOUD_ENABLED="true"`,
+		`ATLAS_SPATIAL_PX4_VIO_FUSION_ENABLED="false"`,
+		`ATLAS_SPATIAL_MOVEMENT_ENABLED="false"`,
 		`ATLAS_SPATIAL_CONTAINER_IMAGE="atlas-spatial-runtime:0.2.0"`,
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered spatial config missing %q:\n%s", expected, rendered)
 		}
 	}
-	if strings.Contains(rendered, "ATLAS_OAK") || strings.Contains(rendered, "ATLAS_DEPTHAI") {
-		t.Fatalf("stable configuration keys leaked a camera vendor:\n%s", rendered)
+	for _, forbidden := range []string{
+		"ATLAS_OAK",
+		"ATLAS_DEPTHAI",
+		"ATLAS_SPATIAL_RECORDING_ENABLED",
+		"ATLAS_SPATIAL_RECORDING_ROOT",
+		"ATLAS_NAVIGATION_SOCKET_PATH",
+		"ATLAS_SPATIAL_MAPPING_ENABLED",
+	} {
+		if strings.Contains(rendered, forbidden) {
+			t.Fatalf("stable spatial configuration retains forbidden key %q:\n%s", forbidden, rendered)
+		}
+	}
+}
+
+func TestEnsureSpatialTransformBundleSeedsOnceAndPreservesCommissionedFile(t *testing.T) {
+	paths := DefaultPaths("/")
+	missing := &fakeRunner{results: map[string]CommandResult{
+		"test -e " + paths.SpatialTransformBundle: {Err: errors.New("missing")},
+	}}
+	if err := ensureSpatialTransformBundle(context.Background(), missing, ApplyRunner{Runner: missing}, paths); err != nil {
+		t.Fatal(err)
+	}
+	expectedInstall := "install -D -m 0640 -o root -g atlas-agent " + paths.DefaultSpatialTransformBundle + " " + paths.SpatialTransformBundle
+	if !strings.Contains(strings.Join(missing.calls, "\n"), expectedInstall) {
+		t.Fatalf("transform seed calls = %#v", missing.calls)
+	}
+
+	existing := &fakeRunner{results: map[string]CommandResult{}}
+	if err := ensureSpatialTransformBundle(context.Background(), existing, ApplyRunner{Runner: existing}, paths); err != nil {
+		t.Fatal(err)
+	}
+	if len(existing.calls) != 1 || existing.calls[0] != "test -e "+paths.SpatialTransformBundle {
+		t.Fatalf("existing commissioned transform was not preserved: %#v", existing.calls)
 	}
 }
 

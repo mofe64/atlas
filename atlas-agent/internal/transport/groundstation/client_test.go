@@ -13,6 +13,7 @@ import (
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/identity"
 	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
+	"github.com/sunnyside/atlas/atlas-agent/internal/spatial"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -286,7 +287,7 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			ProtocolVersion:      "1",
 			HeartbeatInterval:    10 * time.Millisecond,
 			VehicleType:          "multicopter",
-		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor, followExecutor, newFrameDemand())
+		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, spatial.Outputs{}, fakeCommandExecutor{}, missionExecutor, followExecutor, newFrameDemand(), newSpatialDemand())
 	}()
 
 	select {

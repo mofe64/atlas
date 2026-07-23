@@ -82,7 +82,18 @@ class RuntimeCheckTests(unittest.TestCase):
             "provider": "depthai",
             "sourceId": "front-depth",
             "device": {"id": "device-123", "model": "camera", "connection": "usb3"},
-            "streams": {"color": {"fps": 15.0}, "depth": {"fps": 14.9}},
+            "streams": {
+                "color": {"fps": 15.0}, "depth": {"fps": 14.9},
+                "imu": {"status": "ready", "rateHz": 100.0, "ageMs": 5.0},
+            },
+            "vio": {
+                "status": "initializing",
+                "reason": "warming up",
+                "mappingEnabled": True,
+                "px4FusionEnabled": False,
+                "movementAuthority": False,
+            },
+            "transformBundle": {"sha256": "sha256:test", "bodyToOakStatus": "unmeasured", "bodyToHFlowStatus": "configured_unverified"},
             "syncSkewMs": 1.2,
             "calibrationHash": "sha256:abc",
             "lastError": "",
@@ -122,6 +133,49 @@ class RuntimeCheckTests(unittest.TestCase):
         self.assertEqual(flattened["DEVICE_ID"], "device-123")
         self.assertEqual(flattened["COLOR_FPS"], 15.0)
         self.assertEqual(flattened["DEPTH_FPS"], 14.9)
+        self.assertEqual(flattened["IMU_STATUS"], "ready")
+        self.assertEqual(flattened["VIO_STATUS"], "initializing")
+        self.assertTrue(flattened["VIO_MAPPING_ENABLED"])
+        self.assertFalse(flattened["VIO_PX4_FUSION_ENABLED"])
+        self.assertFalse(flattened["VIO_MOVEMENT_AUTHORITY"])
+        self.assertEqual(flattened["BODY_TO_HFLOW_STATUS"], "configured_unverified")
+
+    def test_live_probe_replaces_depthai_boot_transport_with_current_sysfs_speed(self):
+        payload = {
+            "protocolVersion": "1",
+            "ready": True,
+            "provider": "depthai",
+            "device": {
+                "id": "",
+                "model": "Movidius MyriadX",
+                "connection": "usb2-or-unbooted",
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            device = Path(temporary) / "bus" / "usb" / "devices" / "5-1"
+            device.mkdir(parents=True)
+            (device / "idVendor").write_text("03e7\n", encoding="utf-8")
+            (device / "idProduct").write_text("f63b\n", encoding="utf-8")
+            (device / "serial").write_text("19443010F122147E00\n", encoding="utf-8")
+            (device / "product").write_text("Movidius MyriadX\n", encoding="utf-8")
+            (device / "speed").write_text("5000\n", encoding="utf-8")
+
+            reconciled = runtime_check.reconcile_live_usb(payload, Path(temporary))
+
+        flattened = runtime_check._flat_probe(reconciled)
+        self.assertEqual(flattened["USB_TRANSPORT"], "usb3")
+        self.assertEqual(flattened["USB_SPEED_MBPS"], 5000)
+        self.assertEqual(flattened["DEVICE_ID"], "19443010F122147E00")
+
+    def test_live_probe_does_not_replace_non_depthai_transport(self):
+        payload = {
+            "protocolVersion": "1",
+            "provider": "synthetic",
+            "device": {"connection": "virtual"},
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            reconciled = runtime_check.reconcile_live_usb(payload, Path(temporary))
+        self.assertIs(reconciled, payload)
 
 
 if __name__ == "__main__":

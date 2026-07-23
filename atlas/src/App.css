@@ -1188,6 +1188,24 @@ summary {
   }
 }
 
+@media (max-width: 78rem) {
+  .operations-header {
+    flex-wrap: wrap;
+  }
+
+  .workspace-nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+    border-top: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+
+  .workspace-nav button {
+    flex: 1 0 auto;
+  }
+}
+
 @media (max-width: 34rem) {
   .operations-header {
     flex-wrap: wrap;
@@ -1200,8 +1218,8 @@ summary {
   }
 
   .workspace-nav button {
-    flex: 1;
-    min-width: 0;
+    flex: 1 0 4.75rem;
+    min-width: 4.75rem;
     padding-inline: 0.25rem;
     font-size: 0.58rem;
   }

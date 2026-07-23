@@ -13,7 +13,9 @@ import (
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/geolocation"
 	corepb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/core"
+	directpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/mavlink_direct"
 	telemetrypb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/telemetry"
+	"github.com/sunnyside/atlas/atlas-agent/internal/navigation"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -25,6 +27,7 @@ const (
 	aircraftAttitudeRateHz = 30.0
 	aircraftPositionRateHz = 10.0
 	aircraftVelocityRateHz = 20.0
+	navigationStateRateHz  = 20.0
 	autopilotTimeRateHz    = 2.0
 	rateRefreshInterval    = 30 * time.Second
 )
@@ -46,24 +49,29 @@ type aircraftPoseState struct {
 }
 
 type source struct {
-	logger    *slog.Logger
-	conn      *grpc.ClientConn
-	core      corepb.CoreServiceClient
-	telemetry telemetrypb.TelemetryServiceClient
+	logger     *slog.Logger
+	conn       *grpc.ClientConn
+	core       corepb.CoreServiceClient
+	direct     directpb.MavlinkDirectServiceClient
+	telemetry  telemetrypb.TelemetryServiceClient
+	navigation *navigation.Plane
 
-	mu              sync.RWMutex
-	snapshot        telemetry.Snapshot
-	connectionKnown bool
-	connected       bool
-	batteries       map[uint32]telemetry.Battery
-	pose            aircraftPoseState
-	geolocation     *geolocation.Foundation
+	mu                          sync.RWMutex
+	snapshot                    telemetry.Snapshot
+	connectionKnown             bool
+	connected                   bool
+	batteries                   map[uint32]telemetry.Battery
+	pose                        aircraftPoseState
+	navigationTargetSystemID    uint32
+	navigationTargetComponentID uint32
+	geolocation                 *geolocation.Foundation
 }
 
 type Outputs struct {
 	Snapshots   <-chan telemetry.Snapshot
 	StatusTexts <-chan telemetry.StatusTextEvent
 	Latest      func() (telemetry.Snapshot, bool)
+	Navigation  *navigation.Plane
 }
 
 // Start begins the MAVSDK subscriptions and returns a latest-only stream at the
@@ -90,11 +98,18 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 	if err != nil {
 		return Outputs{}, err
 	}
+	navigationPlane, err := navigation.NewPlane(navigation.DefaultConfig())
+	if err != nil {
+		_ = conn.Close()
+		return Outputs{}, err
+	}
 	s := &source{
-		logger:    logger,
-		conn:      conn,
-		core:      corepb.NewCoreServiceClient(conn),
-		telemetry: telemetrypb.NewTelemetryServiceClient(conn),
+		logger:     logger,
+		conn:       conn,
+		core:       corepb.NewCoreServiceClient(conn),
+		direct:     directpb.NewMavlinkDirectServiceClient(conn),
+		telemetry:  telemetrypb.NewTelemetryServiceClient(conn),
+		navigation: navigationPlane,
 		snapshot: telemetry.Snapshot{
 			Source: "mavsdk",
 		},
@@ -118,6 +133,7 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 	go s.streamRCStatus(ctx)
 	go s.streamHome(ctx)
 	go s.streamRawGPS(ctx)
+	go s.streamNavigation(ctx)
 	if foundation != nil {
 		go s.streamAttitudeQuaternion(ctx)
 		go s.streamUnixEpochTime(ctx)
@@ -131,7 +147,7 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
-	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current}, nil
+	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current, Navigation: navigationPlane}, nil
 }
 
 func (s *source) publish(ctx context.Context, updates chan telemetry.Snapshot, interval time.Duration) {
@@ -215,11 +231,14 @@ func (s *source) setRatesOnce(ctx context.Context) {
 	_, _ = s.telemetry.SetRateInAir(rateCtx, &telemetrypb.SetRateInAirRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateAltitude(rateCtx, &telemetrypb.SetRateAltitudeRequest{RateHz: mavsdkRateHz})
 	velocityResponse, velocityErr := s.telemetry.SetRateVelocityNed(rateCtx, &telemetrypb.SetRateVelocityNedRequest{RateHz: velocityRate})
-	_, _ = s.telemetry.SetRateHealth(rateCtx, &telemetrypb.SetRateHealthRequest{RateHz: mavsdkRateHz})
+	_, _ = s.telemetry.SetRateHealth(rateCtx, &telemetrypb.SetRateHealthRequest{RateHz: 5})
 	_, _ = s.telemetry.SetRateLandedState(rateCtx, &telemetrypb.SetRateLandedStateRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateRcStatus(rateCtx, &telemetrypb.SetRateRcStatusRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateHome(rateCtx, &telemetrypb.SetRateHomeRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateRawGps(rateCtx, &telemetrypb.SetRateRawGpsRequest{RateHz: mavsdkRateHz})
+	_, _ = s.telemetry.SetRateOdometry(rateCtx, &telemetrypb.SetRateOdometryRequest{RateHz: navigationStateRateHz})
+	_, _ = s.telemetry.SetRatePositionVelocityNed(rateCtx, &telemetrypb.SetRatePositionVelocityNedRequest{RateHz: navigationStateRateHz})
+	_, _ = s.telemetry.SetRateDistanceSensor(rateCtx, &telemetrypb.SetRateDistanceSensorRequest{RateHz: navigationStateRateHz})
 	if s.geolocation != nil {
 		if positionErr != nil || positionResponse.GetTelemetryResult().GetResult() != telemetrypb.TelemetryResult_RESULT_SUCCESS {
 			s.logger.Debug("high-rate aircraft position request was not accepted", "rate_hz", positionRate, "error", positionErr)
@@ -246,6 +265,7 @@ func (s *source) streamConnectionState(ctx context.Context) {
 			s.connectionKnown = true
 			s.connected = response.GetConnectionState().GetIsConnected()
 			s.mu.Unlock()
+			s.navigation.SetConnected(response.GetConnectionState().GetIsConnected(), time.Now())
 		}
 		sleepOrDone(ctx, streamRetryDelay)
 	}
@@ -518,6 +538,7 @@ func (s *source) streamHealth(ctx context.Context) {
 				break
 			}
 			health := response.GetHealth()
+			s.navigation.SetLocalPositionValid(health.GetIsLocalPositionOk(), time.Now())
 			value := telemetry.VehicleHealth{
 				GyrometerCalibrationOK:     health.GetIsGyrometerCalibrationOk(),
 				AccelerometerCalibrationOK: health.GetIsAccelerometerCalibrationOk(),

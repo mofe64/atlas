@@ -47,6 +47,12 @@ set -- \
     --env "ATLAS_SPATIAL_MODEL=${ATLAS_SPATIAL_MODEL:-}" \
     --env "ATLAS_SPATIAL_USB_TRANSPORT=${ATLAS_SPATIAL_USB_TRANSPORT:-unknown}" \
     --env "ATLAS_SPATIAL_SOCKET_PATH=${ATLAS_SPATIAL_SOCKET_PATH:-/run/atlas-agent/spatial.sock}" \
+    --env "ATLAS_SPATIAL_CLOUD_SOCKET_PATH=${ATLAS_SPATIAL_CLOUD_SOCKET_PATH:-/run/atlas-agent/spatial-cloud.sock}" \
+    --env "ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH=${ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH:-/var/lib/atlas-agent/spatial/transforms.v1.json}" \
+    --env "ATLAS_SPATIAL_VIO_ENABLED=${ATLAS_SPATIAL_VIO_ENABLED:-true}" \
+    --env "ATLAS_SPATIAL_LIVE_CLOUD_ENABLED=${ATLAS_SPATIAL_LIVE_CLOUD_ENABLED:-true}" \
+    --env "ATLAS_SPATIAL_PX4_VIO_FUSION_ENABLED=false" \
+    --env "ATLAS_SPATIAL_MOVEMENT_ENABLED=false" \
     --env HOME=/var/lib/atlas-agent/spatial \
     --env ROS_LOG_DIR=/var/lib/atlas-agent/spatial/log \
     --read-only \

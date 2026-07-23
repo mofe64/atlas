@@ -25,7 +25,7 @@ use super::{
         ground_station_to_agent, AgentPerception, AgentToGroundStation,
     },
     server::serve,
-    unix_time_ms, PerceptionStore,
+    unix_time_ms, PerceptionStore, SpatialStore,
 };
 
 #[tokio::test]
@@ -43,6 +43,7 @@ async fn grpc_registration_creates_and_closes_local_link() {
         Arc::clone(&database),
         command_router.clone(),
         perception.clone(),
+        SpatialStore::default(),
     ));
     let endpoint = format!("http://{address}");
     let mut client = loop {
@@ -603,6 +604,7 @@ async fn sitl_executes_hold_rtl_and_land_through_native_lifecycle() {
         Arc::clone(&database),
         command_router.clone(),
         PerceptionStore::default(),
+        SpatialStore::default(),
     ));
 
     let agent_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../atlas-agent");
@@ -757,6 +759,7 @@ async fn sitl_reconciles_native_run_after_agent_process_restart() {
         Arc::clone(&database),
         command_router.clone(),
         PerceptionStore::default(),
+        SpatialStore::default(),
     ));
     let agent_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../atlas-agent");
     let agent_binary = state_directory.join("atlas-agent-sitl");
@@ -1368,6 +1371,7 @@ async fn sitl_flies_response_patterns_with_continuous_video() {
         Arc::clone(&database),
         command_router.clone(),
         perception.clone(),
+        SpatialStore::default(),
     ));
 
     let agent_directory = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../atlas-agent");

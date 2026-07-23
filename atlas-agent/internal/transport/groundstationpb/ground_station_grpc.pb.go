@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	GroundStationService_OpenSession_FullMethodName          = "/atlas.groundstation.v1.GroundStationService/OpenSession"
 	GroundStationService_OpenPerceptionStream_FullMethodName = "/atlas.groundstation.v1.GroundStationService/OpenPerceptionStream"
+	GroundStationService_OpenSpatialStream_FullMethodName    = "/atlas.groundstation.v1.GroundStationService/OpenSpatialStream"
 )
 
 // GroundStationServiceClient is the client API for GroundStationService service.
@@ -37,6 +38,10 @@ type GroundStationServiceClient interface {
 	// The first message must register the perception stream against an active
 	// agent session.
 	OpenPerceptionStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentPerception, GroundStationPerception], error)
+	// Spatial snapshots have their own stream because a complete 100,000-point
+	// cloud is intentionally much larger than telemetry or perception metadata.
+	// Congestion here must never delay command acknowledgements or heartbeats.
+	OpenSpatialStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentSpatial, GroundStationSpatial], error)
 }
 
 type groundStationServiceClient struct {
@@ -73,6 +78,19 @@ func (c *groundStationServiceClient) OpenPerceptionStream(ctx context.Context, o
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GroundStationService_OpenPerceptionStreamClient = grpc.BidiStreamingClient[AgentPerception, GroundStationPerception]
 
+func (c *groundStationServiceClient) OpenSpatialStream(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[AgentSpatial, GroundStationSpatial], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &GroundStationService_ServiceDesc.Streams[2], GroundStationService_OpenSpatialStream_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[AgentSpatial, GroundStationSpatial]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GroundStationService_OpenSpatialStreamClient = grpc.BidiStreamingClient[AgentSpatial, GroundStationSpatial]
+
 // GroundStationServiceServer is the server API for GroundStationService service.
 // All implementations must embed UnimplementedGroundStationServiceServer
 // for forward compatibility.
@@ -87,6 +105,10 @@ type GroundStationServiceServer interface {
 	// The first message must register the perception stream against an active
 	// agent session.
 	OpenPerceptionStream(grpc.BidiStreamingServer[AgentPerception, GroundStationPerception]) error
+	// Spatial snapshots have their own stream because a complete 100,000-point
+	// cloud is intentionally much larger than telemetry or perception metadata.
+	// Congestion here must never delay command acknowledgements or heartbeats.
+	OpenSpatialStream(grpc.BidiStreamingServer[AgentSpatial, GroundStationSpatial]) error
 	mustEmbedUnimplementedGroundStationServiceServer()
 }
 
@@ -102,6 +124,9 @@ func (UnimplementedGroundStationServiceServer) OpenSession(grpc.BidiStreamingSer
 }
 func (UnimplementedGroundStationServiceServer) OpenPerceptionStream(grpc.BidiStreamingServer[AgentPerception, GroundStationPerception]) error {
 	return status.Errorf(codes.Unimplemented, "method OpenPerceptionStream not implemented")
+}
+func (UnimplementedGroundStationServiceServer) OpenSpatialStream(grpc.BidiStreamingServer[AgentSpatial, GroundStationSpatial]) error {
+	return status.Errorf(codes.Unimplemented, "method OpenSpatialStream not implemented")
 }
 func (UnimplementedGroundStationServiceServer) mustEmbedUnimplementedGroundStationServiceServer() {}
 func (UnimplementedGroundStationServiceServer) testEmbeddedByValue()                              {}
@@ -138,6 +163,13 @@ func _GroundStationService_OpenPerceptionStream_Handler(srv interface{}, stream 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GroundStationService_OpenPerceptionStreamServer = grpc.BidiStreamingServer[AgentPerception, GroundStationPerception]
 
+func _GroundStationService_OpenSpatialStream_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(GroundStationServiceServer).OpenSpatialStream(&grpc.GenericServerStream[AgentSpatial, GroundStationSpatial]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type GroundStationService_OpenSpatialStreamServer = grpc.BidiStreamingServer[AgentSpatial, GroundStationSpatial]
+
 // GroundStationService_ServiceDesc is the grpc.ServiceDesc for GroundStationService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -155,6 +187,12 @@ var GroundStationService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "OpenPerceptionStream",
 			Handler:       _GroundStationService_OpenPerceptionStream_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "OpenSpatialStream",
+			Handler:       _GroundStationService_OpenSpatialStream_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

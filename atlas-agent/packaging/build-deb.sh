@@ -195,6 +195,7 @@ printf '[atlas-package] building linux/arm64 binaries\n'
   cd "${AGENT_DIR}"
   RELEASE_LDFLAGS="-s -w -X github.com/sunnyside/atlas/atlas-agent/internal/buildinfo.Version=${VERSION}"
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "${RELEASE_LDFLAGS}" -o "${PACKAGE_ROOT}/usr/bin/atlas-agent" ./cmd/atlas-agent
+  CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "${RELEASE_LDFLAGS}" -o "${PACKAGE_ROOT}/usr/bin/atlas-navigation-probe" ./cmd/atlas-navigation-probe
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "${RELEASE_LDFLAGS}" -o "${PACKAGE_ROOT}/usr/bin/atlas-setup" ./cmd/atlas-setup
 )
 
@@ -240,11 +241,14 @@ install -m 0755 "${SCRIPT_DIR}/hailo/atlas-hailo-container-run" "${PACKAGE_ROOT}
 install -m 0755 "${SCRIPT_DIR}/spatial/atlas-spatial-container-run" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-spatial-container-run"
 install -m 0755 "${SCRIPT_DIR}/spatial/atlas-spatial-runtime-check" "${PACKAGE_ROOT}/usr/libexec/atlas-agent/atlas-spatial-runtime-check"
 install -m 0644 "${SCRIPT_DIR}/spatial/99-atlas-depth-camera.rules" "${PACKAGE_ROOT}/usr/lib/udev/rules.d/99-atlas-depth-camera.rules"
-mkdir -p "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws"
+mkdir -p \
+  "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/depthai" \
+  "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws"
 install -m 0644 "${SPATIAL_RUNTIME_DIR}/README.md" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/README.md"
 install -m 0644 "${SPATIAL_RUNTIME_DIR}/spatial-runtime.env" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/spatial-runtime.env"
 install -m 0644 "${SPATIAL_RUNTIME_DIR}/packaging/Dockerfile" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/Dockerfile"
 install -m 0755 "${SPATIAL_RUNTIME_DIR}/packaging/entrypoint.sh" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/entrypoint.sh"
+cp -a "${SPATIAL_RUNTIME_DIR}/packaging/depthai/." "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/packaging/depthai/"
 cp -a "${SPATIAL_RUNTIME_DIR}/ros2_ws/src" "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws/src"
 find "${PACKAGE_ROOT}/usr/share/atlas-agent/spatial-runtime/ros2_ws/src" -type d -name __pycache__ -prune -exec rm -rf {} +
 install -m 0755 "${AGENT_DIR}/scripts/atlas-hailort-adapter.py" "${PACKAGE_ROOT}/usr/share/atlas-agent/hailo-container/atlas-hailort-adapter.py"

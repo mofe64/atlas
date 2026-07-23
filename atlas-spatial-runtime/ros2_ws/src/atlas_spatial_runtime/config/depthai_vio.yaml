@@ -1,0 +1,28 @@
+/**:
+  ros__parameters:
+    driver:
+      # Setup substitutes the selected OAK MXID here. An empty value retains
+      # DepthAI's single-device discovery behavior.
+      i_device_id: "$(var device_id)"
+      i_enable_ir: false
+    pipeline_gen:
+      i_pipeline_type: rgbd
+      i_nn_type: none
+      i_enable_imu: true
+      i_enable_vio: true
+    imu:
+      i_batch_report_threshold: 1
+      i_max_batch_reports: 10
+      i_enable_rotation: false
+    vio:
+      i_publish_topic: true
+      i_publish_tf: false
+      # The driver default is 60 Hz. On the Pi that can outpace Basalt and
+      # fill its bounded optical-flow queue, backpressuring all image streams.
+      # Twenty hertz reduces discarded Basalt work and leaves Pi compute for
+      # the bounded live cloud. The core patch still guarantees overload drops
+      # obsolete VIO frames instead of blocking RGB-D.
+      i_fps: 20.0
+      i_imu_update_rate: 400
+      i_frame_id: vio_odom
+      i_child_frame_id: oak_mount

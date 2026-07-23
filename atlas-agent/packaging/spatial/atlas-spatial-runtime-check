@@ -118,6 +118,9 @@ def _flat_probe(payload: dict[str, object]) -> dict[str, object]:
     streams = payload.get("streams") if isinstance(payload.get("streams"), dict) else {}
     color = streams.get("color") if isinstance(streams.get("color"), dict) else {}
     depth = streams.get("depth") if isinstance(streams.get("depth"), dict) else {}
+    imu = streams.get("imu") if isinstance(streams.get("imu"), dict) else {}
+    vio = payload.get("vio") if isinstance(payload.get("vio"), dict) else {}
+    transforms = payload.get("transformBundle") if isinstance(payload.get("transformBundle"), dict) else {}
     device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
     return {
         "READY": bool(payload.get("ready")),
@@ -128,12 +131,55 @@ def _flat_probe(payload: dict[str, object]) -> dict[str, object]:
         "DEVICE_ID": device.get("id", ""),
         "MODEL": device.get("model", ""),
         "USB_TRANSPORT": device.get("connection", "unknown"),
+        "USB_SPEED_MBPS": device.get("speedMbps", 0),
         "COLOR_FPS": color.get("fps", 0),
         "DEPTH_FPS": depth.get("fps", 0),
+        "IMU_STATUS": imu.get("status", "unavailable"),
+        "IMU_RATE_HZ": imu.get("rateHz", 0),
+        "IMU_AGE_MS": imu.get("ageMs", ""),
+        "VIO_STATUS": vio.get("status", "unavailable"),
+        "VIO_REASON": vio.get("reason", ""),
+        "VIO_MAPPING_ENABLED": vio.get("mappingEnabled", False),
+        "VIO_PX4_FUSION_ENABLED": vio.get("px4FusionEnabled", False),
+        "VIO_MOVEMENT_AUTHORITY": vio.get("movementAuthority", False),
+        "TRANSFORM_BUNDLE_HASH": transforms.get("sha256", ""),
+        "BODY_TO_OAK_STATUS": transforms.get("bodyToOakStatus", "unmeasured"),
+        "BODY_TO_HFLOW_STATUS": transforms.get("bodyToHFlowStatus", "unmeasured"),
         "SYNC_SKEW_MS": payload.get("syncSkewMs", 0),
         "CALIBRATION_HASH": payload.get("calibrationHash", ""),
         "LAST_ERROR": payload.get("lastError", ""),
     }
+
+
+def reconcile_live_usb(
+    payload: dict[str, object], sysfs_root: Path, preferred_device_id: str = ""
+) -> dict[str, object]:
+    """Replace boot-time USB metadata with the live host observation.
+
+    DepthAI commonly enumerates at 480 Mb/s before firmware upload and then at
+    5000 Mb/s while streaming. The runtime socket carries the immutable launch
+    metadata, so the host-side diagnostic reconciles it with sysfs at probe
+    time instead of reporting the bootloader state as the live connection.
+    """
+    if payload.get("provider") != "depthai":
+        return payload
+    existing_device = payload.get("device")
+    if not isinstance(existing_device, dict):
+        existing_device = {}
+    selected_id = preferred_device_id or str(existing_device.get("id", ""))
+    observed = discover(sysfs_root, selected_id)
+    if not bool(observed.get("DEVICE_PRESENT")):
+        return payload
+    reconciled = dict(payload)
+    device = dict(existing_device)
+    device["connection"] = observed.get("USB_TRANSPORT", "unknown")
+    device["speedMbps"] = observed.get("USB_SPEED_MBPS", 0)
+    if not device.get("id") and observed.get("DEVICE_ID"):
+        device["id"] = observed["DEVICE_ID"]
+    if not device.get("model") and observed.get("MODEL"):
+        device["model"] = observed["MODEL"]
+    reconciled["device"] = device
+    return reconciled
 
 
 def _print_values(values: dict[str, object]) -> None:
@@ -155,7 +201,12 @@ def main() -> int:
     parser.add_argument("--device-id", default="")
     args = parser.parse_args()
     try:
-        values = discover(Path(args.sysfs_root), args.device_id) if args.discover else probe(args.socket, args.timeout)
+        if args.discover:
+            values = discover(Path(args.sysfs_root), args.device_id)
+        else:
+            values = reconcile_live_usb(
+                probe(args.socket, args.timeout), Path(args.sysfs_root), args.device_id
+            )
         if args.json:
             print(json.dumps(values, separators=(",", ":")))
         else:

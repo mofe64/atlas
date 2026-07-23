@@ -6,7 +6,8 @@ from array import array
 
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import CameraInfo, Image
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import CameraInfo, Image, Imu
 
 
 class SyntheticProvider(Node):
@@ -22,12 +23,15 @@ class SyntheticProvider(Node):
         self.color_info = self.create_publisher(CameraInfo, "/atlas/spatial/color/camera_info", 10)
         self.depth = self.create_publisher(Image, "/atlas/spatial/aligned_depth/image_rect", 10)
         self.depth_info = self.create_publisher(CameraInfo, "/atlas/spatial/aligned_depth/camera_info", 10)
+        self.imu = self.create_publisher(Imu, "/atlas/spatial/imu/data", 50)
+        self.vio = self.create_publisher(Odometry, "/atlas/spatial/vio/odometry", 20)
         self.timer = self.create_timer(1.0 / fps, self.publish_bundle)
+        self.imu_timer = self.create_timer(0.01, self.publish_imu)
 
     def camera_info(self, stamp) -> CameraInfo:
         message = CameraInfo()
         message.header.stamp = stamp
-        message.header.frame_id = "front_depth_color_optical_frame"
+        message.header.frame_id = "oak_rgb_camera_optical_frame"
         message.width = self.width
         message.height = self.height
         focal = float(self.width)
@@ -62,12 +66,30 @@ class SyntheticProvider(Node):
         self.depth.publish(depth)
         self.depth_info.publish(info)
 
+        odometry = Odometry()
+        odometry.header.stamp = stamp
+        odometry.header.frame_id = "vio_odom"
+        odometry.child_frame_id = "oak_mount"
+        odometry.pose.pose.orientation.w = 1.0
+        self.vio.publish(odometry)
+
+    def publish_imu(self) -> None:
+        message = Imu()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.header.frame_id = "oak_imu_frame"
+        message.orientation_covariance[0] = -1.0
+        message.linear_acceleration.z = 9.80665
+        self.imu.publish(message)
+
 
 def main() -> None:
     rclpy.init()
     node = SyntheticProvider()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()

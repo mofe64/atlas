@@ -15,6 +15,11 @@ service GroundStationService {
   // The first message must register the perception stream against an active
   // agent session.
   rpc OpenPerceptionStream(stream AgentPerception) returns (stream GroundStationPerception);
+
+  // Spatial snapshots have their own stream because a complete 100,000-point
+  // cloud is intentionally much larger than telemetry or perception metadata.
+  // Congestion here must never delay command acknowledgements or heartbeats.
+  rpc OpenSpatialStream(stream AgentSpatial) returns (stream GroundStationSpatial);
 }
 
 message AgentToGroundStation {
@@ -63,6 +68,82 @@ message GroundStationPerception {
     PerceptionFrameSubscription frame_subscription = 2;
     PerceptionCountingRuleSet counting_rules = 3;
   }
+}
+
+// Spatial transport carries complete, replaceable map snapshots. `latest-only`
+// describes queue behaviour: it never means a partial or sampled point cloud.
+message AgentSpatial {
+  string session_id = 1;
+  string drone_id = 2;
+
+  oneof payload {
+    SpatialStreamRegistration registration = 3;
+    SpatialCloudSnapshot cloud = 4;
+  }
+}
+
+message GroundStationSpatial {
+  oneof payload {
+    SpatialStreamAccepted stream_accepted = 1;
+    SpatialCloudSubscription cloud_subscription = 2;
+  }
+}
+
+enum SpatialCloudSubscriptionAction {
+  SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED = 0;
+  SPATIAL_CLOUD_SUBSCRIPTION_ACTION_START_OR_RENEW = 1;
+  SPATIAL_CLOUD_SUBSCRIPTION_ACTION_STOP = 2;
+}
+
+// Native renews a short lease only while the indoor view is mounted. The
+// runtime may continue building its bounded map, but the Agent suppresses the
+// expensive radio transfer when nobody is viewing it.
+message SpatialCloudSubscription {
+  string subscription_id = 1;
+  string purpose = 2;
+  SpatialCloudSubscriptionAction action = 3;
+  int64 lease_duration_ms = 4;
+}
+
+message SpatialStreamRegistration {
+  string stream_id = 1;
+  string installation_id = 2;
+  string protocol_version = 3;
+  string source_id = 4;
+  uint32 maximum_points = 5;
+  int64 observed_at_unix_ms = 6;
+}
+
+message SpatialStreamAccepted {
+  string stream_id = 1;
+  int64 accepted_at_unix_ms = 2;
+}
+
+message SpatialCloudSnapshot {
+  string source_id = 1;
+  string stream_epoch = 2;
+  uint64 sequence = 3;
+  int64 observed_at_unix_ms = 4;
+  int64 capture_ns = 5;
+  string frame_id = 6;
+  float voxel_size_m = 7;
+  uint32 point_count = 8;
+  // Tightly packed little-endian XYZ float32 triples: exactly 12 bytes/point.
+  bytes xyz_f32_le = 9;
+  SpatialPose pose = 10;
+}
+
+message SpatialPose {
+  int64 capture_ns = 1;
+  string frame_id = 2;
+  string child_frame_id = 3;
+  double x = 4;
+  double y = 5;
+  double z = 6;
+  double qw = 7;
+  double qx = 8;
+  double qy = 9;
+  double qz = 10;
 }
 
 enum PerceptionFrameSubscriptionAction {

@@ -1,0 +1,71 @@
+{
+  "schema": "atlas.transform-bundle/v1",
+  "bundleId": "ariadne-indoor-foundation-v3-offline-optical-chain",
+  "aircraftId": "ariadne-robot",
+  "createdAt": "2026-07-22T00:00:00Z",
+  "conventions": {
+    "handedness": "right-handed",
+    "translation": "child origin expressed in parent-frame axes, metres",
+    "rotation": "unit quaternion WXYZ rotating child-frame vectors into parent-frame vectors",
+    "pointTransform": "p_parent = R_parent_from_child * p_child + translationM"
+  },
+  "frames": {
+    "body_frd": "PX4 aircraft body: origin at aircraft centre; +X forward, +Y right, +Z down",
+    "oak_mount": "OAK CAM_A/RGB reference origin using DepthAI RDF axes: +X right, +Y down, +Z forward",
+    "oak_rgb_camera_optical_frame": "DepthAI ROS aligned RGB/depth optical frame under the current rs_compat profile: +X right, +Y down, +Z forward",
+    "hflow_flow_frd": "H-Flow optical-flow focal-point frame configured with PX4 rotation 0",
+    "hflow_range_frd": "H-Flow range-origin frame configured with PX4 rotation 0"
+  },
+  "transforms": [
+    {
+      "parentFrame": "body_frd",
+      "childFrame": "oak_mount",
+      "status": "configured_unverified",
+      "translationM": {"x": 0.15, "y": 0.0, "z": 0.0},
+      "rotationWXYZ": {"w": 0.5, "x": 0.5, "y": 0.5, "z": 0.5},
+      "provenance": {
+        "method": "operator-described approximate physical mount; precision measurement and motion-sign validation pending",
+        "reportedAt": "2026-07-22",
+        "mountDescription": "forward-facing, upright, centred laterally, approximately 0.15 m forward of aircraft centre, approximately level in Z",
+        "referencePoint": "aircraft centre to OAK CAM_A/RGB reference origin; exact lens/reference point requires confirmation",
+        "deviceId": "19443010F122147E00",
+        "calibrationHash": "sha256:66d9961eaba0ba63bdcc225d7aae453cf6a4c0efcb9df2582b1f91ad69bea8de"
+      }
+    },
+    {
+      "parentFrame": "oak_mount",
+      "childFrame": "oak_rgb_camera_optical_frame",
+      "status": "configured_unverified",
+      "translationM": {"x": 0.0, "y": 0.0, "z": 0.0},
+      "rotationWXYZ": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0},
+      "provenance": {
+        "method": "DepthAI ROS v3.2.1 rs_compat aligned-depth frame contract; confirm the recorded CameraInfo frame ID on 0.1.17 before use",
+        "driverFrame": "oak_rgb_camera_optical_frame",
+        "referenceFrame": "oak_mount",
+        "validation": "software frame identity configured for offline evaluation; live recorded frame-name confirmation pending"
+      }
+    },
+    {
+      "parentFrame": "body_frd",
+      "childFrame": "hflow_flow_frd",
+      "status": "configured_unverified",
+      "translationM": {"x": 0.045, "y": -0.05, "z": 0.0},
+      "rotationWXYZ": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0},
+      "provenance": {
+        "method": "PX4 configured values; physical measurement and motion-sign validation pending",
+        "parameters": {"EKF2_OF_POS_X": 0.045, "EKF2_OF_POS_Y": -0.05, "EKF2_OF_POS_Z": 0.0, "SENS_FLOW_ROT": 0}
+      }
+    },
+    {
+      "parentFrame": "body_frd",
+      "childFrame": "hflow_range_frd",
+      "status": "configured_unverified",
+      "translationM": {"x": 0.0, "y": 0.0, "z": 0.0},
+      "rotationWXYZ": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0},
+      "provenance": {
+        "method": "PX4 configured values; physical range-origin measurement pending",
+        "parameters": {"EKF2_RNG_POS_X": 0.0, "EKF2_RNG_POS_Y": 0.0, "EKF2_RNG_POS_Z": 0.0, "SENS_FLOW_ROT": 0}
+      }
+    }
+  ]
+}

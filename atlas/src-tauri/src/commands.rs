@@ -208,6 +208,65 @@ pub(crate) fn perception_snapshot(
     state.perception.snapshot(drone_id.as_deref())
 }
 
+#[tauri::command]
+pub(crate) fn spatial_snapshot(
+    state: State<'_, AppState>,
+    drone_id: Option<String>,
+) -> Option<crate::ground_station::SpatialSnapshot> {
+    state.spatial.snapshot(drone_id.as_deref())
+}
+
+#[tauri::command]
+pub(crate) fn spatial_frame(
+    state: State<'_, AppState>,
+    drone_id: String,
+    after_stream_epoch: Option<String>,
+    after_sequence: u64,
+) -> Result<Response, String> {
+    state
+        .spatial
+        .frame_packet(&drone_id, after_stream_epoch.as_deref(), after_sequence)
+        .map(Response::new)
+}
+
+#[tauri::command]
+pub(crate) async fn spatial_subscription_start(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+    lease_duration_ms: i64,
+) -> Result<(), String> {
+    state
+        .spatial
+        .start_or_renew_subscription(&drone_id, &subscription_id, lease_duration_ms)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn spatial_subscription_renew(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+    lease_duration_ms: i64,
+) -> Result<(), String> {
+    state
+        .spatial
+        .start_or_renew_subscription(&drone_id, &subscription_id, lease_duration_ms)
+        .await
+}
+
+#[tauri::command]
+pub(crate) async fn spatial_subscription_stop(
+    state: State<'_, AppState>,
+    drone_id: String,
+    subscription_id: String,
+) -> Result<(), String> {
+    state
+        .spatial
+        .stop_subscription(&drone_id, &subscription_id)
+        .await
+}
+
 /// Reads durable lifecycle summaries independently of the ephemeral live-view
 /// cache. Operator selection uses the exact session/track identity from here.
 #[tauri::command]

@@ -3,11 +3,9 @@ FROM ros:jazzy-ros-base-noble AS depthai-libusb-builder
 ARG DEBIAN_FRONTEND=noninteractive
 ARG DEPTHAI_LIBUSB_REF=d631db2d91ce72f79ac296e3ff724eee98ad0c46
 
-# The ROS Jazzy DepthAI v3 binary links Ubuntu's udev-backed libusb. Inside a
-# container it can miss the OAK's firmware re-enumeration and fail with
-# X_LINK_DEVICE_NOT_FOUND. Build the exact libusb revision pinned by DepthAI
-# 3.6.1, using its netlink backend, so the final image can override only this
-# dependency without forking the ROS driver or the DepthAI core.
+# Ubuntu's udev-backed libusb can lose the OAK while firmware changes its USB
+# identity. Build DepthAI's pinned libusb revision with its netlink backend so
+# discovery survives that re-enumeration inside the container.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
@@ -33,11 +31,75 @@ RUN apt-get update \
         libusb-1.0.so \
         /opt/atlas-depthai-libusb/lib/libusb-1.0.so.0
 
+FROM ros:jazzy-ros-base-noble AS depthai-vio-builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG DEPTHAI_CORE_VERSION=3.6.1
+ARG DEPTHAI_CORE_DEBIAN_REVISION=2noble
+ARG DEPTHAI_CORE_SOURCE_SHA256=f889d96a3458f7b9589db73f5ad1b33bee362a03171720aa6021b5f4132cbc60
+ARG DEPTHAI_CORE_ATLAS_REVISION=atlas2
+
+# Rebuild the exact ROS source package with the two narrow Basalt input fixes.
+# The distinct +atlas2 revision makes the deviation visible to dpkg and doctor.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        devscripts \
+        dpkg-dev \
+        patch \
+        ros2-testing-apt-source \
+    && apt-get update \
+    && apt-get build-dep -y ros-jazzy-depthai-v3
+
+WORKDIR /src
+RUN apt-get source ros-jazzy-depthai-v3 \
+    && printf '%s  %s\n' \
+        "${DEPTHAI_CORE_SOURCE_SHA256}" \
+        "ros-jazzy-depthai-v3_${DEPTHAI_CORE_VERSION}.orig.tar.gz" \
+        | sha256sum -c -
+
+COPY packaging/depthai/AtlasMonotonicImuQueue.hpp /src/AtlasMonotonicImuQueue.hpp
+COPY packaging/depthai/AtlasLatestQueue.hpp /src/AtlasLatestQueue.hpp
+COPY packaging/depthai/test_monotonic_imu_queue.cpp /src/test_monotonic_imu_queue.cpp
+COPY packaging/depthai/test_latest_queue.cpp /src/test_latest_queue.cpp
+COPY packaging/depthai/depthai-v3.6.1-basalt-imu-order.patch /src/depthai-v3.6.1-basalt-imu-order.patch
+
+RUN c++ -std=c++17 -pthread -Wall -Wextra -Werror \
+        -I /src \
+        /src/test_monotonic_imu_queue.cpp \
+        -o /src/test-monotonic-imu-queue \
+    && /src/test-monotonic-imu-queue \
+    && c++ -std=c++17 -Wall -Wextra -Werror \
+        -I /src \
+        /src/test_latest_queue.cpp \
+        -o /src/test-latest-queue \
+    && /src/test-latest-queue \
+    && test "$(dpkg-parsechangelog \
+        --file "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}/debian/changelog" \
+        --show-field Version)" = "${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}" \
+    && cp \
+        /src/AtlasMonotonicImuQueue.hpp \
+        "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}/src/basalt/AtlasMonotonicImuQueue.hpp" \
+    && cp \
+        /src/AtlasLatestQueue.hpp \
+        "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}/src/basalt/AtlasLatestQueue.hpp" \
+    && patch \
+        --directory "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}" \
+        --strip 1 \
+        --input /src/depthai-v3.6.1-basalt-imu-order.patch \
+    && sed -i \
+        "1s/${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}/${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}+${DEPTHAI_CORE_ATLAS_REVISION}/" \
+        "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}/debian/changelog" \
+    && cd "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}" \
+    && DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage --build=binary --no-sign
+
 FROM ros:jazzy-ros-base-noble
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG ATLAS_SPATIAL_VERSION=0.1.0-dev
 ARG DEPTHAI_CORE_VERSION=3.6.1
+ARG DEPTHAI_CORE_DEBIAN_REVISION=2noble
+ARG DEPTHAI_CORE_ATLAS_REVISION=atlas2
 ARG DEPTHAI_ROS_VERSION=3.2.1
 
 RUN apt-get update \
@@ -49,24 +111,34 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ros-jazzy-depth-image-proc \
         ros-jazzy-depthai-ros-v3 \
-        ros-jazzy-rosbag2-storage-mcap \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=depthai-vio-builder \
+    /src/ros-jazzy-depthai-v3_3.6.1-2noble+atlas2_arm64.deb \
+    /tmp/ros-jazzy-depthai-v3-atlas.deb
+
+RUN dpkg --install /tmp/ros-jazzy-depthai-v3-atlas.deb \
+    && rm /tmp/ros-jazzy-depthai-v3-atlas.deb \
     && core_version="$(dpkg-query -W -f='${Version}' ros-jazzy-depthai-v3)" \
     && driver_version="$(dpkg-query -W -f='${Version}' ros-jazzy-depthai-ros-driver-v3)" \
-    && case "${core_version}" in "${DEPTHAI_CORE_VERSION}-"*) ;; *) printf 'unsupported DepthAI core package: %s\n' "${core_version}" >&2; exit 1;; esac \
+    && test "${core_version}" = "${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}+${DEPTHAI_CORE_ATLAS_REVISION}" \
     && case "${driver_version}" in "${DEPTHAI_ROS_VERSION}-"*) ;; *) printf 'unsupported DepthAI ROS driver package: %s\n' "${driver_version}" >&2; exit 1;; esac \
-    && rm -rf /var/lib/apt/lists/*
+    && strings /opt/ros/jazzy/lib/*/libdepthai_v3-core.so \
+        | grep -F 'ATLAS_DEPTHAI_VIO_IMU_ORDER' \
+    && strings /opt/ros/jazzy/lib/*/libdepthai_v3-core.so \
+        | grep -F 'ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE'
 
 COPY --from=depthai-libusb-builder /opt/atlas-depthai-libusb /opt/atlas-depthai-libusb
 
 ENV LD_LIBRARY_PATH=/opt/atlas-depthai-libusb/lib
 
-# Fail the image build if the DepthAI core does not resolve the private libusb.
-# This protects the workaround from silently disappearing during ROS upgrades.
 RUN depthai_core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)" \
     && test -n "${depthai_core}" \
     && ldd "${depthai_core}" \
         | grep -F '/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0'
 
+# Normal Atlas changes start here, after the expensive native dependency
+# layers. Docker reuses those layers unless the pinned inputs or patches change.
 COPY ros2_ws/src /workspace/src
 RUN . /opt/ros/jazzy/setup.sh \
     && cd /workspace \
@@ -76,11 +148,15 @@ COPY packaging/entrypoint.sh /usr/local/bin/atlas-spatial-entrypoint
 RUN chmod 0755 /usr/local/bin/atlas-spatial-entrypoint \
     && printf '%s\n' "${ATLAS_SPATIAL_VERSION}" > /opt/atlas-spatial-runtime/VERSION
 
+LABEL org.opencontainers.image.title="Atlas Spatial Runtime" \
+      io.sunnyside.atlas.spatial-version="${ATLAS_SPATIAL_VERSION}"
+
 ENV ROS_DISTRO=jazzy \
     ROS_LOCALHOST_ONLY=1 \
     DEPTHAI_TELEMETRY=0 \
     ATLAS_SPATIAL_PROVIDER=synthetic \
     ATLAS_SPATIAL_SOURCE_ID=front-depth \
-    ATLAS_SPATIAL_SOCKET_PATH=/run/atlas-agent/spatial.sock
+    ATLAS_SPATIAL_SOCKET_PATH=/run/atlas-agent/spatial.sock \
+    ATLAS_SPATIAL_CLOUD_SOCKET_PATH=/run/atlas-agent/spatial-cloud.sock
 
 ENTRYPOINT ["/usr/local/bin/atlas-spatial-entrypoint"]

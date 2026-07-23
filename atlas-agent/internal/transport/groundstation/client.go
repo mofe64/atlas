@@ -15,6 +15,7 @@ import (
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/identity"
 	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
+	"github.com/sunnyside/atlas/atlas-agent/internal/spatial"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -27,14 +28,15 @@ const (
 	maximumRetry = 30 * time.Second
 )
 
-func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor) {
+func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	frameDemand := newFrameDemand()
+	cloudDemand := newSpatialDemand()
 	backoff := minimumRetry
 	for ctx.Err() == nil {
-		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, executor, missionExecutor, followExecutor, frameDemand)
+		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, spatialOutputs, executor, missionExecutor, followExecutor, frameDemand, cloudDemand)
 		if ctx.Err() != nil {
 			return
 		}
@@ -72,7 +74,7 @@ type AircraftFollowExecutor interface {
 	Capabilities() []string
 }
 
-func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, frameDemand *frameDemand) error {
+func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, frameDemand *frameDemand, cloudDemand *spatialDemand) error {
 	connection, err := grpc.NewClient(cfg.GroundStationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("create ground-station client: %w", err)
@@ -90,6 +92,9 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	capabilities = append(capabilities, followExecutor.Capabilities()...)
 	if cfg.PerceptionEnabled() {
 		capabilities = append(capabilities, "perception:object_detection:v1", "perception:health:v1", "perception:frame_subscription:v1")
+	}
+	if cfg.SpatialEnabled {
+		capabilities = append(capabilities, "spatial:complete_cloud:v1", "spatial:cloud_subscription:v1")
 	}
 	if err := stream.Send(&pb.AgentToGroundStation{
 		SessionId: sessionID,
@@ -120,6 +125,9 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	defer cancelPerception()
 	if cfg.PerceptionEnabled() {
 		go runPerception(perceptionContext, logger, client, cfg, localIdentity, sessionID, perceptionOutputs, frameDemand)
+	}
+	if cfg.SpatialEnabled {
+		go runSpatial(perceptionContext, logger, client, cfg, localIdentity, sessionID, spatialOutputs, cloudDemand)
 	}
 
 	receiveErrors := make(chan error, 1)
@@ -635,7 +643,7 @@ func registration(cfg config.Config, localIdentity identity.Identity, requestID 
 			MavlinkSystemId:     cfg.MAVLinkSystemID,
 			MavlinkComponentId:  cfg.MAVLinkComponentID,
 		},
-		Capabilities:     append([]string{"registration", "heartbeat", "telemetry", "status_text"}, commandCapabilities...),
+		Capabilities:     append([]string{"registration", "heartbeat", "telemetry", "status_text", "navigation_state:local:v1"}, commandCapabilities...),
 		ObservedAtUnixMs: observedAt.UnixMilli(),
 	}
 }

@@ -97,6 +97,11 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	if plan.Config.SpatialEnabled {
+		if err := ensureSpatialTransformBundle(ctx, commandRunner, runner, options.Paths); err != nil {
+			return ApplyResult{}, err
+		}
+	}
 	if err := writeConfiguration(ctx, runner, options, plan.Config); err != nil {
 		return ApplyResult{}, err
 	}
@@ -128,6 +133,13 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	}
 	_, _ = fmt.Fprintln(output, "Atlas onboard installation is active. Run 'sudo atlas-setup doctor' for the full health report.")
 	return result, nil
+}
+
+func ensureSpatialTransformBundle(ctx context.Context, commandRunner Runner, runner ApplyRunner, paths Paths) error {
+	if commandRunner.Run(ctx, "test", "-e", paths.SpatialTransformBundle).Err == nil {
+		return nil
+	}
+	return runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle)
 }
 
 func ensureSpatialRuntime(ctx context.Context, commandRunner Runner, runner ApplyRunner, options Options, config *InstallConfig) (bool, error) {
@@ -169,7 +181,7 @@ func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) er
 		required = append(required, paths.HailoContainerService, paths.HailoContainerEnv)
 	}
 	if config.SpatialEnabled {
-		required = append(required, paths.SpatialSetupBinary, paths.SpatialContainerRun, paths.SpatialCheck, paths.SpatialService, filepath.Join(paths.SpatialContext, "packaging", "Dockerfile"))
+		required = append(required, paths.SpatialSetupBinary, paths.SpatialContainerRun, paths.SpatialCheck, paths.SpatialService, paths.DefaultSpatialTransformBundle, filepath.Join(paths.SpatialContext, "packaging", "Dockerfile"))
 	}
 	for _, path := range required {
 		if !fileExists(path) {
@@ -285,6 +297,10 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 		{"ATLAS_MAVLINK_SYSTEM_ID", strconv.FormatUint(uint64(config.MAVLinkSystemID), 10)},
 		{"ATLAS_MAVLINK_COMPONENT_ID", strconv.FormatUint(uint64(config.MAVLinkComponentID), 10)},
 		{"ATLAS_MAVSDK_GRPC_ADDR", DefaultMAVSDKAddr},
+		{"ATLAS_NAVIGATION_SOCKET_PATH", "/run/atlas-agent/navigation.sock"},
+		{"ATLAS_SPATIAL_ENABLED", strconv.FormatBool(config.SpatialEnabled)},
+		{"ATLAS_SPATIAL_SOURCE_ID", config.SpatialSourceID},
+		{"ATLAS_SPATIAL_CLOUD_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial-cloud.sock")},
 		{"ATLAS_MAVSDK_GRPC_PORT", "50051"},
 		{"ATLAS_MAVSDK_SYSTEM_ADDRESS", "serial://" + config.SerialDevice + ":" + strconv.FormatUint(uint64(config.BaudRate), 10)},
 		{"ATLAS_CAMERA_TRANSPORT", string(config.CameraTransport)},
@@ -339,6 +355,12 @@ func RenderSpatialEnvironment(config InstallConfig, paths Paths) (string, error)
 		{"ATLAS_SPATIAL_MODEL", config.SpatialModel},
 		{"ATLAS_SPATIAL_USB_TRANSPORT", config.SpatialUSBTransport},
 		{"ATLAS_SPATIAL_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial.sock")},
+		{"ATLAS_SPATIAL_CLOUD_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial-cloud.sock")},
+		{"ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH", paths.SpatialTransformBundle},
+		{"ATLAS_SPATIAL_VIO_ENABLED", "true"},
+		{"ATLAS_SPATIAL_LIVE_CLOUD_ENABLED", "true"},
+		{"ATLAS_SPATIAL_PX4_VIO_FUSION_ENABLED", "false"},
+		{"ATLAS_SPATIAL_MOVEMENT_ENABLED", "false"},
 		{"ATLAS_SPATIAL_CONTAINER_IMAGE", config.SpatialContainerImage},
 		{"ATLAS_SPATIAL_CONTAINER_NAME", "atlas-spatial-runtime"},
 	}

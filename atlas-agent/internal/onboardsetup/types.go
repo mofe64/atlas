@@ -29,30 +29,32 @@ const (
 )
 
 type Paths struct {
-	Root                  string
-	ConfigFile            string
-	StateDirectory        string
-	RuntimeDirectory      string
-	AgentBinary           string
-	SetupBinary           string
-	MAVSDKBinary          string
-	HailoAdapter          string
-	ByteTrackWorker       string
-	HailoSetupBinary      string
-	HailoContainerEnv     string
-	HailoContainerService string
-	SpatialConfigFile     string
-	SpatialSetupBinary    string
-	SpatialContainerRun   string
-	SpatialCheck          string
-	SpatialService        string
-	SpatialContext        string
-	SpatialStateDirectory string
-	ReleaseManifest       string
-	AgentService          string
-	MAVSDKService         string
-	DefaultModel          string
-	DefaultPostprocessSO  string
+	Root                          string
+	ConfigFile                    string
+	StateDirectory                string
+	RuntimeDirectory              string
+	AgentBinary                   string
+	SetupBinary                   string
+	MAVSDKBinary                  string
+	HailoAdapter                  string
+	ByteTrackWorker               string
+	HailoSetupBinary              string
+	HailoContainerEnv             string
+	HailoContainerService         string
+	SpatialConfigFile             string
+	SpatialSetupBinary            string
+	SpatialContainerRun           string
+	SpatialCheck                  string
+	SpatialService                string
+	SpatialContext                string
+	SpatialStateDirectory         string
+	SpatialTransformBundle        string
+	DefaultSpatialTransformBundle string
+	ReleaseManifest               string
+	AgentService                  string
+	MAVSDKService                 string
+	DefaultModel                  string
+	DefaultPostprocessSO          string
 }
 
 func DefaultPaths(root string) Paths {
@@ -63,30 +65,32 @@ func DefaultPaths(root string) Paths {
 		return filepath.Join(root, strings.TrimPrefix(path, "/"))
 	}
 	return Paths{
-		Root:                  root,
-		ConfigFile:            rooted("/etc/atlas-agent/atlas-agent.env"),
-		StateDirectory:        rooted("/var/lib/atlas-agent"),
-		RuntimeDirectory:      rooted("/run/atlas-agent"),
-		AgentBinary:           rooted("/usr/bin/atlas-agent"),
-		SetupBinary:           rooted("/usr/bin/atlas-setup"),
-		MAVSDKBinary:          rooted("/usr/libexec/atlas-agent/mavsdk_server"),
-		HailoAdapter:          rooted("/usr/libexec/atlas-agent/atlas-hailort-adapter"),
-		ByteTrackWorker:       rooted("/usr/libexec/atlas-agent/atlas-bytetrack-worker"),
-		HailoSetupBinary:      rooted("/usr/sbin/atlas-hailo-setup"),
-		HailoContainerEnv:     rooted("/etc/atlas-agent/hailo-container.env"),
-		HailoContainerService: rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),
-		SpatialConfigFile:     rooted("/etc/atlas-agent/spatial.env"),
-		SpatialSetupBinary:    rooted("/usr/sbin/atlas-spatial-setup"),
-		SpatialContainerRun:   rooted("/usr/libexec/atlas-agent/atlas-spatial-container-run"),
-		SpatialCheck:          rooted("/usr/libexec/atlas-agent/atlas-spatial-runtime-check"),
-		SpatialService:        rooted("/usr/lib/systemd/system/atlas-spatial-runtime.service"),
-		SpatialContext:        rooted("/usr/share/atlas-agent/spatial-runtime"),
-		SpatialStateDirectory: rooted("/var/lib/atlas-agent/spatial"),
-		ReleaseManifest:       rooted("/usr/share/atlas-agent/release.env"),
-		AgentService:          rooted("/usr/lib/systemd/system/atlas-agent.service"),
-		MAVSDKService:         rooted("/usr/lib/systemd/system/atlas-mavsdk.service"),
-		DefaultModel:          rooted("/usr/share/atlas-agent/models/objects.hef"),
-		DefaultPostprocessSO:  rooted("/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"),
+		Root:                          root,
+		ConfigFile:                    rooted("/etc/atlas-agent/atlas-agent.env"),
+		StateDirectory:                rooted("/var/lib/atlas-agent"),
+		RuntimeDirectory:              rooted("/run/atlas-agent"),
+		AgentBinary:                   rooted("/usr/bin/atlas-agent"),
+		SetupBinary:                   rooted("/usr/bin/atlas-setup"),
+		MAVSDKBinary:                  rooted("/usr/libexec/atlas-agent/mavsdk_server"),
+		HailoAdapter:                  rooted("/usr/libexec/atlas-agent/atlas-hailort-adapter"),
+		ByteTrackWorker:               rooted("/usr/libexec/atlas-agent/atlas-bytetrack-worker"),
+		HailoSetupBinary:              rooted("/usr/sbin/atlas-hailo-setup"),
+		HailoContainerEnv:             rooted("/etc/atlas-agent/hailo-container.env"),
+		HailoContainerService:         rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),
+		SpatialConfigFile:             rooted("/etc/atlas-agent/spatial.env"),
+		SpatialSetupBinary:            rooted("/usr/sbin/atlas-spatial-setup"),
+		SpatialContainerRun:           rooted("/usr/libexec/atlas-agent/atlas-spatial-container-run"),
+		SpatialCheck:                  rooted("/usr/libexec/atlas-agent/atlas-spatial-runtime-check"),
+		SpatialService:                rooted("/usr/lib/systemd/system/atlas-spatial-runtime.service"),
+		SpatialContext:                rooted("/usr/share/atlas-agent/spatial-runtime"),
+		SpatialStateDirectory:         rooted("/var/lib/atlas-agent/spatial"),
+		SpatialTransformBundle:        rooted("/var/lib/atlas-agent/spatial/transforms.v1.json"),
+		DefaultSpatialTransformBundle: rooted("/usr/share/atlas-agent/spatial-runtime/ros2_ws/src/atlas_spatial_runtime/config/transforms.v1.json"),
+		ReleaseManifest:               rooted("/usr/share/atlas-agent/release.env"),
+		AgentService:                  rooted("/usr/lib/systemd/system/atlas-agent.service"),
+		MAVSDKService:                 rooted("/usr/lib/systemd/system/atlas-mavsdk.service"),
+		DefaultModel:                  rooted("/usr/share/atlas-agent/models/objects.hef"),
+		DefaultPostprocessSO:          rooted("/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"),
 	}
 }
 

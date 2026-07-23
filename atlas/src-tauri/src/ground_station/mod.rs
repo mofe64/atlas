@@ -3,12 +3,14 @@ mod proto;
 mod registration;
 mod server;
 mod session;
+mod spatial;
 mod status_text;
 mod telemetry;
 
 pub(crate) use command_router::CommandRouter;
 pub(crate) use perception::{AlignedPerceptionFrameSnapshot, PerceptionSnapshot, PerceptionStore};
 pub(crate) use server::serve;
+pub(crate) use spatial::{SpatialSnapshot, SpatialStore};
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

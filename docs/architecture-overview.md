@@ -37,8 +37,10 @@ flowchart TB
         MAVSDK -->|"MAVLink"| PX4
         Perception -->|"protected Unix socket"| Agent
         Camera -->|"RTSP"| Perception
-        OAK -->|"USB 3 RGB-D"| Spatial
+        OAK -->|"USB 3 RGB-D + BMI270"| Spatial
         HFlow -->|"DroneCAN flow + range"| PX4
+        MAVSDK -->|"read-only navigation state"| Agent
+        Agent -->|"capture-time sample socket"| Spatial
     end
 
     Agent -->|"outbound control + telemetry gRPC"| Rust
@@ -69,11 +71,11 @@ Detailed operational behavior is split into
 | React UI | Operator navigation, forms, map interaction, rendering, polling Native state | Network sessions, durable policy, direct MAVSDK or PX4 access |
 | Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog | Physical flight-controller, gimbal, camera, or accelerator drivers |
 | SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history | Multi-user tenancy or cross-ground-station synchronization |
-| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history |
+| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, read-only PX4/H-Flow navigation-state plane, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, indoor mapping |
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
-| Spatial runtime | Independent OAK RGB-D ownership, normalized color/depth/calibration topics, and bounded local health | H-Flow/PX4 estimation, mapping, navigation, or aircraft commands |
+| Spatial runtime | Independent OAK RGB-D/BMI270 ownership, normalized topics, live non-authoritative Basalt VIO, calibration/transform identity, bounded local health, and a bounded VIO-local point cloud | PX4 VIO fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
 | Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
 
 ## Deployment topology
@@ -96,6 +98,8 @@ PX4 flight controller
 OAK-D Lite
     -> direct Raspberry Pi USB 3
         -> independent Atlas Spatial Runtime container
+            -> capture-time query to Atlas Agent navigation socket
+            -> optional finalized RGB-D/IMU/VIO/PX4 sessions
 ```
 
 Atlas Agent initiates the session to `192.168.144.50:7443`. This direction is
@@ -251,7 +255,7 @@ These rules explain many implementation choices:
 | Manual payload lease expires | Inspection movement stops and ownership releases; mission override restores the current mission payload intent. |
 | Perception stream fails | Agent reconnects it separately; command and telemetry traffic remain isolated. |
 | OAK/spatial runtime fails | The independent systemd service degrades or restarts without stopping Agent/MAVSDK. Atlas does not yet send spatial health to Native or authorize obstacle response. |
-| H-Flow degrades | PX4 owns estimator fusion and flight-mode/failsafe behavior. Atlas does not yet expose H-Flow quality or estimator evidence as a separate capability. |
+| H-Flow degrades | PX4 owns estimator fusion and flight-mode/failsafe behavior. The Agent data plane reports flow/range/estimator state as degraded, stale, or unavailable for recording and later consumers; it does not change flight mode or claim that hardware flight acceptance has passed. |
 | Video decoder fails | Native reports video error state without changing the aircraft-control session. |
 | Backend or PostgreSQL fails | Current Native-Agent aircraft operations continue because neither is in that path. |
 
