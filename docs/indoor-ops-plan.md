@@ -347,7 +347,7 @@ This evidence passes the grounded standard-DepthAI spatial-runtime gate without
 lowering the odometry inlier threshold or restoring patched Basalt. Retain
 `0.1.16` as the operational rollback and keep the commissioned transforms
 marked `configured_unverified`; Indoor Explore still has no aircraft movement
-authority until stage 3 and its later navigation/flight gates are implemented.
+authority until its navigation and flight gates are implemented.
 The retained evidence is in
 `.scratch/pi-evidence-0.1.25-replay-movement-20260724T121316Z` and
 `.scratch/pi-evidence-0.1.25-lifecycle-qualification-20260724T122443Z`;
@@ -381,10 +381,18 @@ Hailo detections, ByteTrack tracking, and Native video overlays. Indoor Explore
 adds a new mission controller and point-cloud view; it should reuse those paths
 instead of creating parallel command, video, or tracking systems.
 
-### Stage 3 contract implemented locally, hold-only
+### Stage 3 contract qualified on 0.1.26, hold-only
 
-The Native/Agent Indoor Explore contract is now implemented and locally
-validated, but it is not part of the installed `0.1.25` aircraft release.
+The Native/Agent Indoor Explore contract is implemented, packaged, and
+qualified on the disarmed aircraft in release `0.1.26`. The matched release
+was built from clean commit
+`df1649764694ab7855ea5a93d6c88ef3fb9f6789`, transferred over the normal Wi-Fi
+route to `mofe@ariadne-robot`, verified on the Pi, and installed from immutable
+spatial image
+`sha256:bb62bef5f359690a77d3b3f511e39f41180714b0699a9cbda851f913c6bf50a8`.
+Setup preserved the aircraft identity and v3 transforms and persisted that
+exact image ID rather than the mutable `0.1.26` tag.
+
 The protobuf carries dedicated `START` and `ABORT_AND_RETURN` operations and
 the explicit `starting`, `taking_off`, `exploring`, `returning`, `complete`,
 `holding`, and `failed` states. Atlas Native exposes exactly `0.5 m`, `1 m`,
@@ -403,10 +411,9 @@ Native keeps the current contract snapshot in memory, validates Agent state
 transitions and immutable altitude, blocks a second non-terminal mission, and
 will recover an unknown post-restart mission only from a safe `holding` or
 `failed` Agent report. The Indoor controls remain disabled when the connected
-Agent does not advertise contract v1; this is the correct behavior with the
-currently installed `0.1.25`.
+Agent does not advertise contract v1.
 
-Local validation passed:
+Local validation passed before packaging:
 
 - Agent vehicle, main-session transport, and executable tests;
 - Native's complete 98-test library suite: 95 passed and the three
@@ -415,9 +422,57 @@ Local validation passed:
   Agent-format `starting`/`holding` updates into the Native store; and
 - the TypeScript/Vite production build using Node `24.14.0`.
 
-No live Start or Abort request was sent to the aircraft, and no Stage 3 release
-was built or deployed in this slice. The aircraft was powered down before the
-final local validation and documentation pass.
+Live grounded qualification then passed:
+
+- Native displayed a complete 100,000-point cloud and exposed only the three
+  fixed altitude choices.
+- A `1 m` Start transitioned from `starting` to `holding` with
+  `LOCAL_NAVIGATION_NOT_COMMISSIONED`; Abort remained available and returned
+  `holding` with `RETURN_CONTROLLER_NOT_COMMISSIONED`.
+- Restarting Agent left Native in the explicit fail-safe
+  `holding / AGENT_SESSION_LOST` state. The aircraft stayed disarmed and on the
+  ground.
+- Restarting the spatial runtime replaced cloud epoch `301eb15b…6c49a` with
+  `59e2bbcf…dc72e`; the new complete-cloud sequence advanced from 10 to 21
+  instead of retaining a frozen pre-restart snapshot.
+- A fresh `0.5 m` mission recovered after a Native restart only as
+  `holding / GROUND_LINK_LOST`, proving the restricted recovery rule. A final
+  Abort returned `holding / RETURN_CONTROLLER_NOT_COMMISSIONED`.
+- All four services were active with zero automatic restarts after the
+  qualification.
+
+The first full doctor probe after the manual spatial restart briefly sampled
+the separate RGB-versus-aligned-depth health window at approximately
+`8.41/9.54 Hz` and `99.993 ms` skew. This did not coincide with a stereo/VIO
+failure: a direct 20-second ROS probe measured rectified mono at
+`20.002/19.885 Hz`, approximately `-0.028 ms` stereo skew, valid CameraInfo and
+TF, filtered IMU at `215.56 Hz`, valid odometry, and standard
+`stereo_odometry` quality of 260–594 with no zero-quality samples in the
+retained log. Thirty consecutive health probes then reported ready with zero
+RGB-D skew, and the final full doctor passed. This is retained as a transient
+health-window incident rather than hidden or used to lower a threshold.
+
+The physical cold start also exposed a separate Agent navigation-clock defect
+in installed release `0.1.26`: if the Pi wall clock steps forward after boot,
+the minimum-offset aligner can leave PX4 samples appearing stale until Agent
+restarts. The subsequent Agent restart restored millisecond-scale alignment
+and ready navigation.
+
+The next-release source now preserves Go's monotonic receive timestamp,
+compares monotonic elapsed time with wall-clock elapsed time, and starts a new
+alignment epoch when those clocks differ by more than `250 ms`, below the
+shortest `500 ms` navigation freshness deadline. Regression tests reproduce
+both the observed `+68 s` wall-clock step and a sub-second step, while a
+separate five-second delivery-delay test proves an old packet is not
+incorrectly made fresh. Setup now also renders the package manifest version as
+`ATLAS_AGENT_VERSION`. These fixes pass the complete Agent test suite, vet, and
+targeted race detection locally, but they are not installed on the Pi yet.
+Stage 3 remains safe because movement authority is false; stage 4 remains
+blocked until a matched release is deployed and a physical cold start proves
+ready navigation without an Agent restart.
+
+Evidence is retained under
+`.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z`.
 
 ## What still needs to be implemented
 
@@ -428,11 +483,13 @@ VIO coordinate epochs, and caps the accumulated voxel store. A separate Unix
 socket and gRPC stream now carry complete latest-only cloud snapshots into an
 in-memory Native store, and the Indoor workspace renders them with React Three
 Fiber beside the existing camera view. Grounded Pi/OAK and Native end-to-end
-acceptance now passes on `0.1.25`. Stage 3 is implemented locally as the
-explicit hold-only Native/Agent contract described above; it is not yet
-packaged or deployed. Flight-enabling acceptance and stages 4–6 remain. The
-first Pi `0.1.17` deployment exposed two release blockers now corrected for
-`0.1.18`: the stream node no longer shadows `rclpy.Node` client state, and the
+acceptance passed on `0.1.25`; the matched `0.1.26` aircraft release qualifies
+the explicit hold-only Native/Agent contract described above. Flight-enabling
+acceptance and stages 4–6 remain. The clock/setup follow-up described above is
+implemented locally but still requires matched packaging and cold-start
+acceptance before stage 4. The first Pi `0.1.17` deployment exposed two release
+blockers corrected for `0.1.18`: the stream node no longer shadows
+`rclpy.Node` client state, and the
 DepthAI provider normalizes the observed vendor frame name to the Atlas-owned
 aligned-depth frame used by the transform bundle. Essential cloud processes
 now terminate the launch when they exit so systemd cannot mask this class of
@@ -457,10 +514,10 @@ Build the feature in this order:
    channel and render them in a React Three Fiber panel beside existing video.
    Path, start point, and mission state join this view with the mission
    contract rather than being fabricated before stage 3.
-3. **Indoor mission contract (implemented locally, hold-only):** the three
-   altitude choices, explicit mission states, Start, and Abort-and-return
-   messages now cross the Native/Agent boundary. Movement remains disabled and
-   the contract has not been deployed to the aircraft.
+3. **Indoor mission contract (qualified on the aircraft, hold-only):** the
+   three altitude choices, explicit mission states, Start, Abort-and-return,
+   and safe Agent/Native restart recovery now cross the live Native/Agent
+   boundary. Movement remains disabled.
 4. **Local navigation:** add the occupancy slice, obstacle inflation, frontier
    selection, grid path, yaw-first movement, and replanning.
 5. **Return behavior:** retain the start/breadcrumb path and use it for the
@@ -469,9 +526,10 @@ Build the feature in this order:
    detection/tracking, and gimbal control alive while Indoor Explore owns
    aircraft movement.
 
-In parallel with stages 2 and 3, run the standard-DepthAI/direct-host
-evaluation above. It is not a prerequisite for implementing the Native view,
-but its outcome controls the final spatial deployment and release packaging.
+The standard DepthAI container path is now the qualified deployment direction.
+A direct-host DepthAI comparison remains optional future work for operational
+simplicity; it is not a prerequisite for stage 4 and must not displace the
+accepted standard container or the retained `0.1.16` rollback.
 
 ## Explicitly unnecessary for this feature
 

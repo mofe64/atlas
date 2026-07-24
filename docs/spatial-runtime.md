@@ -178,6 +178,50 @@ Evidence is retained under
 large MCAP remains on the Pi at
 `/home/mofe/atlas-0.1.25-replay-movement-20260724T121316Z/rosbag`.
 
+## Matched 0.1.26 deployment and Stage 3 lifecycle
+
+Release `0.1.26` packaged the qualified spatial foundation together with the
+hold-only Indoor Explore Native/Agent contract. It was built from clean commit
+`df1649764694ab7855ea5a93d6c88ef3fb9f6789`, transferred to
+`mofe@ariadne-robot` over Wi-Fi, and verified on the Pi before installation.
+The installed configuration and running container both use immutable image
+`sha256:bb62bef5f359690a77d3b3f511e39f41180714b0699a9cbda851f913c6bf50a8`.
+Setup preserved the aircraft identity and transform files, and the configured
+movement flag remains false.
+
+The live Stage 3 qualification kept a complete 100,000-point cloud visible in
+Native while Start and Abort exercised only acknowledged PX4 Hold. Native
+snapshots advanced from 312 through 361 during the initial mission checks.
+After a manual spatial-runtime restart, Native replaced cloud epoch
+`301eb15b…6c49a` with `59e2bbcf…dc72e` and advanced the new sequence from 10
+to 21. This is a runtime-epoch recovery, not a frozen reuse of the original
+cloud. Agent and Native restart tests preserved safe `holding` states, and the
+aircraft remained disarmed and on the ground throughout.
+
+The first full doctor probe after that runtime restart briefly observed the
+separate RGB-versus-aligned-depth health window at `99.993 ms` skew. A direct
+20-second ROS diagnostic immediately distinguished that sample from the
+stereo/VIO contract:
+
+- rectified mono capture rates were `20.002 Hz` and `19.885 Hz`;
+- measured stereo skew was approximately `-0.028 ms`;
+- CameraInfo retained the positive `0.0747062841 m` baseline and required TF
+  lookups succeeded;
+- filtered IMU was `215.56 Hz` with no non-increasing timestamps;
+- standard `stereo_odometry` was present and `rgbd_odometry` was absent;
+- odometry and map messages remained valid; and
+- 1,341 retained RTAB quality samples ranged from 260 to 594 with no
+  zero-quality samples.
+
+Thirty consecutive health probes then returned `ready` with zero RGB-D skew,
+and the final full doctor passed. The one degraded sample is retained as a
+transient RGB-D health-window incident; it is not evidence of a frozen stereo
+map and did not justify a threshold change or a return to patched Basalt.
+
+All four Atlas services were active with zero automatic restarts at the final
+checkpoint. Evidence is retained under
+`.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z`.
+
 ## Installation and failure behavior
 
 `atlas-setup` discovers the OAK, seeds the transform bundle, and manages the
@@ -194,8 +238,8 @@ supervised as essential processes: either process exiting terminates the
 launch so systemd cannot report a partially working spatial runtime as active.
 Missing or stale VIO prevents new cloud integration; the future Indoor Explore
 movement controller must Hold rather than move without fresh depth and local
-position. The locally implemented Stage 3 mission contract is hold-only and
-advertises `indoor_explore:movement_authority:false`.
+position. The installed and grounded-qualified Stage 3 mission contract is
+hold-only and advertises `indoor_explore:movement_authority:false`.
 
 RTAB-Map publishes null odometry when tracking is lost and does not silently
 reset its coordinate frame. After five seconds of sustained invalid or stale
@@ -213,8 +257,13 @@ systemctl status atlas-spatial-runtime.service
 journalctl -u atlas-spatial-runtime.service -f
 ```
 
-The Native/Agent Indoor mission contract is implemented locally but is not in
-the installed `0.1.25` release. The next implementation slice is the local
-navigation controller described in the
-[Indoor Operations Plan](indoor-ops-plan.md); its separate flight gates remain
-mandatory before movement authority can be enabled.
+The Native/Agent Indoor mission contract is installed and grounded-qualified
+in release `0.1.26`. The next implementation slice is the local navigation
+controller described in the [Indoor Operations Plan](indoor-ops-plan.md).
+The Agent source now detects host wall-clock steps using the monotonic receive
+clock, resets the PX4 alignment epoch, and renders `ATLAS_AGENT_VERSION` during
+setup; the observed `+68 s` step and an ordinary five-second delivery delay
+have local regression coverage. Movement remains blocked until those changes
+ship in a matched release and pass a physical cold start without an Agent
+restart, the configured transforms are physically verified, and the separate
+flight gates pass.

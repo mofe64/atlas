@@ -111,7 +111,10 @@ func (s *source) streamDirectMessage(ctx context.Context, name string, handle fu
 				s.navigationTargetComponentID = message.GetComponentId()
 			}
 			s.mu.Unlock()
-			if parseErr := handle(message.GetFieldsJson(), time.Now().UTC()); parseErr != nil {
+			// Keep the monotonic component attached by time.Now. The
+			// navigation clock aligner uses it to distinguish an NTP wall-time
+			// step from ordinary telemetry delivery delay.
+			if parseErr := handle(message.GetFieldsJson(), time.Now()); parseErr != nil {
 				s.logger.Warn("invalid navigation MAVLink message", "message", name, "error", parseErr)
 			}
 		}

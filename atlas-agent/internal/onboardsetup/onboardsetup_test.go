@@ -599,6 +599,7 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 	config := DefaultInstallConfig(paths)
 	config.DroneName = `Survey "One"`
 	config.SerialDevice = "/dev/serial/by-id/usb-pixhawk"
+	config.AgentVersion = "0.1.27-test"
 	config.PerceptionEnabled = true
 
 	rendered, err := RenderEnvironment(config, paths)
@@ -606,6 +607,7 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
+		`ATLAS_AGENT_VERSION="0.1.27-test"`,
 		`ATLAS_DRONE_NAME="Survey \"One\""`,
 		`ATLAS_FLIGHT_CONTROLLER_ENDPOINT="/dev/serial/by-id/usb-pixhawk"`,
 		`ATLAS_MAVSDK_SYSTEM_ADDRESS="serial:///dev/serial/by-id/usb-pixhawk:921600"`,

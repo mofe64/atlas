@@ -346,6 +346,7 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 	}
 	values := [][2]string{
 		{"ATLAS_AGENT_STATE_DIR", paths.StateDirectory},
+		{"ATLAS_AGENT_VERSION", config.AgentVersion},
 		{"ATLAS_GROUND_STATION_ADDR", config.GroundStationAddress},
 		{"ATLAS_DRONE_NAME", config.DroneName},
 		{"ATLAS_FLIGHT_CONTROLLER_TRANSPORT", "serial"},
