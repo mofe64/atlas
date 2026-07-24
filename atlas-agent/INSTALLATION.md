@@ -414,11 +414,46 @@ The generated configuration is stored at:
 The indoor-localization foundation also seeds
 `/var/lib/atlas-agent/spatial/transforms.v1.json` once. Setup will not overwrite
 this file after its OAK/H-Flow geometry has been physically commissioned. The
-default Ariadne OAK entry is `configured_unverified`: it records the operator's
-approximate forward/upright 0.15 m mounting description and the explicit
-CAM_A/RDF-to-body-FRD axis convention. Do not mark it `verified` until the
-reference point, offsets, level alignment, and motion signs are physically
-confirmed.
+current Ariadne v4 seed records the physically measured OAK CAM_A/RGB origin at
+`+0.155 / +0.010 / +0.005 m` in body FRD and marks the body-to-OAK edge
+`verified`. The body-to-H-Flow flow/range edges retain their PX4 geometry and
+are `verified` from the recorded physical, motion-sign, range-response, and
+disarmed estimator evidence. The provider-owned aligned optical-frame edge
+remains separately `configured_unverified`.
+
+An upgrade still preserves the aircraft-owned file. To commission this exact
+v4 seed on Ariadne, first install the matched package, then use a stopped,
+hash-guarded replacement:
+
+```sh
+set -eu
+ACTIVE=/var/lib/atlas-agent/spatial/transforms.v1.json
+PACKAGED=/usr/share/atlas-agent/spatial-runtime/ros2_ws/src/atlas_spatial_runtime/config/transforms.v1.json
+PYTHONPATH=/usr/share/atlas-agent/spatial-runtime/ros2_ws/src/atlas_spatial_runtime
+OLD_HASH=sha256:62ed08cdbdeab32df4e8d61c91e034ec720f94e60f021f5e2a2891cbf8e0f517
+NEW_HASH=sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a
+
+canonical_hash() {
+  sudo -E env PYTHONPATH="$PYTHONPATH" python3 -c \
+    'import sys; from atlas_spatial_runtime.transform_contract import load_transform_bundle; print(load_transform_bundle(sys.argv[1])["sha256"])' \
+    "$1"
+}
+
+test "$(canonical_hash "$ACTIVE")" = "$OLD_HASH"
+test "$(canonical_hash "$PACKAGED")" = "$NEW_HASH"
+sudo systemctl stop atlas-spatial-runtime.service
+sudo install -d -m 0700 /var/backups/atlas-agent
+sudo install -m 0640 -o root -g atlas-agent "$ACTIVE" \
+  /var/backups/atlas-agent/transforms.v1.pre-v4-commissioning.json
+sudo install -m 0640 -o root -g atlas-agent "$PACKAGED" "$ACTIVE"
+test "$(canonical_hash "$ACTIVE")" = "$NEW_HASH"
+sudo systemctl start atlas-spatial-runtime.service
+```
+
+Stop if either source hash differs. Never use this guarded sequence for another
+aircraft or an already modified bundle. Retain the backup, raw and canonical
+hashes, package/release identity, and post-start spatial health with the
+commissioning evidence.
 
 `0.1.17` and later add an explicit configured-unverified aligned optical-frame
 edge. Setup automatically migrates only the exact unchanged `0.1.16` seed hash

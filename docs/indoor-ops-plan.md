@@ -136,9 +136,9 @@ The current aircraft already has the necessary sensor foundation:
 - Aligned `640x400` colour and metre-depth streams.
 - A BMI270 IMU publishing at approximately 200 Hz.
 - Live, non-authoritative odometry on `/atlas/spatial/vio/odometry`.
-- An approximately forward-facing, upright mount about `0.15 m` ahead of the
-  aircraft centre. That measurement is approximate, so the existing transform
-  remains `configured_unverified` rather than pretending to be precise.
+- A forward-facing, upright, approximately level mount physically measured on
+  24 July 2026 at `+0.155 / +0.010 / +0.005 m` in body FRD from the aircraft
+  centre to the OAK CAM_A/RGB reference.
 - The working tree caps external global-shutter stereo odometry input at
   20 Hz. The accepted `0.1.16` Basalt image used 30 Hz visual input.
 
@@ -345,8 +345,10 @@ sent. This distinguishes a Native transport outage from a frozen ROS map.
 
 This evidence passes the grounded standard-DepthAI spatial-runtime gate without
 lowering the odometry inlier threshold or restoring patched Basalt. Retain
-`0.1.16` as the operational rollback and keep the commissioned transforms
-marked `configured_unverified`; Indoor Explore still has no aircraft movement
+`0.1.16` as the operational rollback. The later v4 physical-geometry candidate
+marks only the operator-verified body-to-OAK and body-to-H-Flow edges verified;
+the provider-owned optical-frame edge remains separately
+`configured_unverified`. Indoor Explore still has no aircraft movement
 authority until its navigation and flight gates are implemented.
 The retained evidence is in
 `.scratch/pi-evidence-0.1.25-replay-movement-20260724T121316Z` and
@@ -369,9 +371,13 @@ baseline is:
 
 PX4 has already received and fused live H-Flow/range data while disarmed, and
 Atlas Agent already exposes PX4 local position, odometry, flow, range, and
-estimator health. The remaining practical gap is that GPS-denied position hold
-has not yet been flown on this aircraft. This is a flight capability gap, not a
-reason to repeat the completed OAK camera work.
+estimator health. The operator has verified the physical H-Flow geometry,
+motion signs, range response, estimator fusion, local-position validity, and
+retained parameter/ULog evidence. The v4 transform candidate therefore promotes
+the unchanged body-to-H-Flow flow/range edges to `verified`. The remaining
+practical gap is that GPS-denied position hold has not yet been flown on this
+aircraft. This is a flight capability gap, not a reason to repeat the completed
+camera or H-Flow bench work.
 
 ### Atlas mission, video, and tracking paths
 
@@ -458,21 +464,34 @@ the minimum-offset aligner can leave PX4 samples appearing stale until Agent
 restarts. The subsequent Agent restart restored millisecond-scale alignment
 and ready navigation.
 
-The next-release source now preserves Go's monotonic receive timestamp,
-compares monotonic elapsed time with wall-clock elapsed time, and starts a new
-alignment epoch when those clocks differ by more than `250 ms`, below the
-shortest `500 ms` navigation freshness deadline. Regression tests reproduce
-both the observed `+68 s` wall-clock step and a sub-second step, while a
-separate five-second delivery-delay test proves an old packet is not
-incorrectly made fresh. Setup now also renders the package manifest version as
-`ATLAS_AGENT_VERSION`. These fixes pass the complete Agent test suite, vet, and
-targeted race detection locally, but they are not installed on the Pi yet.
-Stage 3 remains safe because movement authority is false; stage 4 remains
-blocked until a matched release is deployed and a physical cold start proves
-ready navigation without an Agent restart.
+Release `0.1.27` packages the clock/setup fixes from clean commit
+`b8f725c7be6c0f8ee77ea490f0ad758fae67f65e`. The installed configuration and
+running container both select immutable image
+`sha256:054e785e91ad974073d575bb430de23d6dd472177f89254f5e4acbbaa67ef40f`,
+setup renders `ATLAS_AGENT_VERSION="0.1.27"`, and movement authority remains
+false. Identity, transform, and normalized user-configuration hashes were
+unchanged by the upgrade.
+
+Before upgrade, the protected `0.1.26` probe reproduced the defect with all
+five navigation components falsely approximately `225 s` stale. After a
+physical power cycle into a new kernel boot, all four services started
+automatically with zero restarts. The first untouched `0.1.27` probe was ready
+in clock epoch `1`, proving the aligner detected the boot-time wall-clock
+correction. Across 20 `--require-ready` probes, component ages remained
+`2.4-154.3 ms`, alignment errors remained `1.4-23.9 ms`, and every source
+stayed in epoch `1`. Doctor passed; spatial health remained ready on USB 3;
+and a 20-second complete-cloud observer recorded 21 full frames, sequence
+`164→184`, 12 distinct capture timestamps, valid poses, and no error.
+
+This accepts the matched release and cold-start clock gate without an Agent
+restart. Stage 3 remains hold-only, and stage 4 movement remains blocked on
+physical transform commissioning, disarmed H-Flow sign/fusion evidence, the
+separately approved PX4 Position/Hold hover, and the navigation/return
+controller gates below.
 
 Evidence is retained under
-`.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z`.
+`.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z` and
+`.scratch/ariadne-hflow-transform-commissioning-2026-07-24/atlas/evidence/cold-start`.
 
 ## What still needs to be implemented
 
@@ -485,9 +504,13 @@ in-memory Native store, and the Indoor workspace renders them with React Three
 Fiber beside the existing camera view. Grounded Pi/OAK and Native end-to-end
 acceptance passed on `0.1.25`; the matched `0.1.26` aircraft release qualifies
 the explicit hold-only Native/Agent contract described above. Flight-enabling
-acceptance and stages 4–6 remain. The clock/setup follow-up described above is
-implemented locally but still requires matched packaging and cold-start
-acceptance before stage 4. The first Pi `0.1.17` deployment exposed two release
+acceptance and stages 4–6 remain. Release `0.1.27` now accepts the matched
+clock/setup packaging and physical cold-start gate; it grants no additional
+movement authority. The commissioned v4 physical-geometry source candidate has
+canonical hash
+`sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`;
+its guarded aircraft replacement and grounded validation remain pending. The
+first Pi `0.1.17` deployment exposed two release
 blockers corrected for `0.1.18`: the stream node no longer shadows
 `rclpy.Node` client state, and the
 DepthAI provider normalizes the observed vendor frame name to the Atlas-owned

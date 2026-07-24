@@ -87,9 +87,13 @@ topic/frame contract as the DepthAI provider. It should produce a live cloud on
 `/atlas/spatial/map/points`.
 
 The packaged transform bundle is seeded once at
-`/var/lib/atlas-agent/spatial/transforms.v1.json`. The Ariadne OAK mount remains
-`configured_unverified`: approximately 0.15 m forward, upright, and centred.
-Setup never overwrites a commissioned replacement.
+`/var/lib/atlas-agent/spatial/transforms.v1.json`. Ariadne's commissioned v4
+bundle records the OAK CAM_A/RGB origin at `+0.155 / +0.010 / +0.005 m` in
+body FRD with a verified forward/upright/approximately-level mount. Its
+body-to-H-Flow flow/range edges are also verified with unchanged geometry. The
+provider-owned `oak_mount` to aligned optical-frame edge remains
+`configured_unverified`; physical mounting evidence does not replace the
+device calibration contract. Setup never overwrites an aircraft-owned bundle.
 
 ## Pi deployment
 

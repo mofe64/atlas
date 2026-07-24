@@ -263,12 +263,17 @@ class HealthContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "ambiguous"):
             validate_transform_bundle(bundle)
 
-    def test_ariadne_preliminary_oak_mount_maps_rdf_axes_into_body_frd(self):
+    def test_ariadne_commissioned_physical_geometry_maps_sensor_axes_into_body_frd(self):
         config_path = Path(__file__).parents[1] / "config" / "transforms.v1.json"
         bundle = validate_transform_bundle(json.loads(config_path.read_text()))
+        self.assertEqual(bundle["bundleId"], "ariadne-indoor-foundation-v4-commissioned-physical-geometry")
+        self.assertEqual(
+            bundle["sha256"],
+            "sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a",
+        )
         oak = next(transform for transform in bundle["transforms"] if transform["childFrame"] == "oak_mount")
-        self.assertEqual(oak["status"], "configured_unverified")
-        self.assertEqual(oak["translationM"], {"x": 0.15, "y": 0.0, "z": 0.0})
+        self.assertEqual(oak["status"], "verified")
+        self.assertEqual(oak["translationM"], {"x": 0.155, "y": 0.01, "z": 0.005})
         self.assertEqual(oak["rotationWXYZ"], {"w": 0.5, "x": 0.5, "y": 0.5, "z": 0.5})
 
         # q=(0.5, 0.5, 0.5, 0.5) cyclically maps OAK RDF basis axes:
@@ -286,6 +291,18 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(optical["status"], "configured_unverified")
         self.assertEqual(optical["translationM"], {"x": 0.0, "y": 0.0, "z": 0.0})
         self.assertEqual(optical["rotationWXYZ"], {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0})
+
+        hflow = next(
+            transform for transform in bundle["transforms"] if transform["childFrame"] == "hflow_flow_frd"
+        )
+        self.assertEqual(hflow["status"], "verified")
+        self.assertEqual(hflow["translationM"], {"x": 0.045, "y": -0.05, "z": 0.0})
+
+        hrange = next(
+            transform for transform in bundle["transforms"] if transform["childFrame"] == "hflow_range_frd"
+        )
+        self.assertEqual(hrange["status"], "verified")
+        self.assertEqual(hrange["translationM"], {"x": 0.0, "y": 0.0, "z": 0.0})
 
 
 def _rotate_wxyz(rotation, vector):

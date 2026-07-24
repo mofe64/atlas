@@ -5,13 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -712,19 +710,7 @@ func TestEnsureSpatialTransformBundleSeedsMigratesKnownLegacyAndPreservesCommiss
 		t.Fatal(err)
 	}
 
-	decoder := json.NewDecoder(bytes.NewReader(defaultRaw))
-	decoder.UseNumber()
-	var legacy map[string]any
-	if err := decoder.Decode(&legacy); err != nil {
-		t.Fatal(err)
-	}
-	legacy["bundleId"] = "ariadne-indoor-foundation-v2-preliminary-oak"
-	delete(legacy["frames"].(map[string]any), "oak_rgb_camera_optical_frame")
-	transforms := legacy["transforms"].([]any)
-	legacy["transforms"] = slices.DeleteFunc(transforms, func(value any) bool {
-		return value.(map[string]any)["childFrame"] == "oak_rgb_camera_optical_frame"
-	})
-	legacyRaw, err := json.Marshal(legacy)
+	legacyRaw, err := os.ReadFile(filepath.Join("testdata", "ariadne-transform-v2-legacy.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

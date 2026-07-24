@@ -222,6 +222,60 @@ All four Atlas services were active with zero automatic restarts at the final
 checkpoint. Evidence is retained under
 `.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z`.
 
+## Matched 0.1.27 cold-start acceptance
+
+Release `0.1.27` packages the navigation-clock and setup-version fixes from
+clean commit `b8f725c7be6c0f8ee77ea490f0ad758fae67f65e`. The installed
+configuration and running container both select immutable image
+`sha256:054e785e91ad974073d575bb430de23d6dd472177f89254f5e4acbbaa67ef40f`.
+Setup renders `ATLAS_AGENT_VERSION="0.1.27"` and retains
+`ATLAS_SPATIAL_MOVEMENT_ENABLED="false"`.
+
+Before upgrade, the protected `0.1.26` navigation probe reproduced the old
+clock contract: live components appeared approximately `225 s` stale because
+clock epoch `0` retained the pre-correction offset. After a physical power
+cycle, journal history recorded a new kernel boot and all four Atlas services
+started automatically with zero restarts. Before any Agent or service restart,
+the first `0.1.27` probe was ready with component ages `23.5-136.2 ms` and
+clock epoch `1`. The new epoch proves the packaged aligner detected the
+boot-time wall-clock correction.
+
+All 20 subsequent `--require-ready` probes passed. Across the window,
+component ages remained `2.4-154.3 ms`, alignment errors remained
+`1.4-23.9 ms`, and every navigation source stayed in epoch `1`. Doctor exited
+successfully, the OAK remained ready on USB 3 / 5000 Mbps, and spatial health
+retained `movementAuthority=false` and the unchanged
+`configured_unverified` transform.
+
+A read-only 20-second complete-cloud observation captured 21 full
+100,000-point frames in one stream epoch. Sequence advanced `164→184`, capture
+time had 12 distinct values, every frame carried a valid pose, and no socket
+error occurred. The final service snapshot still reported all four services
+active with zero restarts. Identity and transform hashes remained identical
+to the pre-upgrade baseline.
+
+This accepts the matched cold-start clock gate. It does not physically verify
+the transform or grant movement authority. Evidence is retained under
+`.scratch/ariadne-hflow-transform-commissioning-2026-07-24/atlas/evidence/cold-start`.
+
+## Commissioned v4 physical-geometry candidate
+
+The operator subsequently measured the OAK CAM_A/RGB reference from aircraft
+centre at `+0.155 / +0.010 / +0.005 m` in body FRD and verified the mount as
+forward-facing, upright, and approximately level. Four retained original HEIC
+photographs corroborate the installation. The same commissioning record
+verifies the unchanged H-Flow flow/range geometry, motion signs, range
+response, and disarmed estimator behavior.
+
+The v4 source bundle promotes the body-to-OAK and body-to-H-Flow edges to
+`verified`, retains the device-calibration optical-frame edge as
+`configured_unverified`, and has canonical hash
+`sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`.
+Setup continues to preserve the aircraft-owned bundle; installation therefore
+requires an explicit stopped, old-hash-guarded replacement and grounded
+post-start verification. This source candidate does not grant movement
+authority or authorize arming.
+
 ## Installation and failure behavior
 
 `atlas-setup` discovers the OAK, seeds the transform bundle, and manages the
@@ -257,13 +311,12 @@ systemctl status atlas-spatial-runtime.service
 journalctl -u atlas-spatial-runtime.service -f
 ```
 
-The Native/Agent Indoor mission contract is installed and grounded-qualified
-in release `0.1.26`. The next implementation slice is the local navigation
-controller described in the [Indoor Operations Plan](indoor-ops-plan.md).
-The Agent source now detects host wall-clock steps using the monotonic receive
-clock, resets the PX4 alignment epoch, and renders `ATLAS_AGENT_VERSION` during
-setup; the observed `+68 s` step and an ordinary five-second delivery delay
-have local regression coverage. Movement remains blocked until those changes
-ship in a matched release and pass a physical cold start without an Agent
-restart, the configured transforms are physically verified, and the separate
-flight gates pass.
+The Native/Agent Indoor mission contract remains the hold-only contract
+grounded-qualified in release `0.1.26`. Release `0.1.27` now qualifies the
+monotonic clock-epoch and rendered-version fixes through a matched physical
+cold start without an Agent restart. Physical OAK and H-Flow evidence now
+supports the v4 commissioned source bundle, but movement remains blocked until
+that bundle passes its guarded aircraft replacement and grounded validation,
+the separate PX4 Position/Hold flight gate passes, and the local navigation
+and return controllers described in the
+[Indoor Operations Plan](indoor-ops-plan.md) are implemented and accepted.
