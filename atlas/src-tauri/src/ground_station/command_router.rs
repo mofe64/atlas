@@ -9,11 +9,11 @@ use super::{
     proto::pb::{
         ground_station_to_agent, AircraftFollowControlAction, AircraftFollowControlRequest,
         AircraftFollowEnvelope, AircraftFollowTargetState, GroundStationToAgent,
-        MissionActionCheckpoint, MissionOperationRequest, MissionOperationType,
-        MissionReconciliationRequest, VehicleCommandCancellation, VehicleCommandRequest,
-        VehicleCommandType,
+        IndoorExploreControlRequest, MissionActionCheckpoint, MissionOperationRequest,
+        MissionOperationType, MissionReconciliationRequest, VehicleCommandCancellation,
+        VehicleCommandRequest, VehicleCommandType,
     },
-    unix_time_ms,
+    unix_time_ms, IndoorExploreControl,
 };
 
 type ResponseSender = mpsc::Sender<Result<GroundStationToAgent, Status>>;
@@ -240,6 +240,41 @@ impl CommandRouter {
             .await
             .map_err(|_| {
                 "Atlas Agent session closed before aircraft follow control delivery".to_string()
+            })
+    }
+
+    pub(crate) async fn deliver_indoor_explore_control(
+        &self,
+        control: &IndoorExploreControl,
+    ) -> Result<(), String> {
+        let session = self
+            .sessions
+            .read()
+            .await
+            .get(&control.drone_id)
+            .cloned()
+            .ok_or_else(|| "drone has no active Atlas Agent session".to_string())?;
+        session
+            .outbound
+            .send(Ok(GroundStationToAgent {
+                payload: Some(
+                    ground_station_to_agent::Payload::IndoorExploreControlRequest(
+                        IndoorExploreControlRequest {
+                            operation_id: control.operation_id.clone(),
+                            mission_id: control.mission_id.clone(),
+                            drone_id: control.drone_id.clone(),
+                            action: control.action as i32,
+                            altitude_m: control.altitude_m,
+                            requested_at_unix_ms: control.requested_at_unix_ms,
+                            deadline_at_unix_ms: control.deadline_at_unix_ms,
+                            reason: control.reason.clone(),
+                        },
+                    ),
+                ),
+            }))
+            .await
+            .map_err(|_| {
+                "Atlas Agent session closed before Indoor Explore control delivery".to_string()
             })
     }
 

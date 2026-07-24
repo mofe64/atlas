@@ -32,7 +32,7 @@ Both streams are initiated by Agent. Native is the server.
 
 | Stream | Agent to Native | Native to Agent |
 | --- | --- | --- |
-| `OpenSession` | Registration, heartbeat, telemetry, status text, command updates, mission-run updates | Registration acceptance, command requests/cancellations, mission operations |
+| `OpenSession` | Registration, heartbeat, telemetry, status text, command updates, mission-run updates, Indoor Explore updates | Registration acceptance, command requests/cancellations, mission operations, Indoor Explore controls |
 | `OpenPerceptionStream` | Registration, detection frames, perception health | Stream acceptance, frame-subscription leases |
 | `OpenSpatialStream` | Registration, complete bounded point-cloud snapshots and current VIO pose | Stream acceptance, cloud-subscription leases |
 
@@ -242,6 +242,64 @@ degradation, boundary/altitude violation, and Offboard loss as Hold conditions.
 Agent event IDs make state updates idempotent. Gimbal follow messages remain in
 the payload-control path and do not confer aircraft navigation authority.
 
+## Indoor Explore control lifecycle
+
+Indoor Explore uses a dedicated main-session contract instead of an uploaded
+geographic mission or PX4 RTL. Native sends an
+`IndoorExploreControlRequest` with an operation ID, mission ID, exact drone
+identity, deadline, and one of two actions: `START` or `ABORT_AND_RETURN`.
+`altitude_m` accepts exactly `0.5`, `1.0`, or `2.0` metres relative to the
+mission-start floor/height reference.
+
+Agent returns `IndoorExploreMissionUpdate` messages with one of the explicit
+states below:
+
+```mermaid
+stateDiagram-v2
+    [*] --> STARTING
+    STARTING --> TAKING_OFF
+    STARTING --> HOLDING
+    STARTING --> FAILED
+    TAKING_OFF --> EXPLORING
+    TAKING_OFF --> RETURNING
+    TAKING_OFF --> HOLDING
+    TAKING_OFF --> FAILED
+    EXPLORING --> RETURNING
+    EXPLORING --> COMPLETE
+    EXPLORING --> HOLDING
+    EXPLORING --> FAILED
+    RETURNING --> COMPLETE
+    RETURNING --> HOLDING
+    RETURNING --> FAILED
+    HOLDING --> RETURNING
+    HOLDING --> COMPLETE
+    HOLDING --> FAILED
+```
+
+Native validates mission identity, operation identity, the immutable selected
+altitude, and every transition before changing the operator-facing snapshot.
+After a Native restart it may adopt an unknown mission only when Agent reports
+`HOLDING` or `FAILED`; it never reconstructs an unverified moving state.
+Starting a second Indoor Explore mission is blocked while the current state is
+non-terminal.
+
+The first Stage 3 implementation advertises
+`indoor_explore:contract:v1` and
+`indoor_explore:movement_authority:false`. It is intentionally hold-only:
+Agent acknowledges Start with `STARTING`, establishes PX4 Hold through the
+existing MAVSDK action executor, then reports `HOLDING` with
+`LOCAL_NAVIGATION_NOT_COMMISSIONED`. Abort also establishes Hold and reports
+`HOLDING` with `RETURN_CONTROLLER_NOT_COMMISSIONED`; it does not falsely claim
+that return-to-start occurred. A lost main session independently triggers the
+same onboard Hold boundary.
+
+`TAKING_OFF`, `EXPLORING`, `RETURNING`, and `COMPLETE` are reserved contract
+states for later local-navigation and return-controller stages. Their presence
+in the protocol does not grant movement authority. Native enables the controls
+only when the connected Agent advertises `indoor_explore:contract:v1`, so the
+currently installed `0.1.25` mapping release remains mapping-only until a
+later matched Agent/Native release is built and deployed.
+
 ## Mission operation lifecycle
 
 Mission operations use their own request and update messages because they carry
@@ -330,7 +388,8 @@ Both implementations deliberately bound queues:
 
 - Native session response channel: eight messages.
 - Native perception response channel: two messages.
-- Agent command and mission request channels: small fixed capacities.
+- Agent command and mission request channels, including Indoor Explore:
+  small fixed capacities.
 - Agent telemetry and perception source channels: latest-only capacity one.
 - Mission updates: bounded channel.
 

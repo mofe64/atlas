@@ -33,6 +33,7 @@ message AgentToGroundStation {
     VehicleCommandUpdate command_update = 6;
     MissionRunUpdate mission_run_update = 7;
     AircraftFollowSessionUpdate aircraft_follow_session_update = 8;
+    IndoorExploreMissionUpdate indoor_explore_mission_update = 9;
   }
 }
 
@@ -44,6 +45,7 @@ message GroundStationToAgent {
     MissionOperationRequest mission_operation_request = 4;
     MissionReconciliationRequest mission_reconciliation_request = 5;
     AircraftFollowControlRequest aircraft_follow_control_request = 6;
+    IndoorExploreControlRequest indoor_explore_control_request = 7;
   }
 }
 
@@ -601,6 +603,50 @@ message AircraftFollowSessionUpdate {
   string reason_code = 6;
   string message = 7;
   string evidence_json = 8;
+}
+
+// Indoor Explore has a dedicated mission contract because it uses
+// short-range local navigation and an explicit return-to-start behavior, not
+// PX4's uploaded waypoint mission or geographic RTL.
+enum IndoorExploreControlAction {
+  INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED = 0;
+  INDOOR_EXPLORE_CONTROL_ACTION_START = 1;
+  INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN = 2;
+}
+
+enum IndoorExploreMissionState {
+  INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED = 0;
+  INDOOR_EXPLORE_MISSION_STATE_STARTING = 1;
+  INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF = 2;
+  INDOOR_EXPLORE_MISSION_STATE_EXPLORING = 3;
+  INDOOR_EXPLORE_MISSION_STATE_RETURNING = 4;
+  INDOOR_EXPLORE_MISSION_STATE_COMPLETE = 5;
+  INDOOR_EXPLORE_MISSION_STATE_HOLDING = 6;
+  INDOOR_EXPLORE_MISSION_STATE_FAILED = 7;
+}
+
+message IndoorExploreControlRequest {
+  string operation_id = 1;
+  string mission_id = 2;
+  string drone_id = 3;
+  IndoorExploreControlAction action = 4;
+  // The only valid values are exactly 0.5, 1.0, and 2.0 metres relative to
+  // the recorded mission-start floor/height reference.
+  double altitude_m = 5;
+  int64 requested_at_unix_ms = 6;
+  int64 deadline_at_unix_ms = 7;
+  string reason = 8;
+}
+
+message IndoorExploreMissionUpdate {
+  string event_id = 1;
+  string operation_id = 2;
+  string mission_id = 3;
+  IndoorExploreMissionState state = 4;
+  double altitude_m = 5;
+  int64 observed_at_unix_ms = 6;
+  string error_code = 7;
+  string message = 8;
 }
 
 // Mission operations use the same durable request/update boundary as vehicle

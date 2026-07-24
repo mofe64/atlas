@@ -25,6 +25,8 @@ setup(
         "console_scripts": [
             "atlas-spatial-health = atlas_spatial_runtime.health_node:main",
             "atlas-spatial-depth-normalizer = atlas_spatial_runtime.depth_normalizer:main",
+            "atlas-spatial-stereo-camera-info = atlas_spatial_runtime.stereo_camera_info:main",
+            "atlas-spatial-imu-timestamp-gate = atlas_spatial_runtime.imu_timestamp_gate:main",
             "atlas-spatial-live-cloud = atlas_spatial_runtime.live_cloud_node:main",
             "atlas-spatial-stream = atlas_spatial_runtime.spatial_stream_node:main",
             "atlas-spatial-probe = atlas_spatial_runtime.probe:main",

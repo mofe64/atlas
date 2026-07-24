@@ -37,6 +37,51 @@ func TestReadFramePreservesTheCompletePackedCloud(t *testing.T) {
 	}
 }
 
+func TestReadFrameNormalizesValidOptionalPose(t *testing.T) {
+	metadata := validHeader()
+	metadata.Pose = &Pose{
+		CaptureNS: 2, FrameID: "vio_local", ChildFrameID: "oak_mount",
+		OrientationWXYZ: [4]float64{1.01, 0, 0, 0},
+	}
+	frame, err := readFrame(bytes.NewReader(framed(t, metadata, make([]byte, 12))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Pose == nil || frame.Pose.OrientationWXYZ != [4]float64{1, 0, 0, 0} {
+		t.Fatalf("normalized pose = %#v", frame.Pose)
+	}
+}
+
+func TestReadFrameOmitsInvalidOptionalPoseWithoutDroppingCloud(t *testing.T) {
+	metadata := validHeader()
+	metadata.Pose = &Pose{
+		CaptureNS: 2, FrameID: "vio_local", ChildFrameID: "oak_mount",
+		OrientationWXYZ: [4]float64{},
+	}
+	frame, err := readFrame(bytes.NewReader(framed(t, metadata, make([]byte, 12))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Pose != nil || frame.PointCount != 1 || len(frame.XYZF32LE) != 12 {
+		t.Fatalf("frame with omitted pose = %#v", frame)
+	}
+}
+
+func TestReadFrameOmitsOptionalPoseWithBlankFrameIdentity(t *testing.T) {
+	metadata := validHeader()
+	metadata.Pose = &Pose{
+		CaptureNS: 2, FrameID: " ", ChildFrameID: "oak_mount",
+		OrientationWXYZ: [4]float64{1, 0, 0, 0},
+	}
+	frame, err := readFrame(bytes.NewReader(framed(t, metadata, make([]byte, 12))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frame.Pose != nil {
+		t.Fatalf("pose with blank frame identity was preserved: %#v", frame.Pose)
+	}
+}
+
 func TestReadFrameRejectsMismatchedAndNonFiniteClouds(t *testing.T) {
 	metadata := validHeader()
 	metadata.XYZByteLength = 8

@@ -28,7 +28,7 @@ const (
 	maximumRetry = 30 * time.Second
 )
 
-func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor) {
+func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, indoorExecutor IndoorExploreExecutor) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -36,7 +36,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdent
 	cloudDemand := newSpatialDemand()
 	backoff := minimumRetry
 	for ctx.Err() == nil {
-		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, spatialOutputs, executor, missionExecutor, followExecutor, frameDemand, cloudDemand)
+		err := connect(ctx, logger, cfg, localIdentity, telemetryUpdates, statusTexts, perceptionOutputs, spatialOutputs, executor, missionExecutor, followExecutor, indoorExecutor, frameDemand, cloudDemand)
 		if ctx.Err() != nil {
 			return
 		}
@@ -74,7 +74,14 @@ type AircraftFollowExecutor interface {
 	Capabilities() []string
 }
 
-func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, frameDemand *frameDemand, cloudDemand *spatialDemand) error {
+type IndoorExploreExecutor interface {
+	Apply(context.Context, vehicle.IndoorExploreOperation)
+	GroundLinkLost()
+	Updates() <-chan vehicle.IndoorExploreUpdate
+	Capabilities() []string
+}
+
+func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localIdentity identity.Identity, telemetryUpdates <-chan telemetry.Snapshot, statusTexts <-chan telemetry.StatusTextEvent, perceptionOutputs perception.Outputs, spatialOutputs spatial.Outputs, executor CommandExecutor, missionExecutor MissionExecutor, followExecutor AircraftFollowExecutor, indoorExecutor IndoorExploreExecutor, frameDemand *frameDemand, cloudDemand *spatialDemand) error {
 	connection, err := grpc.NewClient(cfg.GroundStationAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return fmt.Errorf("create ground-station client: %w", err)
@@ -90,6 +97,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	now := time.Now().UTC()
 	capabilities := append(executor.Capabilities(), missionExecutor.Capabilities()...)
 	capabilities = append(capabilities, followExecutor.Capabilities()...)
+	capabilities = append(capabilities, indoorExecutor.Capabilities()...)
 	if cfg.PerceptionEnabled() {
 		capabilities = append(capabilities, "perception:object_detection:v1", "perception:health:v1", "perception:frame_subscription:v1")
 	}
@@ -121,6 +129,7 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 		"communication_link_id", accepted.GetCommunicationLinkId(),
 	)
 	defer followExecutor.GroundLinkLost()
+	defer indoorExecutor.GroundLinkLost()
 	perceptionContext, cancelPerception := context.WithCancel(ctx)
 	defer cancelPerception()
 	if cfg.PerceptionEnabled() {
@@ -137,6 +146,18 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 	missionOperations := make(chan *pb.MissionOperationRequest, 4)
 	missionReconciliations := make(chan *pb.MissionReconciliationRequest, 2)
 	aircraftFollowRequests := make(chan *pb.AircraftFollowControlRequest, 8)
+	indoorExploreRequests := make(chan *pb.IndoorExploreControlRequest, 4)
+	indoorExploreOperations := make(chan vehicle.IndoorExploreOperation, 4)
+	go func() {
+		for {
+			select {
+			case <-perceptionContext.Done():
+				return
+			case operation := <-indoorExploreOperations:
+				indoorExecutor.Apply(ctx, operation)
+			}
+		}
+	}()
 	go func() {
 		for {
 			message, err := stream.Recv()
@@ -155,6 +176,8 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 				missionReconciliations <- payload.MissionReconciliationRequest
 			case *pb.GroundStationToAgent_AircraftFollowControlRequest:
 				aircraftFollowRequests <- payload.AircraftFollowControlRequest
+			case *pb.GroundStationToAgent_IndoorExploreControlRequest:
+				indoorExploreRequests <- payload.IndoorExploreControlRequest
 			}
 		}
 	}()
@@ -268,6 +291,47 @@ func connect(ctx context.Context, logger *slog.Logger, cfg config.Config, localI
 			if err := sendAircraftFollowUpdate(stream, sessionID, update); err != nil {
 				return err
 			}
+		case request := <-indoorExploreRequests:
+			if request.GetDroneId() != localIdentity.DroneID || request.GetMissionId() == "" {
+				if err := sendIndoorExploreUpdate(stream, sessionID, vehicle.IndoorExploreUpdate{
+					EventID: identity.NewID(), OperationID: request.GetOperationId(), MissionID: request.GetMissionId(),
+					State: "FAILED", AltitudeM: request.GetAltitudeM(), ObservedAt: time.Now().UTC(),
+					ErrorCode: "INVALID_TARGET", Message: "Indoor Explore request does not target this drone",
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+			if time.Now().UTC().UnixMilli() > request.GetDeadlineAtUnixMs() {
+				if err := sendIndoorExploreUpdate(stream, sessionID, vehicle.IndoorExploreUpdate{
+					EventID: identity.NewID(), OperationID: request.GetOperationId(), MissionID: request.GetMissionId(),
+					State: "FAILED", AltitudeM: request.GetAltitudeM(), ObservedAt: time.Now().UTC(),
+					ErrorCode: "DEADLINE_EXCEEDED", Message: "Indoor Explore request expired before execution",
+				}); err != nil {
+					return err
+				}
+				continue
+			}
+			operation, err := indoorExploreOperation(request)
+			if err != nil {
+				if sendErr := sendIndoorExploreUpdate(stream, sessionID, vehicle.IndoorExploreUpdate{
+					EventID: identity.NewID(), OperationID: request.GetOperationId(), MissionID: request.GetMissionId(),
+					State: "FAILED", AltitudeM: request.GetAltitudeM(), ObservedAt: time.Now().UTC(),
+					ErrorCode: "INVALID_INDOOR_REQUEST", Message: err.Error(),
+				}); sendErr != nil {
+					return sendErr
+				}
+				continue
+			}
+			select {
+			case indoorExploreOperations <- operation:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		case update := <-indoorExecutor.Updates():
+			if err := sendIndoorExploreUpdate(stream, sessionID, update); err != nil {
+				return err
+			}
 		case update := <-missionExecutor.Updates():
 			frameDemand.setMissionState(update.RunID, update.State)
 			if err := sendMissionUpdate(stream, sessionID, update); err != nil {
@@ -347,6 +411,65 @@ func sendAircraftFollowUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundSt
 			ReasonCode: update.ReasonCode, Message: update.Message, EvidenceJson: update.EvidenceJSON,
 		}},
 	})
+}
+
+func sendIndoorExploreUpdate(stream grpc.BidiStreamingClient[pb.AgentToGroundStation, pb.GroundStationToAgent], sessionID string, update vehicle.IndoorExploreUpdate) error {
+	return stream.Send(&pb.AgentToGroundStation{
+		SessionId: sessionID,
+		Payload: &pb.AgentToGroundStation_IndoorExploreMissionUpdate{IndoorExploreMissionUpdate: &pb.IndoorExploreMissionUpdate{
+			EventId: update.EventID, OperationId: update.OperationID, MissionId: update.MissionID,
+			State: indoorExploreUpdateState(update.State), AltitudeM: update.AltitudeM,
+			ObservedAtUnixMs: update.ObservedAt.UnixMilli(), ErrorCode: update.ErrorCode, Message: update.Message,
+		}},
+	})
+}
+
+func indoorExploreOperation(request *pb.IndoorExploreControlRequest) (vehicle.IndoorExploreOperation, error) {
+	action := indoorExploreActionName(request.GetAction())
+	if action == "" {
+		return vehicle.IndoorExploreOperation{}, errors.New("Indoor Explore control action is unspecified")
+	}
+	return vehicle.IndoorExploreOperation{
+		OperationID: request.GetOperationId(),
+		MissionID:   request.GetMissionId(),
+		DroneID:     request.GetDroneId(),
+		Action:      action,
+		AltitudeM:   request.GetAltitudeM(),
+		RequestedAt: time.UnixMilli(request.GetRequestedAtUnixMs()).UTC(),
+		Reason:      request.GetReason(),
+	}, nil
+}
+
+func indoorExploreActionName(action pb.IndoorExploreControlAction) string {
+	switch action {
+	case pb.IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_START:
+		return "start"
+	case pb.IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN:
+		return "abort_and_return"
+	default:
+		return ""
+	}
+}
+
+func indoorExploreUpdateState(state string) pb.IndoorExploreMissionState {
+	switch state {
+	case "STARTING":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_STARTING
+	case "TAKING_OFF":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF
+	case "EXPLORING":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_EXPLORING
+	case "RETURNING":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_RETURNING
+	case "COMPLETE":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_COMPLETE
+	case "HOLDING":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_HOLDING
+	case "FAILED":
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_FAILED
+	default:
+		return pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED
+	}
 }
 
 func aircraftFollowOperation(request *pb.AircraftFollowControlRequest) (vehicle.AircraftFollowOperation, error) {

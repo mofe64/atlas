@@ -20,6 +20,20 @@ type SpatialSnapshot = {
   latestCloud?: SpatialCloudMetadata;
 };
 
+type IndoorExploreState = "starting" | "taking_off" | "exploring" | "returning" | "complete" | "holding" | "failed";
+
+type IndoorExploreSnapshot = {
+  missionId: string;
+  operationId: string;
+  droneId: string;
+  state: IndoorExploreState;
+  altitudeM: number;
+  requestedAtUnixMs: number;
+  updatedAtUnixMs: number;
+  errorCode: string;
+  message: string;
+};
+
 type IndoorPageProps = {
   nativeAvailable: boolean;
   aircraft: FleetAircraft[];
@@ -28,6 +42,7 @@ type IndoorPageProps = {
 };
 
 const leaseDurationMs = 12_000;
+const indoorAltitudes = [0.5, 1, 2] as const;
 
 export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSelectAircraft }: IndoorPageProps) {
   const eligibleAircraft = useMemo(() => aircraft.filter((item) =>
@@ -41,9 +56,15 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
   const [snapshot, setSnapshot] = useState<SpatialSnapshot>();
   const [frame, setFrame] = useState<SpatialCloudFrame>();
   const [error, setError] = useState<string>();
+  const [mission, setMission] = useState<IndoorExploreSnapshot>();
+  const [missionError, setMissionError] = useState<string>();
+  const [missionPending, setMissionPending] = useState<"start" | "abort">();
+  const [selectedAltitude, setSelectedAltitude] = useState<(typeof indoorAltitudes)[number]>(1);
   const [cameraRevision, setCameraRevision] = useState(0);
   const latestSequence = useRef(0);
   const latestEpoch = useRef<string | undefined>(undefined);
+  const selectedAircraft = aircraft.find((item) => item.droneId === droneId);
+  const missionSupported = selectedAircraft?.agentCapabilities?.includes("indoor_explore:contract:v1") === true;
 
   useEffect(() => {
     if (droneId && eligibleAircraft.some((item) => item.droneId === droneId)) return;
@@ -139,14 +160,71 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
     };
   }, [droneId, nativeAvailable]);
 
-  const selectedAircraft = aircraft.find((item) => item.droneId === droneId);
+  useEffect(() => {
+    setMission(undefined);
+    setMissionError(undefined);
+    if (!nativeAvailable || !droneId) return;
+    let active = true;
+    async function refreshMission() {
+      try {
+        const next = await invoke<IndoorExploreSnapshot | null>("indoor_explore_snapshot", { droneId });
+        if (active) setMission(next ?? undefined);
+      } catch (reason) {
+        if (active) setMissionError(message(reason));
+      }
+    }
+    void refreshMission();
+    const interval = window.setInterval(refreshMission, 1_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [droneId, nativeAvailable]);
+
   const status = !nativeAvailable ? "native-unavailable" : snapshot?.status ?? "waiting";
   const statusLabel = status === "connected" && frame ? "Live cloud" : label(status);
   const stale = snapshot?.status === "stale" || (frame && Date.now() - frame.metadata.receivedAtUnixMs > 3_000);
+  const missionTerminal = mission?.state === "complete" || mission?.state === "failed";
+  const missionActive = Boolean(mission && !missionTerminal);
 
   function selectAircraft(nextDroneId: string) {
     setDroneId(nextDroneId);
     onSelectAircraft?.(nextDroneId);
+  }
+
+  async function startMission() {
+    if (!droneId || missionPending) return;
+    setMissionPending("start");
+    setMissionError(undefined);
+    try {
+      const next = await invoke<IndoorExploreSnapshot>("start_indoor_explore", {
+        droneId,
+        altitudeM: selectedAltitude,
+      });
+      setMission(next);
+    } catch (reason) {
+      setMissionError(message(reason));
+    } finally {
+      setMissionPending(undefined);
+    }
+  }
+
+  async function abortMission() {
+    if (!droneId || !mission || missionPending) return;
+    setMissionPending("abort");
+    setMissionError(undefined);
+    try {
+      const next = await invoke<IndoorExploreSnapshot>("abort_indoor_explore", {
+        droneId,
+        missionId: mission.missionId,
+        reason: "Operator selected Abort and return in Atlas Native",
+      });
+      setMission(next);
+    } catch (reason) {
+      setMissionError(message(reason));
+    } finally {
+      setMissionPending(undefined);
+    }
   }
 
   return (
@@ -155,7 +233,7 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
         <div>
           <p className="eyebrow">Local spatial awareness</p>
           <h1>Indoor explore</h1>
-          <p>Inspect the complete current VIO-local map before indoor mission controls are introduced.</p>
+          <p>Inspect the complete VIO-local map and operate the safety-bounded Indoor Explore mission contract.</p>
         </div>
         <label className="indoor-page__aircraft">
           <span>Spatial aircraft</span>
@@ -179,6 +257,67 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
       </section>
 
       {error && <p className="indoor-page__error" role="alert">Spatial stream: {error}</p>}
+
+      <section className="indoor-mission" aria-labelledby="indoor-mission-title">
+        <header>
+          <div>
+            <p className="eyebrow">Mission contract</p>
+            <h2 id="indoor-mission-title">Explore at a fixed height</h2>
+          </div>
+          <span className={`indoor-mission__authority ${missionSupported ? "indoor-mission__authority--ready" : ""}`}>
+            {missionSupported ? "Hold-only contract ready" : "Agent update required"}
+          </span>
+        </header>
+
+        <fieldset className="indoor-mission__altitudes" disabled={missionActive || Boolean(missionPending)}>
+          <legend>Flight height</legend>
+          {indoorAltitudes.map((altitude) => (
+            <label key={altitude}>
+              <input
+                type="radio"
+                name="indoor-altitude"
+                value={altitude}
+                checked={(missionActive ? mission?.altitudeM : selectedAltitude) === altitude}
+                onChange={() => setSelectedAltitude(altitude)}
+              />
+              <strong>{altitude} m</strong>
+              <span>Relative to start</span>
+            </label>
+          ))}
+        </fieldset>
+
+        <div className="indoor-mission__actions">
+          <button
+            type="button"
+            className="indoor-mission__start"
+            disabled={!missionSupported || missionActive || Boolean(missionPending)}
+            onClick={() => void startMission()}
+          >
+            {missionPending === "start" ? "Starting…" : "Start mission"}
+          </button>
+          <button
+            type="button"
+            className="indoor-mission__abort"
+            disabled={!missionSupported || !missionActive || Boolean(missionPending)}
+            onClick={() => void abortMission()}
+          >
+            {missionPending === "abort" ? "Aborting…" : "Abort and return"}
+          </button>
+        </div>
+
+        <div className="indoor-mission__state" aria-live="polite">
+          <small>Mission state</small>
+          <strong>{mission ? label(mission.state) : "Not started"}</strong>
+          <span>{mission
+            ? `${mission.altitudeM} m · ${mission.message || "Waiting for Agent update"}`
+            : missionSupported
+              ? "Select one of the three fixed heights, then Start."
+              : "The connected release can map, but does not advertise Indoor Explore contract v1."}</span>
+          {mission?.errorCode && <code>{mission.errorCode}</code>}
+        </div>
+      </section>
+
+      {missionError && <p className="indoor-page__error" role="alert">Indoor Explore: {missionError}</p>}
 
       <section className="indoor-workspace" aria-label="Indoor spatial workspace">
         <article className="indoor-cloud">
@@ -277,7 +416,7 @@ function StatusMetric({ label: metricLabel, value, detail, tone = "neutral" }: {
 
 function message(reason: unknown) { return reason instanceof Error ? reason.message : String(reason); }
 function compact(value: string) { return value.length > 15 ? `${value.slice(0, 8)}…${value.slice(-5)}` : value; }
-function label(value: string) { return value.split("-").map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" "); }
+function label(value: string) { return value.split(/[-_]/).map((part) => part[0]?.toUpperCase() + part.slice(1)).join(" "); }
 function relativeTime(value: number) {
   const age = Math.max(0, Date.now() - value);
   if (age < 1_000) return "Now";

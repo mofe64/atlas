@@ -267,6 +267,93 @@ pub(crate) async fn spatial_subscription_stop(
         .await
 }
 
+#[tauri::command]
+pub(crate) fn indoor_explore_snapshot(
+    state: State<'_, AppState>,
+    drone_id: String,
+) -> Option<crate::ground_station::IndoorExploreSnapshot> {
+    state.indoor.snapshot(&drone_id)
+}
+
+#[tauri::command]
+pub(crate) async fn start_indoor_explore(
+    state: State<'_, AppState>,
+    drone_id: String,
+    altitude_m: f64,
+) -> Result<crate::ground_station::IndoorExploreSnapshot, String> {
+    validate_indoor_explore_agent(&state, &drone_id)?;
+    let now = unix_time_ms();
+    let control = state.indoor.prepare_start(&drone_id, altitude_m, now)?;
+    if let Err(error) = state
+        .command_router
+        .deliver_indoor_explore_control(&control)
+        .await
+    {
+        state.indoor.record_delivery_failure(
+            &drone_id,
+            &control.operation_id,
+            "START_DELIVERY_FAILED",
+            &error,
+            unix_time_ms(),
+        );
+        return Err(error);
+    }
+    state
+        .indoor
+        .snapshot(&drone_id)
+        .ok_or_else(|| "Indoor Explore state disappeared after Start delivery".into())
+}
+
+#[tauri::command]
+pub(crate) async fn abort_indoor_explore(
+    state: State<'_, AppState>,
+    drone_id: String,
+    mission_id: String,
+    reason: Option<String>,
+) -> Result<crate::ground_station::IndoorExploreSnapshot, String> {
+    validate_indoor_explore_agent(&state, &drone_id)?;
+    let now = unix_time_ms();
+    let reason = reason
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "Operator requested Abort and return".into());
+    let control = state
+        .indoor
+        .prepare_abort(&drone_id, &mission_id, &reason, now)?;
+    if let Err(error) = state
+        .command_router
+        .deliver_indoor_explore_control(&control)
+        .await
+    {
+        state.indoor.record_delivery_failure(
+            &drone_id,
+            &control.operation_id,
+            "ABORT_DELIVERY_FAILED",
+            &error,
+            unix_time_ms(),
+        );
+        return Err(error);
+    }
+    state
+        .indoor
+        .snapshot(&drone_id)
+        .ok_or_else(|| "Indoor Explore state disappeared after Abort delivery".into())
+}
+
+fn validate_indoor_explore_agent(state: &AppState, drone_id: &str) -> Result<(), String> {
+    let aircraft = state.database.operations_snapshot_for(Some(drone_id))?;
+    if aircraft.connection_status != "connected" {
+        return Err("Indoor Explore requires a connected Atlas Agent".into());
+    }
+    if !aircraft
+        .agent_capabilities
+        .iter()
+        .any(|capability| capability == "indoor_explore:contract:v1")
+    {
+        return Err("the connected Atlas Agent does not support Indoor Explore contract v1".into());
+    }
+    Ok(())
+}
+
 /// Reads durable lifecycle summaries independently of the ephemeral live-view
 /// cache. Operator selection uses the exact session/track identity from here.
 #[tauri::command]

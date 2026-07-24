@@ -25,7 +25,7 @@ use super::{
         ground_station_to_agent, AgentPerception, AgentToGroundStation,
     },
     server::serve,
-    unix_time_ms, PerceptionStore, SpatialStore,
+    unix_time_ms, IndoorExploreStore, PerceptionStore, SpatialStore,
 };
 
 #[tokio::test]
@@ -42,6 +42,7 @@ async fn grpc_registration_creates_and_closes_local_link() {
         address,
         Arc::clone(&database),
         command_router.clone(),
+        IndoorExploreStore::default(),
         perception.clone(),
         SpatialStore::default(),
     ));
@@ -531,6 +532,163 @@ async fn grpc_registration_creates_and_closes_local_link() {
     remove_sqlite_files(&path);
 }
 
+#[tokio::test]
+async fn indoor_explore_control_and_agent_state_round_trip_on_the_main_session() {
+    let path =
+        std::env::temp_dir().join(format!("atlas-indoor-contract-test-{}.db", unix_time_ms()));
+    let database = Arc::new(LocalDatabase::open_path(path.clone()).expect("open database"));
+    let probe = TcpListener::bind("127.0.0.1:0").expect("reserve loopback port");
+    let address = probe.local_addr().expect("read loopback address");
+    drop(probe);
+
+    let command_router = super::CommandRouter::default();
+    let indoor = IndoorExploreStore::default();
+    let server = tokio::spawn(serve(
+        address,
+        Arc::clone(&database),
+        command_router.clone(),
+        indoor.clone(),
+        PerceptionStore::default(),
+        SpatialStore::default(),
+    ));
+    let endpoint = format!("http://{address}");
+    let mut client = loop {
+        match pb::ground_station_service_client::GroundStationServiceClient::connect(
+            endpoint.clone(),
+        )
+        .await
+        {
+            Ok(client) => break client,
+            Err(_) => tokio::time::sleep(Duration::from_millis(10)).await,
+        }
+    };
+
+    let (outbound, requests) = mpsc::channel(4);
+    let response = client
+        .open_session(ReceiverStream::new(requests))
+        .await
+        .expect("open session");
+    let mut responses = response.into_inner();
+    outbound
+        .send(AgentToGroundStation {
+            session_id: "indoor-session-1".into(),
+            payload: Some(agent_to_ground_station::Payload::Registration(
+                pb::AgentRegistration {
+                    registration_request_id: "indoor-registration-1".into(),
+                    installation_id: "indoor-agent-1".into(),
+                    agent_version: "test".into(),
+                    protocol_version: "1".into(),
+                    device: Some(pb::DeviceProfile {
+                        hostname: "indoor-test-pi".into(),
+                        ..Default::default()
+                    }),
+                    drone: Some(pb::DroneProfile {
+                        drone_id: "indoor-drone-1".into(),
+                        name: "Indoor Test".into(),
+                        vehicle_type: "multicopter".into(),
+                        ..Default::default()
+                    }),
+                    flight_controller: Some(pb::FlightControllerAttachment {
+                        transport: "serial".into(),
+                        ..Default::default()
+                    }),
+                    capabilities: vec![
+                        "command:hold".into(),
+                        "indoor_explore:contract:v1".into(),
+                        "indoor_explore:movement_authority:false".into(),
+                    ],
+                    observed_at_unix_ms: unix_time_ms(),
+                },
+            )),
+        })
+        .await
+        .expect("send registration");
+    assert!(matches!(
+        responses
+            .message()
+            .await
+            .expect("read registration response")
+            .expect("registration response")
+            .payload,
+        Some(ground_station_to_agent::Payload::RegistrationAccepted(_))
+    ));
+
+    let control = indoor
+        .prepare_start("indoor-drone-1", 1.0, unix_time_ms())
+        .expect("prepare Indoor Explore Start");
+    command_router
+        .deliver_indoor_explore_control(&control)
+        .await
+        .expect("deliver Indoor Explore Start");
+    let request = responses
+        .message()
+        .await
+        .expect("read control request")
+        .expect("control request")
+        .payload;
+    let Some(ground_station_to_agent::Payload::IndoorExploreControlRequest(request)) = request
+    else {
+        panic!("expected Indoor Explore control request");
+    };
+    assert_eq!(request.mission_id, control.mission_id);
+    assert_eq!(request.altitude_m, 1.0);
+    assert_eq!(request.action(), pb::IndoorExploreControlAction::Start);
+
+    for (event_id, state, error_code) in [
+        (
+            "indoor-starting",
+            pb::IndoorExploreMissionState::Starting,
+            "",
+        ),
+        (
+            "indoor-holding",
+            pb::IndoorExploreMissionState::Holding,
+            "LOCAL_NAVIGATION_NOT_COMMISSIONED",
+        ),
+    ] {
+        outbound
+            .send(AgentToGroundStation {
+                session_id: "indoor-session-1".into(),
+                payload: Some(
+                    agent_to_ground_station::Payload::IndoorExploreMissionUpdate(
+                        pb::IndoorExploreMissionUpdate {
+                            event_id: event_id.into(),
+                            operation_id: control.operation_id.clone(),
+                            mission_id: control.mission_id.clone(),
+                            state: state as i32,
+                            altitude_m: 1.0,
+                            observed_at_unix_ms: unix_time_ms(),
+                            error_code: error_code.into(),
+                            message: state.as_str_name().into(),
+                        },
+                    ),
+                ),
+            })
+            .await
+            .expect("send Indoor Explore update");
+    }
+    for _ in 0..20 {
+        if indoor
+            .snapshot("indoor-drone-1")
+            .is_some_and(|snapshot| snapshot.state == "holding")
+        {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let snapshot = indoor
+        .snapshot("indoor-drone-1")
+        .expect("read Indoor Explore snapshot");
+    assert_eq!(snapshot.state, "holding");
+    assert_eq!(snapshot.altitude_m, 1.0);
+    assert_eq!(snapshot.error_code, "LOCAL_NAVIGATION_NOT_COMMISSIONED");
+
+    drop(outbound);
+    server.abort();
+    drop(database);
+    remove_sqlite_files(&path);
+}
+
 fn remove_sqlite_files(path: &std::path::Path) {
     for candidate in [
         path.to_path_buf(),
@@ -603,6 +761,7 @@ async fn sitl_executes_hold_rtl_and_land_through_native_lifecycle() {
         address,
         Arc::clone(&database),
         command_router.clone(),
+        IndoorExploreStore::default(),
         PerceptionStore::default(),
         SpatialStore::default(),
     ));
@@ -758,6 +917,7 @@ async fn sitl_reconciles_native_run_after_agent_process_restart() {
         address,
         Arc::clone(&database),
         command_router.clone(),
+        IndoorExploreStore::default(),
         PerceptionStore::default(),
         SpatialStore::default(),
     ));
@@ -1370,6 +1530,7 @@ async fn sitl_flies_response_patterns_with_continuous_video() {
         address,
         Arc::clone(&database),
         command_router.clone(),
+        IndoorExploreStore::default(),
         perception.clone(),
         SpatialStore::default(),
     ));

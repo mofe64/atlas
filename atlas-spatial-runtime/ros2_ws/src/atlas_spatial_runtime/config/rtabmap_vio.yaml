@@ -1,0 +1,48 @@
+/**:
+  ros__parameters:
+    # The DepthAI calibration tree is rooted at this Atlas-stable mount frame.
+    # RTAB-Map therefore publishes the same child frame as the previous
+    # estimator without Atlas inventing camera/IMU extrinsics.
+    frame_id: oak_mount
+    odom_frame_id: vio_odom
+    publish_tf: false
+    wait_for_transform: 0.2
+
+    # The rectified global-shutter mono pair is hardware synchronized. A
+    # narrow approximate window tolerates host delivery jitter while rejecting
+    # unrelated frames and CameraInfo.
+    approx_sync: true
+    approx_sync_max_interval: 0.015
+    topic_queue_size: 2
+    sync_queue_size: 5
+
+    # RTAB-Map stores IMU samples by timestamp and waits for an orientation
+    # estimate before initializing odometry.
+    wait_imu_to_init: true
+    imu_queue_size: 400
+
+    # Never build an estimator backlog on the Pi. If processing falls behind,
+    # keep the newest synchronized stereo observation.
+    always_process_most_recent_frame: true
+    expected_update_rate: 20.0
+    max_update_rate: 20.0
+
+    # Keep RTAB-Map's bounded 128 px stereo search explicit. A 256 px field
+    # admits ambiguous matches from the repetitive close-table texture and
+    # reduces temporal geometry below the 20-inlier contract. With ORB and a
+    # settled provider, the bounded subset sustains 20-31 inliers even when
+    # most close-field correspondences are intentionally rejected.
+    Stereo/MaxDisparity: "128"
+
+    # Pure ORB retains enough repeatable features in the bright, low-contrast
+    # indoor view to initialize standard stereo odometry. The previous
+    # GFTT/ORB default repeatedly produced fewer than the required 20 inliers.
+    Vis/FeatureType: "2"
+
+    # Atlas owns estimator recovery at the complete spatial-runtime boundary.
+    # Null poses make tracking loss explicit; after a bounded grace period the
+    # required health node terminates the container so the cloud, pose buffer,
+    # and stream epoch restart together. RTAB-Map must not silently reset its
+    # coordinate frame underneath those consumers.
+    publish_null_when_lost: true
+    Odom/ResetCountdown: "0"

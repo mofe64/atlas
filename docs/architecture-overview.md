@@ -75,7 +75,7 @@ Detailed operational behavior is split into
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
-| Spatial runtime | Independent OAK RGB-D/BMI270 ownership, normalized topics, live non-authoritative Basalt VIO, calibration/transform identity, bounded local health, and a bounded VIO-local point cloud | PX4 VIO fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
+| Spatial runtime | Independent OAK RGB-D/BMI270 ownership through standard DepthAI, normalized topics, external non-authoritative RGB-D inertial odometry, calibration/transform identity, bounded local health, and a bounded odometry-local point cloud | PX4 external-vision fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
 | Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
 
 ## Deployment topology

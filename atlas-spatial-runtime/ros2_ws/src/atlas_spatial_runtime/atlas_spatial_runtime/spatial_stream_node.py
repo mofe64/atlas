@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import socket
 import stat
@@ -22,9 +23,42 @@ def _stamp_ns(stamp) -> int:
     return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
 
+def _validated_pose(message: Odometry) -> dict:
+    capture_ns = _stamp_ns(message.header.stamp)
+    frame_id = message.header.frame_id
+    child_frame_id = message.child_frame_id
+    pose = message.pose.pose
+    position = [
+        float(pose.position.x),
+        float(pose.position.y),
+        float(pose.position.z),
+    ]
+    orientation = [
+        float(pose.orientation.w),
+        float(pose.orientation.x),
+        float(pose.orientation.y),
+        float(pose.orientation.z),
+    ]
+    if capture_ns <= 0 or not frame_id.strip() or not child_frame_id.strip():
+        raise ValueError("pose timestamp and frame IDs must be present")
+    if not all(math.isfinite(value) for value in position + orientation):
+        raise ValueError("pose position and quaternion must be finite")
+    norm = math.sqrt(sum(component * component for component in orientation))
+    if not 0.9 <= norm <= 1.1:
+        raise ValueError("pose quaternion must be normalized")
+    orientation = [component / norm for component in orientation]
+    return {
+        "captureNs": capture_ns,
+        "frameId": frame_id,
+        "childFrameId": child_frame_id,
+        "position": position,
+        "orientationWxyz": orientation,
+    }
+
+
 class SpatialStreamNode(Node):
-    def __init__(self) -> None:
-        super().__init__("atlas_spatial_stream")
+    def __init__(self, *, parameter_overrides=None) -> None:
+        super().__init__("atlas_spatial_stream", parameter_overrides=parameter_overrides)
         self.declare_parameter("source_id", "front-depth")
         self.declare_parameter("cloud_socket_path", "/run/atlas-agent/spatial-cloud.sock")
         self.declare_parameter("maximum_points", MAXIMUM_POINTS)
@@ -41,12 +75,16 @@ class SpatialStreamNode(Node):
         self._epoch = str(uuid.uuid4())
         self._sequence = 0
         self._latest_pose: dict | None = None
+        self._invalid_pose_warning_active = False
         self._last_capture_ns = 0
         self._last_frame_id = ""
         self._mailbox = LatestSpatialFrame()
         self._stop = threading.Event()
-        self._clients: set[threading.Thread] = set()
-        self._clients_lock = threading.Lock()
+        # rclpy.Node owns an internal `_clients` collection for ROS service
+        # clients. Keep socket worker bookkeeping under an Atlas-specific name
+        # so the executor never mistakes a Python thread for a ROS entity.
+        self._socket_client_threads: set[threading.Thread] = set()
+        self._socket_clients_lock = threading.Lock()
         self._socket_path = str(self.get_parameter("cloud_socket_path").value)
         self._server = self._open_server(self._socket_path)
         self._server_thread = threading.Thread(
@@ -92,19 +130,18 @@ class SpatialStreamNode(Node):
         return server
 
     def _on_odometry(self, message: Odometry) -> None:
-        pose = message.pose.pose
-        self._latest_pose = {
-            "captureNs": _stamp_ns(message.header.stamp),
-            "frameId": message.header.frame_id,
-            "childFrameId": message.child_frame_id,
-            "position": [float(pose.position.x), float(pose.position.y), float(pose.position.z)],
-            "orientationWxyz": [
-                float(pose.orientation.w),
-                float(pose.orientation.x),
-                float(pose.orientation.y),
-                float(pose.orientation.z),
-            ],
-        }
+        try:
+            self._latest_pose = _validated_pose(message)
+        except ValueError as error:
+            # The cloud is already expressed in its map frame, so pose is
+            # optional metadata. Never let degraded VIO poison a valid cloud,
+            # and never retain an older pose after odometry becomes invalid.
+            self._latest_pose = None
+            if not self._invalid_pose_warning_active:
+                self.get_logger().warning(f"omitting invalid spatial pose: {error}")
+            self._invalid_pose_warning_active = True
+            return
+        self._invalid_pose_warning_active = False
 
     def _on_cloud(self, message: PointCloud2) -> None:
         capture_ns = _stamp_ns(message.header.stamp)
@@ -176,8 +213,8 @@ class SpatialStreamNode(Node):
                 name="atlas-spatial-cloud-client",
                 daemon=True,
             )
-            with self._clients_lock:
-                self._clients.add(worker)
+            with self._socket_clients_lock:
+                self._socket_client_threads.add(worker)
             worker.start()
 
     def _stream_client(self, connection: socket.socket) -> None:
@@ -195,8 +232,8 @@ class SpatialStreamNode(Node):
         finally:
             connection.close()
             current = threading.current_thread()
-            with self._clients_lock:
-                self._clients.discard(current)
+            with self._socket_clients_lock:
+                self._socket_client_threads.discard(current)
 
     def destroy_node(self) -> bool:
         self._stop.set()

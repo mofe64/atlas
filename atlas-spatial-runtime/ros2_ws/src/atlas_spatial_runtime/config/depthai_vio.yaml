@@ -1,4 +1,6 @@
 /**:
+  # Qualification rollback only. The normal provider launch does not reference
+  # this file because it keeps integrated Basalt disabled.
   ros__parameters:
     driver:
       # Setup substitutes the selected OAK MXID here. An empty value retains

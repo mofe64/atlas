@@ -8,6 +8,7 @@ use crate::database::LocalDatabase;
 
 use super::{
     command_router::CommandRouter,
+    indoor::IndoorExploreStore,
     proto::pb::{
         agent_to_ground_station, ground_station_to_agent, AgentToGroundStation,
         AircraftFollowSessionUpdateType, GroundStationToAgent, MissionActionState,
@@ -53,6 +54,7 @@ impl SessionState {
 pub(super) async fn open(
     database: Arc<LocalDatabase>,
     command_router: CommandRouter,
+    indoor: IndoorExploreStore,
     request: Request<Streaming<AgentToGroundStation>>,
 ) -> Result<Response<SessionResponseStream>, Status> {
     let remote_address = request
@@ -304,6 +306,17 @@ pub(super) async fn open(
                         )),
                     }
                 }
+                Some(agent_to_ground_station::Payload::IndoorExploreMissionUpdate(message)) => {
+                    match (state.active_id(), state.drone_id.as_deref()) {
+                        (Some(_), Some(drone_id)) => indoor
+                            .apply_agent_update(drone_id, message)
+                            .map(|()| None)
+                            .map_err(Status::failed_precondition),
+                        _ => Err(Status::failed_precondition(
+                            "registration must be the first session message",
+                        )),
+                    }
+                }
                 None => Err(Status::invalid_argument("session message has no payload")),
             };
 
@@ -340,6 +353,7 @@ pub(super) async fn open(
         if let Some(session_id) = state.session_id {
             if let Some(drone_id) = state.drone_id.as_deref() {
                 command_router.unregister(drone_id, &session_id).await;
+                indoor.agent_session_lost(drone_id, unix_time_ms());
                 if let Err(error) = database.degrade_aircraft_follow_for_drone(
                     drone_id,
                     "AGENT_SESSION_LOST",

@@ -93,14 +93,14 @@ RUN c++ -std=c++17 -pthread -Wall -Wextra -Werror \
     && cd "/src/ros-jazzy-depthai-v3-${DEPTHAI_CORE_VERSION}" \
     && DEB_BUILD_OPTIONS=nocheck dpkg-buildpackage --build=binary --no-sign
 
-FROM ros:jazzy-ros-base-noble
+FROM ros:jazzy-ros-base-noble AS atlas-upstream-depthai
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG ATLAS_SPATIAL_VERSION=0.1.0-dev
 ARG DEPTHAI_CORE_VERSION=3.6.1
 ARG DEPTHAI_CORE_DEBIAN_REVISION=2noble
-ARG DEPTHAI_CORE_ATLAS_REVISION=atlas2
 ARG DEPTHAI_ROS_VERSION=3.2.1
+ARG IMU_TOOLS_VERSION=2.1.5
+ARG RTABMAP_ROS_VERSION=0.23.7
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -109,9 +109,38 @@ RUN apt-get update \
         ros2-testing-apt-source \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
+        ros-jazzy-imu-filter-madgwick \
         ros-jazzy-depth-image-proc \
         ros-jazzy-depthai-ros-v3 \
+        ros-jazzy-rtabmap-odom \
     && rm -rf /var/lib/apt/lists/*
+
+RUN core_version="$(dpkg-query -W -f='${Version}' ros-jazzy-depthai-v3)" \
+    && driver_version="$(dpkg-query -W -f='${Version}' ros-jazzy-depthai-ros-driver-v3)" \
+    && imu_filter_version="$(dpkg-query -W -f='${Version}' ros-jazzy-imu-filter-madgwick)" \
+    && rtabmap_odom_version="$(dpkg-query -W -f='${Version}' ros-jazzy-rtabmap-odom)" \
+    && case "${core_version}" in "${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}"|"${DEPTHAI_CORE_VERSION}-${DEPTHAI_CORE_DEBIAN_REVISION}".*) ;; *) printf 'unsupported standard DepthAI core package: %s\n' "${core_version}" >&2; exit 1;; esac \
+    && case "${driver_version}" in "${DEPTHAI_ROS_VERSION}-"*) ;; *) printf 'unsupported DepthAI ROS driver package: %s\n' "${driver_version}" >&2; exit 1;; esac \
+    && case "${imu_filter_version}" in "${IMU_TOOLS_VERSION}-"*) ;; *) printf 'unsupported Madgwick package: %s\n' "${imu_filter_version}" >&2; exit 1;; esac \
+    && case "${rtabmap_odom_version}" in "${RTABMAP_ROS_VERSION}-"*) ;; *) printf 'unsupported RTAB-Map odometry package: %s\n' "${rtabmap_odom_version}" >&2; exit 1;; esac
+
+# The normal release path uses the unmodified ROS package and Ubuntu libusb.
+# Keep the accepted Atlas-patched dependency stage in source only while the
+# standard path is being qualified; deleting it requires explicit approval.
+FROM atlas-upstream-depthai AS atlas-standard-depthai
+
+RUN depthai_core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)" \
+    && test -n "${depthai_core}" \
+    && ldd "${depthai_core}" \
+        | grep -F 'libusb-1.0.so.0' \
+    && ! ldd "${depthai_core}" \
+        | grep -F '/opt/atlas-depthai-libusb'
+
+FROM atlas-upstream-depthai AS atlas-patched-depthai
+
+ARG DEPTHAI_CORE_VERSION=3.6.1
+ARG DEPTHAI_CORE_DEBIAN_REVISION=2noble
+ARG DEPTHAI_CORE_ATLAS_REVISION=atlas2
 
 COPY --from=depthai-vio-builder \
     /src/ros-jazzy-depthai-v3_3.6.1-2noble+atlas2_arm64.deb \
@@ -136,6 +165,10 @@ RUN depthai_core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -
     && test -n "${depthai_core}" \
     && ldd "${depthai_core}" \
         | grep -F '/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0'
+
+FROM atlas-standard-depthai AS atlas-runtime
+
+ARG ATLAS_SPATIAL_VERSION=0.1.0-dev
 
 # Normal Atlas changes start here, after the expensive native dependency
 # layers. Docker reuses those layers unless the pinned inputs or patches change.

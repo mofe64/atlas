@@ -4,6 +4,12 @@ set -eu
 : "${ATLAS_HAILO_CONTAINER_IMAGE:?ATLAS_HAILO_CONTAINER_IMAGE is required}"
 : "${ATLAS_HAILO_CONTAINER_NAME:?ATLAS_HAILO_CONTAINER_NAME is required}"
 
+adapter_path="/usr/libexec/atlas-agent/atlas-hailort-adapter"
+if [ ! -x "${adapter_path}" ]; then
+    printf '%s\n' "Atlas Hailo adapter ${adapter_path} is not executable; retrying through systemd" >&2
+    exit 1
+fi
+
 if [ ! -c /dev/hailo0 ]; then
     printf '%s\n' 'Hailo device /dev/hailo0 is not available; retrying through systemd' >&2
     exit 1
@@ -31,4 +37,5 @@ exec /usr/bin/docker run \
     --tmpfs /tmp:rw,noexec,nosuid,size=64m \
     --volume /run/atlas-agent:/run/atlas-agent:rw \
     --volume /usr/share/atlas-agent/models:/usr/share/atlas-agent/models:ro \
+    --volume "${adapter_path}:/usr/local/bin/atlas-hailort-adapter:ro" \
     "${ATLAS_HAILO_CONTAINER_IMAGE}"

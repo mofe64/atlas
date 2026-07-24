@@ -1,7 +1,10 @@
 package onboardsetup
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +19,8 @@ type ApplyResult struct {
 	PerceptionReady bool
 	SpatialReady    bool
 }
+
+const legacySpatialTransformHash = "sha256:30a90b90711af18a0bd5de3c0a2800aeb057f2ba1f59925151cc7179cd3c9304"
 
 func Install(ctx context.Context, runner Runner, options Options) (ApplyResult, error) {
 	if options.Input == nil {
@@ -136,10 +141,62 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 }
 
 func ensureSpatialTransformBundle(ctx context.Context, commandRunner Runner, runner ApplyRunner, paths Paths) error {
-	if commandRunner.Run(ctx, "test", "-e", paths.SpatialTransformBundle).Err == nil {
+	if commandRunner.Run(ctx, "test", "-e", paths.SpatialTransformBundle).Err != nil {
+		return runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle)
+	}
+
+	currentHash, err := canonicalTransformBundleHash(paths.SpatialTransformBundle)
+	if err != nil {
+		return fmt.Errorf("inspect existing spatial transform bundle: %w", err)
+	}
+	if currentHash != legacySpatialTransformHash {
 		return nil
 	}
-	return runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle)
+
+	// This exact hash is the uncommissioned v2 Atlas seed. It is safe to
+	// migrate because any physical commissioning changes the canonical hash.
+	// Stop the reader, preserve the original, and install the packaged v3
+	// bundle that adds only the required aligned optical-frame edge.
+	if err := runner.Run(ctx, "systemctl", "stop", "atlas-spatial-runtime.service"); err != nil {
+		return err
+	}
+	backupPath := paths.SpatialTransformBundle + ".pre-optical-chain"
+	if err := runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.SpatialTransformBundle, backupPath); err != nil {
+		return err
+	}
+	if err := runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle); err != nil {
+		return err
+	}
+	if runner.Output != nil {
+		_, _ = fmt.Fprintf(runner.Output, "Migrated the unchanged Atlas spatial transform seed; backup: %s\n", backupPath)
+	}
+	return nil
+}
+
+func canonicalTransformBundleHash(path string) (string, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var bundle map[string]any
+	if err := decoder.Decode(&bundle); err != nil {
+		return "", fmt.Errorf("decode %s: %w", path, err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return "", fmt.Errorf("decode %s: trailing JSON value", path)
+		}
+		return "", fmt.Errorf("decode %s: %w", path, err)
+	}
+	delete(bundle, "sha256")
+	canonical, err := json.Marshal(bundle)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize %s: %w", path, err)
+	}
+	digest := sha256.Sum256(canonical)
+	return fmt.Sprintf("sha256:%x", digest), nil
 }
 
 func ensureSpatialRuntime(ctx context.Context, commandRunner Runner, runner ApplyRunner, options Options, config *InstallConfig) (bool, error) {

@@ -230,34 +230,36 @@ See [INSTALLATION.md](INSTALLATION.md) for the complete build, clean-install,
 upgrade, same-version replacement, rollback, and verification procedures.
 
 The supported onboard profile is Ubuntu 24.04 arm64 on Raspberry Pi 5 with a
-Raspberry Pi AI HAT+ (Hailo-8L by default). Build the Debian package on a Linux
-build machine with Go 1.25 and Debian packaging tools:
+Raspberry Pi AI HAT+ (Hailo-8L by default). Build the matched Agent package and
+standard-DepthAI spatial image on the development Mac or a Linux build machine:
 
 ```sh
 cd atlas-agent
-ATLAS_RELEASE_VERSION=0.1.17 packaging/build-deb.sh
+packaging/release.sh build 0.1.18
 ```
 
-The package builder cross-compiles `atlas-agent` and `atlas-setup`, downloads
-the pinned official MAVSDK arm64 binary, verifies its SHA-256, and packages the
-metadata-only Hailo adapter and a checksum-pinned Hailo-8L HEF. To build for a
-26 TOPS Hailo-8 AI HAT+, provide a compatible HEF and identify its target:
+The release orchestrator builds and verifies the Linux-arm64 spatial image,
+then calls the existing package builder. The package builder cross-compiles
+`atlas-agent` and `atlas-setup`, downloads the pinned official MAVSDK arm64
+binary, verifies its SHA-256, and packages the metadata-only Hailo adapter and
+a checksum-pinned Hailo-8L HEF. To build for a 26 TOPS Hailo-8 AI HAT+, use
+the package-builder override described in the installation guide.
+
+Transfer the verified release set, then install it on the onboard computer:
 
 ```sh
-ATLAS_RELEASE_VERSION=0.1.17 \
-ATLAS_HEF_MODEL_PATH=/path/to/objects-h8.hef \
-ATLAS_MODEL_ACCELERATOR=hailo-8 \
-packaging/build-deb.sh
-```
-
-Copy `dist/atlas-agent_<version>_arm64.deb` to the onboard computer, then run:
-
-```sh
+packaging/release.sh transfer 0.1.18 mofe@ariadne-robot
+# On the landed and disarmed onboard computer:
 sudo apt install ./atlas-agent_<version>_arm64.deb
 sudo atlas-hailo-setup  # clean Ubuntu host only
 # Reboot here if atlas-hailo-setup exits with status 3.
 sudo atlas-setup
 ```
+
+If SSH authentication succeeds but the release transfer stalls, use the
+direct-IP, rate-limited legacy-SCP recovery procedure in
+[INSTALLATION.md](INSTALLATION.md#recover-a-slow-or-stalled-ssh-transfer).
+Never install a partial artifact solely because it has the expected filename.
 
 `atlas-hailo-setup` is needed on a clean Ubuntu installation. If the computer
 already has a compatible working Hailo installation, do not replace it
@@ -285,8 +287,13 @@ atlas-spatial-runtime.service (optional; independent of flight services)
 
 In native/process mode the Hailo adapter remains supervised by `atlas-agent`.
 In container mode systemd supervises `atlas-hailo-adapter.service`, and the
-Agent owns the protected perception socket. Native decodes the A8 RTSP stream
-directly, while the Agent talks to the local `mavsdk_server` gRPC endpoint.
+Agent owns the protected perception socket. The pinned image supplies the
+HailoRT/TAPPAS userspace compatibility unit, while the service read-only mounts
+the adapter executable from the installed Agent package. This keeps the local
+wire protocol and lease-controlled activation behavior on the same release as
+Agent without rebuilding the hardware compatibility image. Native decodes the
+A8 RTSP stream directly, while the Agent talks to the local `mavsdk_server`
+gRPC endpoint.
 
 The installed H-Flow is configured through QGroundControl and fused by PX4; it
 is not owned by the spatial camera container. `atlas-setup doctor` does not yet
@@ -329,8 +336,9 @@ Keeping kernel-facing driver/firmware on the host and Hailo userspace in the
 container prevents Atlas's Python and GStreamer dependencies from becoming
 host-global dependencies. Only the Hailo adapter is containerized. It receives
 host networking for the A8 RTSP stream, `/dev/hailo0`, the Atlas runtime socket,
-and the packaged model directory. It runs as the host `atlas-agent` UID plus the
-Hailo device group, with a read-only root filesystem and all Linux capabilities
+the packaged model directory, and a read-only bind mount of the adapter shipped
+by the Agent Debian package. It runs as the host `atlas-agent` UID plus the Hailo
+device group, with a read-only root filesystem and all Linux capabilities
 dropped.
 
 `atlas-setup doctor` verifies all of the following before container perception

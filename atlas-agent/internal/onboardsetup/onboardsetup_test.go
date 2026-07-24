@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -186,6 +189,9 @@ func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
 		t.Fatalf("spatial launcher passes systemd quoting through Docker's incompatible env-file parser:\n%s", launcher)
 	}
 	for _, expected := range []string{
+		`network_mode=none`,
+		`network_mode=host`,
+		`--network "${network_mode}"`,
 		`--env "ATLAS_SPATIAL_CONTRACT_VERSION=`,
 		`--env "ATLAS_SPATIAL_PROVIDER=`,
 		`--env "ATLAS_SPATIAL_DEVICE_ID=`,
@@ -194,13 +200,29 @@ func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
 		`--env "ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH=`,
 		`--env "ATLAS_SPATIAL_VIO_ENABLED=`,
 		`--env "ATLAS_SPATIAL_LIVE_CLOUD_ENABLED=`,
+		`--volume /run/udev:/run/udev:ro`,
 	} {
 		if !strings.Contains(launcherText, expected) {
 			t.Fatalf("spatial launcher does not explicitly pass parsed environment %q:\n%s", expected, launcher)
 		}
 	}
+	if strings.Contains(launcherText, "--network none") || strings.Contains(launcherText, "--network host") {
+		t.Fatalf("spatial launcher hardcodes one network mode instead of granting host netlink only to DepthAI:\n%s", launcher)
+	}
 	if !strings.Contains(unit, "docker image inspect --format={{.Id}}") {
 		t.Fatalf("spatial unit emits the entire image manifest on every restart:\n%s", unit)
+	}
+
+	agentUnitPath := filepath.Join("..", "..", "packaging", "systemd", "atlas-agent.service")
+	agentUnitRaw, err := os.ReadFile(agentUnitPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(agentUnitRaw), "RuntimeDirectoryPreserve=yes") {
+		t.Fatalf(
+			"Agent unit can unlink independent runtime sockets when it stops or restarts:\n%s",
+			agentUnitRaw,
+		)
 	}
 }
 
@@ -266,6 +288,16 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 	}
 	dockerfileText := string(dockerfile)
 	for _, expected := range []string{
+		"FROM atlas-upstream-depthai AS atlas-standard-depthai",
+		`printf 'unsupported standard DepthAI core package: %s\n' "${core_version}"`,
+		"ros-jazzy-imu-filter-madgwick",
+		"ros-jazzy-rtabmap-odom",
+		"IMU_TOOLS_VERSION=2.1.5",
+		"RTABMAP_ROS_VERSION=0.23.7",
+		"FROM atlas-standard-depthai AS atlas-runtime",
+		// Retained only as source evidence for the accepted 0.1.16 rollback
+		// until the standard path passes and cleanup is explicitly approved.
+		"FROM atlas-upstream-depthai AS atlas-patched-depthai",
 		"ARG DEPTHAI_LIBUSB_REF=d631db2d91ce72f79ac296e3ff724eee98ad0c46",
 		"-DWITH_UDEV=OFF",
 		"ENV LD_LIBRARY_PATH=/opt/atlas-depthai-libusb/lib",
@@ -279,6 +311,11 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 			t.Fatalf("spatial image does not preserve the validated DepthAI USB handoff %q:\n%s", expected, dockerfile)
 		}
 	}
+	patchedBase := strings.Index(dockerfileText, "FROM atlas-upstream-depthai AS atlas-patched-depthai")
+	selectedBase := strings.Index(dockerfileText, "FROM atlas-standard-depthai AS atlas-runtime")
+	if patchedBase < 0 || selectedBase <= patchedBase {
+		t.Fatalf("normal spatial image is not explicitly based on standard DepthAI:\n%s", dockerfile)
+	}
 	for _, forbidden := range []string{
 		"ATLAS_SPATIAL_NATIVE_BASE",
 		"atlas-spatial-runtime-native",
@@ -289,6 +326,50 @@ func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
 		if strings.Contains(dockerfileText, forbidden) {
 			t.Fatalf("normal spatial image retains obsolete release/recording behavior %q:\n%s", forbidden, dockerfile)
 		}
+	}
+}
+
+func TestReleaseOrchestratorBuildsAndTransfersOneMatchedArm64Release(t *testing.T) {
+	releasePath := filepath.Join("..", "..", "packaging", "release.sh")
+	raw, err := os.ReadFile(releasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := string(raw)
+	for _, expected := range []string{
+		"docker buildx build",
+		"--platform linux/arm64",
+		`--file "${SPATIAL_DIR}/packaging/Dockerfile"`,
+		`"${AGENT_DIR}/packaging/build-deb.sh"`,
+		`ATLAS_SPATIAL_CONTAINER_IMAGE="${image_reference}"`,
+		`SPATIAL_ARCHIVE="atlas-spatial-runtime_${version}_arm64.tar.gz"`,
+		`RELEASE_MANIFEST="atlas-release_${version}_arm64.json"`,
+		"--reuse-image",
+		`'{{.Os}}/{{.Architecture}}'`,
+		". /opt/ros/jazzy/setup.sh",
+		". /opt/atlas-spatial-runtime/setup.sh",
+		`"sourceTreeDirty": %s`,
+		"verify_release_directory",
+		`"${destination}:/tmp/"`,
+	} {
+		if !strings.Contains(release, expected) {
+			t.Fatalf("release orchestrator is missing %q", expected)
+		}
+	}
+	for _, forbidden := range []string{
+		"atlas-spatial-setup --build-local",
+		"sudo apt install",
+		"sudo atlas-setup",
+	} {
+		if strings.Contains(release, forbidden) {
+			t.Fatalf("release orchestrator crosses the explicit Pi installation boundary with %q", forbidden)
+		}
+	}
+	if output, err := exec.Command("bash", "-n", releasePath).CombinedOutput(); err != nil {
+		t.Fatalf("release orchestrator has invalid shell syntax: %v\n%s", err, output)
+	}
+	if output, err := exec.Command(releasePath, "--help").CombinedOutput(); err != nil {
+		t.Fatalf("release orchestrator help failed: %v\n%s", err, output)
 	}
 }
 
@@ -596,7 +677,7 @@ func TestRenderSpatialEnvironmentUsesVendorNeutralContract(t *testing.T) {
 	}
 }
 
-func TestEnsureSpatialTransformBundleSeedsOnceAndPreservesCommissionedFile(t *testing.T) {
+func TestEnsureSpatialTransformBundleSeedsMigratesKnownLegacyAndPreservesCommissionedFile(t *testing.T) {
 	paths := DefaultPaths("/")
 	missing := &fakeRunner{results: map[string]CommandResult{
 		"test -e " + paths.SpatialTransformBundle: {Err: errors.New("missing")},
@@ -609,6 +690,66 @@ func TestEnsureSpatialTransformBundleSeedsOnceAndPreservesCommissionedFile(t *te
 		t.Fatalf("transform seed calls = %#v", missing.calls)
 	}
 
+	root := t.TempDir()
+	paths = DefaultPaths(root)
+	defaultSource := filepath.Join(
+		"..", "..", "..", "atlas-spatial-runtime", "ros2_ws", "src",
+		"atlas_spatial_runtime", "config", "transforms.v1.json",
+	)
+	defaultRaw, err := os.ReadFile(defaultSource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.DefaultSpatialTransformBundle), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.SpatialTransformBundle), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.DefaultSpatialTransformBundle, defaultRaw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(defaultRaw))
+	decoder.UseNumber()
+	var legacy map[string]any
+	if err := decoder.Decode(&legacy); err != nil {
+		t.Fatal(err)
+	}
+	legacy["bundleId"] = "ariadne-indoor-foundation-v2-preliminary-oak"
+	delete(legacy["frames"].(map[string]any), "oak_rgb_camera_optical_frame")
+	transforms := legacy["transforms"].([]any)
+	legacy["transforms"] = slices.DeleteFunc(transforms, func(value any) bool {
+		return value.(map[string]any)["childFrame"] == "oak_rgb_camera_optical_frame"
+	})
+	legacyRaw, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.SpatialTransformBundle, legacyRaw, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if hash, err := canonicalTransformBundleHash(paths.SpatialTransformBundle); err != nil || hash != legacySpatialTransformHash {
+		t.Fatalf("legacy hash=%q err=%v", hash, err)
+	}
+	migrating := &fakeRunner{results: map[string]CommandResult{}}
+	if err := ensureSpatialTransformBundle(context.Background(), migrating, ApplyRunner{Runner: migrating}, paths); err != nil {
+		t.Fatal(err)
+	}
+	migrationCalls := strings.Join(migrating.calls, "\n")
+	for _, expected := range []string{
+		"systemctl stop atlas-spatial-runtime.service",
+		"install -D -m 0640 -o root -g atlas-agent " + paths.SpatialTransformBundle + " " + paths.SpatialTransformBundle + ".pre-optical-chain",
+		"install -D -m 0640 -o root -g atlas-agent " + paths.DefaultSpatialTransformBundle + " " + paths.SpatialTransformBundle,
+	} {
+		if !strings.Contains(migrationCalls, expected) {
+			t.Fatalf("transform migration calls missing %q:\n%s", expected, migrationCalls)
+		}
+	}
+
+	if err := os.WriteFile(paths.SpatialTransformBundle, defaultRaw, 0o640); err != nil {
+		t.Fatal(err)
+	}
 	existing := &fakeRunner{results: map[string]CommandResult{}}
 	if err := ensureSpatialTransformBundle(context.Background(), existing, ApplyRunner{Runner: existing}, paths); err != nil {
 		t.Fatal(err)
@@ -793,6 +934,8 @@ func TestHailoContainerServiceUsesLeastPrivilegeLauncher(t *testing.T) {
 	for _, expected := range []string{
 		"[ ! -c /dev/hailo0 ]",
 		"Hailo device /dev/hailo0 is not available; retrying through systemd",
+		"adapter_path=\"/usr/libexec/atlas-agent/atlas-hailort-adapter\"",
+		"Atlas Hailo adapter ${adapter_path} is not executable; retrying through systemd",
 		"--network host",
 		"--workdir /tmp",
 		"--device /dev/hailo0:/dev/hailo0",
@@ -801,6 +944,7 @@ func TestHailoContainerServiceUsesLeastPrivilegeLauncher(t *testing.T) {
 		"--cap-drop ALL",
 		"--volume /run/atlas-agent:/run/atlas-agent:rw",
 		"--volume /usr/share/atlas-agent/models:/usr/share/atlas-agent/models:ro",
+		"--volume \"${adapter_path}:/usr/local/bin/atlas-hailort-adapter:ro\"",
 	} {
 		if !strings.Contains(launcher, expected) {
 			t.Fatalf("Hailo launcher missing %q:\n%s", expected, launcher)

@@ -10,8 +10,10 @@
 
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>imu_filter_madgwick</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>rtabmap_odom</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
 

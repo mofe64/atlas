@@ -135,18 +135,18 @@ The current aircraft already has the necessary sensor foundation:
 - A 2021 OAK-D Lite connected directly to the Raspberry Pi 5 over USB 3.
 - Aligned `640x400` colour and metre-depth streams.
 - A BMI270 IMU publishing at approximately 200 Hz.
-- Live DepthAI/Basalt VIO on `/atlas/spatial/vio/odometry`.
+- Live, non-authoritative odometry on `/atlas/spatial/vio/odometry`.
 - An approximately forward-facing, upright mount about `0.15 m` ahead of the
   aircraft centre. That measurement is approximate, so the existing transform
   remains `configured_unverified` rather than pretending to be precise.
-- The working tree requests 20 Hz VIO visual input. The accepted `0.1.16`
-  aircraft image used 30 Hz.
+- The working tree caps external global-shutter stereo odometry input at
+  20 Hz. The accepted `0.1.16` Basalt image used 30 Hz visual input.
 
-The currently accepted aircraft runtime uses the custom DepthAI
-`3.6.1+atlas2` build. Retain it only as the known-working rollback while Atlas
-qualifies the preferred end state: the standard upstream package. The custom
-build contains two small mitigations for failures seen on the real Pi/OAK
-combination:
+The accepted `0.1.16` aircraft runtime uses the custom DepthAI
+`3.6.1+atlas2` build. It remains the known-working rollback while the current
+source qualifies the preferred end state: the standard upstream package. The
+custom build contains two small mitigations for failures seen on the real
+Pi/OAK combination:
 
 - IMU samples are delivered to Basalt in strictly increasing timestamp order,
   preventing the estimator assertion that previously killed the camera
@@ -159,37 +159,200 @@ camera/VIO source running, but Atlas must not assume they are universally
 required by OAK-D Lite or make a permanent private DepthAI fork part of the
 product without the comparison below.
 
-### Future work: standard DepthAI and direct-host evaluation
+### In progress: standard DepthAI qualification
 
-Atlas prefers the standard DepthAI implementation. The current evidence proves
-that the custom build works in Atlas's restricted Pi container; it does not
-prove that patching is the only correct solution. In particular, the USB
-failure may be caused or amplified by the container/udev boundary, and the
-final 20 Hz VIO configuration has not been qualified with the standard
-package.
+Atlas now defaults its normal image build to the unmodified ROS Jazzy DepthAI
+package. Integrated Basalt is disabled: DepthAI owns RGB-D, rectified
+global-shutter mono, and raw-IMU transport; Madgwick supplies orientation; and
+RTAB-Map owns bounded stereo-inertial odometry. An Atlas-owned input gate drops
+duplicate and short out-of-order IMU stamps before Madgwick; a true clock reset
+restarts the complete provider boundary. DepthAI itself remains unmodified.
+The container mounts the host udev database read-only to give standard libusb
+the host device state without granting privileged access.
 
-Run a controlled comparison on the same grounded Pi, OAK, cable, USB port, and
-configuration:
+A grounded Pi comparison on 2026-07-23 isolated the firmware re-enumeration
+failure to the container network namespace. With `/dev/bus/usb` and
+`/run/udev` mounted but `--network none`, standard libusb discovered the
+unbooted OAK, uploaded firmware, and then failed with
+`X_LINK_DEVICE_NOT_FOUND`. The same immutable `0.1.18` image, user, mounts,
+capability set, and read-only filesystem succeeded with `--network host`:
+the OAK reappeared, RGB-D/IMU reached the external odometry pipeline, and the
+Atlas health and cloud sockets listened. The production runner therefore
+shares the host network namespace for udev/netlink hotplug delivery while
+retaining non-root execution, no capabilities, a read-only root filesystem,
+and USB character-device access only. `ROS_LOCALHOST_ONLY=1` keeps ROS traffic
+host-local. This proves the standard-package re-enumeration path, but the full
+runtime is not accepted for flight until the remaining grounded qualification
+below passes.
 
-1. standard DepthAI directly on the Pi under an independent systemd service;
-2. standard DepthAI inside the current restricted container; and
-3. the accepted `3.6.1+atlas2` container as the reference.
+Finish the controlled qualification on the same grounded Pi, OAK, cable, USB
+port, and configuration:
 
-For each variant, retain repeated cold-start and service-restart results, OAK
+1. the new standard DepthAI plus external-odometry image inside the production
+   container using the required host network namespace;
+2. the accepted `3.6.1+atlas2` container as the rollback reference.
+
+For both variants, retain repeated cold-start and service-restart results, OAK
 firmware re-enumeration, USB 3 identity, uninterrupted RGB-D, raw BMI270
-timestamp ordering, VIO cadence, deliberate estimator overload, resource use,
-and restart counts. A direct-host service must preserve the same stable Atlas
-topics, health socket, transform bundle, non-root account, and independence
-from Agent/MAVSDK.
+timestamp ordering, odometry cadence, deliberate estimator overload, resource
+use, and restart counts. Any future direct-host experiment must preserve the
+same stable Atlas topics, health socket, transform bundle, non-root account,
+and independence from Agent/MAVSDK.
 
-If standard DepthAI passes directly on the host, prefer that design and remove
-the spatial container and private package in a separately approved cleanup. If
-the standard package passes only after correcting container/udev integration,
-keep container isolation but remove the private package. If neither standard
-variant passes, report the minimal reproducer upstream and retain only the
-smallest mitigation that remains necessary. This investigation can run in
-parallel with Native visualization work, but it must finish before the indoor
-movement feature is released for aircraft use.
+The standard package has now passed the re-enumeration boundary after
+correcting the container's udev/netlink integration, so retain the container
+and finish repeated cold-start, restart, sustained-stream, odometry-quality,
+resource, and Native cloud qualification. Direct-on-Pi DepthAI remains future
+work for comparing operational simplicity and isolation; it is no longer
+needed to explain this failure. Removal of the retained private package and
+patched build stages remains a separately approved cleanup after the standard
+path passes the complete grounded/aircraft acceptance. If later qualification
+exposes a separate upstream failure, report its minimal reproducer and retain
+only the smallest mitigation demonstrably required. This investigation can
+run in parallel with Native visualization work, but it must finish before the
+indoor movement feature is released for aircraft use.
+
+The first packaged `0.1.19` restart test also exposed a separate service
+lifecycle bug: restarting `atlas-agent.service` removed its systemd-managed
+`/run/atlas-agent` directory while the independent spatial processes still had
+health and cloud sockets bound there. The kernel listeners survived, but their
+filesystem names disappeared and new clients received `ENOENT`. The Agent unit
+now preserves the shared runtime directory across both stops and restarts;
+each socket owner remains responsible for replacing its own stale socket on
+startup. Qualification must explicitly restart Agent while the spatial runtime
+continues and prove that both spatial socket paths remain reachable.
+
+The same `0.1.19` qualification then showed healthy synchronized RGB-D/IMU and
+odometry but no `/atlas/spatial/map/points` message. Health reported the exact
+unchanged legacy transform hash
+`sha256:30a90b90711af18a0bd5de3c0a2800aeb057f2ba1f59925151cc7179cd3c9304`,
+whose v2 bundle predates the `oak_rgb_camera_optical_frame` edge required to
+project aligned depth into `oak_mount`. Setup had correctly avoided
+overwriting arbitrary existing geometry, but made the known seed migration
+too easy to miss. Setup now canonicalizes an existing bundle, automatically
+migrates only that exact legacy hash, saves the original beside it, and
+preserves every modified or commissioned bundle.
+
+After the guarded migration on the grounded Pi, the packaged `0.1.19` runtime
+reported synchronized `640x400` colour and metre depth, a healthy approximately
+224 Hz raw IMU with zero timestamp anomalies, the booted OAK at USB 3
+5000 Mb/s, and the expected v3 transform hash
+`sha256:62ed08cdbdeab32df4e8d61c91e034ec720f94e60f021f5e2a2891cbf8e0f517`.
+The live-cloud topic then emitted a complete 3,702-point snapshot. This passes
+the real-device DepthAI-to-ROS cloud boundary; Agent-to-Native delivery,
+tracking quality during deliberate grounded motion, repeated lifecycle tests,
+and aircraft acceptance remain.
+
+The first Agent-to-Native attempt reached Native's spatial gRPC service but was
+rejected with `spatial pose quaternion must be normalized`. The complete cloud
+was valid; the independently sampled, optional odometry pose was not. The
+runtime stream boundary now omits pose whenever VIO has no valid finite unit
+quaternion and clears any previously cached pose rather than attaching stale
+metadata. Atlas Agent independently normalizes a near-unit pose and discards
+invalid optional pose metadata without discarding the complete map-frame
+cloud. Native remains strict, so malformed orientation data is never presented
+as authoritative. The repeated `unsupported perception runtime protocol "1"`
+messages observed in the same log belong to the separate Hailo perception
+adapter and are not part of the spatial cloud protocol.
+
+The following `0.1.20` grounded run proved that the effective DepthAI profile
+already aligned depth to CAM_A and gave RGB and stereo equal device timestamps,
+but RTAB-Map remained at quality zero with repeated insufficient-inlier
+failures. The first process start did not produce a map because only null
+odometry poses were produced.
+The provider profile now explicitly preserves alignment/synchronization and
+sets Luxonis's RTAB-Map `DEFAULT` preset on the driver's RealSense-compatible
+`depth` namespace instead of leaving the observed implicit `FAST_ACCURACY`
+preset active. VIO health now rejects null/non-unit pose quaternions,
+does not count them as valid samples, and reports visual tracking loss instead
+of hiding it behind the separate unverified-extrinsics warning. Qualification
+must still prove sustained nonzero odometry quality and a continuously
+updating map in a controlled textured scene; the inlier threshold remains
+unchanged.
+
+The active `DEFAULT` hotfix then produced a 516-point map; a clean runtime
+restart produced a new 670-point map. Both maps froze while the provider kept
+delivering fresh RGB-D and approximately 241 Hz IMU and RTAB-Map reported
+quality zero continuously. A direct OAK input probe found 1,000 ORB features
+per sampled RGB frame, strong still-frame sharpness and contrast, 54.9% valid
+depth, and valid depth at 860 of those features. This rules out Native
+transport, a stale pre-existing map, and simple lack of still-frame texture as
+the primary cause. It does not validate geometry during movement: the OAK-D
+Lite's IMX214 colour sensor is rolling-shutter, and the effective RGB-D rate on
+the Pi was only approximately 3–6 Hz. The standard runtime now publishes the
+rectified OV7251 global-shutter mono pair at 20 Hz and uses standard RTAB-Map
+`stereo_odometry`; aligned RGB-D remains a separate input for cloud geometry.
+
+RTAB-Map automatic odometry reset is disabled because a silent reset would
+change the coordinate frame underneath the pose buffer and accumulated cloud.
+Null odometry makes tracking loss observable. After the startup grace, five
+seconds of sustained missing, stale, or invalid odometry terminates the whole
+spatial runtime so systemd restarts the estimator, cloud, pose buffer, and
+stream epoch as one coordinate boundary.
+
+### Qualified grounded: release 0.1.25
+
+Release `0.1.25` passed the controlled disarmed movement and lifecycle
+qualification on the aircraft on 2026-07-24. The Pi ran package `0.1.25` from
+immutable image
+`sha256:28edec1c5ef969d6ed5eb2e49f972ab318a3f6cbabae158e0f057ff41c313670`;
+the standard RTAB-Map `stereo_odometry` process was present and
+`rgbd_odometry` was absent.
+
+During an exact 35.013-second slow hand carry through a textured room:
+
+- rectified left and right mono published at `19.901 Hz` and `19.817 Hz`;
+- 99.4872% of stereo frames paired, with `-0.026918 ms` median skew and a
+  positive `0.0747062841 m` right-camera baseline;
+- filtered IMU published at `223.68 Hz`, all recorded sensor headers were
+  monotonic, and all nine required static transforms were present;
+- all 135 movement-window odometry samples were valid, with zero tracking-loss
+  or zero-inlier samples and 25–652 inliers;
+- tracked distance advanced by `6.424 m`, 65 keyframes were added, and the
+  local odometry map grew from 896 to its configured 2,000-feature bound;
+- the ROS map produced 30 messages across 33.040 seconds with ten capture-time
+  advances and no invalid odometry messages;
+- the complete-cloud stream produced 29 frames across 34.185 seconds, advanced
+  its sequence 28 times, retained valid poses, and reported no error; and
+- the spatial service restart count remained `6` before and after the
+  movement window.
+
+The ROS and Native-facing clouds had already reached the configured
+100,000-point bound, so a changing point count was no longer a valid freshness
+test. Freshness was instead proven by nondecreasing capture times with repeated
+advancement, strictly advancing complete-cloud sequences, added keyframes, and
+local-map growth. After the movement window ended and the aircraft was set
+down, visual tracking later became invalid and the configured health boundary
+performed one whole-runtime restart. That post-window restart recovered to a
+ready, synchronized service and is not counted as a movement-window failure.
+
+The same release then passed the required lifecycle checks. A manual spatial
+restart re-enumerated the OAK at USB 3 / 5000 Mb/s, returned ready synchronized
+health with valid odometry, retained the v3 transform hash, and started the
+same immutable image with standard stereo odometry. Restarting
+`atlas-agent.service` did not restart the spatial container and preserved both
+spatial socket paths and their exact inodes. The preceding battery replacement
+also created a new kernel boot ID, proving a real cold start; the misleading
+old `who -b` time came from the Pi clock being corrected after boot.
+
+The initial Native message, “CLOUD NOT AVAILABLE YET,” was a separate ground
+link outage: the Mac had no active `192.168.144.50` Ethernet interface and
+Native was not listening on port 7443. Once the HM30 Ethernet path was restored
+and Native started, Agent registered successfully. In a synchronized
+eight-second end-to-end window, the runtime produced 13 advancing complete
+100,000-point snapshots while Native TCP-acknowledged 4.43 MB of the 4.50 MB
+sent. This distinguishes a Native transport outage from a frozen ROS map.
+
+This evidence passes the grounded standard-DepthAI spatial-runtime gate without
+lowering the odometry inlier threshold or restoring patched Basalt. Retain
+`0.1.16` as the operational rollback and keep the commissioned transforms
+marked `configured_unverified`; Indoor Explore still has no aircraft movement
+authority until stage 3 and its later navigation/flight gates are implemented.
+The retained evidence is in
+`.scratch/pi-evidence-0.1.25-replay-movement-20260724T121316Z` and
+`.scratch/pi-evidence-0.1.25-lifecycle-qualification-20260724T122443Z`;
+the 632 MB MCAP remains on the Pi under
+`/home/mofe/atlas-0.1.25-replay-movement-20260724T121316Z/rosbag`.
 
 ### H-Flow and PX4
 
@@ -218,16 +381,62 @@ Hailo detections, ByteTrack tracking, and Native video overlays. Indoor Explore
 adds a new mission controller and point-cloud view; it should reuse those paths
 instead of creating parallel command, video, or tracking systems.
 
+### Stage 3 contract implemented locally, hold-only
+
+The Native/Agent Indoor Explore contract is now implemented and locally
+validated, but it is not part of the installed `0.1.25` aircraft release.
+The protobuf carries dedicated `START` and `ABORT_AND_RETURN` operations and
+the explicit `starting`, `taking_off`, `exploring`, `returning`, `complete`,
+`holding`, and `failed` states. Atlas Native exposes exactly `0.5 m`, `1 m`,
+and `2 m`; arbitrary altitude input is not present.
+
+This slice deliberately has no aircraft movement authority. Agent advertises
+`indoor_explore:contract:v1` together with
+`indoor_explore:movement_authority:false`. Start records the contract identity
+and selected altitude, invokes the existing acknowledged PX4 Hold action, and
+reports `holding` with `LOCAL_NAVIGATION_NOT_COMMISSIONED`. Abort invokes Hold
+again and reports `holding` with `RETURN_CONTROLLER_NOT_COMMISSIONED`. A main
+session loss also invokes Hold onboard. The implementation never reports
+takeoff, exploration, return, or completion before those controllers exist.
+
+Native keeps the current contract snapshot in memory, validates Agent state
+transitions and immutable altitude, blocks a second non-terminal mission, and
+will recover an unknown post-restart mission only from a safe `holding` or
+`failed` Agent report. The Indoor controls remain disabled when the connected
+Agent does not advertise contract v1; this is the correct behavior with the
+currently installed `0.1.25`.
+
+Local validation passed:
+
+- Agent vehicle, main-session transport, and executable tests;
+- Native's complete 98-test library suite: 95 passed and the three
+  flight-dependent SITL tests remained intentionally ignored;
+- a real localhost gRPC round trip from Native Start delivery through
+  Agent-format `starting`/`holding` updates into the Native store; and
+- the TypeScript/Vite production build using Node `24.14.0`.
+
+No live Start or Abort request was sent to the aircraft, and no Stage 3 release
+was built or deployed in this slice. The aircraft was powered down before the
+final local validation and documentation pass.
+
 ## What still needs to be implemented
 
-Implementation checkpoint (23 July 2026): stages 1 and 2 now provide a bounded live ROS
-cloud built from aligned depth, camera intrinsics, and capture-time VIO poses.
-It publishes `/atlas/spatial/map/points`, resets rather than mixing VIO
-coordinate epochs, and caps the accumulated voxel store. A separate Unix
+Implementation checkpoint (24 July 2026): stages 1 and 2 now provide a bounded
+live ROS cloud built from aligned depth, camera intrinsics, and capture-time
+VIO poses. It publishes `/atlas/spatial/map/points`, resets rather than mixing
+VIO coordinate epochs, and caps the accumulated voxel store. A separate Unix
 socket and gRPC stream now carry complete latest-only cloud snapshots into an
 in-memory Native store, and the Indoor workspace renders them with React Three
-Fiber beside the existing camera view. Pi/OAK end-to-end release acceptance
-remains, and stage 3 is the next feature slice.
+Fiber beside the existing camera view. Grounded Pi/OAK and Native end-to-end
+acceptance now passes on `0.1.25`. Stage 3 is implemented locally as the
+explicit hold-only Native/Agent contract described above; it is not yet
+packaged or deployed. Flight-enabling acceptance and stages 4–6 remain. The
+first Pi `0.1.17` deployment exposed two release blockers now corrected for
+`0.1.18`: the stream node no longer shadows `rclpy.Node` client state, and the
+DepthAI provider normalizes the observed vendor frame name to the Atlas-owned
+aligned-depth frame used by the transform bundle. Essential cloud processes
+now terminate the launch when they exit so systemd cannot mask this class of
+failure as an active service.
 
 The transport does not downsample the current cloud. Every delivered update
 contains all points currently held by the bounded map, up to 100,000 tightly
@@ -248,8 +457,10 @@ Build the feature in this order:
    channel and render them in a React Three Fiber panel beside existing video.
    Path, start point, and mission state join this view with the mission
    contract rather than being fabricated before stage 3.
-3. **Indoor mission contract:** add the three altitude choices, mission states,
-   Start, and Abort-and-return messages between Native and Agent.
+3. **Indoor mission contract (implemented locally, hold-only):** the three
+   altitude choices, explicit mission states, Start, and Abort-and-return
+   messages now cross the Native/Agent boundary. Movement remains disabled and
+   the contract has not been deployed to the aircraft.
 4. **Local navigation:** add the occupancy slice, obstacle inflation, frontier
    selection, grid path, yaw-first movement, and replanning.
 5. **Return behavior:** retain the start/breadcrumb path and use it for the
@@ -272,12 +483,12 @@ Do not make the following prerequisites for Indoor Explore:
 - Foxglove or RViz as the user-facing point-cloud view;
 - a split native/runtime Docker release flow, remote BuildKit cache, or CI
   release pipeline;
-- RTAB-Map, Nav2, OctoMap, loop closure, or a general 3D autonomy stack;
+- RTAB-Map SLAM, Nav2, OctoMap, loop closure, or a general 3D autonomy stack;
 - PX4 external-vision fusion in the first version;
 - production certification, fleet-scale orchestration, or exhaustive
   acceptance paperwork.
 
-The normal local build is sufficient. The heavy native DepthAI layer only
-needs rebuilding when its pinned ROS/DepthAI/Basalt/libusb dependencies or the
-two required DepthAI patches change. Normal Atlas Python, ROS launch, Agent, or
-Native changes should reuse that layer.
+The normal local build is sufficient. The standard ROS/DepthAI/RTAB-Map package
+layer appears before Atlas source, so normal Atlas Python, ROS launch, Agent,
+or Native changes should reuse it. The retained patched DepthAI stages are not
+part of a normal build and exist only for the qualification rollback.

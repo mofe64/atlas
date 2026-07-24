@@ -6,6 +6,7 @@ use crate::database::LocalDatabase;
 
 use super::{
     command_router::CommandRouter,
+    indoor::IndoorExploreStore,
     perception::{self, PerceptionResponseStream, PerceptionStore},
     proto::pb::{
         ground_station_service_server::{
@@ -21,6 +22,7 @@ use super::{
 struct GroundStationService {
     database: Arc<LocalDatabase>,
     command_router: CommandRouter,
+    indoor: IndoorExploreStore,
     perception: PerceptionStore,
     spatial: SpatialStore,
 }
@@ -38,6 +40,7 @@ impl GroundStationServiceContract for GroundStationService {
         session::open(
             Arc::clone(&self.database),
             self.command_router.clone(),
+            self.indoor.clone(),
             request,
         )
         .await
@@ -62,6 +65,7 @@ pub(crate) async fn serve(
     address: SocketAddr,
     database: Arc<LocalDatabase>,
     command_router: CommandRouter,
+    indoor: IndoorExploreStore,
     perception: PerceptionStore,
     spatial: SpatialStore,
 ) -> Result<(), String> {
@@ -70,6 +74,7 @@ pub(crate) async fn serve(
         .add_service(GroundStationServiceServer::new(GroundStationService {
             database,
             command_router,
+            indoor,
             perception,
             spatial,
         }))

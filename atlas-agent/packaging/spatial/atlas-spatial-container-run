@@ -11,7 +11,14 @@ if [ "${ATLAS_SPATIAL_ENABLED:-false}" != true ]; then
 fi
 
 case "${ATLAS_SPATIAL_PROVIDER}" in
-    synthetic|depthai)
+    synthetic)
+        network_mode=none
+        ;;
+    depthai)
+        # Standard libusb receives OAK firmware re-enumeration through a udev
+        # monitor backed by the host netlink namespace. ROS remains host-local
+        # through ROS_LOCALHOST_ONLY in the runtime image.
+        network_mode=host
         ;;
     *)
         printf 'unsupported spatial provider: %s\n' "${ATLAS_SPATIAL_PROVIDER}" >&2
@@ -21,6 +28,10 @@ esac
 
 if [ "${ATLAS_SPATIAL_PROVIDER}" = depthai ] && [ ! -d /dev/bus/usb ]; then
     printf '%s\n' 'USB device bus is unavailable; retrying through systemd' >&2
+    exit 1
+fi
+if [ "${ATLAS_SPATIAL_PROVIDER}" = depthai ] && [ ! -d /run/udev ]; then
+    printf '%s\n' 'host udev database is unavailable; retrying through systemd' >&2
     exit 1
 fi
 
@@ -38,7 +49,7 @@ agent_gid="$(id -g atlas-agent)"
 set -- \
     run --rm \
     --name "${ATLAS_SPATIAL_CONTAINER_NAME}" \
-    --network none \
+    --network "${network_mode}" \
     --user "${agent_uid}:${agent_gid}" \
     --env "ATLAS_SPATIAL_CONTRACT_VERSION=${ATLAS_SPATIAL_CONTRACT_VERSION:-1}" \
     --env "ATLAS_SPATIAL_PROVIDER=${ATLAS_SPATIAL_PROVIDER}" \
@@ -65,7 +76,8 @@ set -- \
 if [ "${ATLAS_SPATIAL_PROVIDER}" = depthai ]; then
     set -- "$@" \
         --device-cgroup-rule 'c 189:* rmw' \
-        --volume /dev/bus/usb:/dev/bus/usb:rw
+        --volume /dev/bus/usb:/dev/bus/usb:rw \
+        --volume /run/udev:/run/udev:ro
 fi
 
 exec /usr/bin/docker "$@" "${ATLAS_SPATIAL_CONTAINER_IMAGE}"

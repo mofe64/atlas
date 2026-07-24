@@ -126,9 +126,9 @@ class HealthContractTests(unittest.TestCase):
     def test_vio_health_has_non_authoritative_five_state_contract(self):
         state = VioHealthState(required_initial_samples=2)
         self.assertEqual(state.snapshot("verified", now_ns=1)["status"], "unavailable")
-        state.observe(100, 1_000, (0.0, 0.0), "vio_odom", "oak_mount")
+        state.observe(100, 1_000, (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0), "vio_odom", "oak_mount")
         self.assertEqual(state.snapshot("verified", now_ns=1_100)["status"], "initializing")
-        state.observe(200, 2_000, (0.1, 0.0), "vio_odom", "oak_mount")
+        state.observe(200, 2_000, (0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0), "vio_odom", "oak_mount")
         ready = state.snapshot("verified", now_ns=2_100)
         self.assertEqual(ready["status"], "ready")
         self.assertEqual(ready["estimatorMode"], "live")
@@ -138,6 +138,93 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(state.snapshot("configured_unverified", now_ns=2_100)["status"], "degraded")
         self.assertEqual(state.snapshot("verified", now_ns=1_000_000_000)["status"], "stale")
 
+    def test_vio_health_reports_tracking_lost_for_null_odometry_pose(self):
+        state = VioHealthState(required_initial_samples=1)
+        state.observe(
+            100,
+            1_000_000_000,
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            "vio_odom",
+            "oak_mount",
+        )
+
+        snapshot = state.snapshot("configured_unverified", now_ns=1_010_000_000)
+
+        self.assertEqual(snapshot["status"], "degraded")
+        self.assertFalse(snapshot["ready"])
+        self.assertEqual(
+            snapshot["reason"],
+            "VIO is publishing invalid poses because visual tracking is lost",
+        )
+        self.assertEqual(snapshot["sampleCount"], 0)
+        self.assertEqual(snapshot["invalidSamples"], 1)
+        self.assertFalse(
+            state.tracking_live(
+                now_ns=1_010_000_000,
+                stale_after_ms=500.0,
+            )
+        )
+
+    def test_vio_tracking_live_follows_the_newest_observation_and_freshness(self):
+        state = VioHealthState(required_initial_samples=1)
+        state.observe(
+            100,
+            1_000_000_000,
+            (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            "vio_odom",
+            "oak_mount",
+        )
+        self.assertTrue(
+            state.tracking_live(
+                now_ns=1_100_000_000,
+                stale_after_ms=500.0,
+            )
+        )
+        self.assertFalse(
+            state.tracking_live(
+                now_ns=1_600_000_000,
+                stale_after_ms=500.0,
+            )
+        )
+
+        state.observe(
+            200,
+            1_700_000_000,
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            "vio_odom",
+            "oak_mount",
+        )
+        self.assertFalse(
+            state.tracking_live(
+                now_ns=1_710_000_000,
+                stale_after_ms=500.0,
+            )
+        )
+        lost = state.snapshot(
+            "configured_unverified",
+            now_ns=1_710_000_000,
+            stale_after_ms=500.0,
+        )
+        self.assertEqual(lost["status"], "degraded")
+        self.assertEqual(
+            lost["reason"],
+            "VIO is publishing invalid poses because visual tracking is lost",
+        )
+
+        state.observe(
+            300,
+            1_800_000_000,
+            (0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            "vio_odom",
+            "oak_mount",
+        )
+        self.assertTrue(
+            state.tracking_live(
+                now_ns=1_810_000_000,
+                stale_after_ms=500.0,
+            )
+        )
+
     def test_vio_timestamp_or_frame_change_starts_a_new_epoch(self):
         for capture_ns, frame_id, child_frame_id in (
             (900, "vio_odom", "oak_mount"),
@@ -146,8 +233,20 @@ class HealthContractTests(unittest.TestCase):
         ):
             with self.subTest(capture_ns=capture_ns, frame_id=frame_id, child_frame_id=child_frame_id):
                 state = VioHealthState(required_initial_samples=1)
-                state.observe(1_000, 1_000, (0.0,), "vio_odom", "oak_mount")
-                state.observe(capture_ns, 2_000, (0.1,), frame_id, child_frame_id)
+                state.observe(
+                    1_000,
+                    1_000,
+                    (0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+                    "vio_odom",
+                    "oak_mount",
+                )
+                state.observe(
+                    capture_ns,
+                    2_000,
+                    (0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+                    frame_id,
+                    child_frame_id,
+                )
                 self.assertEqual(state.estimator_epoch, 1)
 
     def test_transform_contract_rejects_invented_unmeasured_geometry_and_hashes_canonically(self):

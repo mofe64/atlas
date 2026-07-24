@@ -18,10 +18,13 @@ camera services.
   PX4 release through QGroundControl and retain the separate firmware,
   parameter, estimator, and flight-acceptance evidence.
 
-The commands use `0.1.17`, the prepared bounded-live-cloud release.
+The commands use `0.1.18`, the corrected bounded-live-cloud release.
 The currently accepted aircraft foundation remains `0.1.16` as of 22 July
-2026. Retain that package, image identity, and transform backup until `0.1.17`
-passes the validation section; source implementation is not aircraft acceptance.
+2026. Candidate `0.1.17` was rejected after its complete-cloud stream process
+collided with an internal `rclpy.Node` field and the live DepthAI frame name
+did not match the Atlas transform contract. Retain the accepted package, image
+identity, and transform backup until `0.1.18` passes the validation section;
+source implementation is not aircraft acceptance.
 
 ## Camera transport contract
 
@@ -53,14 +56,13 @@ official server version, server asset checksum, and protobuf submodule commit
 must move together. The build stops before producing a package when the
 checked-out protobuf source or generated Go client does not match that pin.
 
-Run these commands on a Linux development or build computer:
+The supported release path builds the spatial image and Agent package as one
+matched artifact set. Run this single command on a Linux development computer
+or the Atlas development Mac:
 
 ```sh
 cd /path/to/sunnyside/atlas/atlas-agent
-
-export ATLAS_RELEASE_VERSION=0.1.17
-sudo apt install cmake libeigen3-dev g++
-./packaging/build-deb.sh
+./packaging/release.sh build 0.1.18
 ```
 
 The same build is supported on the Atlas development Mac used for current
@@ -74,6 +76,21 @@ for command in go git dpkg-deb curl file cmake sha256sum docker; do
 done
 docker info >/dev/null
 docker buildx version
+```
+
+The orchestrator uses the canonical spatial Dockerfile and existing
+`build-deb.sh`; it does not introduce a second build definition. It stages all
+outputs, verifies that the Debian package selects the image with the same
+version, writes basename-only checksums, and publishes the artifacts only after
+the complete set passes verification. Rebuilding an existing version requires
+an explicit `--replace`.
+
+If a release attempt completed the ARM64 image build but stopped during later
+verification or packaging, and the spatial runtime source has not changed,
+resume from that exact local image instead of invoking Buildx again:
+
+```sh
+./packaging/release.sh build 0.1.18 --reuse-image
 ```
 
 On a clean checkout, Buildx creates the Linux-arm64 ByteTrack worker. Retain
@@ -97,19 +114,28 @@ The package preserves FoundationVision's MIT license under
 `/usr/share/doc/atlas-agent/third-party/bytetrack/`. Do not place a macOS or
 x86-64 worker in an arm64 Debian package.
 
-The build produces:
+The unified build produces:
 
 ```text
-dist/atlas-agent_0.1.17_arm64.deb
-dist/atlas-agent_0.1.17_arm64.deb.sha256
+dist/atlas-agent_0.1.18_arm64.deb
+dist/atlas-agent_0.1.18_arm64.deb.sha256
+dist/atlas-agent_0.1.18_arm64.binary.sha256
+dist/atlas-spatial-runtime_0.1.18_arm64.tar.gz
+dist/atlas-spatial-runtime_0.1.18_arm64.tar.gz.sha256
+dist/atlas-release_0.1.18_arm64.json
 ```
 
-For `0.1.17`, also build and archive the exact Linux-arm64 spatial image so the
-Pi does not rebuild it from the network:
+The manifest binds the Git revision and dirty-tree state to the immutable image
+ID and both artifact hashes. The commands below show what the orchestrator
+executes and remain useful for troubleshooting; they are not an additional
+release path.
+
+For `0.1.18`, the orchestrator builds and archives the exact Linux-arm64
+spatial image so the Pi does not rebuild it from the network:
 
 ```sh
 cd /path/to/sunnyside/atlas
-export ATLAS_RELEASE_VERSION=0.1.17
+export ATLAS_RELEASE_VERSION=0.1.18
 
 docker buildx build \
   --platform linux/arm64 \
@@ -121,10 +147,18 @@ docker buildx build \
 
 docker run --rm --entrypoint /bin/bash \
   "atlas-spatial-runtime:${ATLAS_RELEASE_VERSION}" -lc '
-    dpkg-query -W ros-jazzy-depthai-v3 ros-jazzy-depthai-ros-driver-v3
-    strings /opt/ros/jazzy/lib/*/libdepthai_v3-core.so | grep -F ATLAS_DEPTHAI_VIO_IMU_ORDER
-    strings /opt/ros/jazzy/lib/*/libdepthai_v3-core.so | grep -F ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE
-    grep -F "i_fps: 20.0" /workspace/src/atlas_spatial_runtime/config/depthai_vio.yaml
+    core_version="$(dpkg-query -W -f=\${Version} ros-jazzy-depthai-v3)"
+    case "${core_version}" in
+      3.6.1-2noble|3.6.1-2noble.*) ;;
+      *) echo "unexpected standard DepthAI version: ${core_version}" >&2; exit 1 ;;
+    esac
+    dpkg-query -W ros-jazzy-depthai-ros-driver-v3 ros-jazzy-imu-filter-madgwick ros-jazzy-rtabmap-odom
+    core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)"
+    ldd "${core}" | grep -F libusb-1.0.so.0
+    ! ldd "${core}" | grep -F /opt/atlas-depthai-libusb
+    ! strings "${core}" | grep -F ATLAS_DEPTHAI_
+    grep -F "always_process_most_recent_frame: true" \
+      /workspace/src/atlas_spatial_runtime/config/rtabmap_vio.yaml
     test -f /workspace/src/atlas_spatial_runtime/atlas_spatial_runtime/live_cloud.py
     test -f /workspace/src/atlas_spatial_runtime/atlas_spatial_runtime/live_cloud_node.py
     python3 -m pytest -q /workspace/src/atlas_spatial_runtime/test
@@ -133,7 +167,8 @@ docker run --rm --entrypoint /bin/bash \
 docker save "atlas-spatial-runtime:${ATLAS_RELEASE_VERSION}" \
   --output "atlas-agent/dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar"
 gzip -n -f "atlas-agent/dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar"
-sha256sum "atlas-agent/dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz" \
+(cd atlas-agent/dist && \
+  sha256sum "atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz") \
   > "atlas-agent/dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz.sha256"
 
 PACKAGE_CHECK_DIR="$(mktemp -d)"
@@ -148,12 +183,23 @@ Record the Debian, packaged Agent binary, runtime archive, and loaded image IDs
 from these outputs. Do not reuse the accepted `0.1.16` identities for the new
 release.
 
-Transfer both release artifacts and their identity files to the onboard
-computer:
+Verify and transfer the complete matched release to the onboard computer:
 
 ```sh
 cd /path/to/sunnyside/atlas/atlas-agent
-export ATLAS_RELEASE_VERSION=0.1.17
+./packaging/release.sh verify 0.1.18
+./packaging/release.sh transfer 0.1.18 mofe@ariadne-robot
+```
+
+The transfer command stops at `/tmp`. Installation remains explicit because it
+stops onboard services and must only happen after the aircraft is confirmed
+landed and disarmed. It uses the local OpenSSH `scp` client and prompts for the
+Pi account password when SSH keys are not configured. The equivalent manual
+transfer is:
+
+```sh
+cd /path/to/sunnyside/atlas/atlas-agent
+export ATLAS_RELEASE_VERSION=0.1.18
 export ATLAS_PI_HOST=<pi-user>@<pi-address>
 
 scp \
@@ -162,8 +208,67 @@ scp \
   "dist/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.binary.sha256" \
   "dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz" \
   "dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz.sha256" \
+  "dist/atlas-release_${ATLAS_RELEASE_VERSION}_arm64.json" \
   "${ATLAS_PI_HOST}:/tmp/"
 ```
+
+### Recover a slow or stalled SSH transfer
+
+An SSH password prompt or successful interactive shell proves only that small
+control packets can cross the link. It does not prove that the Ethernet/HM30
+route can sustain a large Debian package or the compressed spatial image.
+Before deleting files or rebuilding a release, confirm the Mac is using the
+intended Atlas-network route:
+
+```sh
+ping -c 10 192.168.144.168
+route -n get 192.168.144.168
+```
+
+Use the commissioned Pi address directly when the `ariadne-robot` hostname
+resolves over a different interface. Test the smaller Agent package first with
+legacy SCP framing, no IP QoS marking, SSH keepalives, and a conservative
+2 Mbit/s cap:
+
+```sh
+cd /path/to/sunnyside/atlas/atlas-agent
+export ATLAS_RELEASE_VERSION=0.1.18
+export ATLAS_PI_ADDRESS=192.168.144.168
+
+scp -O -v \
+  -l 2000 \
+  -o IPQoS=none \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=6 \
+  "dist/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb" \
+  "mofe@${ATLAS_PI_ADDRESS}:/tmp/"
+```
+
+`-O` selects the legacy SCP protocol instead of the SFTP transport used by
+current OpenSSH clients. `-l 2000` limits the transfer to 2 Mbit/s; raise that
+cap only after the link is stable. If the test succeeds, transfer the remaining
+matched artifacts with the same options:
+
+```sh
+scp -O \
+  -l 2000 \
+  -o IPQoS=none \
+  -o ServerAliveInterval=15 \
+  -o ServerAliveCountMax=6 \
+  "dist/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256" \
+  "dist/atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.binary.sha256" \
+  "dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz" \
+  "dist/atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz.sha256" \
+  "dist/atlas-release_${ATLAS_RELEASE_VERSION}_arm64.json" \
+  "mofe@${ATLAS_PI_ADDRESS}:/tmp/"
+```
+
+An interrupted `scp` may leave a correctly named but truncated file in
+`/tmp`. Never infer completion from the filename. Compare the transferred
+sizes with `dist/` and require both artifact checksum files to report `OK`
+before `docker load` or `apt install`. Preserve the final `scp -v` output if
+the small package still stalls; diagnose route selection, packet loss, MTU,
+and the Pi SSH service before changing the release artifacts.
 
 Skip this section when the release package is already available on the onboard
 computer.
@@ -175,7 +280,7 @@ On the onboard computer, verify and install the transferred package:
 ```sh
 cd /tmp
 
-export ATLAS_RELEASE_VERSION=0.1.17
+export ATLAS_RELEASE_VERSION=0.1.18
 sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
 sha256sum -c "atlas-spatial-runtime_${ATLAS_RELEASE_VERSION}_arm64.tar.gz.sha256"
 sudo docker load \
@@ -184,7 +289,7 @@ sudo apt install "./atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb"
 ```
 
 Load and install only while the aircraft is landed, disarmed, and not
-executing a mission. `docker load` must report the `0.1.17` tag; setup later
+executing a mission. `docker load` must report the `0.1.18` tag; setup later
 resolves it to an immutable `sha256:` image ID.
 
 The package installs `atlas-agent`, `atlas-setup`, `atlas-hailo-setup`,
@@ -212,6 +317,11 @@ components. It:
 - builds the pinned HailoRT/TAPPAS container;
 - records the immutable image ID in
   `/etc/atlas-agent/hailo-container.env`.
+
+The service uses that immutable image for HailoRT/TAPPAS and read-only mounts
+the adapter executable from the installed Agent package. Agent and the adapter
+therefore always use the same local runtime protocol and activation contract,
+while the hardware userspace image remains pinned independently.
 
 Exit status `3` means that the installation succeeded but the loaded driver or
 device cannot be verified until after a reboot. When requested, reboot:
@@ -310,10 +420,14 @@ CAM_A/RDF-to-body-FRD axis convention. Do not mark it `verified` until the
 reference point, offsets, level alignment, and motion signs are physically
 confirmed.
 
-`0.1.17` adds an explicit configured-unverified aligned optical-frame edge.
-Setup deliberately preserves an existing bundle, so migrate only the exact
-accepted `0.1.16` bundle and retain a rollback copy. Run after installing the
-new package and before rerunning setup:
+`0.1.17` and later add an explicit configured-unverified aligned optical-frame
+edge. Setup automatically migrates only the exact unchanged `0.1.16` seed hash
+shown below, after stopping the spatial reader and retaining
+`transforms.v1.json.pre-optical-chain`. Any physically commissioned or
+otherwise changed bundle has a different canonical hash and remains untouched.
+
+For an already installed release that predates this automatic migration, run
+the following guarded recovery before rerunning setup:
 
 ```sh
 set -eu
@@ -372,16 +486,16 @@ read-only PX4/H-Flow state separately:
 atlas-navigation-probe
 ```
 
-For the hardware-validated DepthAI profile, also verify the immutable image,
-production security boundary, private libusb selection, and versioned health
-contract:
+For the standard DepthAI candidate, also verify the immutable image,
+production security boundary, standard libusb selection, host-udev mount, and
+versioned health contract:
 
 ```sh
 grep '^ATLAS_SPATIAL_CONTAINER_IMAGE=' /etc/atlas-agent/spatial.env
 lsusb -t
 
 sudo docker inspect \
-  --format 'image={{.Image}} privileged={{.HostConfig.Privileged}} readonly={{.HostConfig.ReadonlyRootfs}} capdrop={{json .HostConfig.CapDrop}}' \
+  --format 'image={{.Image}} network={{.HostConfig.NetworkMode}} privileged={{.HostConfig.Privileged}} readonly={{.HostConfig.ReadonlyRootfs}} capdrop={{json .HostConfig.CapDrop}} mounts={{json .Mounts}}' \
   atlas-spatial-runtime
 
 sudo docker exec atlas-spatial-runtime /bin/bash -lc '
@@ -400,14 +514,32 @@ sudo docker exec atlas-spatial-runtime /bin/bash -lc '
 ```
 
 Acceptance requires all spatial doctor checks to pass, the live USB tree to
-show the booted device at 5000 Mb/s, the DepthAI core to resolve
-`/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0`, and the probe to report fresh
-color plus `32FC1` metre depth, calibration, `synchronized=true`, and
-`ready=true`, `streams.imu.ready=true`, and live non-authoritative VIO when it is
-enabled. The container must report `privileged=false`, `readonly=true`, and
-`capdrop=["ALL"]`. A `degraded` VIO state with reason `body to OAK transform is
-not verified` is expected until physical extrinsic commissioning; it is not a
-camera or estimator outage.
+show the booted device at 5000 Mb/s, and the DepthAI core to resolve the system
+`libusb-1.0.so.0` with no `/opt/atlas-depthai-libusb` path. The container mounts
+must include `/run/udev` read-only. The probe must report fresh color plus
+`32FC1` metre depth, calibration, `synchronized=true`, `ready=true`,
+`streams.imu.ready=true`, and live non-authoritative odometry when enabled. The
+container must report `privileged=false`, `readonly=true`, and
+`capdrop=["ALL"]`, with `network=host` so standard libusb receives host
+udev/netlink events when the OAK re-enumerates after firmware upload. A
+`degraded` odometry state with reason `body to OAK transform is not verified`
+is expected until physical extrinsic commissioning; it is not a camera or
+estimator outage.
+
+Prove that Agent lifecycle is independent from the spatial sockets:
+
+```sh
+sudo systemctl restart atlas-agent.service
+test -S /run/atlas-agent/spatial.sock
+test -S /run/atlas-agent/spatial-cloud.sock
+sudo /usr/libexec/atlas-agent/atlas-spatial-runtime-check \
+  --socket /run/atlas-agent/spatial.sock \
+  --json
+```
+
+The Agent unit must preserve `/run/atlas-agent` across stops and restarts.
+Seeing spatial paths in `ss -xl` while `test -S` fails means systemd unlinked
+the shared directory after the spatial servers bound their sockets.
 
 The installed OAK/H-Flow baseline and the indoor feature it supports are
 summarized in
@@ -552,13 +684,13 @@ A new Debian version is strongly recommended because package state, Atlas
 Native, logs, and rollback artifacts can then distinguish the builds:
 
 ```sh
-export ATLAS_RELEASE_VERSION=0.1.17
+export ATLAS_RELEASE_VERSION=0.1.18
 ```
 
 For a development replacement that deliberately keeps the installed version:
 
 ```sh
-export ATLAS_RELEASE_VERSION=0.1.17
+export ATLAS_RELEASE_VERSION=0.1.18
 ```
 
 Debian and Atlas will report the same version before and after a same-version
@@ -621,7 +753,7 @@ On the onboard computer:
 
 ```sh
 cd /tmp
-export ATLAS_RELEASE_VERSION=0.1.17  # Use the exact version selected for this build.
+export ATLAS_RELEASE_VERSION=0.1.18  # Use the exact version selected for this build.
 sha256sum -c "atlas-agent_${ATLAS_RELEASE_VERSION}_arm64.deb.sha256"
 ```
 
@@ -840,7 +972,7 @@ means that the isolated visualization cloud is active; it does not grant
 flight authority. Retain the immutable image SHA printed by `docker inspect`
 in the commissioning record.
 
-For `0.1.17`, prove the authority boundary and verify that both VIO and the
+For `0.1.18`, prove the authority boundary and verify that both VIO and the
 bounded live cloud are publishing:
 
 ```sh
@@ -861,17 +993,22 @@ sudo docker exec atlas-spatial-runtime /bin/bash -lc '
   . /opt/ros/jazzy/setup.sh
   . /opt/atlas-spatial-runtime/setup.sh
   set -u
+  test -S /run/atlas-agent/spatial-cloud.sock
+  ros2 node list | grep -Fx /atlas_spatial_stream
+  test "$(timeout 15 ros2 topic echo \
+    /atlas/spatial/aligned_depth/camera_info \
+    --once --field header.frame_id)" = oak_rgb_camera_optical_frame
   timeout 30 ros2 topic hz /atlas/spatial/vio/odometry
   timeout 15 ros2 topic echo /atlas/spatial/map/points --once --field width
 '
 ```
 
-The measured VIO output should be approximately the intended 20 Hz, allowing
-normal scheduling jitter, and the cloud width must become non-zero while the
-camera sees valid depth. A timeout exit after printing VIO samples is expected.
-Do not interpret cadence or a populated cloud as localization accuracy. During
-a bounded soak, retain provider, IMU, VIO, live-cloud, temperature, throttling,
-restart, and backpressure evidence:
+The odometry input is capped at 20 Hz; output may be lower while tracking or
+under load. The cloud width must become non-zero while the camera sees valid
+depth. A timeout exit after printing odometry samples is expected. Do not
+interpret cadence or a populated cloud as localization accuracy. During a
+bounded soak, retain provider, IMU, odometry, live-cloud, temperature,
+throttling, restart, and dropped-frame evidence:
 
 ```sh
 ATLAS_SOAK_START="$(date --iso-8601=seconds)"
@@ -884,13 +1021,13 @@ vcgencmd measure_temp
 vcgencmd get_throttled
 sudo journalctl -u atlas-spatial-runtime.service \
   --since "$ATLAS_SOAK_START" --no-pager | \
-  grep -c ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE || true
+  grep -Ec 'Dropping image/scan data|previous image/scan is dropped' || true
 ```
 
-Backpressure must remain bounded without RGB-D/VIO staleness, assertion,
-provider stall, or restart, and should be materially lower than the retained
-30 Hz baseline over a comparable interval. Zero drops are not required, and
-fresh VIO output means dropping obsolete visual work is not estimator failure.
+Backpressure must remain bounded without RGB-D/odometry staleness, assertion,
+provider stall, or restart. Zero drops are not required: a fresh odometry
+stream with current RGB-D proves that obsolete visual work is being discarded
+outside the camera component.
 
 In Atlas Native, confirm that the same drone identity reconnects, telemetry is
 fresh, and the expected Agent capabilities are present. When perception or
@@ -943,7 +1080,7 @@ sudo docker inspect --format '{{.Image}}' atlas-spatial-runtime
 The restored runtime image must resolve to the accepted `0.1.16` image
 `sha256:06c9106ea2f59f2d5f879b28c7482e0221dff7128e19c152c63e68c1cbe65edc`.
 If that exact image was removed, reload the separately retained `0.1.16`
-archive before running `atlas-setup`; do not relabel the `0.1.17` image as a
+archive before running `atlas-setup`; do not relabel the `0.1.18` image as a
 rollback.
 
 If the failed deployment also rebuilt the Hailo container or changed its pinned
@@ -977,11 +1114,11 @@ journalctl -u atlas-hailo-adapter.service -n 200 --no-pager
 
 ### The OAK firmware boots but RGB-D topics never become ready
 
-The validated failure signature is a DepthAI log that reports firmware boot
-success and then `X_LINK_DEVICE_NOT_FOUND`. That is a container USB
-re-enumeration failure, not evidence that the camera or USB 3 cable is bad.
-Confirm that the installed release selected the expected image and private
-library:
+The historical failure signature is a DepthAI log that reports firmware boot
+success and then `X_LINK_DEVICE_NOT_FOUND`. That indicates USB
+re-enumeration/discovery failed; it is not by itself evidence that the camera
+or USB 3 cable is bad. Confirm that the standard candidate selected the
+expected image, system library, and host-udev mount:
 
 ```sh
 dpkg-query -W -f='${Package} ${Version}\n' atlas-agent
@@ -990,18 +1127,22 @@ grep '^ATLAS_SPATIAL_CONTAINER_IMAGE=' /etc/atlas-agent/spatial.env
 
 sudo docker exec atlas-spatial-runtime /bin/bash -lc '
   core="$(find /opt/ros/jazzy/lib -name libdepthai_v3-core.so -print -quit)"
+  dpkg-query -W ros-jazzy-depthai-v3
   ldd "${core}" | grep libusb
 '
 
+sudo docker inspect --format '{{json .Mounts}}' atlas-spatial-runtime
 sudo journalctl -u atlas-spatial-runtime.service -n 200 --no-pager
 ```
 
-The linkage must resolve `/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0`.
-Installing `udev` in the runtime image or forcing the driver to USB 2 did not
-fix this failure and is not the supported recovery. Install a release that
-contains the pinned private-lib workaround, run `sudo atlas-setup` so its
-release-versioned image is built and pinned, and validate USB 3 while the
-runtime is active.
+The DepthAI package version must not contain `+atlas`, linkage must not resolve
+`/opt/atlas-depthai-libusb`, `/run/udev` must be mounted read-only, and the
+container must use the host network namespace. A grounded `0.1.18` comparison
+proved that `--network none` prevents the standard libusb udev monitor from
+observing the booted OAK, while the otherwise identical `--network host`
+container re-discovers it and produces RGB-D/IMU input. If the signature
+remains with the production host-network runner, keep the aircraft grounded
+and retain the complete logs; do not silently reintroduce a private library.
 
 ### Atlas is not configured
 

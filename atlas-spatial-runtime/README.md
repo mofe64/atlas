@@ -35,27 +35,40 @@ calibration and transform identity, USB transport, and direct VIO health. VIO
 is used for live mapping but remains non-authoritative: PX4 VIO fusion and
 spatial-runtime movement authority are always disabled.
 
-## Why DepthAI is patched
+## Standard DepthAI boundary
 
-The stock ROS Jazzy DepthAI 3.6.1 package fails on the deployed Raspberry Pi 5
-and 2021 OAK-D Lite in three observed ways:
+The normal image installs the unmodified ROS Jazzy DepthAI packages. DepthAI
+owns synchronized RGB-D, a rectified global-shutter mono pair, and raw BMI270
+transport; its integrated Basalt VIO is disabled. Atlas runs standard
+`imu_filter_madgwick` and RTAB-Map stereo odometry as separate processes and
+publishes the result on the existing
+non-authoritative `/atlas/spatial/vio/odometry` compatibility topic.
+The camera profile explicitly aligns and synchronizes RGB/stereo and sets the
+Luxonis RTAB-Map `DEFAULT` preset on the RealSense-compatible `depth`
+namespace, so cloud projection receives useful registered depth rather than
+silently retaining the driver's implicit `FAST_ACCURACY` profile. Visual
+odometry independently uses the rectified mono pair.
 
-1. Its Ubuntu udev-backed libusb can lose the OAK while firmware changes the
-   USB identity. Atlas uses DepthAI's pinned libusb revision with the netlink
-   backend so the container follows the device through re-enumeration.
-2. BMI270 packets can reach Basalt with duplicate or regressive timestamps.
-   Basalt requires strictly increasing IMU time and otherwise aborts the
-   camera component. Atlas serializes callbacks, sorts each packet batch, and
-   drops late samples without inventing timestamps.
-3. Basalt's bounded visual queue uses a blocking push. When the Pi cannot keep
-   up, that blocks the shared RGB-D pipeline. Atlas makes the queue
-   non-blocking and latest-frame-wins, discarding obsolete estimator work while
-   keeping RGB-D live.
+This boundary removes the reasons Atlas previously patched DepthAI:
 
-These are narrow patches to the validated `3.6.1-2noble+atlas2` core, not a
-forked mapping stack. The image build checks source hashes, runs both queue
-tests, marks the Debian revision with `+atlas2`, verifies both patch markers in
-the built library, and confirms the private libusb is actually linked.
+1. An Atlas-owned timestamp gate drops duplicate and short out-of-order raw
+   IMU samples before Madgwick, without rewriting device time. A one-second
+   clock regression terminates the provider boundary so Madgwick, odometry,
+   and the camera restart in the same clock epoch.
+2. RTAB-Map keeps only the most recent unprocessed stereo observation, so
+   estimator overload cannot block the DepthAI camera component.
+3. The container mounts the host udev database read-only alongside
+   `/dev/bus/usb` and shares the host network namespace. Standard libusb's
+   udev monitor depends on host netlink hotplug delivery: a grounded Pi test
+   proved that `--network none` loses the booted OAK after firmware upload,
+   while `--network host` re-discovers it and produces RGB-D/IMU input without
+   a patched DepthAI or libusb. The container remains non-root, read-only,
+   capability-free, and limited to the USB character-device class.
+
+The accepted `0.1.16` image remains the operational rollback. Its
+`3.6.1-2noble+atlas2` build stage and source files are retained but are not in
+the normal image dependency graph; they must not be deleted until the standard
+path passes aircraft tests and cleanup is explicitly approved.
 
 ## Development
 
@@ -80,10 +93,11 @@ Setup never overwrites a commissioned replacement.
 
 ## Pi deployment
 
-The normal image is built from `packaging/Dockerfile`. The expensive pinned
-DepthAI/Basalt/libusb stages appear before Atlas source is copied, so ordinary
-Python or launch changes reuse Docker's layer cache without a separate native
-image or release flow.
+The normal image is built from `packaging/Dockerfile` and defaults to the
+`atlas-standard-depthai` base. The retained patched stages are skipped by
+BuildKit during a normal build. Atlas source is copied only after the
+third-party runtime layers, preserving cache reuse without a second release
+flow.
 
 The Pi runs the image through `atlas-spatial-runtime.service`. See
 [`docs/spatial-runtime.md`](../docs/spatial-runtime.md) for the system boundary

@@ -28,7 +28,7 @@ def _finite(values: tuple[float, ...]) -> bool:
 
 @dataclass
 class ImuHealthState:
-    """Bounded health window for the BMI270 stream used by Basalt."""
+    """Bounded health window for the normalized BMI270 stream."""
 
     enabled: bool = True
     clock_reset_threshold_ns: int = 1_000_000_000
@@ -149,12 +149,20 @@ class VioHealthState:
         frame_id: str,
         child_frame_id: str,
     ) -> None:
+        quaternion_norm = (
+            math.sqrt(sum(component * component for component in values[3:7]))
+            if len(values) == 7 and _finite(values)
+            else 0.0
+        )
         if (
             capture_ns <= 0
             or arrival_ns <= 0
             or not frame_id
             or not child_frame_id
+            or len(values) != 7
             or not _finite(values)
+            or quaternion_norm < 1e-9
+            or abs(quaternion_norm - 1.0) > 1e-3
         ):
             self.invalid_samples += 1
             self.last_invalid_arrival_ns = arrival_ns
@@ -171,6 +179,19 @@ class VioHealthState:
         self.frame_id = frame_id
         self.child_frame_id = child_frame_id
         self.sample_count += 1
+
+    def tracking_live(
+        self,
+        now_ns: int | None = None,
+        stale_after_ms: float = 1000.0,
+    ) -> bool:
+        """Return whether the newest VIO observation is valid and fresh."""
+        now_ns = now_ns or time.monotonic_ns()
+        if not self.enabled or not self.last_arrival_ns or stale_after_ms <= 0:
+            return False
+        if self.last_invalid_arrival_ns > self.last_arrival_ns:
+            return False
+        return now_ns - self.last_arrival_ns <= int(stale_after_ms * 1_000_000)
 
     def snapshot(
         self,
@@ -191,7 +212,31 @@ class VioHealthState:
             "childFrameId": self.child_frame_id,
             "transformStatus": transform_status or "unmeasured",
         }
-        if not self.enabled or not self.last_arrival_ns:
+        if not self.enabled:
+            return {**base, "status": "unavailable", "ready": False, "reason": "VIO is disabled"}
+        if self.last_invalid_arrival_ns > self.last_arrival_ns:
+            age_ms = max(
+                0.0,
+                (now_ns - self.last_invalid_arrival_ns) / 1_000_000.0,
+            )
+            if age_ms > stale_after_ms:
+                return {
+                    **base,
+                    "status": "stale",
+                    "ready": False,
+                    "reason": "VIO invalid-pose output exceeded the freshness limit",
+                    "ageMs": age_ms,
+                    "sampleCount": self.sample_count,
+                }
+            return {
+                **base,
+                "status": "degraded",
+                "ready": False,
+                "reason": "VIO is publishing invalid poses because visual tracking is lost",
+                "ageMs": age_ms,
+                "sampleCount": self.sample_count,
+            }
+        if not self.last_arrival_ns:
             return {**base, "status": "unavailable", "ready": False, "reason": "VIO output has not been observed"}
         age_ms = (now_ns - self.last_arrival_ns) / 1_000_000.0
         if age_ms > stale_after_ms:

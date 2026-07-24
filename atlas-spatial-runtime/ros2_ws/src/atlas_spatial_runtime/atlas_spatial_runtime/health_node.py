@@ -32,12 +32,15 @@ class SpatialHealthNode(Node):
         self.declare_parameter("model", "")
         self.declare_parameter("usb_transport", "unknown")
         self.declare_parameter("imu_required", True)
+        self.declare_parameter("vio_required", True)
         self.declare_parameter("socket_path", "/run/atlas-agent/spatial.sock")
         self.declare_parameter("stale_after_ms", 1000.0)
         self.declare_parameter("sync_tolerance_ms", 25.0)
         self.declare_parameter("transform_bundle_path", "")
         self.declare_parameter("provider_startup_grace_ms", 30000.0)
         self.declare_parameter("provider_stale_exit_after_ms", 5000.0)
+        self.declare_parameter("vio_startup_grace_ms", 30000.0)
+        self.declare_parameter("vio_stale_exit_after_ms", 5000.0)
 
         self.state = SpatialHealthState(
             provider=str(self.get_parameter("provider").value),
@@ -50,6 +53,7 @@ class SpatialHealthNode(Node):
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._provider_failure_started_ns = None
+        self._vio_failure_started_ns = None
         self._socket_path = str(self.get_parameter("socket_path").value)
         transform_path = str(self.get_parameter("transform_bundle_path").value)
         if not transform_path:
@@ -62,7 +66,14 @@ class SpatialHealthNode(Node):
         self.create_subscription(Image, "/atlas/spatial/color/image_raw", self._color, qos_profile_sensor_data)
         self.create_subscription(Image, "/atlas/spatial/aligned_depth/image_rect", self._depth, qos_profile_sensor_data)
         self.create_subscription(CameraInfo, "/atlas/spatial/aligned_depth/camera_info", self._camera_info, qos_profile_sensor_data)
-        self.create_subscription(Imu, "/atlas/spatial/imu/data", self._imu, qos_profile_sensor_data)
+        # Health observes the provider-side stream so timestamp anomalies remain
+        # visible even when the safety gate drops them before Madgwick.
+        self.create_subscription(
+            Imu,
+            "/atlas/spatial/provider/imu/data_raw",
+            self._imu,
+            qos_profile_sensor_data,
+        )
         self.create_subscription(Odometry, "/atlas/spatial/vio/odometry", self._vio, qos_profile_sensor_data)
 
         self._server_thread = threading.Thread(target=self._serve, name="atlas-spatial-health-socket", daemon=True)
@@ -153,18 +164,70 @@ class SpatialHealthNode(Node):
         with self._lock:
             live = self.state.provider_streams_live(now_ns=now_ns, stale_after_ms=stale_after_ms)
             ages = self.state.provider_stream_ages_ms(now_ns=now_ns)
-        if live:
-            self._provider_failure_started_ns = None
+        if not live:
+            if self._provider_failure_started_ns is None:
+                self._provider_failure_started_ns = now_ns
+                return
+            exit_after_ns = int(
+                float(self.get_parameter("provider_stale_exit_after_ms").value)
+                * 1_000_000
+            )
+            if now_ns - self._provider_failure_started_ns < exit_after_ns:
+                return
+            self.get_logger().fatal(
+                "provider streams remained unavailable or stale; shutting down the spatial failure boundary: "
+                + json.dumps(
+                    ages,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+            rclpy.shutdown()
             return
-        if self._provider_failure_started_ns is None:
-            self._provider_failure_started_ns = now_ns
+        self._provider_failure_started_ns = None
+        self._supervise_vio(now_ns, stale_after_ms)
+
+    def _supervise_vio(self, now_ns: int, stale_after_ms: float) -> None:
+        """Restart the complete coordinate boundary after sustained VIO loss."""
+        if not bool(self.get_parameter("vio_required").value):
+            self._vio_failure_started_ns = None
             return
-        exit_after_ns = int(float(self.get_parameter("provider_stale_exit_after_ms").value) * 1_000_000)
-        if now_ns - self._provider_failure_started_ns < exit_after_ns:
+        startup_grace_ns = int(
+            float(self.get_parameter("vio_startup_grace_ms").value) * 1_000_000
+        )
+        if now_ns - self.state.started_monotonic_ns < startup_grace_ns:
+            return
+        with self._lock:
+            tracking_live = self._vio_state.tracking_live(
+                now_ns=now_ns,
+                stale_after_ms=stale_after_ms,
+            )
+            vio_snapshot = self._vio_state.snapshot(
+                self._body_to_oak_status,
+                now_ns=now_ns,
+                stale_after_ms=stale_after_ms,
+            )
+        if tracking_live:
+            self._vio_failure_started_ns = None
+            return
+        if self._vio_failure_started_ns is None:
+            self._vio_failure_started_ns = now_ns
+            return
+        exit_after_ns = int(
+            float(self.get_parameter("vio_stale_exit_after_ms").value) * 1_000_000
+        )
+        if now_ns - self._vio_failure_started_ns < exit_after_ns:
             return
         self.get_logger().fatal(
-            "provider streams remained unavailable or stale; shutting down the spatial failure boundary: "
-            + json.dumps(ages, allow_nan=False, separators=(",", ":"), sort_keys=True)
+            "VIO remained unavailable, stale, or invalid; restarting the complete "
+            "spatial coordinate boundary: "
+            + json.dumps(
+                vio_snapshot,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
         )
         rclpy.shutdown()
 

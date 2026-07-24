@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"math"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -156,8 +157,38 @@ func readFrame(reader io.Reader) (Frame, error) {
 		Sequence: metadata.Sequence, ObservedAtUnixMS: metadata.ObservedAtUnixMS,
 		CaptureNS: metadata.CaptureNS, FrameID: metadata.FrameID,
 		VoxelSizeM: metadata.VoxelSizeM, PointCount: metadata.PointCount,
-		XYZF32LE: payload, Pose: metadata.Pose,
+		XYZF32LE: payload, Pose: normalizedPoseOrNil(metadata.Pose),
 	}, nil
+}
+
+// normalizedPoseOrNil preserves a complete map-frame cloud when VIO is
+// degraded. Pose is optional transport metadata; an invalid pose must not tear
+// down the spatial stream or be mistaken for an authoritative orientation.
+func normalizedPoseOrNil(value *Pose) *Pose {
+	if value == nil || value.CaptureNS <= 0 ||
+		strings.TrimSpace(value.FrameID) == "" || strings.TrimSpace(value.ChildFrameID) == "" {
+		return nil
+	}
+	values := append(value.Position[:], value.OrientationWXYZ[:]...)
+	for _, coordinate := range values {
+		if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
+			return nil
+		}
+	}
+	norm := math.Sqrt(
+		value.OrientationWXYZ[0]*value.OrientationWXYZ[0] +
+			value.OrientationWXYZ[1]*value.OrientationWXYZ[1] +
+			value.OrientationWXYZ[2]*value.OrientationWXYZ[2] +
+			value.OrientationWXYZ[3]*value.OrientationWXYZ[3],
+	)
+	if norm < 0.9 || norm > 1.1 {
+		return nil
+	}
+	result := *value
+	for index := range result.OrientationWXYZ {
+		result.OrientationWXYZ[index] /= norm
+	}
+	return &result
 }
 
 func validateHeader(value header) error {
@@ -178,14 +209,6 @@ func validateHeader(value header) error {
 	}
 	if value.VoxelSizeM <= 0 || math.IsNaN(float64(value.VoxelSizeM)) || math.IsInf(float64(value.VoxelSizeM), 0) {
 		return errors.New("spatial voxel size must be finite and positive")
-	}
-	if value.Pose != nil {
-		values := append(value.Pose.Position[:], value.Pose.OrientationWXYZ[:]...)
-		for _, coordinate := range values {
-			if math.IsNaN(coordinate) || math.IsInf(coordinate, 0) {
-				return errors.New("spatial pose contains a non-finite value")
-			}
-		}
 	}
 	return nil
 }

@@ -36,8 +36,9 @@ def generate_launch_description():
                 "transform_bundle_path",
                 default_value=PathJoinSubstitution([package_share, "config", "transforms.v1.json"]),
             ),
-            # This flag controls estimator execution, not authority: Basalt
-            # publishes every live VIO sample, but cannot command PX4.
+            # This flag controls estimator execution, not authority: external
+            # stereo-inertial odometry publishes live samples but cannot
+            # command PX4.
             DeclareLaunchArgument("vio_enabled", default_value="true", choices=["true", "false"]),
             DeclareLaunchArgument("live_cloud_enabled", default_value="true", choices=["true", "false"]),
             IncludeLaunchDescription(
@@ -63,9 +64,12 @@ def generate_launch_description():
                         "usb_transport": usb_transport,
                         "socket_path": socket_path,
                         "imu_required": True,
+                        "vio_required": vio_enabled,
                         "transform_bundle_path": transform_bundle_path,
                         "provider_startup_grace_ms": 30000.0,
                         "provider_stale_exit_after_ms": 5000.0,
+                        "vio_startup_grace_ms": 30000.0,
+                        "vio_stale_exit_after_ms": 5000.0,
                     }
                 ],
                 on_exit=Shutdown(reason="spatial provider health monitor exited"),
@@ -81,6 +85,7 @@ def generate_launch_description():
                     ])
                 ),
                 parameters=[{"transform_bundle_path": transform_bundle_path}],
+                on_exit=Shutdown(reason="spatial live-cloud builder exited"),
             ),
             Node(
                 package="atlas_spatial_runtime",
@@ -100,6 +105,7 @@ def generate_launch_description():
                         "voxel_size_m": 0.05,
                     }
                 ],
+                on_exit=Shutdown(reason="spatial complete-cloud stream exited"),
             ),
         ]
     )

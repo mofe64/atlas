@@ -167,6 +167,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer aircraftFollowController.Close()
+	indoorExploreController, err := vehicle.NewIndoorExploreController(actionExecutor)
+	if err != nil {
+		logger.Error("start Indoor Explore contract controller", "error", err)
+		os.Exit(1)
+	}
 	discoveryContext, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
 	gimbalIDs, discoveryErr := discoverGimbalsWithRetry(
 		discoveryContext,
@@ -190,7 +195,7 @@ func main() {
 	}
 
 	logger.Info("atlas agent started", "state_directory", cfg.StateDirectory, "installation_id", localIdentity.InstallationID, "drone_id", localIdentity.DroneID, "mavsdk_grpc_address", cfg.MAVSDKGRPCAddress, "camera_transport", cfg.CameraTransport, "geolocation_temporal_foundation", true)
-	go groundstation.Run(ctx, logger, cfg, localIdentity, telemetryOutputs.Snapshots, telemetryOutputs.StatusTexts, perceptionOutputs, spatialOutputs, actionExecutor, missionExecutor, aircraftFollowController)
+	go groundstation.Run(ctx, logger, cfg, localIdentity, telemetryOutputs.Snapshots, telemetryOutputs.StatusTexts, perceptionOutputs, spatialOutputs, actionExecutor, missionExecutor, aircraftFollowController, indoorExploreController)
 	<-ctx.Done()
 	logger.Info("atlas agent stopped")
 }

@@ -23,6 +23,9 @@ class SyntheticProvider(Node):
         self.color_info = self.create_publisher(CameraInfo, "/atlas/spatial/color/camera_info", 10)
         self.depth = self.create_publisher(Image, "/atlas/spatial/aligned_depth/image_rect", 10)
         self.depth_info = self.create_publisher(CameraInfo, "/atlas/spatial/aligned_depth/camera_info", 10)
+        self.raw_imu = self.create_publisher(
+            Imu, "/atlas/spatial/provider/imu/data_raw", 50
+        )
         self.imu = self.create_publisher(Imu, "/atlas/spatial/imu/data", 50)
         self.vio = self.create_publisher(Odometry, "/atlas/spatial/vio/odometry", 20)
         self.timer = self.create_timer(1.0 / fps, self.publish_bundle)
@@ -79,6 +82,7 @@ class SyntheticProvider(Node):
         message.header.frame_id = "oak_imu_frame"
         message.orientation_covariance[0] = -1.0
         message.linear_acceleration.z = 9.80665
+        self.raw_imu.publish(message)
         self.imu.publish(message)
 
 

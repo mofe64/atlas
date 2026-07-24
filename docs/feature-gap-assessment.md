@@ -434,12 +434,15 @@ margins, and all unresolved features.
 The current mission payload is the visible-light SIYI A8 gimbal. Atlas should
 not expose a thermal source.
 
-The purchased 2021 OAK-D Lite now provides synchronized near-field stereo
-depth, color, calibration, BMI270 IMU, and live non-authoritative Basalt VIO to
-the independent spatial runtime. Release `0.1.16` accepted the required
-DepthAI overload protection. Atlas records those facts without treating the
-unit as a validated flight-position source. The runtime now builds a bounded
-live point cloud for visualization, not a new SLAM or autonomy framework.
+The purchased 2021 OAK-D Lite provides synchronized near-field stereo depth,
+color, calibration, and BMI270 IMU to the independent spatial runtime. Release
+`0.1.16` accepted a patched Basalt reference; the current standard-package
+candidate moves live non-authoritative RGB-D inertial odometry into a separate
+RTAB-Map process and guards Madgwick with an Atlas-owned monotonic raw-IMU
+boundary. DepthAI remains unmodified. Atlas records those facts without
+treating the unit as a validated flight-position source. The runtime builds a
+bounded live point cloud for visualization, not a loop-closing SLAM or
+autonomy framework.
 
 The downward Holybro H-Flow is installed and configured through QGroundControl
 to provide DroneCAN optical-flow and distance measurements to the PX4
