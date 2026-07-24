@@ -31,9 +31,37 @@ export type SpatialCloudFrame = {
   positions: Float32Array;
 };
 
+export type SpatialCloudUpdate = {
+  metadata: SpatialCloudMetadata;
+  pointCount: number;
+};
+
 const textDecoder = new TextDecoder();
+const nativeLittleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
 
 export function decodeSpatialFrame(packet: ArrayBuffer): SpatialCloudFrame | undefined {
+  const decoded = decodeSpatialPacket(packet);
+  if (!decoded) return undefined;
+  const positions = new Float32Array(decoded.metadata.pointCount * 3);
+  copyAndValidatePositions(packet, decoded.payloadOffset, positions, positions.length);
+  return { metadata: decoded.metadata, positions };
+}
+
+export function decodeSpatialFrameInto(
+  packet: ArrayBuffer,
+  positions: Float32Array,
+): SpatialCloudUpdate | undefined {
+  const decoded = decodeSpatialPacket(packet);
+  if (!decoded) return undefined;
+  const coordinateCount = decoded.metadata.pointCount * 3;
+  if (positions.length < coordinateCount) {
+    throw new Error("Spatial point buffer is smaller than the complete cloud");
+  }
+  copyAndValidatePositions(packet, decoded.payloadOffset, positions, coordinateCount);
+  return { metadata: decoded.metadata, pointCount: decoded.metadata.pointCount };
+}
+
+function decodeSpatialPacket(packet: ArrayBuffer) {
   if (packet.byteLength === 0) return undefined;
   if (packet.byteLength < 8) throw new Error("Spatial frame packet is truncated");
   const bytes = new Uint8Array(packet);
@@ -56,12 +84,34 @@ export function decodeSpatialFrame(packet: ArrayBuffer): SpatialCloudFrame | und
   ) {
     throw new Error("Spatial frame is not a complete bounded XYZ cloud");
   }
-  const alignedPayload = packet.slice(payloadOffset);
-  const positions = new Float32Array(alignedPayload);
-  for (let index = 0; index < positions.length; index += 1) {
+  return { metadata, payloadOffset };
+}
+
+function copyAndValidatePositions(
+  packet: ArrayBuffer,
+  payloadOffset: number,
+  positions: Float32Array,
+  coordinateCount: number,
+) {
+  if (nativeLittleEndian) {
+    new Uint8Array(
+      positions.buffer,
+      positions.byteOffset,
+      coordinateCount * Float32Array.BYTES_PER_ELEMENT,
+    ).set(new Uint8Array(
+      packet,
+      payloadOffset,
+      coordinateCount * Float32Array.BYTES_PER_ELEMENT,
+    ));
+  } else {
+    const source = new DataView(packet, payloadOffset);
+    for (let index = 0; index < coordinateCount; index += 1) {
+      positions[index] = source.getFloat32(index * Float32Array.BYTES_PER_ELEMENT, true);
+    }
+  }
+  for (let index = 0; index < coordinateCount; index += 1) {
     if (!Number.isFinite(positions[index])) {
       throw new Error("Spatial frame contains a non-finite coordinate");
     }
   }
-  return { metadata, positions };
 }

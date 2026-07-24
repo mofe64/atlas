@@ -337,14 +337,14 @@ export function LiveVideo({
 }: LiveVideoProps) {
   const videoCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
-  const overlayEnabledRef = useRef(true);
+  const overlayEnabledRef = useRef(!compact);
   const latestOverlayFrameRef = useRef<PerceptionFrame | undefined>(undefined);
   const selectionRef = useRef<TrackSelection | undefined>(undefined);
   const countingRulesRef = useRef<CountingRule[]>([]);
   const countingRuleDraftRef = useRef<CountingRuleDraft | undefined>(undefined);
   const missionRunIdRef = useRef<string | undefined>(recordingContext?.missionRunId);
   const cameraFollowRef = useRef<CameraFollowState | undefined>(undefined);
-  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayEnabled, setOverlayEnabled] = useState(!compact);
   const [perceptionRequested, setPerceptionRequested] = useState(false);
   const [stream, setStream] = useState<VideoStreamSnapshot>();
   const [perception, setPerception] = useState<PerceptionSnapshot>();
@@ -455,6 +455,13 @@ export function LiveVideo({
     async function refreshStatus() {
       try {
         const nextStream = await invoke<VideoStreamSnapshot>("video_stream_snapshot");
+        if (compact) {
+          if (active) {
+            setStream(nextStream);
+            setError(nextStream.lastError);
+          }
+          return;
+        }
         const [nextPerception, nextCounts, nextRules, nextSelection] = await Promise.all([
           invoke<PerceptionSnapshot | null>("perception_snapshot", { droneId }),
           invoke<PerceptionCounts>("perception_counts", {
@@ -519,7 +526,7 @@ export function LiveVideo({
       window.clearInterval(statusInterval);
       void invoke("video_stream_stop", { droneId }).catch(() => undefined);
     };
-  }, [droneId, nativeAvailable]);
+  }, [compact, droneId, nativeAvailable]);
 
   useEffect(() => {
     const follow = cameraFollow;
@@ -618,7 +625,7 @@ export function LiveVideo({
   }, [droneId, nativeAvailable, perceptionRequested]);
 
   useEffect(() => {
-    if (!nativeAvailable || !droneId) {
+    if (compact || !nativeAvailable || !droneId) {
       setRecording(undefined);
       setRecordingError(undefined);
       return;
@@ -645,7 +652,7 @@ export function LiveVideo({
       active = false;
       window.clearInterval(interval);
     };
-  }, [droneId, nativeAvailable, recordingContext?.incidentId, recordingContext?.missionId, recordingContext?.missionRunId]);
+  }, [compact, droneId, nativeAvailable, recordingContext?.incidentId, recordingContext?.missionId, recordingContext?.missionRunId]);
 
   async function startRecording() {
     if (!droneId || recordingPending) return;
@@ -1033,12 +1040,14 @@ export function LiveVideo({
     <section className={`live-video${compact ? " live-video--compact" : ""}${hudReduced ? " live-video--hud-reduced" : ""}`} aria-label="Live camera stream">
       <div className={`live-video__viewport${telemetryStale ? " live-video__viewport--telemetry-stale" : ""}`}>
         <canvas ref={videoCanvasRef} className="live-video__clean" aria-label="Clean RTSP video" />
-        <canvas
-          ref={overlayCanvasRef}
-          className={`live-video__overlay${countingRuleDraft ? " live-video__overlay--drawing" : ""}`}
-          aria-label={countingRuleDraft ? `Place ${countingRuleDraft.ruleType.toLowerCase()} count-rule points` : "Select a confirmed tracked object"}
-          onClick={handleOverlayClick}
-        />
+        {!compact && (
+          <canvas
+            ref={overlayCanvasRef}
+            className={`live-video__overlay${countingRuleDraft ? " live-video__overlay--drawing" : ""}`}
+            aria-label={countingRuleDraft ? `Place ${countingRuleDraft.ruleType.toLowerCase()} count-rule points` : "Select a confirmed tracked object"}
+            onClick={handleOverlayClick}
+          />
+        )}
         {!playing && (
           <div className="live-video__empty">
             <span className={stream?.status === "error" ? "live-video__signal live-video__signal--error" : "live-video__signal"} />
@@ -1081,7 +1090,7 @@ export function LiveVideo({
         <div className="live-video__reticle" aria-hidden="true"><span /><span /></div>
       </div>
 
-      <footer className="live-video__controls">
+      {!compact && <footer className="live-video__controls">
         <div className="live-video__mode" role="group" aria-label="Video display mode">
           <button type="button" className={!overlayEnabled ? "live-video__mode-active" : ""} onClick={() => setOverlayEnabled(false)}>Clean feed</button>
           <button type="button" className={overlayEnabled ? "live-video__mode-active" : ""} onClick={() => setOverlayEnabled(true)}>Detection overlay</button>
@@ -1282,7 +1291,7 @@ export function LiveVideo({
           <VideoMetric label="Alignment" value={alignmentDeltaMs == null ? "NO MATCH" : `${signed(alignmentDeltaMs)} MS`} />
           <VideoMetric label="Playout" value={stream ? `${stream.playoutDelayMs} MS` : "—"} />
         </div>
-      </footer>
+      </footer>}
     </section>
   );
 }
@@ -1368,19 +1377,23 @@ async function renderFrame(
   countingRules: CountingRule[] = [],
   countingRuleDraft?: CountingRuleDraft,
 ) {
-  if (!videoCanvas || !overlayCanvas) return;
+  if (!videoCanvas) return;
   const bitmap = await createImageBitmap(frame.jpeg);
   try {
     if (videoCanvas.width !== frame.header.width || videoCanvas.height !== frame.header.height) {
       videoCanvas.width = frame.header.width;
       videoCanvas.height = frame.header.height;
+    }
+    const videoContext = videoCanvas.getContext("2d", { alpha: false });
+    if (!videoContext) throw new Error("Atlas could not create the native video canvas.");
+    videoContext.drawImage(bitmap, 0, 0, videoCanvas.width, videoCanvas.height);
+    if (!overlayCanvas) return;
+    if (overlayCanvas.width !== frame.header.width || overlayCanvas.height !== frame.header.height) {
       overlayCanvas.width = frame.header.width;
       overlayCanvas.height = frame.header.height;
     }
-    const videoContext = videoCanvas.getContext("2d", { alpha: false });
     const overlayContext = overlayCanvas.getContext("2d");
-    if (!videoContext || !overlayContext) throw new Error("Atlas could not create the native video canvas.");
-    videoContext.drawImage(bitmap, 0, 0, videoCanvas.width, videoCanvas.height);
+    if (!overlayContext) throw new Error("Atlas could not create the native video overlay canvas.");
     overlayContext.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
     if (drawOverlay && frame.header.overlay) {
       drawDetections(overlayContext, frame.header.overlay.frame.detections, overlayCanvas.width, overlayCanvas.height, selection);

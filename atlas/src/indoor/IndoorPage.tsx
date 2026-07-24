@@ -1,11 +1,11 @@
 import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { invoke } from "@tauri-apps/api/core";
-import { BufferAttribute, BufferGeometry } from "three";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { BufferAttribute, BufferGeometry, DynamicDrawUsage, Group } from "three";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { FleetAircraft } from "../operationsTypes";
 import { LiveVideo } from "../video/LiveVideo";
-import { decodeSpatialFrame, maximumSpatialPoints, type SpatialCloudFrame, type SpatialCloudMetadata } from "./spatialFrame";
+import { decodeSpatialFrameInto, maximumSpatialPoints, type SpatialCloudMetadata } from "./spatialFrame";
 import "./IndoorPage.css";
 
 type SpatialSnapshot = {
@@ -43,6 +43,7 @@ type IndoorPageProps = {
 
 const leaseDurationMs = 12_000;
 const indoorAltitudes = [0.5, 1, 2] as const;
+const IndoorLiveVideo = memo(LiveVideo);
 
 export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSelectAircraft }: IndoorPageProps) {
   const eligibleAircraft = useMemo(() => aircraft.filter((item) =>
@@ -54,15 +55,12 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
       : eligibleAircraft[0]?.droneId ?? "",
   );
   const [snapshot, setSnapshot] = useState<SpatialSnapshot>();
-  const [frame, setFrame] = useState<SpatialCloudFrame>();
   const [error, setError] = useState<string>();
   const [mission, setMission] = useState<IndoorExploreSnapshot>();
   const [missionError, setMissionError] = useState<string>();
   const [missionPending, setMissionPending] = useState<"start" | "abort">();
   const [selectedAltitude, setSelectedAltitude] = useState<(typeof indoorAltitudes)[number]>(1);
   const [cameraRevision, setCameraRevision] = useState(0);
-  const latestSequence = useRef(0);
-  const latestEpoch = useRef<string | undefined>(undefined);
   const selectedAircraft = aircraft.find((item) => item.droneId === droneId);
   const missionSupported = selectedAircraft?.agentCapabilities?.includes("indoor_explore:contract:v1") === true;
 
@@ -74,10 +72,7 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
   }, [droneId, eligibleAircraft, onSelectAircraft]);
 
   useEffect(() => {
-    latestSequence.current = 0;
-    latestEpoch.current = undefined;
     setSnapshot(undefined);
-    setFrame(undefined);
     setError(undefined);
     if (!nativeAvailable || !droneId) return;
 
@@ -129,38 +124,6 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
   }, [droneId, nativeAvailable]);
 
   useEffect(() => {
-    if (!nativeAvailable || !droneId) return;
-    let active = true;
-    let timer = 0;
-    async function pullFrame() {
-      try {
-        const packet = await invoke<ArrayBuffer>("spatial_frame", {
-          droneId,
-          afterStreamEpoch: latestEpoch.current,
-          afterSequence: latestSequence.current,
-        });
-        if (!active) return;
-        const decoded = decodeSpatialFrame(packet);
-        if (decoded) {
-          latestSequence.current = decoded.metadata.sequence;
-          latestEpoch.current = decoded.metadata.streamEpoch;
-          setFrame(decoded);
-          setError(undefined);
-        }
-      } catch (reason) {
-        if (active) setError(message(reason));
-      } finally {
-        if (active) timer = window.setTimeout(pullFrame, 250);
-      }
-    }
-    void pullFrame();
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [droneId, nativeAvailable]);
-
-  useEffect(() => {
     setMission(undefined);
     setMissionError(undefined);
     if (!nativeAvailable || !droneId) return;
@@ -181,9 +144,10 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
     };
   }, [droneId, nativeAvailable]);
 
+  const cloud = snapshot?.latestCloud;
   const status = !nativeAvailable ? "native-unavailable" : snapshot?.status ?? "waiting";
-  const statusLabel = status === "connected" && frame ? "Live cloud" : label(status);
-  const stale = snapshot?.status === "stale" || (frame && Date.now() - frame.metadata.receivedAtUnixMs > 3_000);
+  const statusLabel = status === "connected" && cloud ? "Live cloud" : label(status);
+  const stale = snapshot?.status === "stale" || Boolean(cloud && Date.now() - cloud.receivedAtUnixMs > 3_000);
   const missionTerminal = mission?.state === "complete" || mission?.state === "failed";
   const missionActive = Boolean(mission && !missionTerminal);
 
@@ -249,11 +213,11 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
       </header>
 
       <section className="indoor-status" aria-label="Spatial stream status">
-        <StatusMetric label="Stream" value={statusLabel} tone={stale || error ? "warning" : frame ? "positive" : "neutral"} />
-        <StatusMetric label="Complete cloud" value={frame ? frame.metadata.pointCount.toLocaleString() : "No frame"} detail={`of ${maximumSpatialPoints.toLocaleString()} points`} />
-        <StatusMetric label="Resolution" value={frame ? `${Math.round(frame.metadata.voxelSizeM * 100)} cm` : "—"} detail="voxel edge" />
-        <StatusMetric label="Coordinate frame" value={frame?.metadata.frameId || "—"} detail={frame ? compact(frame.metadata.streamEpoch) : "Waiting for epoch"} />
-        <StatusMetric label="Received" value={frame ? relativeTime(frame.metadata.receivedAtUnixMs) : "—"} detail={frame ? `snapshot ${frame.metadata.sequence}` : "No cloud received"} />
+        <StatusMetric label="Stream" value={statusLabel} tone={stale || error ? "warning" : cloud ? "positive" : "neutral"} />
+        <StatusMetric label="Complete cloud" value={cloud ? cloud.pointCount.toLocaleString() : "No frame"} detail={`of ${maximumSpatialPoints.toLocaleString()} points`} />
+        <StatusMetric label="Resolution" value={cloud ? `${Math.round(cloud.voxelSizeM * 100)} cm` : "—"} detail="voxel edge" />
+        <StatusMetric label="Coordinate frame" value={cloud?.frameId || "—"} detail={cloud ? compact(cloud.streamEpoch) : "Waiting for epoch"} />
+        <StatusMetric label="Received" value={cloud ? relativeTime(cloud.receivedAtUnixMs) : "—"} detail={cloud ? `snapshot ${cloud.sequence}` : "No cloud received"} />
       </section>
 
       {error && <p className="indoor-page__error" role="alert">Spatial stream: {error}</p>}
@@ -323,22 +287,25 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
         <article className="indoor-cloud">
           <header className="indoor-cloud__toolbar">
             <div>
-              <span className={`indoor-cloud__state indoor-cloud__state--${stale ? "warning" : frame ? "live" : "waiting"}`} />
-              <strong>{stale ? "Cloud stale" : frame ? "Complete map snapshot" : "Waiting for point cloud"}</strong>
+              <span className={`indoor-cloud__state indoor-cloud__state--${stale ? "warning" : cloud ? "live" : "waiting"}`} />
+              <strong>{stale ? "Cloud stale" : cloud ? "Complete map snapshot" : "Waiting for point cloud"}</strong>
             </div>
             <button type="button" onClick={() => setCameraRevision((value) => value + 1)}>Reset view</button>
           </header>
           <div className="indoor-cloud__viewport">
-            {frame ? (
-              <SpatialCanvas key={cameraRevision} frame={frame} />
+            {nativeAvailable && droneId ? (
+              <SpatialCanvas
+                key={`${droneId}:${cameraRevision}`}
+                droneId={droneId}
+                onError={setError}
+              />
             ) : (
-              <div className="indoor-cloud__empty">
-                <span aria-hidden="true" />
-                <strong>{eligibleAircraft.length === 0 ? "No spatial-capable aircraft" : "Cloud not available yet"}</strong>
-                <p>{eligibleAircraft.length === 0
+              <SpatialEmpty
+                title={eligibleAircraft.length === 0 ? "No spatial-capable aircraft" : "Cloud not available yet"}
+                detail={eligibleAircraft.length === 0
                   ? "Connect an aircraft reporting the spatial complete-cloud capability."
-                  : "Atlas has opened the view lease and will render the next complete map snapshot."}</p>
-              </div>
+                  : "Atlas Native is required to render the complete map snapshot."}
+              />
             )}
             <div className="indoor-cloud__legend" aria-label="Map legend">
               <span><i className="indoor-cloud__legend-point" />Observed surface</span>
@@ -353,60 +320,155 @@ export function IndoorPage({ nativeAvailable, aircraft, preferredDroneId, onSele
             <div><p className="eyebrow">Visual cross-check</p><h2>Live camera</h2></div>
             <span>{selectedAircraft?.connectionStatus === "connected" ? "Linked" : "Unavailable"}</span>
           </header>
-          <LiveVideo nativeAvailable={nativeAvailable} droneId={droneId || undefined} aircraft={selectedAircraft} compact />
+          <IndoorLiveVideo nativeAvailable={nativeAvailable} droneId={droneId || undefined} aircraft={selectedAircraft} compact />
         </aside>
       </section>
     </main>
   );
 }
 
-function SpatialCanvas({ frame }: { frame: SpatialCloudFrame }) {
+function SpatialCanvas({
+  droneId,
+  onError,
+}: {
+  droneId: string;
+  onError: (value: string | undefined) => void;
+}) {
+  const [ready, setReady] = useState(false);
   return (
-    <Canvas
-      camera={{ position: [5, -7, 4.5], fov: 48, near: 0.02, far: 250, up: [0, 0, 1] }}
-      dpr={[1, 2]}
-      frameloop="demand"
-      gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-    >
-      <color attach="background" args={["#132019"]} />
-      <fog attach="fog" args={["#132019", 18, 65]} />
-      <ambientLight intensity={1.4} />
-      <gridHelper args={[40, 80, "#496855", "#273e31"]} rotation={[Math.PI / 2, 0, 0]} />
-      <axesHelper args={[1.25]} />
-      <PointCloud positions={frame.positions} />
-      {frame.metadata.pose && <AircraftPose pose={frame.metadata.pose} />}
-      <OrbitControls makeDefault target={[0, 0, 0.5]} enableDamping dampingFactor={0.08} minDistance={0.5} maxDistance={80} />
-    </Canvas>
+    <>
+      <Canvas
+        camera={{ position: [5, -7, 4.5], fov: 48, near: 0.02, far: 250, up: [0, 0, 1] }}
+        dpr={[1, 1.5]}
+        frameloop="demand"
+        gl={{ antialias: false, alpha: false, powerPreference: "high-performance" }}
+      >
+        <color attach="background" args={["#132019"]} />
+        <fog attach="fog" args={["#132019", 18, 65]} />
+        <ambientLight intensity={1.4} />
+        <gridHelper args={[40, 80, "#496855", "#273e31"]} rotation={[Math.PI / 2, 0, 0]} />
+        <axesHelper args={[1.25]} />
+        <StreamingPointCloud droneId={droneId} onReady={setReady} onError={onError} />
+        <OrbitControls makeDefault target={[0, 0, 0.5]} enableDamping dampingFactor={0.08} minDistance={0.5} maxDistance={80} />
+      </Canvas>
+      {!ready && (
+        <SpatialEmpty
+          title="Cloud not available yet"
+          detail="Atlas has opened the view lease and will render the next complete map snapshot."
+        />
+      )}
+    </>
   );
 }
 
-function PointCloud({ positions }: { positions: Float32Array }) {
-  const geometry = useMemo(() => {
-    const next = new BufferGeometry();
-    next.setAttribute("position", new BufferAttribute(positions, 3));
-    next.computeBoundingSphere();
-    return next;
-  }, [positions]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
+function StreamingPointCloud({
+  droneId,
+  onReady,
+  onError,
+}: {
+  droneId: string;
+  onReady: (value: boolean) => void;
+  onError: (value: string | undefined) => void;
+}) {
+  const cloudBuffer = useMemo(() => {
+    const positions = new Float32Array(maximumSpatialPoints * 3);
+    const attribute = new BufferAttribute(positions, 3);
+    attribute.setUsage(DynamicDrawUsage);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", attribute);
+    geometry.setDrawRange(0, 0);
+    return { positions, attribute, geometry };
+  }, []);
+  const aircraftPose = useRef<Group>(null);
+  const { invalidate } = useThree();
+
+  useEffect(() => () => cloudBuffer.geometry.dispose(), [cloudBuffer]);
+
+  useEffect(() => {
+    let active = true;
+    let timer = 0;
+    let latestSequence = 0;
+    let latestEpoch: string | undefined;
+    let ready = false;
+    let readFailed = false;
+
+    async function pullFrame() {
+      try {
+        const packet = await invoke<ArrayBuffer>("spatial_frame", {
+          droneId,
+          afterStreamEpoch: latestEpoch,
+          afterSequence: latestSequence,
+        });
+        if (!active) return;
+        const decoded = decodeSpatialFrameInto(packet, cloudBuffer.positions);
+        if (decoded) {
+          latestSequence = decoded.metadata.sequence;
+          latestEpoch = decoded.metadata.streamEpoch;
+          cloudBuffer.geometry.setDrawRange(0, decoded.pointCount);
+          cloudBuffer.attribute.clearUpdateRanges();
+          cloudBuffer.attribute.addUpdateRange(0, decoded.pointCount * 3);
+          cloudBuffer.attribute.needsUpdate = true;
+          if (aircraftPose.current) {
+            const pose = decoded.metadata.pose;
+            aircraftPose.current.visible = Boolean(pose);
+            if (pose) {
+              aircraftPose.current.position.set(pose.x, pose.y, pose.z);
+              aircraftPose.current.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
+            }
+          }
+          if (!ready) {
+            ready = true;
+            onReady(true);
+          }
+          if (readFailed) {
+            readFailed = false;
+            onError(undefined);
+          }
+          invalidate();
+        }
+      } catch (reason) {
+        if (active) {
+          readFailed = true;
+          onError(message(reason));
+        }
+      } finally {
+        if (active) timer = window.setTimeout(pullFrame, 250);
+      }
+    }
+
+    void pullFrame();
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [cloudBuffer, droneId, invalidate, onError, onReady]);
+
   return (
-    <points geometry={geometry} frustumCulled>
-      <pointsMaterial color="#a8d6b2" size={0.035} sizeAttenuation transparent opacity={0.9} depthWrite={false} />
-    </points>
+    <>
+      <points geometry={cloudBuffer.geometry} frustumCulled={false} dispose={null}>
+        <pointsMaterial color="#a8d6b2" size={0.035} sizeAttenuation depthWrite />
+      </points>
+      <group ref={aircraftPose} visible={false}>
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <coneGeometry args={[0.14, 0.38, 4]} />
+          <meshStandardMaterial color="#ed9839" />
+        </mesh>
+        <mesh position={[0, 0, -0.05]}>
+          <sphereGeometry args={[0.09, 12, 8]} />
+          <meshStandardMaterial color="#f2d09b" />
+        </mesh>
+      </group>
+    </>
   );
 }
 
-function AircraftPose({ pose }: { pose: NonNullable<SpatialCloudMetadata["pose"]> }) {
+function SpatialEmpty({ title, detail }: { title: string; detail: string }) {
   return (
-    <group position={[pose.x, pose.y, pose.z]} quaternion={[pose.qx, pose.qy, pose.qz, pose.qw]}>
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.14, 0.38, 4]} />
-        <meshStandardMaterial color="#ed9839" />
-      </mesh>
-      <mesh position={[0, 0, -0.05]}>
-        <sphereGeometry args={[0.09, 12, 8]} />
-        <meshStandardMaterial color="#f2d09b" />
-      </mesh>
-    </group>
+    <div className="indoor-cloud__empty">
+      <span aria-hidden="true" />
+      <strong>{title}</strong>
+      <p>{detail}</p>
+    </div>
   );
 }
 

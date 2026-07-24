@@ -48,8 +48,8 @@
 .indoor-mission__state span { margin-top: .2rem; color: var(--muted); font-size: .5rem; line-height: 1.45; }
 .indoor-mission__state code { width: fit-content; margin-top: .35rem; padding: .15rem .25rem; color: color-mix(in oklch, var(--signal) 80%, var(--ink)); background: var(--signal-soft); font-size: .46rem; }
 
-.indoor-workspace { display: grid; min-height: 40rem; grid-template-columns: minmax(0, 1.65fr) minmax(24rem, .75fr); gap: 1rem; margin-top: 1rem; }
-.indoor-cloud, .indoor-video { min-width: 0; border: 1px solid var(--line-strong); background: var(--panel); }
+.indoor-workspace { display: grid; min-height: 40rem; grid-template-columns: minmax(0, 1.65fr) minmax(24rem, .75fr); align-items: start; gap: 1rem; margin-top: 1rem; }
+.indoor-cloud, .indoor-video { min-width: 0; max-width: 100%; overflow: hidden; border: 1px solid var(--line-strong); background: var(--panel); contain: layout paint; }
 .indoor-cloud { display: grid; grid-template-rows: auto minmax(0, 1fr); }
 .indoor-cloud__toolbar, .indoor-video > header { display: flex; min-height: 3.4rem; align-items: center; justify-content: space-between; gap: 1rem; padding: .65rem .8rem; border-bottom: 1px solid var(--line-strong); }
 .indoor-cloud__toolbar > div { display: flex; align-items: center; gap: .5rem; font-size: .65rem; }
@@ -58,7 +58,7 @@
 .indoor-cloud__state--warning { border-color: var(--signal); background: var(--signal); box-shadow: 0 0 0 3px var(--signal-soft); }
 .indoor-cloud__toolbar button { min-height: 2.05rem; padding: 0 .65rem; border: 1px solid var(--line-strong); color: var(--ink); background: transparent; cursor: pointer; font: inherit; font-size: .5rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .indoor-cloud__toolbar button:hover { color: var(--panel); background: var(--ink); }
-.indoor-cloud__viewport { position: relative; min-height: 36rem; overflow: hidden; background: #132019; }
+.indoor-cloud__viewport { position: relative; min-width: 0; min-height: 36rem; overflow: hidden; background: #132019; contain: strict; }
 .indoor-cloud__viewport canvas { display: block; width: 100%; height: 100%; }
 .indoor-cloud__empty { position: absolute; inset: 0; display: grid; align-content: center; justify-items: center; padding: 2rem; color: color-mix(in oklch, var(--panel) 80%, var(--field)); text-align: center; }
 .indoor-cloud__empty > span { width: 2.4rem; aspect-ratio: 1; border: 1px solid currentColor; background: linear-gradient(90deg, transparent 48%, currentColor 49%, currentColor 51%, transparent 52%), linear-gradient(transparent 48%, currentColor 49%, currentColor 51%, transparent 52%); transform: rotate(45deg); opacity: .6; }
@@ -70,12 +70,13 @@
 .indoor-cloud__legend-point { background: #a8d6b2; }
 .indoor-cloud__legend-aircraft { background: #ed9839; }
 
-.indoor-video { display: grid; align-content: start; }
+.indoor-video { display: grid; grid-template-rows: auto minmax(0, auto); align-content: start; }
 .indoor-video > header p { margin: 0; }
 .indoor-video > header h2 { margin: .18rem 0 0; font-family: var(--font-display); font-size: 1.15rem; }
 .indoor-video > header > span { color: var(--muted); font-size: .52rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.indoor-video .live-video { min-height: 36rem; }
-.indoor-video .live-video__viewport { min-height: 25rem; }
+.indoor-video .live-video { width: 100%; min-width: 0; max-width: 100%; min-height: 0; overflow: hidden; grid-template-rows: minmax(0, 1fr); }
+.indoor-video .live-video__viewport { width: 100%; min-width: 0; max-width: 100%; min-height: 0; max-height: 32rem; aspect-ratio: 16 / 9; overflow: hidden; contain: layout paint; }
+.indoor-video .live-video__viewport canvas { width: 100%; max-width: 100%; height: 100%; max-height: 100%; }
 
 @media (max-width: 1120px) {
   .indoor-status { grid-template-columns: repeat(3, 1fr); }
@@ -85,7 +86,6 @@
   .indoor-mission__actions { border-right: 0; }
   .indoor-mission__state { grid-column: 1 / -1; min-height: 5rem; border-top: 1px solid var(--line-strong); }
   .indoor-workspace { grid-template-columns: 1fr; }
-  .indoor-video .live-video { min-height: 32rem; }
 }
 
 @media (max-width: 700px) {
