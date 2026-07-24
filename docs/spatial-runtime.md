@@ -258,7 +258,7 @@ This accepts the matched cold-start clock gate. It does not physically verify
 the transform or grant movement authority. Evidence is retained under
 `.scratch/ariadne-hflow-transform-commissioning-2026-07-24/atlas/evidence/cold-start`.
 
-## Commissioned v4 physical-geometry candidate
+## Matched 0.1.28 commissioned v4 deployment
 
 The operator subsequently measured the OAK CAM_A/RGB reference from aircraft
 centre at `+0.155 / +0.010 / +0.005 m` in body FRD and verified the mount as
@@ -267,14 +267,24 @@ photographs corroborate the installation. The same commissioning record
 verifies the unchanged H-Flow flow/range geometry, motion signs, range
 response, and disarmed estimator behavior.
 
-The v4 source bundle promotes the body-to-OAK and body-to-H-Flow edges to
+Release `0.1.28`, built from clean commit
+`ab065398c8e381ecf71b683c3a9eccc8408bc6e5`, installed this bundle on Ariadne
+through an explicit stopped replacement guarded by both the exact old
+canonical hash and the packaged new hash. The prior aircraft bundle is retained
+at `/var/backups/atlas-agent/transforms.v1.pre-v4-commissioning.json`; the full
+pre-upgrade backup is
+`/var/backups/atlas-agent/pre-upgrade-0.1.28-20260724T170702Z.tar.gz`.
+
+The active v4 bundle promotes the body-to-OAK and body-to-H-Flow edges to
 `verified`, retains the device-calibration optical-frame edge as
 `configured_unverified`, and has canonical hash
 `sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`.
-Setup continues to preserve the aircraft-owned bundle; installation therefore
-requires an explicit stopped, old-hash-guarded replacement and grounded
-post-start verification. This source candidate does not grant movement
-authority or authorize arming.
+After installation, all four Atlas services were active with zero restarts,
+the required-ready navigation probe passed, spatial/VIO health was ready, and
+an observed complete-cloud stream advanced through eight full 100,000-point
+frames with valid poses and no socket error. Movement authority and PX4 VIO
+fusion remained disabled throughout. This deployment verifies the grounded
+geometry/configuration gate; it does not authorize arming or flight.
 
 ## Installation and failure behavior
 
@@ -312,11 +322,11 @@ journalctl -u atlas-spatial-runtime.service -f
 ```
 
 The Native/Agent Indoor mission contract remains the hold-only contract
-grounded-qualified in release `0.1.26`. Release `0.1.27` now qualifies the
+grounded-qualified in release `0.1.26`. Release `0.1.27` qualifies the
 monotonic clock-epoch and rendered-version fixes through a matched physical
-cold start without an Agent restart. Physical OAK and H-Flow evidence now
-supports the v4 commissioned source bundle, but movement remains blocked until
-that bundle passes its guarded aircraft replacement and grounded validation,
-the separate PX4 Position/Hold flight gate passes, and the local navigation
+cold start without an Agent restart. Release `0.1.28` now qualifies the
+commissioned OAK and H-Flow physical transform bundle through guarded aircraft
+replacement and grounded validation. Movement remains blocked until the
+separate PX4 Position/Hold first-hover gate passes and the local navigation
 and return controllers described in the
 [Indoor Operations Plan](indoor-ops-plan.md) are implemented and accepted.

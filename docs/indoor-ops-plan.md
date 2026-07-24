@@ -345,11 +345,11 @@ sent. This distinguishes a Native transport outage from a frozen ROS map.
 
 This evidence passes the grounded standard-DepthAI spatial-runtime gate without
 lowering the odometry inlier threshold or restoring patched Basalt. Retain
-`0.1.16` as the operational rollback. The later v4 physical-geometry candidate
-marks only the operator-verified body-to-OAK and body-to-H-Flow edges verified;
-the provider-owned optical-frame edge remains separately
-`configured_unverified`. Indoor Explore still has no aircraft movement
-authority until its navigation and flight gates are implemented.
+`0.1.16` as the operational rollback. The deployed `0.1.28` v4
+physical-geometry bundle marks only the operator-verified body-to-OAK and
+body-to-H-Flow edges verified; the provider-owned optical-frame edge remains
+separately `configured_unverified`. Indoor Explore still has no aircraft
+movement authority until its navigation and flight gates are implemented.
 The retained evidence is in
 `.scratch/pi-evidence-0.1.25-replay-movement-20260724T121316Z` and
 `.scratch/pi-evidence-0.1.25-lifecycle-qualification-20260724T122443Z`;
@@ -373,11 +373,11 @@ PX4 has already received and fused live H-Flow/range data while disarmed, and
 Atlas Agent already exposes PX4 local position, odometry, flow, range, and
 estimator health. The operator has verified the physical H-Flow geometry,
 motion signs, range response, estimator fusion, local-position validity, and
-retained parameter/ULog evidence. The v4 transform candidate therefore promotes
-the unchanged body-to-H-Flow flow/range edges to `verified`. The remaining
-practical gap is that GPS-denied position hold has not yet been flown on this
-aircraft. This is a flight capability gap, not a reason to repeat the completed
-camera or H-Flow bench work.
+retained parameter/ULog evidence. The installed v4 transform bundle therefore
+promotes the unchanged body-to-H-Flow flow/range edges to `verified`. The
+remaining practical gap is that GPS-denied position hold has not yet been
+flown on this aircraft. This is a flight capability gap, not a reason to
+repeat the completed camera or H-Flow bench work.
 
 ### Atlas mission, video, and tracking paths
 
@@ -504,13 +504,18 @@ in-memory Native store, and the Indoor workspace renders them with React Three
 Fiber beside the existing camera view. Grounded Pi/OAK and Native end-to-end
 acceptance passed on `0.1.25`; the matched `0.1.26` aircraft release qualifies
 the explicit hold-only Native/Agent contract described above. Flight-enabling
-acceptance and stages 4–6 remain. Release `0.1.27` now accepts the matched
+acceptance and stages 4–6 remain. Release `0.1.27` accepts the matched
 clock/setup packaging and physical cold-start gate; it grants no additional
-movement authority. The commissioned v4 physical-geometry source candidate has
-canonical hash
-`sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`;
-its guarded aircraft replacement and grounded validation remain pending. The
-first Pi `0.1.17` deployment exposed two release
+movement authority. Release `0.1.28`, built from clean commit
+`ab065398c8e381ecf71b683c3a9eccc8408bc6e5`, installs the commissioned v4
+physical-geometry bundle with canonical hash
+`sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`.
+Its guarded aircraft replacement and grounded validation passed: all four
+services were active with zero restarts, required-ready navigation and
+spatial/VIO health passed, and an observed stream advanced through eight full
+100,000-point clouds with valid poses. Movement authority and PX4 VIO fusion
+remain disabled; the controlled first-hover gate and stages 4–6 remain
+pending. The first Pi `0.1.17` deployment exposed two release
 blockers corrected for `0.1.18`: the stream node no longer shadows
 `rclpy.Node` client state, and the
 DepthAI provider normalizes the observed vendor frame name to the Atlas-owned
