@@ -1,191 +1,139 @@
 # H-Flow PX4 Setup and Verification
 
-**Status:** New-aircraft installation and commissioning runbook; not a flight
-authorization  
-**Last updated:** 22 July 2026
+**Status:** Practical setup and bench-verification runbook
+**Last updated:** 25 July 2026
 
-## Purpose
+## Purpose and boundary
 
-This runbook describes how Atlas installed, configured, and verified a Holybro
-H-Flow on PX4, and how to repeat that work on another aircraft.
+This runbook covers installing a Holybro H-Flow, configuring PX4 to consume its
+optical-flow and range data, and confirming that the data reaches the PX4
+estimator.
 
-Use this document for the installation and parameter procedure. The current
-aircraft baseline and the feature that depends on it are summarized in the
-[Indoor Operations Plan](indoor-ops-plan.md).
+H-Flow connects directly to PX4 over DroneCAN. Atlas Agent can read the
+resulting navigation health, but it does not fuse the measurements. The
+independent Spatial Runtime does not use H-Flow and H-Flow is not part of the
+outdoor obstacle-observation contract.
 
-The work has four separate gates:
+This procedure does not authorize autonomous flight. If the aircraft will use
+flow or range aiding in flight, finish with a low, supervised acceptance flight
+under the normal PX4 and RC failsafes.
 
-1. The H-Flow is installed and electrically healthy.
-2. PX4 is configured to receive and fuse its flow and range data.
-3. Live sensor and estimator behavior is verified and retained.
-4. Controlled GPS-denied flight and failure handling are accepted.
+## Safety
 
-Passing an earlier gate never implies that a later gate has passed. In
-particular, this procedure does not authorize autonomous indoor movement.
+For installation and bench checks:
 
-## Safety and authority boundary
+- disarm the aircraft and remove the propellers;
+- disconnect the battery before changing CAN wiring or termination;
+- keep mission, Offboard, and autonomous movement processes stopped; and
+- secure the aircraft whenever it is powered on the bench.
 
-Perform installation and bench tests with:
+Do not weaken PX4 safeguards or estimator thresholds merely to make the sensor
+appear healthy.
 
-- the aircraft disarmed;
-- propellers removed;
-- the battery disconnected while changing wiring or termination;
-- no mission, Offboard controller, or autonomous movement process active; and
-- the aircraft physically secured whenever it is powered on the bench.
+## Before changing the aircraft
 
-Do not disable independent flight safeguards merely to make optical-flow
-testing pass. The first hover and sensor-loss tests require a safety pilot with
-direct RC authority, propeller guards, a controlled area without people, and a
-written flight envelope.
+In QGroundControl:
 
-## Evidence to create for every aircraft
+1. Open **Analyze Tools > MAVLink Console** and run:
 
-Before changing configuration, choose a stable aircraft identifier and an
-evidence location. Retain at least:
+   ```text
+   ver all
+   uavcan status
+   ```
 
-| Artifact | Required content |
-| --- | --- |
-| Aircraft record | Aircraft ID, airframe, flight-controller model, date, operator, and installation photographs |
-| PX4 identity | Complete `ver all` output |
-| H-Flow identity | DroneCAN node name, node ID, hardware version, software version, unique ID/serial, and firmware provenance |
-| Mount record | Orientation photographs and measured body-frame flow/range X/Y/Z offsets |
-| Parameter baseline | Complete QGroundControl `.params` export and SHA-256 |
-| CAN evidence | `uavcan status` before and after the bench test |
-| Sensor evidence | Flow, quality, range, device IDs, update rates, and error counters |
-| Estimator evidence | Flow/range fusion, innovations, test ratios, rejection flags, resets, and local-position validity |
-| Flight evidence | Approved envelope, drift, height error, yaw behavior, dropouts, degradation, recovery, Hold, and takeover results |
+2. Save the current parameters from **Vehicle Setup > Parameters > Tools > Save
+   to file**.
 
-Do not rely on screenshots alone when a complete text export or ULog is
-available. Do not modify or re-encode a retained binary log; record its exact
-hash after QGroundControl has finished downloading it.
+The parameter file is a practical recovery reference if a value is entered
+incorrectly. It does not need a checksum, manifest, evidence bundle, or
+versioned Atlas release archive.
 
-## 1. Record the starting aircraft state
+## Install the sensor
 
-Connect QGroundControl and open **Analyze Tools > MAVLink Console**. Capture:
+### Orientation
 
-```text
-ver all
-uavcan status
-```
+Mount the H-Flow facing downward with an unobstructed view. With the Holybro
+default orientation, the board connectors point toward the rear and
+`SENS_FLOW_ROT=0`.
 
-`ver all` binds the configuration to the exact PX4 build, flight-controller
-hardware, OS build, toolchain, and PX4 GUID. `uavcan status` records enabled CAN
-interfaces, traffic/error counters, online nodes, and the flow/range sensor
-mapping.
+If the physical orientation differs, use the matching PX4 rotation. Do not copy
+the rotation from another aircraft without checking the mount.
 
-Also export the complete pre-change parameter set from **Vehicle Setup >
-Parameters > Tools > Save to file**. This is the rollback and comparison
-baseline.
-
-## 2. Install the H-Flow
-
-### Mount orientation
-
-Mount the sensor downward with an unobstructed view of the floor. For the
-Holybro default rotation, the board connectors point toward the rear of the
-vehicle and `SENS_FLOW_ROT=0`.
-
-If the connectors do not point rearward, select the rotation that matches the
-physical installation. Do not use `0` simply because it worked on another
-aircraft.
-
-Retain photographs that show:
-
-- the direction of the vehicle nose;
-- the H-Flow connector direction;
-- the flow lens and rangefinder field of view;
-- nearby landing gear, wiring, or structure that could obstruct either sensor;
-  and
-- cable strain relief.
-
-### Measure body-frame offsets
+### Body-frame offsets
 
 Measure from the aircraft centre of gravity to the optical-flow focal point and
-rangefinder origin using PX4 body axes:
+rangefinder origin in PX4 body axes:
 
 - X is positive forward;
 - Y is positive right;
 - Z is positive down.
 
-Record optical-flow and range offsets separately. The sensors share one H-Flow
-housing, but their configured offsets must still reflect the measured origins
-and must not automatically be copied from the Ariadne values.
+The flow and range origins may differ even though they share one housing.
+Configure their offsets independently.
 
-### CAN wiring and termination
+### CAN wiring
 
-Connect the H-Flow to the intended DroneCAN bus using a Pixhawk-compatible CAN
-cable. Record the flight-controller port and every node on that bus.
+Connect the sensor to the intended DroneCAN bus with a Pixhawk-compatible CAN
+cable. Terminate only the two physical ends of the bus. Check connector seating,
+cable routing, and strain relief before applying power.
 
-The CAN network must have termination at its two physical ends. If the H-Flow
-is an end node, configure its `CAN_TERMINATE`/termination setting according to
-the actual topology. Do not enable termination on every node. After wiring,
-inspect the cable routing, connector seating, and strain relief before applying
-power.
+The Ariadne installation uses CAN1. A different port or topology must be
+checked on its own merits.
 
-The verified Ariadne installation uses CAN1. CAN2 is not part of the accepted
-H-Flow path and must be assessed independently if enabled.
+## Configure PX4
 
-## 3. Configure PX4 through QGroundControl
+Parameter availability can depend on the active subscriptions. Apply the
+settings in this order and reboot when QGroundControl requests it.
 
-Parameter availability can depend on subscriptions. Use this order and reboot
-when QGroundControl or the parameter metadata requires it.
-
-### Enable DroneCAN and sensor subscriptions
+### Enable DroneCAN and H-Flow subscriptions
 
 | Parameter | Baseline | Purpose |
 | --- | ---: | --- |
-| `UAVCAN_ENABLE` | `2` | Enable DroneCAN sensors and dynamic node allocation. Use `3` only when the aircraft also requires DroneCAN ESC output. |
-| `UAVCAN_SUB_FLOW` | `1` | Subscribe to DroneCAN optical flow. |
-| `UAVCAN_SUB_RNG` | `1` | Subscribe to DroneCAN rangefinder data. |
+| `UAVCAN_ENABLE` | `2` | Enable DroneCAN sensors and dynamic node allocation. Use `3` only when DroneCAN ESC output is also required. |
+| `UAVCAN_SUB_FLOW` | `1` | Subscribe to optical flow. |
+| `UAVCAN_SUB_RNG` | `1` | Subscribe to range data. |
 
-Set `UAVCAN_ENABLE`, reboot, enable both subscriptions, and reboot again. PX4
-may not expose the flow-specific parameters until the flow subscription is
-enabled.
+Set `UAVCAN_ENABLE`, reboot, enable both subscriptions, and reboot again.
 
-### Set H-Flow capability values
+### Describe the sensor
 
-| Parameter | Verified baseline | Purpose |
+| Parameter | Ariadne baseline | Purpose |
 | --- | ---: | --- |
-| `UAVCAN_RNG_MIN` | `0.08 m` | H-Flow minimum range capability. |
-| `UAVCAN_RNG_MAX` | `30 m` | H-Flow maximum range capability. |
+| `UAVCAN_RNG_MIN` | `0.08 m` | Minimum range capability. |
+| `UAVCAN_RNG_MAX` | `30 m` | Maximum range capability. |
 | `SENS_FLOW_MINHGT` | `0.08 m` | Minimum height at which PX4 uses this flow model. |
-| `SENS_FLOW_MAXHGT` | `30 m` | Maximum sensor capability supplied to PX4. This is not an approved flight ceiling. |
-| `SENS_FLOW_MAXR` | `7.4 rad/s` | Maximum angular-flow rate reported for the sensor model. This is not a commanded aircraft rate. |
-| `SENS_FLOW_RATE` | `70 Hz` | Configured sensor publication rate. |
-| `SENS_FLOW_SCALE` | `1.0` | Initial flow scale; change only from measured rotational/flight evidence. |
+| `SENS_FLOW_MAXHGT` | `30 m` | Sensor capability, not an approved flight ceiling. |
+| `SENS_FLOW_MAXR` | `7.4 rad/s` | Maximum angular-flow rate for the sensor model. |
+| `SENS_FLOW_RATE` | `70 Hz` | Sensor publication rate. |
+| `SENS_FLOW_SCALE` | `1.0` | Initial scale; change only after a measured rotation check. |
 
-Keep the DroneCAN range limits and optical-flow height limits aligned. The
-values describe sensor capability; the approved indoor operating envelope will
-normally be much smaller.
+Keep the DroneCAN range and optical-flow height limits consistent. These values
+describe the device; the operational flight envelope should be more
+conservative.
 
 ### Enable estimator aiding
 
-| Parameter | Verified baseline | Purpose |
+| Parameter | Ariadne baseline | Purpose |
 | --- | ---: | --- |
 | `EKF2_OF_CTRL` | `1` | Enable optical-flow aiding. |
 | `EKF2_RNG_CTRL` | `1` | Enable range-height aiding. |
-| `EKF2_RNG_A_HMAX` | `10 m` | Maximum height for conditional range aiding in this baseline. |
-| `EKF2_RNG_QLTY_T` | `0.2 s` | Range-quality hysteresis time in this baseline. |
-| `EKF2_OF_QMIN` | `1` | Minimum in-flight flow-quality value in this baseline. |
-| `EKF2_OF_QMIN_GND` | `0` | Minimum on-ground flow quality in this baseline. |
+| `EKF2_RNG_A_HMAX` | `10 m` | Maximum height for conditional range aiding. |
+| `EKF2_RNG_QLTY_T` | `0.2 s` | Range-quality hysteresis. |
+| `EKF2_OF_QMIN` | `1` | Minimum in-flight flow quality. |
+| `EKF2_OF_QMIN_GND` | `0` | Minimum on-ground flow quality. |
 
-Do not tune quality thresholds or innovation gates merely to suppress a failed
-test. First establish whether the cause is lighting, texture, height, motion,
-mounting, timing, vibration, or an incorrect sensor model.
+Do not disable GNSS as part of ordinary H-Flow setup. Sensor delivery and
+estimator fusion can be verified with GNSS still enabled.
 
-Do not set `EKF2_GPS_CTRL=0` as part of routine installation. Deliberately
-disabling GNSS is a separate, controlled test decision and not required to
-prove that H-Flow data reaches the estimator.
-
-### Apply the aircraft-specific geometry
+### Apply aircraft geometry
 
 | Parameter | Value source |
 | --- | --- |
-| `SENS_FLOW_ROT` | Physical connector/mount orientation |
-| `EKF2_OF_POS_X/Y/Z` | Measured centre-of-gravity-to-flow-focal-point offset |
+| `SENS_FLOW_ROT` | Physical sensor orientation |
+| `EKF2_OF_POS_X/Y/Z` | Measured centre-of-gravity-to-flow-origin offset |
 | `EKF2_RNG_POS_X/Y/Z` | Measured centre-of-gravity-to-range-origin offset |
 
-The Ariadne values are a worked example, not a template:
+The current Ariadne values are:
 
 ```text
 SENS_FLOW_ROT=0
@@ -197,13 +145,13 @@ EKF2_RNG_POS_Y=0 m
 EKF2_RNG_POS_Z=0 m
 ```
 
-The Ariadne range offsets still require physical confirmation. A new aircraft
-must use its own measurements.
+They are an Ariadne reference, not a template for another airframe. After
+saving the parameters, reboot PX4 and refresh the QGroundControl parameter
+view.
 
-After saving the parameters, reboot the flight controller and refresh the
-QGroundControl parameter view.
+## Verify the installation
 
-## 4. Verify DroneCAN discovery and identity
+### 1. DroneCAN discovery
 
 Run:
 
@@ -211,50 +159,19 @@ Run:
 uavcan status
 ```
 
-Pass the discovery check only when:
+Check that:
 
 - the expected H-Flow node is online with health `OK` and mode `OPERAT`;
-- `uavcan_flow` maps to an optical-flow sensor instance;
-- `uavcan_rangefinder` maps to a rangefinder instance;
-- the active CAN interface receives frames; and
-- hardware, transfer, and I/O errors on the active H-Flow interface do not
-  increase during the observation window.
+- `uavcan_flow` and `uavcan_rangefinder` map to sensor instances;
+- the active CAN interface is receiving frames; and
+- error counters on that interface do not continually increase.
 
-Treat other CAN interfaces separately. Zero received frames plus increasing
-errors on an unused interface does not prove that the active H-Flow bus is bad,
-but the interface must be confirmed as intentionally unused or diagnosed.
+An unused CAN interface can show no traffic without indicating a fault on the
+active bus.
 
-### Capture the H-Flow firmware identity
+### 2. Raw flow and range
 
-`uavcan status` proves node presence and health; it does not by itself retain
-the node's software/hardware version and unique ID.
-
-For PX4 releases that publish `device_information`, capture all entries for the
-H-Flow with:
-
-```text
-listener device_information
-```
-
-PX4 documents this asset-tracking topic for v1.18 and later. For the verified
-PX4 1.17 baseline, use a DroneCAN monitor that requests
-`uavcan.protocol.GetNodeInfo`, such as the cross-platform DroneCAN GUI Tool with
-a compatible CAN adapter. Retain:
-
-- node name and node ID;
-- software major/minor and version-control commit, when supplied;
-- hardware major/minor;
-- the 16-byte unique ID; and
-- a screenshot or text export tied to the aircraft evidence bundle.
-
-Do not update the H-Flow firmware merely to discover its current identity.
-Firmware update is a separate controlled change with its own before/after
-evidence and rollback plan.
-
-## 5. Verify raw sensor data
-
-Use the QGroundControl MAVLink Console. PX4's `listener` prints a bounded number
-of uORB messages:
+Run:
 
 ```text
 listener sensor_optical_flow -n 5
@@ -262,34 +179,15 @@ listener distance_sensor -n 5
 uorb top
 ```
 
-Also use **Analyze Tools > MAVLink Inspector** to inspect `DISTANCE_SENSOR` when
-available. Holybro's setup check requires a non-zero `current_distance`.
+Check for fresh timestamps, plausible publication rates, non-zero range,
+reasonable quality, stable device IDs, and no increasing sensor error count.
+Lift the aircraft vertically by hand and confirm that range changes in the
+expected direction.
 
-Verify and record:
+### 3. Orientation and signs
 
-- stable flow and range device IDs;
-- non-stale timestamps;
-- optical-flow quality and error count;
-- range in metres and range signal quality;
-- plausible change when the aircraft is lifted vertically by hand; and
-- plausible topic rates in `uorb top`.
-
-The ULog recording rate may be lower than the sensor publication rate. Do not
-mistake a down-sampled log topic for a 1 Hz sensor.
-
-## 6. Verify orientation and motion signs
-
-With the aircraft disarmed, propellers removed, level, and held at a usable
-height above a textured floor, record a labelled sequence:
-
-1. stationary;
-2. forward along body +X;
-3. backward along body -X;
-4. right along body +Y;
-5. left along body -Y; and
-6. stationary again.
-
-PX4's optical-flow contract is:
+Hold the disarmed aircraft level over a textured surface and move it forward,
+backward, right, and left.
 
 | Vehicle translation | Expected integrated flow |
 | --- | --- |
@@ -298,17 +196,12 @@ PX4's optical-flow contract is:
 | Right | `-X` |
 | Left | `+X` |
 
-These are angular image-flow measurements, not translational distances. If the
-signs do not match, stop and correct the physical orientation or
-`SENS_FLOW_ROT`; do not compensate by inventing offset signs.
+If the signs are wrong, correct the physical orientation or `SENS_FLOW_ROT`.
+Do not compensate by inventing offset signs.
 
-Use a separate controlled rotation sequence only when validating
-`SENS_FLOW_SCALE`. Pure rotational gyro and optical-flow integrals should agree
-before the scale is changed.
+### 4. Estimator health
 
-## 7. Verify estimator fusion and local-position health
-
-Capture bounded console samples and a ULog containing at least:
+Run bounded samples:
 
 ```text
 listener estimator_aid_src_optical_flow -n 5
@@ -318,169 +211,48 @@ listener estimator_event_flags -n 5
 listener vehicle_local_position -n 5
 ```
 
-Review both EKF instances when multiple estimators are enabled. Check:
+Check that:
 
-- optical-flow and range-height aiding are active;
-- `fused` is asserted while valid measurements are present;
-- innovation values and test ratios remain bounded;
-- rejection/fault flags are not sustained or unexplained;
-- XY, Z, and bottom-distance validity remain true when expected;
-- reset counters do not increment unexpectedly; and
-- heading readiness is evaluated separately from flow/range readiness.
+- optical flow and range height are fused when measurements are valid;
+- innovations and test ratios are not persistently rejected;
+- rejection or fault flags are not sustained;
+- expected position and bottom-distance validity flags are true; and
+- reset counters do not increase unexpectedly.
 
-PX4 defines an innovation test ratio of `1.0` as the rejection boundary and
-describes successful operation as normally remaining below `0.5`, with only
-occasional higher spikes. A brief flag must still be retained and explained;
-do not summarize a run as “zero rejection” if any estimator status sample says
-otherwise.
+When multiple EKF instances are enabled, check each one. Heading readiness is a
+separate condition and must not be inferred from healthy flow or range data.
 
-### Ariadne disarmed benchmark
+Capture a ULog only when a console check is inconclusive or a flight anomaly
+needs diagnosis. Routine installation does not require a hashed log archive.
 
-The retained Ariadne log is a comparison point, not a universal acceptance
-threshold:
+## Finish and, when required, flight-check
 
-| Observation | Ariadne result |
-| --- | --- |
-| ULog | 72.646 s, clean parse, zero declared dropouts |
-| Flow quality | `79 / 112 / 120` minimum/median/maximum; error count `0` |
-| Range | `0.156-0.712 m`; signal quality `100` |
-| Fusion | Flow and range-height fused on both EKF instances |
-| Maximum sampled flow test ratio | `0.295` |
-| Estimator status | Brief X/Y flow rejection near 42.04 s during hand movement |
-| Local position | XY/Z/bottom distance valid; no in-window reset-counter increment |
-| Heading | `heading_good_for_control=false` throughout |
-| Vehicle state | Disarmed and not in air |
+Save the final current parameter set in QGroundControl. Keep that one current
+configuration file with the aircraft maintenance material; Atlas does not
+require a separate hash, evidence ledger, or per-aircraft completion table.
 
-This benchmark accepted live disarmed sensor/estimator behavior only. It did
-not accept rotation signs, heading, drift, position hold, or flight behavior.
+If H-Flow will be used for in-flight aiding, perform a low, manually supervised
+hover in a clear area with:
 
-## 8. Export and hash the final configuration
+- a safety pilot holding direct RC authority;
+- conservative speed, height, duration, and battery limits;
+- a textured, adequately lit surface within sensor range; and
+- predefined Hold/land/takeover actions for invalid flow, range, or position.
 
-After the final reboot and verification:
+Confirm stable position/height behaviour and safe degradation when the aiding
+source becomes unavailable. This check validates PX4 behaviour; it does not
+commission Atlas obstacle avoidance.
 
-1. Refresh all parameters in QGroundControl.
-2. Use **Vehicle Setup > Parameters > Tools > Save to file**.
-3. Confirm the header contains the expected PX4 version and Git revision.
-4. Confirm the export contains the flight-controller component and every
-   expected H-Flow-related parameter.
-5. Compute and record a SHA-256 hash.
-
-On macOS or Linux:
-
-```sh
-shasum -a 256 aircraft-hflow-final.params
-```
-
-A QGroundControl parameter file can contain multiple components. A PX4-only
-export does not replace the separate H-Flow node firmware/identity record.
-
-## 9. Capture and retain the ULog
-
-Before the test, check the logger:
-
-```text
-logger status
-```
-
-If the logger process is running but not currently recording, capture a bounded
-log around the labelled test:
-
-```text
-logger on
-logger status
-```
-
-After completing the test:
-
-```text
-logger off
-logger status
-```
-
-`logger on` overrides the normal armed-state trigger; it does not arm the
-aircraft. Confirm that a new log started and stopped as intended.
-
-Download the file through **Analyze Tools > Download Logs**. Wait for the
-download to finish and for QGroundControl to close the file before hashing or
-parsing it. A preallocated file can have its final size while QGroundControl is
-still writing missing blocks.
-
-Record:
-
-```sh
-shasum -a 256 log-file.ulg
-```
-
-Retain the raw ULog unchanged. Record the analysis tool and version separately
-so results can be reproduced.
-
-## 10. Flight acceptance remains a separate gate
-
-Do not progress directly from a healthy bench log to an indoor waypoint. The
-first GPS-denied flight stage must define and retain:
-
-- the exact room boundary, floor texture, lighting, magnetic conditions, and
-  usable height range;
-- maximum horizontal/vertical speed and duration;
-- horizontal drift, height error, yaw error, dropout, and innovation limits;
-- battery reserve and abort criteria;
-- safety-pilot and RC takeover roles;
-- Hold behavior when flow, range, local position, or heading becomes invalid;
-- post-test parameter and ULog hashes.
-
-Start with a low, manually supervised hover/position-hold test. Autonomous
-waypoint execution remains blocked until position-hold behavior, estimator
-degradation, and operator takeover have separate acceptance evidence.
-
-Atlas exposes H-Flow/PX4 estimator state through the Agent's protected,
-read-only navigation socket. The spatial runtime deliberately does not compare
-that state with VIO or fuse VIO into PX4. Initial H-Flow position-hold
-acceptance therefore depends on PX4 estimator health and controlled flight
-evidence, not on a separate VIO/PX4 comparison subsystem.
-
-## Per-aircraft completion record
-
-Copy this table into the commissioning evidence for each new aircraft:
-
-| Field | Recorded value | Evidence reference | Status |
-| --- | --- | --- | --- |
-| Aircraft ID |  |  | `PENDING` |
-| Flight-controller hardware |  |  | `PENDING` |
-| PX4 release and full Git hash |  |  | `PENDING` |
-| PX4 GUID |  |  | `PENDING` |
-| H-Flow node name/ID |  |  | `PENDING` |
-| H-Flow hardware/software version |  |  | `PENDING` |
-| H-Flow unique ID |  |  | `PENDING` |
-| CAN port and termination topology |  |  | `PENDING` |
-| Mount orientation |  |  | `PENDING` |
-| Optical-flow X/Y/Z offsets |  |  | `PENDING` |
-| Range X/Y/Z offsets |  |  | `PENDING` |
-| Final parameter export/hash |  |  | `PENDING` |
-| DroneCAN discovery |  |  | `PENDING` |
-| Direction/sign test |  |  | `PENDING` |
-| Raw flow/range evidence |  |  | `PENDING` |
-| Fusion/innovation/reset evidence |  |  | `PENDING` |
-| GPS-denied position hold |  |  | `PENDING` |
-| Sensor-loss/Hold/takeover |  |  | `PENDING` |
-| Final acceptance authority/date |  |  | `PENDING` |
-
-## Authoritative references
+## References
 
 - [Holybro H-Flow setup guide](https://docs.holybro.com/peripherals/h-flow-dronecan/setup-guide)
-- [Holybro H-Flow firmware](https://docs.holybro.com/peripherals/h-flow-dronecan/firmware)
 - [PX4 optical flow](https://docs.px4.io/main/en/sensor/optical_flow)
 - [PX4 DroneCAN configuration](https://docs.px4.io/main/en/dronecan/)
-- [PX4 CAN wiring and `uavcan status`](https://docs.px4.io/main/en/uavcan/)
-- [PX4 EKF2 optical-flow and estimator guidance](https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf)
+- [PX4 EKF2 optical-flow guidance](https://docs.px4.io/main/en/advanced_config/tuning_the_ecl_ekf)
 - [PX4 uORB listener](https://docs.px4.io/main/en/middleware/uorb)
-- [PX4 logging](https://docs.px4.io/main/en/dev_log/logging)
-- [PX4 DroneCAN asset tracking](https://docs.px4.io/main/en/debug/asset_tracking)
-- [DroneCAN GUI Tool](https://dronecan.github.io/GUI_Tool/Overview/)
-- [DroneCAN `GetNodeInfo`](https://dronecan.github.io/Specification/6._Application_level_functions/)
 - [QGroundControl parameter save/load](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/setup_view/parameters.html)
-- [QGroundControl Analyze Tools](https://docs.qgroundcontrol.com/master/en/qgc-user-guide/analyze_view/)
 
-Installed PX4 parameter metadata and the installed H-Flow firmware remain
-authoritative for a specific aircraft. If they disagree with this runbook,
-stop, record the discrepancy, and review the applicable release before
-changing the aircraft.
+Installed PX4 parameter metadata and the installed H-Flow firmware are
+authoritative for a particular aircraft. If they disagree with this runbook,
+stop and review the applicable hardware and PX4 documentation before changing
+the aircraft.

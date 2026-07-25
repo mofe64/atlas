@@ -13,6 +13,7 @@ coverage.out
 __pycache__/
 *.pyc
 atlas-agent/dist/
+atlas-spatial-runtime/dist/
 sampleVids/
 
 # ROS 2 generated workspaces

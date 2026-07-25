@@ -7,31 +7,28 @@ mod video;
 use std::{net::SocketAddr, sync::Arc};
 
 use commands::{
-    abandon_prepared_response, abort_indoor_explore, acknowledge_operational_alert,
-    aircraft_follow_session, aircraft_follow_sessions, annotate_evidence_asset,
-    annotate_perception_track, apply_mission_terrain_profile, archive_drone,
-    cancel_vehicle_command, capture_evidence_still, clear_perception_track_selection,
-    control_mission_run, create_aircraft_follow_session, create_incident, create_mission,
-    end_aircraft_follow_session, evidence_asset, evidence_asset_content, evidence_assets,
-    evidence_recording_status, evidence_retention_policy, fleet_snapshot, generate_mission_plan,
-    ground_station_snapshot, history_overview, incident_detail, incident_list,
-    incident_response_aircraft_suitability, indoor_explore_snapshot, mission_detail, mission_list,
-    mission_plan, mission_run_detail, mission_run_history, mission_templates, operational_alerts,
-    operational_track_geolocations, perception_counting_rules, perception_counts,
-    perception_frame_subscription_renew, perception_frame_subscription_start,
+    abandon_prepared_response, acknowledge_operational_alert, aircraft_follow_session,
+    aircraft_follow_sessions, annotate_evidence_asset, annotate_perception_track,
+    apply_mission_terrain_profile, archive_drone, cancel_vehicle_command, capture_evidence_still,
+    clear_perception_track_selection, control_mission_run, create_aircraft_follow_session,
+    create_incident, create_mission, end_aircraft_follow_session, evidence_asset,
+    evidence_asset_content, evidence_assets, evidence_recording_status, evidence_retention_policy,
+    fleet_snapshot, generate_mission_plan, ground_station_snapshot, history_overview,
+    incident_detail, incident_list, incident_response_aircraft_suitability, mission_detail,
+    mission_list, mission_plan, mission_run_detail, mission_run_history, mission_templates,
+    operational_alerts, operational_track_geolocations, perception_counting_rules,
+    perception_counts, perception_frame_subscription_renew, perception_frame_subscription_start,
     perception_frame_subscription_stop, perception_snapshot, perception_track_geolocations,
     perception_track_history, perception_track_samples, perception_track_selection,
     prepare_incident_response, preview_incident_response, queue_evidence_event_clip,
     refine_perception_track_geolocation, renew_aircraft_follow_session, request_vehicle_command,
     restore_drone, restore_evidence_asset, review_evidence_asset, runtime_info,
-    select_perception_track, spatial_frame, spatial_snapshot, spatial_subscription_renew,
-    spatial_subscription_start, spatial_subscription_stop, start_evidence_recording,
-    start_indoor_explore, stop_evidence_recording, trash_evidence_asset,
-    update_evidence_asset_retention, update_evidence_retention_policy, update_incident,
-    update_mission, upload_mission, upsert_perception_counting_rule, vehicle_command_detail,
-    vehicle_command_history, vehicle_event_history, vehicle_operations_snapshot,
-    vehicle_telemetry_chart_series, vehicle_telemetry_history, video_stream_frame,
-    video_stream_snapshot, video_stream_start, video_stream_stop,
+    select_perception_track, start_evidence_recording, stop_evidence_recording,
+    trash_evidence_asset, update_evidence_asset_retention, update_evidence_retention_policy,
+    update_incident, update_mission, upload_mission, upsert_perception_counting_rule,
+    vehicle_command_detail, vehicle_command_history, vehicle_event_history,
+    vehicle_operations_snapshot, vehicle_telemetry_chart_series, vehicle_telemetry_history,
+    video_stream_frame, video_stream_snapshot, video_stream_start, video_stream_stop,
 };
 use database::LocalDatabase;
 use tauri::Manager;
@@ -40,9 +37,7 @@ pub(crate) struct AppState {
     database: Arc<LocalDatabase>,
     listen_address: String,
     command_router: ground_station::CommandRouter,
-    indoor: ground_station::IndoorExploreStore,
     perception: ground_station::PerceptionStore,
-    spatial: ground_station::SpatialStore,
     recording: recording::EvidenceRecorder,
     video: video::VideoManager,
 }
@@ -69,12 +64,8 @@ pub fn run() {
             let command_timeout_database = Arc::clone(&database);
             let command_router = ground_station::CommandRouter::default();
             let server_command_router = command_router.clone();
-            let indoor = ground_station::IndoorExploreStore::default();
-            let server_indoor = indoor.clone();
             let perception = ground_station::PerceptionStore::default();
             let server_perception = perception.clone();
-            let spatial = ground_station::SpatialStore::default();
-            let server_spatial = spatial.clone();
             let video = video::VideoManager::from_environment().map_err(std::io::Error::other)?;
             let recording = recording::EvidenceRecorder::from_environment(
                 Arc::clone(&database),
@@ -92,9 +83,7 @@ pub fn run() {
                     socket_address,
                     server_database,
                     server_command_router,
-                    server_indoor,
                     server_perception,
-                    server_spatial,
                 )
                 .await
                 {
@@ -168,9 +157,7 @@ pub fn run() {
                 database,
                 listen_address,
                 command_router,
-                indoor,
                 perception,
-                spatial,
                 recording,
                 video,
             });
@@ -199,16 +186,8 @@ pub fn run() {
             aircraft_follow_session,
             aircraft_follow_sessions,
             operational_alerts,
-            indoor_explore_snapshot,
-            start_indoor_explore,
-            abort_indoor_explore,
             acknowledge_operational_alert,
             perception_snapshot,
-            spatial_snapshot,
-            spatial_frame,
-            spatial_subscription_start,
-            spatial_subscription_renew,
-            spatial_subscription_stop,
             perception_track_history,
             perception_counts,
             perception_counting_rules,

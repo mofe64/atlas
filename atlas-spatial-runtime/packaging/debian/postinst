@@ -1,0 +1,32 @@
+#!/bin/sh
+set -eu
+
+if ! id -u atlas-agent >/dev/null 2>&1; then
+    useradd \
+        --system \
+        --user-group \
+        --home-dir /var/lib/atlas-agent \
+        --shell /usr/sbin/nologin \
+        atlas-agent
+fi
+
+# The retired source installer used this exact virtual-environment path. The
+# packaged runtime lives directly under /opt and retains no previous install.
+if [ -d /opt/atlas-spatial-runtime/venv ]; then
+    rm -rf -- /opt/atlas-spatial-runtime/venv
+fi
+
+if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=usb --attr-match=idVendor=03e7 || true
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+    if [ -f /etc/atlas-agent/spatial.env ]; then
+        systemctl try-restart atlas-spatial-runtime.service || true
+    fi
+fi
+
+printf '%s\n' 'Atlas Spatial Runtime package installed.'
+printf '%s\n' 'Run atlas-setup after Agent and Spatial packages are installed.'

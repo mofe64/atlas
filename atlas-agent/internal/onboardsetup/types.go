@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/sunnyside/atlas/atlas-agent/internal/aircraftprofile"
 	agentconfig "github.com/sunnyside/atlas/atlas-agent/internal/config"
 )
 
@@ -23,38 +24,34 @@ const (
 	AdapterModeProcess       = "process"
 	AdapterModeContainer     = "container"
 	DefaultSpatialSource     = "front-depth"
-	DefaultSpatialImage      = "atlas-spatial-runtime:0.1.0-dev"
 	SpatialProviderDepthAI   = "depthai"
 	SpatialProviderSynthetic = "synthetic"
 )
 
 type Paths struct {
-	Root                          string
-	ConfigFile                    string
-	StateDirectory                string
-	RuntimeDirectory              string
-	AgentBinary                   string
-	SetupBinary                   string
-	MAVSDKBinary                  string
-	HailoAdapter                  string
-	ByteTrackWorker               string
-	HailoSetupBinary              string
-	HailoContainerEnv             string
-	HailoContainerService         string
-	SpatialConfigFile             string
-	SpatialSetupBinary            string
-	SpatialContainerRun           string
-	SpatialCheck                  string
-	SpatialService                string
-	SpatialContext                string
-	SpatialStateDirectory         string
-	SpatialTransformBundle        string
-	DefaultSpatialTransformBundle string
-	ReleaseManifest               string
-	AgentService                  string
-	MAVSDKService                 string
-	DefaultModel                  string
-	DefaultPostprocessSO          string
+	Root                  string
+	ConfigFile            string
+	StateDirectory        string
+	RuntimeDirectory      string
+	AgentBinary           string
+	SetupBinary           string
+	MAVSDKBinary          string
+	HailoAdapter          string
+	ByteTrackWorker       string
+	HailoSetupBinary      string
+	HailoContainerEnv     string
+	HailoContainerService string
+	AircraftProfilesDir   string
+	AircraftProfileConfig string
+	SpatialConfigFile     string
+	SpatialRuntimeBinary  string
+	SpatialCheck          string
+	SpatialService        string
+	ReleaseManifest       string
+	AgentService          string
+	MAVSDKService         string
+	DefaultModel          string
+	DefaultPostprocessSO  string
 }
 
 func DefaultPaths(root string) Paths {
@@ -65,32 +62,29 @@ func DefaultPaths(root string) Paths {
 		return filepath.Join(root, strings.TrimPrefix(path, "/"))
 	}
 	return Paths{
-		Root:                          root,
-		ConfigFile:                    rooted("/etc/atlas-agent/atlas-agent.env"),
-		StateDirectory:                rooted("/var/lib/atlas-agent"),
-		RuntimeDirectory:              rooted("/run/atlas-agent"),
-		AgentBinary:                   rooted("/usr/bin/atlas-agent"),
-		SetupBinary:                   rooted("/usr/bin/atlas-setup"),
-		MAVSDKBinary:                  rooted("/usr/libexec/atlas-agent/mavsdk_server"),
-		HailoAdapter:                  rooted("/usr/libexec/atlas-agent/atlas-hailort-adapter"),
-		ByteTrackWorker:               rooted("/usr/libexec/atlas-agent/atlas-bytetrack-worker"),
-		HailoSetupBinary:              rooted("/usr/sbin/atlas-hailo-setup"),
-		HailoContainerEnv:             rooted("/etc/atlas-agent/hailo-container.env"),
-		HailoContainerService:         rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),
-		SpatialConfigFile:             rooted("/etc/atlas-agent/spatial.env"),
-		SpatialSetupBinary:            rooted("/usr/sbin/atlas-spatial-setup"),
-		SpatialContainerRun:           rooted("/usr/libexec/atlas-agent/atlas-spatial-container-run"),
-		SpatialCheck:                  rooted("/usr/libexec/atlas-agent/atlas-spatial-runtime-check"),
-		SpatialService:                rooted("/usr/lib/systemd/system/atlas-spatial-runtime.service"),
-		SpatialContext:                rooted("/usr/share/atlas-agent/spatial-runtime"),
-		SpatialStateDirectory:         rooted("/var/lib/atlas-agent/spatial"),
-		SpatialTransformBundle:        rooted("/var/lib/atlas-agent/spatial/transforms.v1.json"),
-		DefaultSpatialTransformBundle: rooted("/usr/share/atlas-agent/spatial-runtime/ros2_ws/src/atlas_spatial_runtime/config/transforms.v1.json"),
-		ReleaseManifest:               rooted("/usr/share/atlas-agent/release.env"),
-		AgentService:                  rooted("/usr/lib/systemd/system/atlas-agent.service"),
-		MAVSDKService:                 rooted("/usr/lib/systemd/system/atlas-mavsdk.service"),
-		DefaultModel:                  rooted("/usr/share/atlas-agent/models/objects.hef"),
-		DefaultPostprocessSO:          rooted("/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"),
+		Root:                  root,
+		ConfigFile:            rooted("/etc/atlas-agent/atlas-agent.env"),
+		StateDirectory:        rooted("/var/lib/atlas-agent"),
+		RuntimeDirectory:      rooted("/run/atlas-agent"),
+		AgentBinary:           rooted("/usr/bin/atlas-agent"),
+		SetupBinary:           rooted("/usr/bin/atlas-setup"),
+		MAVSDKBinary:          rooted("/usr/libexec/atlas-agent/mavsdk_server"),
+		HailoAdapter:          rooted("/usr/libexec/atlas-agent/atlas-hailort-adapter"),
+		ByteTrackWorker:       rooted("/usr/libexec/atlas-agent/atlas-bytetrack-worker"),
+		HailoSetupBinary:      rooted("/usr/sbin/atlas-hailo-setup"),
+		HailoContainerEnv:     rooted("/etc/atlas-agent/hailo-container.env"),
+		HailoContainerService: rooted("/usr/lib/systemd/system/atlas-hailo-adapter.service"),
+		AircraftProfilesDir:   rooted("/usr/share/atlas-agent/aircraft-profiles"),
+		AircraftProfileConfig: rooted("/etc/atlas-agent/aircraft-profile.json"),
+		SpatialConfigFile:     rooted("/etc/atlas-agent/spatial.env"),
+		SpatialRuntimeBinary:  rooted("/opt/atlas-spatial-runtime/bin/atlas-spatial-runtime"),
+		SpatialCheck:          rooted("/opt/atlas-spatial-runtime/bin/atlas-spatial-check"),
+		SpatialService:        rooted("/usr/lib/systemd/system/atlas-spatial-runtime.service"),
+		ReleaseManifest:       rooted("/usr/share/atlas-agent/release.env"),
+		AgentService:          rooted("/usr/lib/systemd/system/atlas-agent.service"),
+		MAVSDKService:         rooted("/usr/lib/systemd/system/atlas-mavsdk.service"),
+		DefaultModel:          rooted("/usr/share/atlas-agent/models/objects.hef"),
+		DefaultPostprocessSO:  rooted("/usr/lib/aarch64-linux-gnu/hailo/tappas/post_processes/libyolo_hailortpp_post.so"),
 	}
 }
 
@@ -169,16 +163,15 @@ type SpatialStatus struct {
 	Model            string
 	USBTransport     string
 	USBSpeedMbps     int
-	ContainerImage   string
 	RuntimeInstalled bool
 	ServiceRunning   bool
 	Ready            bool
 	Status           string
 	SourceID         string
-	ColorFPS         string
 	DepthFPS         string
-	SyncSkewMS       string
-	CalibrationHash  string
+	DepthFrameID     string
+	CalibrationValid bool
+	CalibrationFrame string
 	LastError        string
 }
 
@@ -200,29 +193,32 @@ func (discovery Discovery) PlatformSupported() bool {
 }
 
 type InstallConfig struct {
-	DroneName             string
-	GroundStationAddress  string
-	SerialDevice          string
-	BaudRate              uint32
-	MAVLinkSystemID       uint32
-	MAVLinkComponentID    uint32
-	A8RTSPURL             string
-	CameraTransport       agentconfig.CameraTransport
-	SIYICameraAddress     string
-	PerceptionEnabled     bool
-	PerceptionAdapterMode string
-	HailoAccelerator      string
-	ModelPath             string
-	PostprocessSO         string
-	PostprocessFunction   string
-	SpatialEnabled        bool
-	SpatialProvider       string
-	SpatialSourceID       string
-	SpatialDeviceID       string
-	SpatialModel          string
-	SpatialUSBTransport   string
-	SpatialContainerImage string
-	AgentVersion          string
+	AircraftProfileID         string
+	AircraftProfileSourcePath string
+	AircraftProfile           aircraftprofile.Profile
+	DroneName                 string
+	GroundStationAddress      string
+	SerialDevice              string
+	BaudRate                  uint32
+	MAVLinkSystemID           uint32
+	MAVLinkComponentID        uint32
+	A8RTSPURL                 string
+	CameraTransport           agentconfig.CameraTransport
+	SIYICameraAddress         string
+	PerceptionEnabled         bool
+	PerceptionAdapterMode     string
+	HailoAccelerator          string
+	ModelPath                 string
+	PostprocessSO             string
+	PostprocessFunction       string
+	SpatialEnabled            bool
+	SpatialProvider           string
+	SpatialSourceID           string
+	SpatialDeviceID           string
+	SpatialModel              string
+	SpatialUSBTransport       string
+	SpatialFrameID            string
+	AgentVersion              string
 }
 
 func DefaultInstallConfig(paths Paths) InstallConfig {
@@ -242,12 +238,24 @@ func DefaultInstallConfig(paths Paths) InstallConfig {
 		PostprocessFunction:   "filter",
 		SpatialSourceID:       DefaultSpatialSource,
 		SpatialUSBTransport:   "unknown",
-		SpatialContainerImage: DefaultSpatialImage,
+		SpatialFrameID:        "oak_rgb_camera_optical_frame",
 		AgentVersion:          "unknown",
 	}
 }
 
 func (config InstallConfig) Validate(paths Paths) error {
+	if strings.TrimSpace(config.AircraftProfileID) == "" {
+		return fmt.Errorf("aircraft profile selection is required")
+	}
+	if !filepath.IsAbs(config.AircraftProfileSourcePath) {
+		return fmt.Errorf("aircraft profile source path must be absolute")
+	}
+	if config.AircraftProfile.ProfileID != config.AircraftProfileID {
+		return fmt.Errorf("selected aircraft profile id does not match the loaded profile")
+	}
+	if err := config.AircraftProfile.Validate(); err != nil {
+		return fmt.Errorf("selected aircraft profile is invalid: %w", err)
+	}
 	if strings.TrimSpace(config.DroneName) == "" {
 		return fmt.Errorf("drone name is required")
 	}
@@ -287,8 +295,9 @@ func (config InstallConfig) Validate(paths Paths) error {
 		if strings.TrimSpace(config.SpatialSourceID) == "" {
 			return fmt.Errorf("spatial source id is required")
 		}
-		if strings.TrimSpace(config.SpatialContainerImage) == "" {
-			return fmt.Errorf("spatial container image is required")
+		if config.SpatialProvider == SpatialProviderDepthAI &&
+			config.SpatialDeviceID != config.AircraftProfile.Payloads.DepthCamera.DeviceID {
+			return fmt.Errorf("spatial device must match the depth camera in aircraft profile %q", config.AircraftProfileID)
 		}
 	}
 	return nil
@@ -303,6 +312,7 @@ type Options struct {
 	Output                   io.Writer
 	ArchitectureOverride     string
 	PackagedModelAccelerator string
+	AircraftProfileID        string
 }
 
 func DefaultOptions() Options {

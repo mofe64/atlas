@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 	"time"
 )
@@ -14,10 +13,9 @@ const (
 	estimatorVelocityHoriz = uint32(1 << 1)
 	estimatorVelocityVert  = uint32(1 << 2)
 	estimatorPosHorizRel   = uint32(1 << 3)
-	estimatorPosVertAGL    = uint32(1 << 6)
 	estimatorGPSGlitch     = uint32(1 << 10)
 	estimatorAccelError    = uint32(1 << 11)
-	requiredEstimatorFlags = estimatorAttitude | estimatorVelocityHoriz | estimatorVelocityVert | estimatorPosHorizRel | estimatorPosVertAGL
+	requiredEstimatorFlags = estimatorAttitude | estimatorVelocityHoriz | estimatorVelocityVert | estimatorPosHorizRel
 )
 
 type Plane struct {
@@ -36,21 +34,20 @@ type Plane struct {
 	opticalFlow                       *OpticalFlow
 	rangefinder                       *Range
 	lastReset                         *EstimatorReset
-	history                           []State
 }
 
 func NewPlane(config Config) (*Plane, error) {
-	if config.LocalPositionStaleAfter <= 0 || config.LocalPositionHealthStaleAfter <= 0 || config.OdometryStaleAfter <= 0 || config.EstimatorStaleAfter <= 0 || config.OpticalFlowStaleAfter <= 0 || config.RangeStaleAfter <= 0 || config.ResetDegradedFor < 0 || config.HistoryDuration <= 0 {
+	if config.LocalPositionStaleAfter <= 0 || config.LocalPositionHealthStaleAfter <= 0 || config.OdometryStaleAfter <= 0 || config.EstimatorStaleAfter <= 0 || config.OpticalFlowStaleAfter <= 0 || config.RangeStaleAfter <= 0 || config.ResetDegradedFor < 0 {
 		return nil, errors.New("navigation durations must be positive")
 	}
 	return &Plane{config: config}, nil
 }
 
-func (plane *Plane) SetConnected(connected bool, observedAt time.Time) {
+func (plane *Plane) SetConnected(connected bool) {
 	plane.mu.Lock()
 	defer plane.mu.Unlock()
 	plane.connectionKnown, plane.connected = true, connected
-	plane.recordLocked(observedAt.UTC().UnixNano())
+	plane.sequence++
 }
 
 func (plane *Plane) SetLocalPositionValid(valid bool, observedAt time.Time) {
@@ -58,7 +55,7 @@ func (plane *Plane) SetLocalPositionValid(valid bool, observedAt time.Time) {
 	defer plane.mu.Unlock()
 	plane.localPositionKnown, plane.localPositionValid = true, valid
 	plane.localPositionHealthObservedUnixNS = observedAt.UTC().UnixNano()
-	plane.recordLocked(observedAt.UTC().UnixNano())
+	plane.sequence++
 }
 
 func (plane *Plane) ObserveLocalPosition(sourceUS uint64, receivedAt time.Time, position, velocity Vector3) {
@@ -66,7 +63,7 @@ func (plane *Plane) ObserveLocalPosition(sourceUS uint64, receivedAt time.Time, 
 	defer plane.mu.Unlock()
 	value := &LocalPosition{Time: plane.clock.align(sourceUS, receivedAt), Position: position, Velocity: velocity}
 	plane.localPosition = value
-	plane.recordLocked(value.Time.AlignedUnixNS)
+	plane.sequence++
 }
 
 func (plane *Plane) ObserveOdometry(sourceUS uint64, receivedAt time.Time, value Odometry) {
@@ -77,7 +74,7 @@ func (plane *Plane) ObserveOdometry(sourceUS uint64, receivedAt time.Time, value
 		plane.lastReset = &EstimatorReset{PreviousCounter: plane.odometry.ResetCounter, CurrentCounter: value.ResetCounter, ObservedUnixNS: value.Time.AlignedUnixNS}
 	}
 	plane.odometry = &value
-	plane.recordLocked(value.Time.AlignedUnixNS)
+	plane.sequence++
 }
 
 func (plane *Plane) ObserveEstimator(sourceUS uint64, receivedAt time.Time, value EstimatorStatus) {
@@ -85,7 +82,7 @@ func (plane *Plane) ObserveEstimator(sourceUS uint64, receivedAt time.Time, valu
 	defer plane.mu.Unlock()
 	value.Time = plane.clock.align(sourceUS, receivedAt)
 	plane.estimator = &value
-	plane.recordLocked(value.Time.AlignedUnixNS)
+	plane.sequence++
 }
 
 func (plane *Plane) ObserveOpticalFlow(sourceUS uint64, receivedAt time.Time, value OpticalFlow) {
@@ -93,7 +90,7 @@ func (plane *Plane) ObserveOpticalFlow(sourceUS uint64, receivedAt time.Time, va
 	defer plane.mu.Unlock()
 	value.Time = plane.clock.align(sourceUS, receivedAt)
 	plane.opticalFlow = &value
-	plane.recordLocked(value.Time.AlignedUnixNS)
+	plane.sequence++
 }
 
 func (plane *Plane) ObserveRange(sourceUS uint64, receivedAt time.Time, value Range) {
@@ -101,7 +98,7 @@ func (plane *Plane) ObserveRange(sourceUS uint64, receivedAt time.Time, value Ra
 	defer plane.mu.Unlock()
 	value.Time = plane.clock.align(sourceUS, receivedAt)
 	plane.rangefinder = &value
-	plane.recordLocked(value.Time.AlignedUnixNS)
+	plane.sequence++
 }
 
 func (plane *Plane) Latest(now time.Time) State {
@@ -110,77 +107,9 @@ func (plane *Plane) Latest(now time.Time) State {
 	return plane.snapshotLocked(now.UTC().UnixNano())
 }
 
-func (plane *Plane) SampleAt(captureUnixNS, maximumSkewNS int64) (Sample, error) {
-	if captureUnixNS <= 0 || maximumSkewNS <= 0 {
-		return Sample{}, errors.New("captureUnixNs and maxSkewNs must be positive")
-	}
-	plane.mu.RLock()
-	defer plane.mu.RUnlock()
-	if len(plane.history) == 0 {
-		return Sample{}, errors.New("navigation history is unavailable")
-	}
-	index := sort.Search(len(plane.history), func(index int) bool {
-		return plane.history[index].GeneratedAtUnixNS > captureUnixNS
-	}) - 1
-	if index < 0 {
-		index = 0
-	}
-	state := plane.history[index]
-	stripObservationsAfter(&state, captureUnixNS)
-	state = evaluate(state, captureUnixNS, plane.config)
-	sampleUnixNS, skew, withinTolerance := int64(0), int64(0), false
-	if state.Odometry != nil {
-		sampleUnixNS = state.Odometry.Time.AlignedUnixNS
-		skew = captureUnixNS - sampleUnixNS
-		if skew < 0 {
-			skew = -skew
-		}
-		withinTolerance = skew <= maximumSkewNS
-	}
-	return Sample{State: state, CaptureUnixNS: captureUnixNS, SampleUnixNS: sampleUnixNS, SkewNS: skew, WithinTolerance: withinTolerance}, nil
-}
-
-func stripObservationsAfter(state *State, captureUnixNS int64) {
-	if state.LocalPositionHealthObservedUnixNS > captureUnixNS {
-		state.LocalPositionHealthObservedUnixNS = 0
-	}
-	if state.LocalPosition != nil && state.LocalPosition.Time.AlignedUnixNS > captureUnixNS {
-		state.LocalPosition = nil
-	}
-	if state.Odometry != nil && state.Odometry.Time.AlignedUnixNS > captureUnixNS {
-		state.Odometry = nil
-	}
-	if state.Estimator != nil && state.Estimator.Time.AlignedUnixNS > captureUnixNS {
-		state.Estimator = nil
-	}
-	if state.OpticalFlow != nil && state.OpticalFlow.Time.AlignedUnixNS > captureUnixNS {
-		state.OpticalFlow = nil
-	}
-	if state.Range != nil && state.Range.Time.AlignedUnixNS > captureUnixNS {
-		state.Range = nil
-	}
-	if state.LastEstimatorReset != nil && state.LastEstimatorReset.ObservedUnixNS > captureUnixNS {
-		state.LastEstimatorReset = nil
-	}
-}
-
-func (plane *Plane) recordLocked(atUnixNS int64) {
-	plane.sequence++
-	state := plane.snapshotLocked(atUnixNS)
-	plane.history = append(plane.history, state)
-	sort.SliceStable(plane.history, func(left, right int) bool {
-		return plane.history[left].GeneratedAtUnixNS < plane.history[right].GeneratedAtUnixNS
-	})
-	cutoff := atUnixNS - plane.config.HistoryDuration.Nanoseconds()
-	first := sort.Search(len(plane.history), func(index int) bool { return plane.history[index].GeneratedAtUnixNS >= cutoff })
-	if first > 0 {
-		plane.history = append([]State(nil), plane.history[first:]...)
-	}
-}
-
 func (plane *Plane) snapshotLocked(nowUnixNS int64) State {
 	state := State{
-		ProtocolVersion: ProtocolVersion, Sequence: plane.sequence, GeneratedAtUnixNS: nowUnixNS,
+		Sequence: plane.sequence, GeneratedAtUnixNS: nowUnixNS,
 		ConnectionObserved:                plane.connectionKnown,
 		Connected:                         plane.connectionKnown && plane.connected,
 		LocalPositionValid:                !plane.localPositionKnown || plane.localPositionValid,
@@ -194,25 +123,24 @@ func (plane *Plane) snapshotLocked(nowUnixNS int64) State {
 func evaluate(state State, nowUnixNS int64, config Config) State {
 	state.Components = make(map[string]ComponentHealth, 5)
 	state.Reasons = nil
+	state.HFlowReasons = nil
 	state.Components["localPosition"] = localPositionHealth(nowUnixNS, state, config.LocalPositionStaleAfter, config.LocalPositionHealthStaleAfter)
 	state.Components["odometry"] = timedHealth(nowUnixNS, timeOf(state.Odometry), config.OdometryStaleAfter, odometryReason(state.Odometry))
 	state.Components["estimator"] = timedHealth(nowUnixNS, timeOf(state.Estimator), config.EstimatorStaleAfter, estimatorReason(state.Estimator))
 	state.Components["opticalFlow"] = timedHealth(nowUnixNS, timeOf(state.OpticalFlow), config.OpticalFlowStaleAfter, flowReason(state.OpticalFlow, config.MinimumFlowQuality))
 	state.Components["range"] = timedHealth(nowUnixNS, timeOf(state.Range), config.RangeStaleAfter, rangeReason(state.Range))
+
+	// The top-level status is generic PX4 navigation readiness. H-Flow is
+	// reported separately because consumers that do not use H-Flow must not be
+	// disabled by a missing optical-flow sensor or rangefinder.
 	state.Status = StatusReady
 	if !state.ConnectionObserved || !state.Connected {
 		state.Status = StatusUnavailable
 		state.Reasons = append(state.Reasons, "PX4 connection not observed or unavailable")
 	}
-	for _, name := range []string{"localPosition", "odometry", "estimator", "opticalFlow", "range"} {
+	for _, name := range []string{"localPosition", "odometry", "estimator"} {
 		health := state.Components[name]
-		if health.Status == StatusUnavailable {
-			state.Status = StatusUnavailable
-		} else if health.Status == StatusStale && state.Status != StatusUnavailable {
-			state.Status = StatusStale
-		} else if health.Status == StatusDegraded && state.Status == StatusReady {
-			state.Status = StatusDegraded
-		}
+		state.Status = combineStatus(state.Status, health.Status)
 		if health.Status != StatusReady {
 			state.Reasons = append(state.Reasons, name+": "+health.Reason)
 		}
@@ -222,7 +150,34 @@ func evaluate(state State, nowUnixNS int64, config Config) State {
 		state.Reasons = append(state.Reasons, "estimator reset settling window active")
 	}
 	state.Ready = state.Status == StatusReady
+
+	state.HFlowStatus = StatusReady
+	if !state.ConnectionObserved || !state.Connected {
+		state.HFlowStatus = StatusUnavailable
+		state.HFlowReasons = append(state.HFlowReasons, "PX4 connection not observed or unavailable")
+	}
+	for _, name := range []string{"opticalFlow", "range"} {
+		health := state.Components[name]
+		state.HFlowStatus = combineStatus(state.HFlowStatus, health.Status)
+		if health.Status != StatusReady {
+			state.HFlowReasons = append(state.HFlowReasons, name+": "+health.Reason)
+		}
+	}
+	state.HFlowReady = state.HFlowStatus == StatusReady
 	return state
+}
+
+func combineStatus(current, component Status) Status {
+	if current == StatusUnavailable || component == StatusUnavailable {
+		return StatusUnavailable
+	}
+	if current == StatusStale || component == StatusStale {
+		return StatusStale
+	}
+	if current == StatusDegraded || component == StatusDegraded {
+		return StatusDegraded
+	}
+	return StatusReady
 }
 
 func timedHealth(nowUnixNS int64, observed *ObservationTime, staleAfter time.Duration, degradedReason string) ComponentHealth {
@@ -298,7 +253,7 @@ func estimatorReason(value *EstimatorStatus) string {
 	if value.Flags&(estimatorGPSGlitch|estimatorAccelError) != 0 {
 		return "estimator reports GPS glitch or acceleration error"
 	}
-	for _, ratio := range []float64{value.VelocityTestRatio, value.HorizontalPosTestRatio, value.VerticalPosTestRatio, value.HeightAGLTestRatio} {
+	for _, ratio := range []float64{value.VelocityTestRatio, value.HorizontalPosTestRatio, value.VerticalPosTestRatio} {
 		if math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < 0 || ratio > 1 {
 			return "estimator innovation test ratio exceeds 1"
 		}

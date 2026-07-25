@@ -1,0 +1,27 @@
+[Unit]
+Description=Atlas Spatial depth-camera runtime
+After=local-fs.target
+ConditionPathExists=/etc/atlas-agent/spatial.env
+
+[Service]
+Type=simple
+User=atlas-agent
+Group=atlas-agent
+EnvironmentFile=/etc/atlas-agent/spatial.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/atlas-spatial-runtime/bin/atlas-spatial-runtime
+Restart=on-failure
+RestartSec=3
+TimeoutStartSec=45
+TimeoutStopSec=15
+RuntimeDirectory=atlas-agent
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/run/atlas-agent
+
+[Install]
+WantedBy=multi-user.target

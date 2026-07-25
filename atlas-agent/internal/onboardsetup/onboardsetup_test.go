@@ -3,12 +3,9 @@ package onboardsetup
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -143,231 +140,13 @@ func TestContainerPerceptionEnablesContainerService(t *testing.T) {
 	}
 }
 
-func TestSpatialRuntimeIsIndependentFromFlightServices(t *testing.T) {
+func TestConfiguredServicesIncludesSpatialRuntimeWhenEnabled(t *testing.T) {
 	config := DefaultInstallConfig(DefaultPaths("/"))
 	config.SpatialEnabled = true
 	config.SpatialProvider = SpatialProviderDepthAI
 	services := configuredServices(config)
 	if !slicesEqual(services, []string{"atlas-mavsdk.service", "atlas-agent.service", "atlas-spatial-runtime.service"}) {
 		t.Fatalf("services = %#v", services)
-	}
-
-	unitPath := filepath.Join("..", "..", "packaging", "systemd", "atlas-spatial-runtime.service")
-	raw, err := os.ReadFile(unitPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	unit := string(raw)
-	for _, forbidden := range []string{"Requires=atlas-agent.service", "PartOf=atlas-agent.service", "After=atlas-agent.service"} {
-		if strings.Contains(unit, forbidden) {
-			t.Fatalf("spatial service is coupled to Atlas Agent through %q:\n%s", forbidden, unit)
-		}
-	}
-	for _, expected := range []string{
-		"Requires=docker.service",
-		"EnvironmentFile=/etc/atlas-agent/spatial.env",
-		"ExecStart=/usr/libexec/atlas-agent/atlas-spatial-container-run",
-		"ExecStop=/usr/bin/docker stop --timeout 10 ${ATLAS_SPATIAL_CONTAINER_NAME}",
-		"TimeoutStopSec=20",
-	} {
-		if !strings.Contains(unit, expected) {
-			t.Fatalf("spatial unit missing %q:\n%s", expected, unit)
-		}
-	}
-	launcherPath := filepath.Join("..", "..", "packaging", "spatial", "atlas-spatial-container-run")
-	launcher, err := os.ReadFile(launcherPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	launcherText := string(launcher)
-	if !strings.Contains(launcherText, "/usr/bin/install -d -m 0750 -o atlas-agent -g atlas-agent") {
-		t.Fatalf("spatial launcher does not recreate its runtime path independently:\n%s", launcher)
-	}
-	if strings.Contains(launcherText, "--env-file /etc/atlas-agent/spatial.env") {
-		t.Fatalf("spatial launcher passes systemd quoting through Docker's incompatible env-file parser:\n%s", launcher)
-	}
-	for _, expected := range []string{
-		`network_mode=none`,
-		`network_mode=host`,
-		`--network "${network_mode}"`,
-		`--env "ATLAS_SPATIAL_CONTRACT_VERSION=`,
-		`--env "ATLAS_SPATIAL_PROVIDER=`,
-		`--env "ATLAS_SPATIAL_DEVICE_ID=`,
-		`--env "ATLAS_SPATIAL_SOCKET_PATH=`,
-		`--env "ATLAS_SPATIAL_CLOUD_SOCKET_PATH=`,
-		`--env "ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH=`,
-		`--env "ATLAS_SPATIAL_VIO_ENABLED=`,
-		`--env "ATLAS_SPATIAL_LIVE_CLOUD_ENABLED=`,
-		`--volume /run/udev:/run/udev:ro`,
-	} {
-		if !strings.Contains(launcherText, expected) {
-			t.Fatalf("spatial launcher does not explicitly pass parsed environment %q:\n%s", expected, launcher)
-		}
-	}
-	if strings.Contains(launcherText, "--network none") || strings.Contains(launcherText, "--network host") {
-		t.Fatalf("spatial launcher hardcodes one network mode instead of granting host netlink only to DepthAI:\n%s", launcher)
-	}
-	if !strings.Contains(unit, "docker image inspect --format={{.Id}}") {
-		t.Fatalf("spatial unit emits the entire image manifest on every restart:\n%s", unit)
-	}
-
-	agentUnitPath := filepath.Join("..", "..", "packaging", "systemd", "atlas-agent.service")
-	agentUnitRaw, err := os.ReadFile(agentUnitPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(agentUnitRaw), "RuntimeDirectoryPreserve=yes") {
-		t.Fatalf(
-			"Agent unit can unlink independent runtime sockets when it stops or restarts:\n%s",
-			agentUnitRaw,
-		)
-	}
-}
-
-func TestDebianPackageIncludesSpatialSetupRuntimeAndUSBRule(t *testing.T) {
-	buildPath := filepath.Join("..", "..", "packaging", "build-deb.sh")
-	raw, err := os.ReadFile(buildPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	build := string(raw)
-	for _, expected := range []string{
-		"atlas-spatial-setup",
-		"atlas-spatial-container-run",
-		"atlas-spatial-runtime-check",
-		"99-atlas-depth-camera.rules",
-		"atlas-spatial-runtime.service",
-		"atlas-navigation-probe",
-		"ATLAS_SPATIAL_CONTAINER_IMAGE",
-		"packaging/depthai/.",
-		"ros2_ws/src",
-	} {
-		if !strings.Contains(build, expected) {
-			t.Fatalf("package build is missing %q", expected)
-		}
-	}
-
-	entrypointPath := filepath.Join("..", "..", "..", "atlas-spatial-runtime", "packaging", "entrypoint.sh")
-	entrypoint, err := os.ReadFile(entrypointPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	entrypointText := string(entrypoint)
-	disableNounset := strings.Index(entrypointText, "set +u")
-	rosSetup := strings.Index(entrypointText, ". /opt/ros/jazzy/setup.sh")
-	restoreNounset := strings.LastIndex(entrypointText, "set -u")
-	if disableNounset < 0 || rosSetup <= disableNounset || restoreNounset <= rosSetup {
-		t.Fatalf("spatial entrypoint must suspend nounset while sourcing ROS setup files:\n%s", entrypoint)
-	}
-	deviceGuard := strings.Index(entrypointText, `if [ -n "${ATLAS_SPATIAL_DEVICE_ID:-}" ]; then`)
-	deviceArgument := strings.Index(entrypointText, `"device_id:=${ATLAS_SPATIAL_DEVICE_ID}"`)
-	if deviceGuard < 0 || deviceArgument <= deviceGuard {
-		t.Fatalf("spatial entrypoint must omit an unknown device ID instead of emitting device_id:=:\n%s", entrypoint)
-	}
-	if strings.Contains(entrypointText, `device_id:="${ATLAS_SPATIAL_DEVICE_ID:-}"`) {
-		t.Fatalf("spatial entrypoint passes an explicitly empty ROS launch argument:\n%s", entrypoint)
-	}
-	for _, forbidden := range []string{
-		"ATLAS_SPATIAL_RECORDING_ENABLED",
-		"ATLAS_SPATIAL_RECORDING_ROOT",
-		"ATLAS_NAVIGATION_SOCKET_PATH",
-		"recording_enabled:=",
-		"navigation_socket_path:=",
-	} {
-		if strings.Contains(entrypointText, forbidden) {
-			t.Fatalf("spatial entrypoint retains obsolete recorder/comparison wiring %q:\n%s", forbidden, entrypoint)
-		}
-	}
-
-	dockerfilePath := filepath.Join("..", "..", "..", "atlas-spatial-runtime", "packaging", "Dockerfile")
-	dockerfile, err := os.ReadFile(dockerfilePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dockerfileText := string(dockerfile)
-	for _, expected := range []string{
-		"FROM atlas-upstream-depthai AS atlas-standard-depthai",
-		`printf 'unsupported standard DepthAI core package: %s\n' "${core_version}"`,
-		"ros-jazzy-imu-filter-madgwick",
-		"ros-jazzy-rtabmap-odom",
-		"IMU_TOOLS_VERSION=2.1.5",
-		"RTABMAP_ROS_VERSION=0.23.7",
-		"FROM atlas-standard-depthai AS atlas-runtime",
-		// Retained only as source evidence for the accepted 0.1.16 rollback
-		// until the standard path passes and cleanup is explicitly approved.
-		"FROM atlas-upstream-depthai AS atlas-patched-depthai",
-		"ARG DEPTHAI_LIBUSB_REF=d631db2d91ce72f79ac296e3ff724eee98ad0c46",
-		"-DWITH_UDEV=OFF",
-		"ENV LD_LIBRARY_PATH=/opt/atlas-depthai-libusb/lib",
-		"grep -F '/opt/atlas-depthai-libusb/lib/libusb-1.0.so.0'",
-		"packaging/depthai",
-		"DEPTHAI_CORE_SOURCE_SHA256=f889d96a3458f7b9589db73f5ad1b33bee362a03171720aa6021b5f4132cbc60",
-		"ATLAS_DEPTHAI_VIO_IMU_ORDER",
-		"ATLAS_DEPTHAI_VIO_IMAGE_BACKPRESSURE",
-	} {
-		if !strings.Contains(dockerfileText, expected) {
-			t.Fatalf("spatial image does not preserve the validated DepthAI USB handoff %q:\n%s", expected, dockerfile)
-		}
-	}
-	patchedBase := strings.Index(dockerfileText, "FROM atlas-upstream-depthai AS atlas-patched-depthai")
-	selectedBase := strings.Index(dockerfileText, "FROM atlas-standard-depthai AS atlas-runtime")
-	if patchedBase < 0 || selectedBase <= patchedBase {
-		t.Fatalf("normal spatial image is not explicitly based on standard DepthAI:\n%s", dockerfile)
-	}
-	for _, forbidden := range []string{
-		"ATLAS_SPATIAL_NATIVE_BASE",
-		"atlas-spatial-runtime-native",
-		"Dockerfile.native",
-		"ros-jazzy-rosbag2-storage-mcap",
-		"STOPSIGNAL",
-	} {
-		if strings.Contains(dockerfileText, forbidden) {
-			t.Fatalf("normal spatial image retains obsolete release/recording behavior %q:\n%s", forbidden, dockerfile)
-		}
-	}
-}
-
-func TestReleaseOrchestratorBuildsAndTransfersOneMatchedArm64Release(t *testing.T) {
-	releasePath := filepath.Join("..", "..", "packaging", "release.sh")
-	raw, err := os.ReadFile(releasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	release := string(raw)
-	for _, expected := range []string{
-		"docker buildx build",
-		"--platform linux/arm64",
-		`--file "${SPATIAL_DIR}/packaging/Dockerfile"`,
-		`"${AGENT_DIR}/packaging/build-deb.sh"`,
-		`ATLAS_SPATIAL_CONTAINER_IMAGE="${image_reference}"`,
-		`SPATIAL_ARCHIVE="atlas-spatial-runtime_${version}_arm64.tar.gz"`,
-		`RELEASE_MANIFEST="atlas-release_${version}_arm64.json"`,
-		"--reuse-image",
-		`'{{.Os}}/{{.Architecture}}'`,
-		". /opt/ros/jazzy/setup.sh",
-		". /opt/atlas-spatial-runtime/setup.sh",
-		`"sourceTreeDirty": %s`,
-		"verify_release_directory",
-		`"${destination}:/tmp/"`,
-	} {
-		if !strings.Contains(release, expected) {
-			t.Fatalf("release orchestrator is missing %q", expected)
-		}
-	}
-	for _, forbidden := range []string{
-		"atlas-spatial-setup --build-local",
-		"sudo apt install",
-		"sudo atlas-setup",
-	} {
-		if strings.Contains(release, forbidden) {
-			t.Fatalf("release orchestrator crosses the explicit Pi installation boundary with %q", forbidden)
-		}
-	}
-	if output, err := exec.Command("bash", "-n", releasePath).CombinedOutput(); err != nil {
-		t.Fatalf("release orchestrator has invalid shell syntax: %v\n%s", err, output)
-	}
-	if output, err := exec.Command(releasePath, "--help").CombinedOutput(); err != nil {
-		t.Fatalf("release orchestrator help failed: %v\n%s", err, output)
 	}
 }
 
@@ -379,53 +158,59 @@ func TestDiscoverSpatialParsesDeviceAndHealthContract(t *testing.T) {
 	if err := os.WriteFile(paths.SpatialCheck, []byte("check"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(paths.SpatialRuntimeBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.SpatialRuntimeBinary, []byte("runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	configuration := map[string]string{
-		"ATLAS_SPATIAL_ENABLED":         "true",
-		"ATLAS_SPATIAL_SOURCE_ID":       "front-depth",
-		"ATLAS_SPATIAL_CONTAINER_IMAGE": "atlas-spatial-runtime:test",
-		"ATLAS_SPATIAL_SOCKET_PATH":     filepath.Join(paths.RuntimeDirectory, "spatial.sock"),
+		"ATLAS_SPATIAL_ENABLED":     "true",
+		"ATLAS_SPATIAL_SOURCE_ID":   "front-depth",
+		"ATLAS_SPATIAL_SOCKET_PATH": filepath.Join(paths.RuntimeDirectory, "spatial.sock"),
 	}
 	discoverCall := paths.SpatialCheck + " --discover --sysfs-root " + rootPath(paths.Root, "/sys")
 	probeCall := paths.SpatialCheck + " --socket " + configuration["ATLAS_SPATIAL_SOCKET_PATH"]
 	runner := &fakeRunner{results: map[string]CommandResult{
 		discoverCall: {Output: "DEVICE_PRESENT=true\nPROVIDER=depthai\nDEVICE_ID=oak-123\nMODEL=OAK-D Lite\nUSB_TRANSPORT=usb3\nUSB_SPEED_MBPS=5000"},
-		"docker image inspect atlas-spatial-runtime:test":   {},
 		"systemctl is-active atlas-spatial-runtime.service": {Output: "active"},
-		probeCall: {Output: "READY=true\nSTATUS=ready\nCOLOR_FPS=15.0\nDEPTH_FPS=15.0\nSYNC_SKEW_MS=2.5\nCALIBRATION_HASH=sha256:abc"},
+		probeCall: {Output: "READY=true\nSTATUS=ready\nDEPTH_FPS=15.0\nDEPTH_FRAME_ID=camera_optical\nCALIBRATION_VALID=true\nCALIBRATION_FRAME_ID=camera_optical"},
 	}}
 
 	status := discoverSpatial(context.Background(), runner, paths, configuration)
 	if !status.DevicePresent || !status.RuntimeInstalled || !status.ServiceRunning || !status.Ready {
 		t.Fatalf("status = %#v, want device and runtime ready", status)
 	}
-	if status.Provider != SpatialProviderDepthAI || status.DeviceID != "oak-123" || status.USBTransport != "usb3" || status.CalibrationHash != "sha256:abc" {
+	if status.Provider != SpatialProviderDepthAI || status.DeviceID != "oak-123" || status.USBTransport != "usb3" || !status.CalibrationValid || status.CalibrationFrame != "camera_optical" {
 		t.Fatalf("status = %#v, want parsed vendor boundary metadata", status)
 	}
 }
 
-func TestSpatialPackageUpgradeReplacesPreviousImmutableImageSelection(t *testing.T) {
+func TestSpatialDiscoveryUsesIndependentNativeInstallation(t *testing.T) {
 	paths := DefaultPaths(t.TempDir())
-	if err := os.MkdirAll(filepath.Dir(paths.ReleaseManifest), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(paths.ReleaseManifest, []byte(`ATLAS_SPATIAL_CONTAINER_IMAGE="atlas-spatial-runtime:0.2.0"`), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	existing := map[string]string{
-		"ATLAS_SPATIAL_ENABLED":         "true",
-		"ATLAS_SPATIAL_PROVIDER":        SpatialProviderDepthAI,
-		"ATLAS_SPATIAL_CONTAINER_IMAGE": "sha256:previous-release",
+		"ATLAS_SPATIAL_ENABLED":  "true",
+		"ATLAS_SPATIAL_PROVIDER": SpatialProviderDepthAI,
 	}
 	status := discoverSpatial(context.Background(), &fakeRunner{results: map[string]CommandResult{}}, paths, existing)
-	config := installConfigFromDiscovery(Discovery{Spatial: status, ExistingSpatialConfig: existing}, paths)
-	if config.SpatialContainerImage != "atlas-spatial-runtime:0.2.0" {
-		t.Fatalf("image = %q, want package release image", config.SpatialContainerImage)
+	if status.RuntimeInstalled {
+		t.Fatal("runtime should not be installed before its independent binary exists")
+	}
+	if err := os.MkdirAll(filepath.Dir(paths.SpatialRuntimeBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.SpatialRuntimeBinary, []byte("runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	status = discoverSpatial(context.Background(), &fakeRunner{results: map[string]CommandResult{}}, paths, existing)
+	if !status.RuntimeInstalled {
+		t.Fatal("runtime should be installed when the native binary exists")
 	}
 }
 
-func TestDoctorSpatialRequiresReadySynchronizedContract(t *testing.T) {
+func TestDoctorSpatialRequiresReadyCalibratedDepthContract(t *testing.T) {
 	paths := DefaultPaths(t.TempDir())
-	for _, path := range []string{paths.SpatialConfigFile, paths.SpatialCheck} {
+	for _, path := range []string{paths.SpatialConfigFile, paths.SpatialRuntimeBinary, paths.SpatialCheck} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -434,18 +219,16 @@ func TestDoctorSpatialRequiresReadySynchronizedContract(t *testing.T) {
 		}
 	}
 	configuration := map[string]string{
-		"ATLAS_SPATIAL_PROVIDER":        SpatialProviderDepthAI,
-		"ATLAS_SPATIAL_DEVICE_ID":       "device-123",
-		"ATLAS_SPATIAL_CONTAINER_IMAGE": "sha256:spatial-image",
-		"ATLAS_SPATIAL_SOCKET_PATH":     filepath.Join(paths.RuntimeDirectory, "spatial.sock"),
+		"ATLAS_SPATIAL_PROVIDER":    SpatialProviderDepthAI,
+		"ATLAS_SPATIAL_DEVICE_ID":   "device-123",
+		"ATLAS_SPATIAL_SOCKET_PATH": filepath.Join(paths.RuntimeDirectory, "spatial.sock"),
 	}
 	discoverCall := paths.SpatialCheck + " --discover --sysfs-root " + rootPath(paths.Root, "/sys") + " --device-id device-123"
 	probeCall := paths.SpatialCheck + " --socket " + configuration["ATLAS_SPATIAL_SOCKET_PATH"]
 	runner := &fakeRunner{results: map[string]CommandResult{
 		"systemctl is-active atlas-spatial-runtime.service": {Output: "active"},
-		"docker image inspect sha256:spatial-image":         {},
 		discoverCall: {Output: "DEVICE_PRESENT=true\nDEVICE_ID=device-123\nMODEL=OAK-D Lite\nUSB_TRANSPORT=usb3"},
-		probeCall:    {Output: "READY=true\nSTATUS=ready\nCOLOR_FPS=15\nDEPTH_FPS=15\nSYNC_SKEW_MS=1.2\nCALIBRATION_HASH=sha256:calibration"},
+		probeCall:    {Output: "READY=true\nSTATUS=ready\nDEPTH_FPS=15\nDEPTH_ENCODING=16UC1\nDEPTH_UNIT=millimetre\nDEPTH_FRAME_ID=camera_optical\nCALIBRATION_VALID=true\nCALIBRATION_FRAME_ID=camera_optical"},
 	}}
 
 	checks := doctorSpatial(context.Background(), runner, paths, configuration)
@@ -455,6 +238,43 @@ func TestDoctorSpatialRequiresReadySynchronizedContract(t *testing.T) {
 	runner.results[probeCall] = CommandResult{Output: "READY=false\nSTATUS=degraded\nLAST_ERROR=depth stale", Err: errors.New("not ready")}
 	if checks = doctorSpatial(context.Background(), runner, paths, configuration); !HasFailures(checks) {
 		t.Fatalf("checks = %#v, want degraded contract failure", checks)
+	}
+	if check := namedCheck(checks, "spatial depth contract"); !strings.Contains(check.Message, "error=depth stale") {
+		t.Fatalf("depth check = %#v, want detailed provider failure", check)
+	}
+
+	runner.results[discoverCall] = CommandResult{Output: "READY=false\nSTATUS=error\nLAST_ERROR=cannot read USB sysfs", Err: errors.New("discovery failed")}
+	checks = doctorSpatial(context.Background(), runner, paths, configuration)
+	if check := namedCheck(checks, "spatial USB camera"); !strings.Contains(check.Message, "error=cannot read USB sysfs") {
+		t.Fatalf("USB check = %#v, want detailed discovery failure", check)
+	}
+}
+
+func TestDefaultSpatialDiagnosticsArePrivate(t *testing.T) {
+	paths := DefaultPaths("/")
+	if paths.SpatialCheck != "/opt/atlas-spatial-runtime/bin/atlas-spatial-check" {
+		t.Fatalf("SpatialCheck = %q, want private packaged diagnostic", paths.SpatialCheck)
+	}
+}
+
+func namedCheck(checks []Check, name string) Check {
+	for _, check := range checks {
+		if check.Name == name {
+			return check
+		}
+	}
+	return Check{}
+}
+
+func TestAircraftProfileCheckReportsSelectedCamera(t *testing.T) {
+	paths := DefaultPaths(t.TempDir())
+	installTestAircraftProfile(t, paths)
+	source := filepath.Join(paths.AircraftProfilesDir, "ariadne.json")
+	if check := aircraftProfileCheck(source, "ariadne"); check.Level != CheckPass || !strings.Contains(check.Message, "19443010F122147E00") {
+		t.Fatalf("profile check = %#v", check)
+	}
+	if check := aircraftProfileCheck(source, "another-aircraft"); check.Level != CheckFail {
+		t.Fatalf("mismatched profile check = %#v", check)
 	}
 }
 
@@ -521,21 +341,6 @@ func TestDoctorContainerHailoValidatesHEFAccelerator(t *testing.T) {
 	}
 }
 
-func TestChecksumCheckRejectsMismatchedPackagedBinary(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "mavsdk_server")
-	content := []byte("pinned mavsdk server")
-	if err := os.WriteFile(path, content, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	expected := fmt.Sprintf("%x", sha256.Sum256(content))
-	if check := checksumCheck("mavsdk_server package", path, expected); check.Level != CheckPass {
-		t.Fatalf("matching checksum check = %#v", check)
-	}
-	if check := checksumCheck("mavsdk_server package", path, strings.Repeat("0", 64)); check.Level != CheckFail {
-		t.Fatalf("mismatched checksum check = %#v", check)
-	}
-}
-
 func slicesEqual(left, right []string) bool {
 	if len(left) != len(right) {
 		return false
@@ -583,6 +388,7 @@ func TestModelMismatchStillAllowsCoreInstallWhenPerceptionDisabled(t *testing.T)
 	options.Paths = paths
 	options.NonInteractive = true
 	options.PackagedModelAccelerator = "hailo-8l"
+	options.AircraftProfileID = installTestAircraftProfile(t, paths)
 	plan, err := BuildInstallPlan(context.Background(), &fakeRunner{results: map[string]CommandResult{}}, discovery, options)
 	if err != nil {
 		t.Fatalf("core install was blocked by disabled perception: %v", err)
@@ -610,7 +416,6 @@ func TestRenderEnvironmentUsesOneSerialSelectionEverywhere(t *testing.T) {
 		`ATLAS_FLIGHT_CONTROLLER_ENDPOINT="/dev/serial/by-id/usb-pixhawk"`,
 		`ATLAS_MAVSDK_SYSTEM_ADDRESS="serial:///dev/serial/by-id/usb-pixhawk:921600"`,
 		`ATLAS_CAMERA_TRANSPORT="siyi_udp"`,
-		`ATLAS_SPATIAL_CLOUD_SOCKET_PATH="/run/atlas-agent/spatial-cloud.sock"`,
 		`ATLAS_PERCEPTION_PROVIDER="hailo"`,
 		`ATLAS_TRACKER_ALGORITHM="byte_track"`,
 		`ATLAS_TRACKER_CMC_MAX_DIMENSION="320"`,
@@ -639,154 +444,65 @@ func TestRenderSpatialEnvironmentUsesVendorNeutralContract(t *testing.T) {
 	config.SpatialDeviceID = "device-123"
 	config.SpatialModel = "OAK-D Lite"
 	config.SpatialUSBTransport = "usb3"
-	config.SpatialContainerImage = "atlas-spatial-runtime:0.2.0"
 
 	rendered, err := RenderSpatialEnvironment(config, paths)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`ATLAS_SPATIAL_CONTRACT_VERSION="1"`,
+		`ATLAS_SPATIAL_CONTRACT_VERSION="2"`,
 		`ATLAS_SPATIAL_PROVIDER="depthai"`,
 		`ATLAS_SPATIAL_SOURCE_ID="front-depth"`,
 		`ATLAS_SPATIAL_DEVICE_ID="device-123"`,
 		`ATLAS_SPATIAL_SOCKET_PATH="/run/atlas-agent/spatial.sock"`,
-		`ATLAS_SPATIAL_CLOUD_SOCKET_PATH="/run/atlas-agent/spatial-cloud.sock"`,
-		`ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH="/var/lib/atlas-agent/spatial/transforms.v1.json"`,
-		`ATLAS_SPATIAL_VIO_ENABLED="true"`,
-		`ATLAS_SPATIAL_LIVE_CLOUD_ENABLED="true"`,
-		`ATLAS_SPATIAL_PX4_VIO_FUSION_ENABLED="false"`,
-		`ATLAS_SPATIAL_MOVEMENT_ENABLED="false"`,
-		`ATLAS_SPATIAL_CONTAINER_IMAGE="atlas-spatial-runtime:0.2.0"`,
+		`ATLAS_SPATIAL_FRAME_ID="oak_rgb_camera_optical_frame"`,
+		`ATLAS_SPATIAL_WIDTH="640"`,
+		`ATLAS_SPATIAL_HEIGHT="400"`,
+		`ATLAS_SPATIAL_FPS="20"`,
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("rendered spatial config missing %q:\n%s", expected, rendered)
 		}
 	}
-	for _, forbidden := range []string{
-		"ATLAS_OAK",
-		"ATLAS_DEPTHAI",
-		"ATLAS_SPATIAL_RECORDING_ENABLED",
-		"ATLAS_SPATIAL_RECORDING_ROOT",
-		"ATLAS_NAVIGATION_SOCKET_PATH",
-		"ATLAS_SPATIAL_MAPPING_ENABLED",
-	} {
-		if strings.Contains(rendered, forbidden) {
-			t.Fatalf("stable spatial configuration retains forbidden key %q:\n%s", forbidden, rendered)
-		}
-	}
 }
 
-func TestEnsureSpatialTransformBundleSeedsMigratesKnownLegacyAndPreservesCommissionedFile(t *testing.T) {
-	paths := DefaultPaths("/")
-	missing := &fakeRunner{results: map[string]CommandResult{
-		"test -e " + paths.SpatialTransformBundle: {Err: errors.New("missing")},
-	}}
-	if err := ensureSpatialTransformBundle(context.Background(), missing, ApplyRunner{Runner: missing}, paths); err != nil {
-		t.Fatal(err)
-	}
-	expectedInstall := "install -D -m 0640 -o root -g atlas-agent " + paths.DefaultSpatialTransformBundle + " " + paths.SpatialTransformBundle
-	if !strings.Contains(strings.Join(missing.calls, "\n"), expectedInstall) {
-		t.Fatalf("transform seed calls = %#v", missing.calls)
-	}
-
-	root := t.TempDir()
-	paths = DefaultPaths(root)
-	defaultSource := filepath.Join(
-		"..", "..", "..", "atlas-spatial-runtime", "ros2_ws", "src",
-		"atlas_spatial_runtime", "config", "transforms.v1.json",
-	)
-	defaultRaw, err := os.ReadFile(defaultSource)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(paths.DefaultSpatialTransformBundle), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(paths.SpatialTransformBundle), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(paths.DefaultSpatialTransformBundle, defaultRaw, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	legacyRaw, err := os.ReadFile(filepath.Join("testdata", "ariadne-transform-v2-legacy.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(paths.SpatialTransformBundle, legacyRaw, 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if hash, err := canonicalTransformBundleHash(paths.SpatialTransformBundle); err != nil || hash != legacySpatialTransformHash {
-		t.Fatalf("legacy hash=%q err=%v", hash, err)
-	}
-	migrating := &fakeRunner{results: map[string]CommandResult{}}
-	if err := ensureSpatialTransformBundle(context.Background(), migrating, ApplyRunner{Runner: migrating}, paths); err != nil {
-		t.Fatal(err)
-	}
-	migrationCalls := strings.Join(migrating.calls, "\n")
-	for _, expected := range []string{
-		"systemctl stop atlas-spatial-runtime.service",
-		"install -D -m 0640 -o root -g atlas-agent " + paths.SpatialTransformBundle + " " + paths.SpatialTransformBundle + ".pre-optical-chain",
-		"install -D -m 0640 -o root -g atlas-agent " + paths.DefaultSpatialTransformBundle + " " + paths.SpatialTransformBundle,
-	} {
-		if !strings.Contains(migrationCalls, expected) {
-			t.Fatalf("transform migration calls missing %q:\n%s", expected, migrationCalls)
-		}
-	}
-
-	if err := os.WriteFile(paths.SpatialTransformBundle, defaultRaw, 0o640); err != nil {
-		t.Fatal(err)
-	}
-	existing := &fakeRunner{results: map[string]CommandResult{}}
-	if err := ensureSpatialTransformBundle(context.Background(), existing, ApplyRunner{Runner: existing}, paths); err != nil {
-		t.Fatal(err)
-	}
-	if len(existing.calls) != 1 || existing.calls[0] != "test -e "+paths.SpatialTransformBundle {
-		t.Fatalf("existing commissioned transform was not preserved: %#v", existing.calls)
-	}
-}
-
-func TestEnsureSpatialRuntimeBuildsOnlyWhenImageIsMissing(t *testing.T) {
+func TestEnsureSpatialRuntimeOnlyRefreshesDepthAIUdevRules(t *testing.T) {
 	paths := DefaultPaths("/")
 	config := DefaultInstallConfig(paths)
 	config.SpatialEnabled = true
 	config.SpatialProvider = SpatialProviderDepthAI
-	runner := &fakeRunner{results: map[string]CommandResult{
-		"docker image inspect " + config.SpatialContainerImage: {Err: errors.New("missing")},
-	}}
+	runner := &fakeRunner{results: map[string]CommandResult{}}
 	output := &bytes.Buffer{}
-	ready, err := ensureSpatialRuntime(context.Background(), runner, ApplyRunner{Runner: runner, DryRun: true, Output: output}, Options{DryRun: true, Paths: paths}, &config)
+	ready, err := ensureSpatialRuntime(context.Background(), ApplyRunner{Runner: runner, DryRun: true, Output: output}, Options{DryRun: true, Paths: paths}, &config)
 	if err != nil || !ready {
 		t.Fatalf("ready=%v err=%v", ready, err)
 	}
 	rendered := output.String()
-	for _, expected := range []string{
-		paths.SpatialSetupBinary + " --image " + config.SpatialContainerImage + " --build-local",
-		"udevadm control --reload-rules || true",
-	} {
+	for _, expected := range []string{"udevadm control --reload-rules || true"} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("dry-run missing %q:\n%s", expected, rendered)
 		}
 	}
+	if strings.Contains(rendered, "docker") {
+		t.Fatalf("native Spatial setup unexpectedly invokes Docker:\n%s", rendered)
+	}
 }
 
-func TestEnsureSpatialRuntimePersistsImmutableImageID(t *testing.T) {
-	paths := DefaultPaths("/")
+func TestEnsureSpatialRuntimeChecksNativeBinary(t *testing.T) {
+	paths := DefaultPaths(t.TempDir())
 	config := DefaultInstallConfig(paths)
 	config.SpatialEnabled = true
 	config.SpatialProvider = SpatialProviderSynthetic
-	tag := config.SpatialContainerImage
-	runner := &fakeRunner{results: map[string]CommandResult{
-		"docker image inspect " + tag:                  {},
-		"docker image inspect --format {{.Id}} " + tag: {Output: "sha256:0123456789abcdef"},
-	}}
-	ready, err := ensureSpatialRuntime(context.Background(), runner, ApplyRunner{Runner: runner, Output: &bytes.Buffer{}}, Options{Paths: paths}, &config)
+	if err := os.MkdirAll(filepath.Dir(paths.SpatialRuntimeBinary), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(paths.SpatialRuntimeBinary, []byte("runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runner := &fakeRunner{results: map[string]CommandResult{}}
+	ready, err := ensureSpatialRuntime(context.Background(), ApplyRunner{Runner: runner, Output: &bytes.Buffer{}}, Options{Paths: paths}, &config)
 	if err != nil || !ready {
 		t.Fatalf("ready=%v err=%v", ready, err)
-	}
-	if config.SpatialContainerImage != "sha256:0123456789abcdef" {
-		t.Fatalf("image = %q, want immutable id", config.SpatialContainerImage)
 	}
 }
 
@@ -843,10 +559,11 @@ func TestInteractivePlanUsesDetectedHeartbeat(t *testing.T) {
 			PCIVisible: true, RuntimeInstalled: true, DeviceReady: true, GStreamerReady: true, PythonReady: true, Accelerator: "hailo-8l",
 		},
 	}
-	input := strings.NewReader("\n\n\n\n\n\n\n\n")
+	input := strings.NewReader("\n\n\n\n\n\n\n\n\n")
 	output := &bytes.Buffer{}
 	options := DefaultOptions()
 	options.Paths = DefaultPaths(t.TempDir())
+	installTestAircraftProfile(t, options.Paths)
 	for _, path := range []string{options.Paths.DefaultModel, options.Paths.DefaultPostprocessSO} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -867,6 +584,22 @@ func TestInteractivePlanUsesDetectedHeartbeat(t *testing.T) {
 	if !plan.Config.PerceptionEnabled {
 		t.Fatal("expected ready Hailo runtime to be enabled by default")
 	}
+}
+
+func installTestAircraftProfile(t *testing.T, paths Paths) string {
+	t.Helper()
+	source := filepath.Join("..", "..", "..", "aircraft-profiles", "ariadne.json")
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.AircraftProfilesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.AircraftProfilesDir, "ariadne.json"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return "ariadne"
 }
 
 func TestPackagedSystemdUnitsUseDirectExecutables(t *testing.T) {

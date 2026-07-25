@@ -1,332 +1,151 @@
-# Spatial Camera Runtime
+# Spatial Depth Runtime
 
-Atlas Spatial Runtime is the independently supervised OAK RGB-D/BMI270/VIO
-process used by Indoor Explore. Camera-vendor details stop at its provider
-adapter; Atlas consumers use stable `/atlas/spatial/*` topics.
+Atlas Spatial Runtime is the independently supervised depth-camera process. It
+owns acquisition, calibration, freshness, direct projection utilities, and its
+local diagnostic socket. It does not map, estimate aircraft pose, command
+movement, or stream spatial data to Atlas Agent or Native.
 
-## System boundary
+## Current boundary
 
 ```mermaid
 flowchart LR
-    OAK["OAK-D Lite + BMI270"] --> Provider["DepthAI provider adapter"]
-    Provider --> RGBD["Aligned RGB-D in metres"]
-    Provider --> RawIMU["Raw BMI270 IMU"]
-    RawIMU --> Gate["Atlas monotonic timestamp gate"]
-    Gate --> Orientation["Madgwick orientation"]
-    Provider --> Stereo["Rectified global-shutter mono pair"]
-    Stereo --> Odometry["RTAB-Map stereo-inertial odometry"]
-    Orientation --> Odometry
-    RGBD --> Health["Bounded health service"]
-    Orientation --> Health
-    Odometry --> Health
-    RGBD --> Cloud["Bounded voxel cloud"]
-    Odometry -->|"capture-time pose"| Cloud
-    Cloud --> PointCloud["/atlas/spatial/map/points"]
-    PointCloud --> Socket["Latest-only complete-cloud socket"]
-    Socket --> Agent["Atlas Agent spatial stream"]
-    Agent --> Native["Atlas Native React Three Fiber view"]
+    OAK["OAK stereo camera"] --> DepthAI["Direct DepthAI v3 provider"]
+    DepthAI --> Frame["Latest uint16 depth frame in millimetres"]
+    DepthAI --> Calibration["Intrinsics for aligned RGB optical frame"]
+    Frame --> Health["Local health socket"]
+    Calibration --> Health
+    Frame --> Projection["Sampled depth projection"]
+    Calibration --> Projection
+    Profile["Aircraft camera-to-body extrinsic"] --> Projection
+    Projection -. "future work" .-> Obstacles["Fresh obstacle observations"]
 ```
 
-PX4 continues to stabilize the aircraft using its own estimator and H-Flow
-inputs. The spatial runtime does not inject VIO into PX4 and cannot send
-movement commands.
+ROS and Docker are not part of this path. The process runs from a Python
+virtual environment under systemd and talks to the camera through the DepthAI
+API.
 
-## Stable topics
+The current OAK-D Lite is a provider detail. A replacement camera must implement
+the same provider-neutral frame boundary: native depth values, host-monotonic
+capture time, explicit frame ID, calibration for the exact output dimensions,
+device diagnostics, and non-blocking latest-frame delivery.
 
-| Topic | Meaning |
+PX4 remains flight-control and state-estimation authority. H-Flow feeds PX4
+directly and is not a Spatial prerequisite.
+
+At startup Spatial loads the aircraft profile selected by `atlas-setup`. The
+profile supplies the expected depth-camera device id and its direct mounting
+offset. Spatial refuses to start if the configured DepthAI device id conflicts
+with the selected profile.
+
+## Depth frame contract
+
+| Property | Value |
 | --- | --- |
-| `/atlas/spatial/color/image_raw` | Aligned RGB image |
-| `/atlas/spatial/color/camera_info` | RGB calibration |
-| `/atlas/spatial/aligned_depth/image_rect` | Aligned `32FC1` depth in metres |
-| `/atlas/spatial/aligned_depth/camera_info` | Rectified depth projection model |
-| `/atlas/spatial/imu/data` | BMI270 acceleration/angular velocity plus filtered orientation |
-| `/atlas/spatial/vio/odometry` | Live, non-authoritative stereo-inertial odometry; topic name retained for compatibility |
-| `/atlas/spatial/map/points` | Bounded VIO-local `PointCloud2` |
+| Storage | Two-dimensional NumPy `uint16` |
+| Unit | Millimetres |
+| Invalid value | `0` |
+| Default size/rate | 640 × 400 at 20 fps |
+| Default frame | `oak_rgb_camera_optical_frame` |
+| Queueing | Latest frame only |
 
-The DepthAI provider normalizes both aligned depth and its `CameraInfo` to the
-Atlas-owned `oak_rgb_camera_optical_frame`. The driver also publishes its
-calibrated camera/IMU TF tree below `oak_mount` for use inside the external
-estimator. That provider-local tree supplies device calibration; the versioned
-Atlas bundle remains authoritative for the `body_frd` to `oak_mount` physical
-installation.
+Keeping native millimetres avoids converting and doubling the size of every
+frame before a consumer exists. A metres-based consumer can use
+`millimetres_to_metres`; projection can sample the native array and convert only
+selected pixels.
 
-The live-cloud node waits for a VIO pose near each depth capture, projects
-valid depth with the rectified camera model, applies the configured optical to
-VIO-child transform, and accumulates 5 cm voxels. It publishes at 2 Hz and caps
-the cloud at 100,000 points. When full, least-recently-observed voxels are
-evicted so new space can still appear. A VIO timestamp regression, frame
-change, or calibration change clears the cloud.
+DepthAI aligns stereo depth to the RGB optical output. This preserves Ariadne's
+verified camera-frame geometry and avoids creating a new mount calibration
+merely because middleware was removed. Calibration is taken from the
+transformation metadata attached to the actual aligned frame rather than from a
+separate topic.
 
-## Complete-cloud transport
-
-The cloud stream Unix socket defaults to
-`/run/atlas-agent/spatial-cloud.sock`, separately from the health-probe socket.
-Both paths live below a runtime directory shared with independent Agent,
-navigation, perception, and adapter processes. The packaged Agent unit
-preserves that directory when Agent stops or restarts; otherwise systemd would
-unlink live spatial socket paths while leaving their servers bound but
-unreachable.
-Its binary frame is a bounded JSON header followed by the original tightly
-packed little-endian XYZ float32 payload from `PointCloud2`. It sends every
-point in the current map, up to 100,000 points; it does not send a 20,000-point
-preview or divide one cloud over multiple updates.
-
-The runtime, Agent, and Native each retain only the latest complete snapshot.
-When a consumer is slow, the next unsent snapshot replaces the stale one. This
-keeps realtime state current without allowing a queue of old 1.2 MB frames to
-consume memory or radio time. Agent forwards snapshots over the independent
-`OpenSpatialStream` gRPC method only while Native holds a renewable Indoor-view
-lease. Native validates the bound, exact 12-byte-per-point length, finite
-coordinates, epoch, and sequence before replacing its in-memory snapshot.
-
-## Health contract
+## Local health contract
 
 The Unix socket defaults to `/run/atlas-agent/spatial.sock`. A client sends:
 
 ```json
-{"protocolVersion":"1","type":"probe"}
+{"protocolVersion":"2","type":"probe"}
 ```
 
-The response reports device/provider identity, USB transport, synchronized
-RGB-D state, IMU rate and timestamp anomalies, transform identity, and direct
-VIO freshness. The authority fields are invariant:
+Readiness requires:
 
-```text
-authoritative=false
-mappingEnabled=true
-px4FusionEnabled=false
-movementAuthority=false
-```
+- a fresh depth frame;
+- `16UC1` millimetre encoding with a declared `0.001` metre scale;
+- a non-empty frame ID and positive dimensions;
+- finite, valid intrinsics for the same frame and dimensions; and
+- no current acquisition error.
 
-`mappingEnabled` describes the VIO-local visualization map only. It does not
-grant navigation authority. The approximate Ariadne mount therefore reports
-VIO as degraded until physically verified even though prototype mapping can
-run.
+The response includes provider/device diagnostics, frame rate and age,
+calibration, and errors. It has no map epoch, transform provenance graph,
+calibration digest, pose, colour stream, or movement-authority fields.
 
-## Standard DepthAI migration
+`atlas-setup doctor` invokes a private Spatial diagnostic that combines the
+socket response with live USB discovery. A waiting OAK can initially enumerate
+at 480 Mb/s with a synthetic USB identity; diagnostics reconcile that boot
+state with the live device after DepthAI starts it. The lower-level check and
+probe executables remain private under `/opt/atlas-spatial-runtime/bin`.
 
-Release `0.1.16` proved that RGB-D, IMU, and VIO could stay live on the actual
-Pi/OAK combination, but it did so with a private DepthAI build. The current
-normal build instead installs the unmodified `ros-jazzy-depthai-v3` package and
-keeps integrated Basalt disabled.
+## Geometry
 
-The architecture addresses each historical symptom at its actual boundary:
+`aircraft-profiles/ariadne.json` stores only the profile id, depth-camera
+device id, and Ariadne's direct sensor-optical-to-body-FRD rotation and
+translation. `translationM` is metres and `rotationWXYZ` rotates camera-frame
+points into body FRD. Projection has two steps:
 
-- The standard DepthAI driver publishes RGB-D, rectified global-shutter mono,
-  and raw IMU. RTAB-Map, not the shared camera component, owns odometry.
-- Atlas drops duplicate and short-regressing raw IMU stamps before Madgwick
-  without changing valid device stamps. A one-second clock regression restarts
-  the complete provider boundary rather than mixing estimator clock epochs.
-- Madgwick supplies IMU orientation. RTAB-Map then stores the filtered input by
-  timestamp and uses it with the synchronized stereo pair.
-- Atlas explicitly retains RGB-to-depth alignment and device-side RGB/stereo
-  timestamp synchronization, and selects Luxonis's RTAB-Map `DEFAULT` preset
-  on the RealSense-compatible `depth` namespace rather than silently retaining
-  the driver's sparser implicit `FAST_ACCURACY` profile for cloud geometry.
-- RTAB-Map estimates motion from the global-shutter mono pair rather than the
-  OAK-D Lite's rolling-shutter RGB sensor. Its latest-frame processing policy
-  bounds estimator work without blocking DepthAI image publication.
-- The host `/run/udev` database is mounted read-only next to the USB bus so the
-  standard Ubuntu libusb path has the host device state available without
-  granting a privileged container. The grounded qualification below proves
-  this boundary across OAK firmware re-enumeration.
+1. Intrinsics project selected fresh depth pixels into the camera optical
+   frame.
+2. One normalized quaternion and translation place those points in body FRD.
 
-The previous `3.6.1-2noble+atlas2` dependency stages remain in the single
-Dockerfile during aircraft qualification, but the final runtime explicitly
-inherits `atlas-standard-depthai`; a normal BuildKit build does not compile or
-install the patch. The retained `0.1.16` image is the actual operational
-rollback. Those stages and patch files require explicit cleanup approval after
-the standard path passes.
+There is no transform graph. A different aircraft or camera mount must supply
+and verify its own direct extrinsic.
 
-## Grounded 0.1.25 qualification
+## Ownership and failure behavior
 
-The standard-DepthAI runtime passed its disarmed aircraft qualification on
-2026-07-24 using package `0.1.25` and immutable image
-`sha256:28edec1c5ef969d6ed5eb2e49f972ab318a3f6cbabae158e0f057ff41c313670`.
-An instrumented 35.013-second hand carry recorded rectified stereo at
-`19.901/19.817 Hz`, 99.4872% pairing, `-0.026918 ms` median skew, a positive
-`0.0747062841 m` baseline, and filtered IMU at `223.68 Hz`. Required static TF
-and camera calibration were present.
+- Spatial owns the camera, DepthAI pipeline, udev access, systemd unit, Python
+  environment, and local diagnostic tools.
+- Atlas Agent owns only Spatial configuration and operator-facing doctor
+  aggregation.
+- A startup failure or depth stall exits the Spatial process; systemd restarts
+  it.
+- Spatial failure does not stop Agent, MAVSDK, telemetry, H-Flow, or ordinary
+  commands.
+- No obstacle-avoidance capability is advertised yet. That requires an
+  expiring observation contract and a separately designed flight consumer.
 
-Standard `stereo_odometry` produced 135 valid movement-window samples with
-zero lost or zero-inlier samples, 25–652 inliers, `6.424 m` of tracked motion,
-65 added keyframes, and local-map growth from 896 to 2,000 features. The ROS
-map continued publishing for more than 30 seconds, and the complete-cloud
-sequence advanced 28 times with valid poses and no stream error. Both outputs
-were already at the 100,000-point bound, so sequence, capture-time, keyframe,
-and local-map advancement—not point-count growth—proved freshness.
+## Development, packaging, and Pi installation
 
-A manual runtime restart recovered the same image, USB 3 device, synchronized
-health, v3 transform hash, and valid odometry. A subsequent Agent restart left
-the spatial container running and preserved both spatial socket paths and
-their inodes. The battery replacement created a new kernel boot ID and the
-standard runtime recovered after that physical cold start.
-
-The initial Native “CLOUD NOT AVAILABLE YET” state was not a ROS or Docker
-freeze. The Mac's `192.168.144.50` Ethernet interface was inactive and no
-process listened on port 7443. After restoring the HM30 link and starting
-Native, Agent registered and an eight-second correlated window produced 13
-advancing complete 100,000-point source snapshots while Native acknowledged
-4.43 MB of spatial payload. The standard path therefore passes the grounded
-runtime and Native delivery gate without a threshold change. The
-`configured_unverified` aircraft transform and future mission/navigation gates
-still prevent this mapping result from granting flight movement authority.
-
-Evidence is retained under
-`.scratch/pi-evidence-0.1.25-replay-movement-20260724T121316Z` and
-`.scratch/pi-evidence-0.1.25-lifecycle-qualification-20260724T122443Z`; the
-large MCAP remains on the Pi at
-`/home/mofe/atlas-0.1.25-replay-movement-20260724T121316Z/rosbag`.
-
-## Matched 0.1.26 deployment and Stage 3 lifecycle
-
-Release `0.1.26` packaged the qualified spatial foundation together with the
-hold-only Indoor Explore Native/Agent contract. It was built from clean commit
-`df1649764694ab7855ea5a93d6c88ef3fb9f6789`, transferred to
-`mofe@ariadne-robot` over Wi-Fi, and verified on the Pi before installation.
-The installed configuration and running container both use immutable image
-`sha256:bb62bef5f359690a77d3b3f511e39f41180714b0699a9cbda851f913c6bf50a8`.
-Setup preserved the aircraft identity and transform files, and the configured
-movement flag remains false.
-
-The live Stage 3 qualification kept a complete 100,000-point cloud visible in
-Native while Start and Abort exercised only acknowledged PX4 Hold. Native
-snapshots advanced from 312 through 361 during the initial mission checks.
-After a manual spatial-runtime restart, Native replaced cloud epoch
-`301eb15b…6c49a` with `59e2bbcf…dc72e` and advanced the new sequence from 10
-to 21. This is a runtime-epoch recovery, not a frozen reuse of the original
-cloud. Agent and Native restart tests preserved safe `holding` states, and the
-aircraft remained disarmed and on the ground throughout.
-
-The first full doctor probe after that runtime restart briefly observed the
-separate RGB-versus-aligned-depth health window at `99.993 ms` skew. A direct
-20-second ROS diagnostic immediately distinguished that sample from the
-stereo/VIO contract:
-
-- rectified mono capture rates were `20.002 Hz` and `19.885 Hz`;
-- measured stereo skew was approximately `-0.028 ms`;
-- CameraInfo retained the positive `0.0747062841 m` baseline and required TF
-  lookups succeeded;
-- filtered IMU was `215.56 Hz` with no non-increasing timestamps;
-- standard `stereo_odometry` was present and `rgbd_odometry` was absent;
-- odometry and map messages remained valid; and
-- 1,341 retained RTAB quality samples ranged from 260 to 594 with no
-  zero-quality samples.
-
-Thirty consecutive health probes then returned `ready` with zero RGB-D skew,
-and the final full doctor passed. The one degraded sample is retained as a
-transient RGB-D health-window incident; it is not evidence of a frozen stereo
-map and did not justify a threshold change or a return to patched Basalt.
-
-All four Atlas services were active with zero automatic restarts at the final
-checkpoint. Evidence is retained under
-`.scratch/pi-evidence-0.1.26-stage3-qualification-20260724T150532Z`.
-
-## Matched 0.1.27 cold-start acceptance
-
-Release `0.1.27` packages the navigation-clock and setup-version fixes from
-clean commit `b8f725c7be6c0f8ee77ea490f0ad758fae67f65e`. The installed
-configuration and running container both select immutable image
-`sha256:054e785e91ad974073d575bb430de23d6dd472177f89254f5e4acbbaa67ef40f`.
-Setup renders `ATLAS_AGENT_VERSION="0.1.27"` and retains
-`ATLAS_SPATIAL_MOVEMENT_ENABLED="false"`.
-
-Before upgrade, the protected `0.1.26` navigation probe reproduced the old
-clock contract: live components appeared approximately `225 s` stale because
-clock epoch `0` retained the pre-correction offset. After a physical power
-cycle, journal history recorded a new kernel boot and all four Atlas services
-started automatically with zero restarts. Before any Agent or service restart,
-the first `0.1.27` probe was ready with component ages `23.5-136.2 ms` and
-clock epoch `1`. The new epoch proves the packaged aligner detected the
-boot-time wall-clock correction.
-
-All 20 subsequent `--require-ready` probes passed. Across the window,
-component ages remained `2.4-154.3 ms`, alignment errors remained
-`1.4-23.9 ms`, and every navigation source stayed in epoch `1`. Doctor exited
-successfully, the OAK remained ready on USB 3 / 5000 Mbps, and spatial health
-retained `movementAuthority=false` and the unchanged
-`configured_unverified` transform.
-
-A read-only 20-second complete-cloud observation captured 21 full
-100,000-point frames in one stream epoch. Sequence advanced `164→184`, capture
-time had 12 distinct values, every frame carried a valid pose, and no socket
-error occurred. The final service snapshot still reported all four services
-active with zero restarts. Identity and transform hashes remained identical
-to the pre-upgrade baseline.
-
-This accepts the matched cold-start clock gate. It does not physically verify
-the transform or grant movement authority. Evidence is retained under
-`.scratch/ariadne-hflow-transform-commissioning-2026-07-24/atlas/evidence/cold-start`.
-
-## Matched 0.1.28 commissioned v4 deployment
-
-The operator subsequently measured the OAK CAM_A/RGB reference from aircraft
-centre at `+0.155 / +0.010 / +0.005 m` in body FRD and verified the mount as
-forward-facing, upright, and approximately level. Four retained original HEIC
-photographs corroborate the installation. The same commissioning record
-verifies the unchanged H-Flow flow/range geometry, motion signs, range
-response, and disarmed estimator behavior.
-
-Release `0.1.28`, built from clean commit
-`ab065398c8e381ecf71b683c3a9eccc8408bc6e5`, installed this bundle on Ariadne
-through an explicit stopped replacement guarded by both the exact old
-canonical hash and the packaged new hash. The prior aircraft bundle is retained
-at `/var/backups/atlas-agent/transforms.v1.pre-v4-commissioning.json`; the full
-pre-upgrade backup is
-`/var/backups/atlas-agent/pre-upgrade-0.1.28-20260724T170702Z.tar.gz`.
-
-The active v4 bundle promotes the body-to-OAK and body-to-H-Flow edges to
-`verified`, retains the device-calibration optical-frame edge as
-`configured_unverified`, and has canonical hash
-`sha256:f98e0f66849f73f1963bfa82e47effacab2b12388da639c7b383de6ba9d1ee3a`.
-After installation, all four Atlas services were active with zero restarts,
-the required-ready navigation probe passed, spatial/VIO health was ready, and
-an observed complete-cloud stream advanced through eight full 100,000-point
-frames with valid poses and no socket error. Movement authority and PX4 VIO
-fusion remained disabled throughout. This deployment verifies the grounded
-geometry/configuration gate; it does not authorize arming or flight.
-
-## Installation and failure behavior
-
-`atlas-setup` discovers the OAK, seeds the transform bundle, and manages the
-independent `atlas-spatial-runtime.service`. The DepthAI provider shares the
-host network namespace so standard libusb can receive the udev/netlink event
-when the OAK re-enumerates after firmware upload. The synthetic provider
-retains no network. In both cases the container runs read-only without Linux
-capabilities; DepthAI receives only the USB character-device class, the host
-udev database read-only, and its runtime/state directories.
-
-Sustained RGB-D/IMU loss terminates the container so systemd restarts the whole
-camera boundary. The live-cloud builder and complete-cloud stream are also
-supervised as essential processes: either process exiting terminates the
-launch so systemd cannot report a partially working spatial runtime as active.
-Missing or stale VIO prevents new cloud integration; the future Indoor Explore
-movement controller must Hold rather than move without fresh depth and local
-position. The installed and grounded-qualified Stage 3 mission contract is
-hold-only and advertises `indoor_explore:movement_authority:false`.
-
-RTAB-Map publishes null odometry when tracking is lost and does not silently
-reset its coordinate frame. After five seconds of sustained invalid or stale
-VIO, the required health node terminates the complete spatial-runtime boundary.
-Systemd then restarts odometry, pose buffers, voxel state, and the Native stream
-epoch together, preventing points from different estimator epochs from being
-combined.
-
-Use:
+Run source tests:
 
 ```sh
-sudo atlas-setup doctor
-sudo /usr/libexec/atlas-agent/atlas-spatial-runtime-check --json
-systemctl status atlas-spatial-runtime.service
-journalctl -u atlas-spatial-runtime.service -f
+cd atlas-spatial-runtime
+./scripts/test-source.sh
 ```
 
-The Native/Agent Indoor mission contract remains the hold-only contract
-grounded-qualified in release `0.1.26`. Release `0.1.27` qualifies the
-monotonic clock-epoch and rendered-version fixes through a matched physical
-cold start without an Agent restart. Release `0.1.28` now qualifies the
-commissioned OAK and H-Flow physical transform bundle through guarded aircraft
-replacement and grounded validation. Movement remains blocked until the
-separate PX4 Position/Hold first-hover gate passes and the local navigation
-and return controllers described in the
-[Indoor Operations Plan](indoor-ops-plan.md) are implemented and accepted.
+Build and transfer a Spatial package. The build command reruns those source
+tests before producing the package:
+
+```sh
+./packaging/release.sh build 0.1.0
+./packaging/release.sh transfer 0.1.0 mofe@ariadne-robot
+```
+
+Install Agent and Spatial together on the landed, disarmed Pi, then perform one
+configuration pass:
+
+```sh
+cd /tmp
+sudo apt install \
+  ./atlas-agent_0.1.29_arm64.deb \
+  ./atlas-spatial-runtime_0.1.0_arm64.deb
+sudo atlas-setup
+sudo atlas-setup doctor
+```
+
+The Spatial package contains its Linux-arm64 Python/DepthAI dependencies and
+does not access PyPI during installation. It replaces the single private
+runtime at `/opt/atlas-spatial-runtime`; the Pi does not need a repository
+checkout. Agent package builds and updates do not build, embed, test, or replace
+Spatial.
+
+See the [decommission audit](indoor-navigation-decommission-audit.md) for the
+removed indoor architecture and the remaining outdoor-avoidance work.

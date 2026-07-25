@@ -11,9 +11,7 @@ import (
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/geolocation"
 	"github.com/sunnyside/atlas/atlas-agent/internal/identity"
-	"github.com/sunnyside/atlas/atlas-agent/internal/navigation"
 	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
-	"github.com/sunnyside/atlas/atlas-agent/internal/spatial"
 	mavsdktelemetry "github.com/sunnyside/atlas/atlas-agent/internal/telemetry/mavsdk"
 	"github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstation"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -25,6 +23,14 @@ func main() {
 	if err != nil {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
+	}
+	if cfg.AircraftProfile.ProfileID != "" {
+		logger.Info(
+			"aircraft profile loaded",
+			"profile_id", cfg.AircraftProfile.ProfileID,
+			"path", cfg.AircraftProfilePath,
+			"depth_camera_device_id", cfg.AircraftProfile.Payloads.DepthCamera.DeviceID,
+		)
 	}
 	localIdentity, err := identity.LoadOrCreate(cfg.StateDirectory)
 	if err != nil {
@@ -92,21 +98,11 @@ func main() {
 			logger.Info("HailoRT perception adapter is externally supervised", "mode", cfg.PerceptionAdapterMode)
 		}
 	}
-	var spatialOutputs spatial.Outputs
-	if cfg.SpatialEnabled {
-		spatialOutputs = spatial.StartRuntimeSource(ctx, logger, cfg.SpatialCloudSocketPath)
-		logger.Info("spatial cloud source ready", "socket_path", cfg.SpatialCloudSocketPath, "maximum_points", spatial.MaximumPoints, "snapshot_semantics", "complete_latest_only")
-	}
 	telemetryOutputs, err := mavsdktelemetry.StartWithGeolocation(ctx, logger, cfg.MAVSDKGRPCAddress, cfg.TelemetryInterval, geolocationFoundation)
 	if err != nil {
 		logger.Error("start MAVSDK telemetry", "error", err)
 		os.Exit(1)
 	}
-	if err := navigation.StartSocketServer(ctx, logger, cfg.NavigationSocketPath, telemetryOutputs.Navigation); err != nil {
-		logger.Error("start navigation-state data plane", "error", err)
-		os.Exit(1)
-	}
-	logger.Info("navigation-state data plane ready", "socket_path", cfg.NavigationSocketPath, "movement_authority", false)
 	payloadController, err := vehicle.NewPayloadController(cfg.MAVSDKGRPCAddress, logger)
 	if err != nil {
 		logger.Error("start MAVSDK payload controller", "error", err)
@@ -167,11 +163,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer aircraftFollowController.Close()
-	indoorExploreController, err := vehicle.NewIndoorExploreController(actionExecutor)
-	if err != nil {
-		logger.Error("start Indoor Explore contract controller", "error", err)
-		os.Exit(1)
-	}
 	discoveryContext, cancelDiscovery := context.WithTimeout(ctx, 10*time.Second)
 	gimbalIDs, discoveryErr := discoverGimbalsWithRetry(
 		discoveryContext,
@@ -195,7 +186,7 @@ func main() {
 	}
 
 	logger.Info("atlas agent started", "state_directory", cfg.StateDirectory, "installation_id", localIdentity.InstallationID, "drone_id", localIdentity.DroneID, "mavsdk_grpc_address", cfg.MAVSDKGRPCAddress, "camera_transport", cfg.CameraTransport, "geolocation_temporal_foundation", true)
-	go groundstation.Run(ctx, logger, cfg, localIdentity, telemetryOutputs.Snapshots, telemetryOutputs.StatusTexts, perceptionOutputs, spatialOutputs, actionExecutor, missionExecutor, aircraftFollowController, indoorExploreController)
+	go groundstation.Run(ctx, logger, cfg, localIdentity, telemetryOutputs.Snapshots, telemetryOutputs.StatusTexts, perceptionOutputs, actionExecutor, missionExecutor, aircraftFollowController)
 	<-ctx.Done()
 	logger.Info("atlas agent stopped")
 }

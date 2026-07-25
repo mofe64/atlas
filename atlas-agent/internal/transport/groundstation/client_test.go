@@ -7,13 +7,13 @@ import (
 	"log/slog"
 	"net"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/sunnyside/atlas/atlas-agent/internal/config"
 	"github.com/sunnyside/atlas/atlas-agent/internal/identity"
 	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
-	"github.com/sunnyside/atlas/atlas-agent/internal/spatial"
 	"github.com/sunnyside/atlas/atlas-agent/internal/telemetry"
 	pb "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb"
 	"github.com/sunnyside/atlas/atlas-agent/internal/vehicle"
@@ -28,7 +28,6 @@ type recordingGroundStation struct {
 	statusText     chan *pb.AgentToGroundStation
 	commandUpdates chan *pb.VehicleCommandUpdate
 	missionUpdates chan *pb.MissionRunUpdate
-	indoorUpdates  chan *pb.IndoorExploreMissionUpdate
 }
 
 type fakeCommandExecutor struct{}
@@ -37,9 +36,6 @@ type evidenceCommandExecutor struct{}
 type fakeMissionExecutor struct{ updates chan vehicle.MissionUpdate }
 type fakeAircraftFollowExecutor struct {
 	updates chan vehicle.AircraftFollowUpdate
-}
-type fakeIndoorExploreExecutor struct {
-	updates chan vehicle.IndoorExploreUpdate
 }
 type deadlineCommandExecutor struct{}
 
@@ -99,33 +95,6 @@ func (executor fakeAircraftFollowExecutor) Updates() <-chan vehicle.AircraftFoll
 func (fakeAircraftFollowExecutor) Capabilities() []string {
 	return []string{"aircraft_follow:standoff:v1:unverified"}
 }
-func (executor fakeIndoorExploreExecutor) Apply(ctx context.Context, operation vehicle.IndoorExploreOperation) {
-	for _, update := range []vehicle.IndoorExploreUpdate{
-		{
-			EventID: "indoor-starting", OperationID: operation.OperationID, MissionID: operation.MissionID,
-			State: "STARTING", AltitudeM: operation.AltitudeM, ObservedAt: time.Now().UTC(),
-		},
-		{
-			EventID: "indoor-holding", OperationID: operation.OperationID, MissionID: operation.MissionID,
-			State: "HOLDING", AltitudeM: operation.AltitudeM, ObservedAt: time.Now().UTC(),
-			ErrorCode: "LOCAL_NAVIGATION_NOT_COMMISSIONED", Message: "holding",
-		},
-	} {
-		select {
-		case executor.updates <- update:
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-func (fakeIndoorExploreExecutor) GroundLinkLost() {}
-func (executor fakeIndoorExploreExecutor) Updates() <-chan vehicle.IndoorExploreUpdate {
-	return executor.updates
-}
-func (fakeIndoorExploreExecutor) Capabilities() []string {
-	return []string{"indoor_explore:contract:v1"}
-}
-
 func TestAircraftFollowOperationPreservesReviewedEnvelopeAndExactTrack(t *testing.T) {
 	request := &pb.AircraftFollowControlRequest{
 		OperationId: "operation-1", FollowSessionId: "follow-1", DroneId: "drone-1",
@@ -241,25 +210,6 @@ func (s *recordingGroundStation) OpenSession(stream pb.GroundStationService_Open
 		}
 		s.missionUpdates <- message.GetMissionRunUpdate()
 	}
-	if err := stream.Send(&pb.GroundStationToAgent{
-		Payload: &pb.GroundStationToAgent_IndoorExploreControlRequest{IndoorExploreControlRequest: &pb.IndoorExploreControlRequest{
-			OperationId: "indoor-operation-1", MissionId: "indoor-mission-1", DroneId: "drone-1",
-			Action:    pb.IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_START,
-			AltitudeM: 1, DeadlineAtUnixMs: time.Now().Add(time.Second).UnixMilli(),
-		}},
-	}); err != nil {
-		return err
-	}
-	for range 2 {
-		message, err := stream.Recv()
-		if err != nil {
-			return err
-		}
-		if message.GetIndoorExploreMissionUpdate() == nil {
-			return errors.New("expected Indoor Explore update")
-		}
-		s.indoorUpdates <- message.GetIndoorExploreMissionUpdate()
-	}
 	return nil
 }
 
@@ -300,7 +250,6 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 		statusText:     make(chan *pb.AgentToGroundStation, 1),
 		commandUpdates: make(chan *pb.VehicleCommandUpdate, 3),
 		missionUpdates: make(chan *pb.MissionRunUpdate, 2),
-		indoorUpdates:  make(chan *pb.IndoorExploreMissionUpdate, 2),
 	}
 	pb.RegisterGroundStationServiceServer(server, recorder)
 	go func() { _ = server.Serve(listener) }()
@@ -330,7 +279,6 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 		}
 		missionExecutor := fakeMissionExecutor{updates: make(chan vehicle.MissionUpdate, 2)}
 		followExecutor := fakeAircraftFollowExecutor{updates: make(chan vehicle.AircraftFollowUpdate)}
-		indoorExecutor := fakeIndoorExploreExecutor{updates: make(chan vehicle.IndoorExploreUpdate, 2)}
 		done <- connect(ctx, slog.New(slog.NewTextHandler(io.Discard, nil)), config.Config{
 			GroundStationAddress: listener.Addr().String(),
 			DroneName:            "Test Drone",
@@ -338,13 +286,19 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			ProtocolVersion:      "1",
 			HeartbeatInterval:    10 * time.Millisecond,
 			VehicleType:          "multicopter",
-		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, spatial.Outputs{}, fakeCommandExecutor{}, missionExecutor, followExecutor, indoorExecutor, newFrameDemand(), newSpatialDemand())
+		}, identity.Identity{InstallationID: "agent-1", DroneID: "drone-1"}, telemetryUpdates, statusTexts, perception.Outputs{}, fakeCommandExecutor{}, missionExecutor, followExecutor, newFrameDemand())
 	}()
 
 	select {
 	case registration := <-recorder.registration:
-		if registration.GetRegistration().GetInstallationId() != "agent-1" || registration.GetSessionId() == "" {
+		payload := registration.GetRegistration()
+		if payload.GetInstallationId() != "agent-1" || registration.GetSessionId() == "" {
 			t.Fatalf("registration = %#v", registration)
+		}
+		for _, capability := range payload.GetCapabilities() {
+			if strings.HasPrefix(capability, "navigation_state:") {
+				t.Fatalf("retired navigation capability advertised: %q", capability)
+			}
 		}
 	case <-ctx.Done():
 		t.Fatal("registration was not received")
@@ -400,20 +354,6 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 			}
 		case <-ctx.Done():
 			t.Fatalf("mission update %s was not received", want)
-		}
-	}
-	wantIndoorStates := []pb.IndoorExploreMissionState{
-		pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_STARTING,
-		pb.IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_HOLDING,
-	}
-	for _, want := range wantIndoorStates {
-		select {
-		case update := <-recorder.indoorUpdates:
-			if update.GetMissionId() != "indoor-mission-1" || update.GetState() != want || update.GetAltitudeM() != 1 {
-				t.Fatalf("Indoor Explore update = %#v, want %s", update, want)
-			}
-		case <-ctx.Done():
-			t.Fatalf("Indoor Explore update %s was not received", want)
 		}
 	}
 	select {

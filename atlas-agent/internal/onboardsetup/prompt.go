@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sunnyside/atlas/atlas-agent/internal/aircraftprofile"
 )
 
 type InstallPlan struct {
@@ -24,9 +26,26 @@ func NewPrompter(input io.Reader, output io.Writer) *Prompter {
 }
 
 func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, options Options) (InstallPlan, error) {
+	profiles, err := aircraftprofile.LoadDirectory(options.Paths.AircraftProfilesDir)
+	if err != nil {
+		return InstallPlan{}, err
+	}
 	config := installConfigFromDiscovery(discovery, options.Paths)
-	plan := InstallPlan{Config: config}
+	requestedProfileID := strings.TrimSpace(options.AircraftProfileID)
+	if requestedProfileID == "" {
+		requestedProfileID = strings.TrimSpace(discovery.ExistingConfig["ATLAS_AIRCRAFT_PROFILE_ID"])
+	}
 	if options.NonInteractive {
+		if requestedProfileID == "" {
+			return InstallPlan{}, fmt.Errorf("--aircraft-profile is required for a first non-interactive setup")
+		}
+		source, findErr := aircraftprofile.Find(profiles, requestedProfileID)
+		if findErr != nil {
+			return InstallPlan{}, findErr
+		}
+		if err := applyAircraftProfile(&config, source, discovery); err != nil {
+			return InstallPlan{}, err
+		}
 		if err := ensureSerialCandidate(config, discovery); err != nil {
 			return InstallPlan{}, err
 		}
@@ -38,11 +57,21 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 				return InstallPlan{}, err
 			}
 		}
-		return plan, config.Validate(options.Paths)
+		return InstallPlan{Config: config}, config.Validate(options.Paths)
 	}
 
 	prompt := NewPrompter(options.Input, options.Output)
 	printDiscovery(options.Output, discovery)
+	if requestedProfileID == "" && len(profiles) == 1 {
+		requestedProfileID = profiles[0].Profile.ProfileID
+	}
+	selectedProfile, err := prompt.selectAircraftProfile(profiles, requestedProfileID)
+	if err != nil {
+		return InstallPlan{}, err
+	}
+	if err := applyAircraftProfile(&config, selectedProfile, discovery); err != nil {
+		return InstallPlan{}, err
+	}
 	selected, err := prompt.selectSerial(discovery.Serial, config.SerialDevice)
 	if err != nil {
 		return InstallPlan{}, err
@@ -148,7 +177,7 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 	} else {
 		_, _ = fmt.Fprintln(options.Output, "\nSpatial camera: no supported USB device detected; leaving the optional runtime disabled.")
 	}
-	plan.Config = config
+	plan := InstallPlan{Config: config}
 	if config.PerceptionEnabled && !fileExists(config.ModelPath) {
 		return InstallPlan{}, fmt.Errorf("Hailo HEF model does not exist: %s", config.ModelPath)
 	}
@@ -204,6 +233,7 @@ func printPlan(output io.Writer, plan InstallPlan, paths Paths) {
 		provider = "hailo"
 	}
 	_, _ = fmt.Fprintln(output, "\nInstallation plan")
+	_, _ = fmt.Fprintf(output, "  Profile:     %s\n", plan.Config.AircraftProfileID)
 	_, _ = fmt.Fprintf(output, "  Drone:       %s\n", plan.Config.DroneName)
 	_, _ = fmt.Fprintf(output, "  Native:      %s\n", plan.Config.GroundStationAddress)
 	_, _ = fmt.Fprintf(output, "  TELEM2:      %s at %d baud\n", plan.Config.SerialDevice, plan.Config.BaudRate)
@@ -215,6 +245,59 @@ func printPlan(output io.Writer, plan InstallPlan, paths Paths) {
 	_, _ = fmt.Fprintf(output, "  Spatial:     %s\n", spatial)
 	_, _ = fmt.Fprintf(output, "  Config:      %s\n", paths.ConfigFile)
 	_, _ = fmt.Fprintf(output, "  Services:    %s\n", strings.Join(configuredServices(plan.Config), ", "))
+}
+
+func (prompt *Prompter) selectAircraftProfile(sources []aircraftprofile.Source, defaultID string) (aircraftprofile.Source, error) {
+	_, _ = fmt.Fprintln(prompt.output, "\nInstalled aircraft profiles:")
+	defaultIndex := 0
+	for index, source := range sources {
+		marker := " "
+		if source.Profile.ProfileID == defaultID {
+			defaultIndex, marker = index, "*"
+		}
+		_, _ = fmt.Fprintf(
+			prompt.output,
+			"  %d. %s %s\n",
+			index+1,
+			marker,
+			source.Profile.ProfileID,
+		)
+	}
+	for {
+		value, err := prompt.text("Select the aircraft profile", strconv.Itoa(defaultIndex+1))
+		if err != nil {
+			return aircraftprofile.Source{}, err
+		}
+		selection, parseErr := strconv.Atoi(value)
+		if parseErr == nil && selection >= 1 && selection <= len(sources) {
+			return sources[selection-1], nil
+		}
+		if source, findErr := aircraftprofile.Find(sources, value); findErr == nil {
+			return source, nil
+		}
+		_, _ = fmt.Fprintln(prompt.output, "Choose one of the listed profile numbers or ids.")
+	}
+}
+
+func applyAircraftProfile(config *InstallConfig, source aircraftprofile.Source, discovery Discovery) error {
+	if discovery.Spatial.DevicePresent &&
+		discovery.Spatial.Provider == SpatialProviderDepthAI &&
+		discovery.Spatial.DeviceID != "" &&
+		discovery.Spatial.DeviceID != source.Profile.Payloads.DepthCamera.DeviceID {
+		return fmt.Errorf(
+			"connected Spatial device %s does not match aircraft profile %s device %s",
+			discovery.Spatial.DeviceID,
+			source.Profile.ProfileID,
+			source.Profile.Payloads.DepthCamera.DeviceID,
+		)
+	}
+	config.AircraftProfileID = source.Profile.ProfileID
+	config.AircraftProfileSourcePath = source.Path
+	config.AircraftProfile = source.Profile
+	if config.SpatialProvider == SpatialProviderDepthAI || config.SpatialProvider == "" {
+		config.SpatialDeviceID = source.Profile.Payloads.DepthCamera.DeviceID
+	}
+	return nil
 }
 
 func (prompt *Prompter) text(label, defaultValue string) (string, error) {

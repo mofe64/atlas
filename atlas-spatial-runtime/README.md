@@ -1,108 +1,124 @@
 # Atlas Spatial Runtime
 
-`atlas-spatial-runtime` is the vendor-neutral onboard RGB-D boundary for Atlas.
-It owns the selected depth camera, publishes normalized live sensor topics,
-tracks bounded health, and builds the bounded VIO-local cloud used by Indoor
-Explore. It contains no PX4 setpoint or movement API.
+`atlas-spatial-runtime` is a small native service that owns one depth camera.
+It acquires fresh calibrated depth, exposes bounded local health, and retains
+the direct projection math needed by a future obstacle extractor.
 
-## Runtime contract
+It has no ROS dependency, Docker image, map, pose estimator, transform graph,
+flight command, Agent stream, or Native UI contract.
 
-The live boundary publishes:
+## Data boundary
 
-```text
-/atlas/spatial/color/image_raw
-/atlas/spatial/color/camera_info
-/atlas/spatial/aligned_depth/image_rect
-/atlas/spatial/aligned_depth/camera_info
-/atlas/spatial/imu/data
-/atlas/spatial/vio/odometry
-/atlas/spatial/map/points
-```
+The provider returns one in-process `DepthFrame`:
 
-Aligned depth is `32FC1` in metres. `/atlas/spatial/map/points` is a bounded,
-voxel-downsampled `PointCloud2` in the current VIO-local frame. A VIO timestamp
-regression or frame change resets the cloud rather than mixing coordinate
-epochs.
+| Field | Contract |
+| --- | --- |
+| Depth | `uint16` millimetres; zero means invalid |
+| Timestamp | Capture time on the host monotonic clock |
+| Frame | `oak_rgb_camera_optical_frame` by default |
+| Calibration | Intrinsics for the exact aligned depth dimensions |
 
-The health service listens on `/run/atlas-agent/spatial.sock` by default. Send:
+The runtime keeps the camera's compact native depth representation. Consumers
+convert or project only the pixels they use; the service no longer expands
+every frame into a ROS `32FC1` image.
+
+`depthai` is the physical OAK provider. It runs stereo depth on the device,
+aligns depth to the RGB optical frame, keeps only the newest queued frame, and
+reads the aligned intrinsics from DepthAI frame metadata. `synthetic` implements
+the same provider interface for software tests.
+
+## Health contract
+
+The Unix socket defaults to `/run/atlas-agent/spatial.sock`. Send:
 
 ```json
-{"protocolVersion":"1","type":"probe"}
+{"protocolVersion":"2","type":"probe"}
 ```
 
-The response reports source/provider identity, RGB-D/IMU freshness and rates,
-calibration and transform identity, USB transport, and direct VIO health. VIO
-is used for live mapping but remains non-authoritative: PX4 VIO fusion and
-spatial-runtime movement authority are always disabled.
+Readiness requires a fresh `16UC1` millimetre depth frame and matching valid
+intrinsics. The response explicitly reports `scaleToMetres: 0.001`. It does not
+claim obstacle observations yet.
 
-## Standard DepthAI boundary
+The operator-facing health command on the Pi is:
 
-The normal image installs the unmodified ROS Jazzy DepthAI packages. DepthAI
-owns synchronized RGB-D, a rectified global-shutter mono pair, and raw BMI270
-transport; its integrated Basalt VIO is disabled. Atlas runs standard
-`imu_filter_madgwick` and RTAB-Map stereo odometry as separate processes and
-publishes the result on the existing
-non-authoritative `/atlas/spatial/vio/odometry` compatibility topic.
-The camera profile explicitly aligns and synchronizes RGB/stereo and sets the
-Luxonis RTAB-Map `DEFAULT` preset on the RealSense-compatible `depth`
-namespace, so cloud projection receives useful registered depth rather than
-silently retaining the driver's implicit `FAST_ACCURACY` profile. Visual
-odometry independently uses the rectified mono pair.
+```sh
+sudo atlas-setup doctor
+sudo journalctl -u atlas-spatial-runtime.service -n 200 --no-pager
+```
 
-This boundary removes the reasons Atlas previously patched DepthAI:
-
-1. An Atlas-owned timestamp gate drops duplicate and short out-of-order raw
-   IMU samples before Madgwick, without rewriting device time. A one-second
-   clock regression terminates the provider boundary so Madgwick, odometry,
-   and the camera restart in the same clock epoch.
-2. RTAB-Map keeps only the most recent unprocessed stereo observation, so
-   estimator overload cannot block the DepthAI camera component.
-3. The container mounts the host udev database read-only alongside
-   `/dev/bus/usb` and shares the host network namespace. Standard libusb's
-   udev monitor depends on host netlink hotplug delivery: a grounded Pi test
-   proved that `--network none` loses the booted OAK after firmware upload,
-   while `--network host` re-discovers it and produces RGB-D/IMU input without
-   a patched DepthAI or libusb. The container remains non-root, read-only,
-   capability-free, and limited to the USB character-device class.
-
-The accepted `0.1.16` image remains the operational rollback. Its
-`3.6.1-2noble+atlas2` build stage and source files are retained but are not in
-the normal image dependency graph; they must not be deleted until the standard
-path passes aircraft tests and cleanup is explicitly approved.
+`atlas-setup doctor` invokes the private Spatial diagnostics and includes their
+specific failure in its combined report. The package keeps
+`atlas-spatial-check` and `atlas-spatial-probe` under
+`/opt/atlas-spatial-runtime/bin` as implementation details; they are not
+installed as routine `/usr/bin` operator commands.
 
 ## Development
 
-Inside ROS 2 Jazzy:
+Run source tests directly:
 
 ```sh
-cd atlas-spatial-runtime/ros2_ws
-source /opt/ros/jazzy/setup.sh
-colcon build --symlink-install
-source install/setup.sh
-ros2 launch atlas_spatial_runtime spatial_runtime.launch.py provider:=synthetic
+./scripts/test-source.sh
 ```
 
-The synthetic provider publishes RGB-D, IMU, and VIO with the same stable
-topic/frame contract as the DepthAI provider. It should produce a live cloud on
-`/atlas/spatial/map/points`.
+Run a local synthetic process after installing the package into a virtual
+environment:
 
-The packaged transform bundle is seeded once at
-`/var/lib/atlas-agent/spatial/transforms.v1.json`. Ariadne's commissioned v4
-bundle records the OAK CAM_A/RGB origin at `+0.155 / +0.010 / +0.005 m` in
-body FRD with a verified forward/upright/approximately-level mount. Its
-body-to-H-Flow flow/range edges are also verified with unchanged geometry. The
-provider-owned `oak_mount` to aligned optical-frame edge remains
-`configured_unverified`; physical mounting evidence does not replace the
-device calibration contract. Setup never overwrites an aircraft-owned bundle.
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -e .
+ATLAS_SPATIAL_PROVIDER=synthetic \
+ATLAS_SPATIAL_SOCKET_PATH=/tmp/atlas-spatial.sock \
+.venv/bin/atlas-spatial-runtime
+```
 
-## Pi deployment
+DepthAI is an optional development dependency:
 
-The normal image is built from `packaging/Dockerfile` and defaults to the
-`atlas-standard-depthai` base. The retained patched stages are skipped by
-BuildKit during a normal build. Atlas source is copied only after the
-third-party runtime layers, preserving cache reuse without a second release
-flow.
+```sh
+.venv/bin/pip install -e '.[depthai]'
+```
 
-The Pi runs the image through `atlas-spatial-runtime.service`. See
-[`docs/spatial-runtime.md`](../docs/spatial-runtime.md) for the system boundary
-and [`docs/indoor-ops-plan.md`](../docs/indoor-ops-plan.md) for feature order.
+## Package and Pi installation
+
+Build and transfer Spatial from the development checkout:
+
+```sh
+./packaging/release.sh build 0.1.0
+./packaging/release.sh transfer 0.1.0 mofe@ariadne-robot
+```
+
+The build command runs `scripts/test-source.sh`, resolves the declared
+Linux-arm64 DepthAI/NumPy runtime, and creates:
+
+```text
+dist/atlas-spatial-runtime_0.1.0_arm64.deb
+```
+
+Install it on the landed, disarmed Pi together with the independently built
+Agent package, then configure both:
+
+```sh
+cd /tmp
+sudo apt install \
+  ./atlas-agent_0.1.29_arm64.deb \
+  ./atlas-spatial-runtime_0.1.0_arm64.deb
+sudo atlas-setup
+sudo atlas-setup doctor
+```
+
+The package is self-contained and does not access PyPI on the Pi. It installs
+one private runtime at `/opt/atlas-spatial-runtime`, the udev rule, systemd
+unit, and private diagnostic commands. Reinstalling or upgrading replaces that
+runtime; it does not retain old Spatial artifacts or images. A source checkout
+is not required on the aircraft.
+
+Atlas Agent remains a separate package. `atlas-setup` writes
+`/etc/atlas-agent/spatial.env` and enables the already-installed Spatial
+service, but its Debian package does not contain or build Spatial.
+
+Spatial loads the selected profile from
+`/etc/atlas-agent/aircraft-profile.json`. The profile contains only its id,
+the depth-camera device id, and the direct sensor-to-body mounting offset. The
+current Ariadne source profile is
+[`../aircraft-profiles/ariadne.json`](../aircraft-profiles/ariadne.json). See
+[`../docs/spatial-runtime.md`](../docs/spatial-runtime.md) for the system
+boundary and failure model.

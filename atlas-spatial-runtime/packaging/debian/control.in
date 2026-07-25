@@ -1,0 +1,11 @@
+Package: atlas-spatial-runtime
+Version: @VERSION@
+Section: utils
+Priority: optional
+Architecture: arm64
+Maintainer: Sunnyside <engineering@sunnyside.local>
+Depends: libusb-1.0-0, passwd, python3 (>= 3.12), python3 (<< 3.13), systemd, udev
+Description: Atlas native depth-camera runtime
+ Atlas Spatial Runtime owns calibrated depth acquisition and local health for
+ an optional onboard depth camera. It uses DepthAI directly without ROS or
+ Docker and is configured by atlas-setup after installation.

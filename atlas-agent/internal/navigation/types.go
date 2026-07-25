@@ -1,10 +1,8 @@
-// Package navigation owns the read-only PX4/H-Flow navigation-state data
-// plane. It deliberately contains no setpoint or movement-authority API.
+// Package navigation evaluates the latest PX4 and H-Flow observations for
+// in-process consumers. It has no IPC, protocol, or movement-authority API.
 package navigation
 
 import "time"
-
-const ProtocolVersion = "1"
 
 type Status string
 
@@ -23,7 +21,6 @@ type Config struct {
 	OpticalFlowStaleAfter         time.Duration
 	RangeStaleAfter               time.Duration
 	ResetDegradedFor              time.Duration
-	HistoryDuration               time.Duration
 	MinimumFlowQuality            uint8
 }
 
@@ -36,7 +33,6 @@ func DefaultConfig() Config {
 		OpticalFlowStaleAfter:         500 * time.Millisecond,
 		RangeStaleAfter:               500 * time.Millisecond,
 		ResetDegradedFor:              2 * time.Second,
-		HistoryDuration:               15 * time.Second,
 		MinimumFlowQuality:            1,
 	}
 }
@@ -123,12 +119,14 @@ type EstimatorReset struct {
 }
 
 type State struct {
-	ProtocolVersion                   string                     `json:"protocolVersion"`
 	Sequence                          uint64                     `json:"sequence"`
 	GeneratedAtUnixNS                 int64                      `json:"generatedAtUnixNs"`
 	Status                            Status                     `json:"status"`
 	Ready                             bool                       `json:"ready"`
 	Reasons                           []string                   `json:"reasons,omitempty"`
+	HFlowStatus                       Status                     `json:"hflowStatus"`
+	HFlowReady                        bool                       `json:"hflowReady"`
+	HFlowReasons                      []string                   `json:"hflowReasons,omitempty"`
 	ConnectionObserved                bool                       `json:"connectionObserved"`
 	Connected                         bool                       `json:"connected"`
 	LocalPositionValid                bool                       `json:"localPositionValid"`
@@ -140,12 +138,4 @@ type State struct {
 	Range                             *Range                     `json:"range,omitempty"`
 	LastEstimatorReset                *EstimatorReset            `json:"lastEstimatorReset,omitempty"`
 	Components                        map[string]ComponentHealth `json:"components"`
-}
-
-type Sample struct {
-	State           State `json:"state"`
-	CaptureUnixNS   int64 `json:"captureUnixNs"`
-	SampleUnixNS    int64 `json:"sampleUnixNs"`
-	SkewNS          int64 `json:"skewNs"`
-	WithinTolerance bool  `json:"withinTolerance"`
 }

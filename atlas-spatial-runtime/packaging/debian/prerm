@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+
+if command -v systemctl >/dev/null 2>&1; then
+    case "${1:-}" in
+        remove)
+            systemctl disable --now atlas-spatial-runtime.service || true
+            ;;
+        *)
+            systemctl stop atlas-spatial-runtime.service || true
+            ;;
+    esac
+fi

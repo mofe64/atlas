@@ -21,7 +21,7 @@ flowchart LR
     Camera --> Inference["Hailo inference runtime"]
     Inference -->|"normalized metadata"| Agent
     DepthCamera["USB depth camera"] --> Spatial["Atlas Spatial Runtime"]
-    Spatial -->|"bounded PointCloud2"| Viewer["Development viewer"]
+    Spatial -->|"calibrated metric depth"| FutureAvoidance["Future obstacle adapter"]
     Backend["Atlas Backend"] -. "future coordinated services; not flight control" .-> Host
 ```
 
@@ -45,21 +45,24 @@ and Agent.
 | 8 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the general command, lifecycle, safety, and failure-state rules? |
 | 9 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, rendered, and retained? |
 | 10 | [Spatial camera runtime](spatial-runtime.md) | How is USB RGB-D hardware installed behind a vendor-neutral Pi boundary? |
-| 11 | [PX4/H-Flow navigation-state data plane](navigation-state-data-plane.md) | How is read-only PX4/H-Flow state exposed for diagnostics and the future Indoor Explore controller? |
+| 11 | [PX4/H-Flow in-process health](navigation-state-data-plane.md) | How are PX4 and optional H-Flow observations assessed without creating movement authority or another protocol? |
 | 12 | [H-Flow PX4 setup and verification](h-flow-px4-setup-and-verification.md) | How do we reproduce the installed H-Flow integration on another aircraft? |
-| 13 | [Indoor operations plan](indoor-ops-plan.md) | What exact indoor mission are we building, what already works, and what remains? |
-| 14 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
-| 15 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
+| 13 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
+| 14 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
 
 The [feature gap assessment](feature-gap-assessment.md) is a product-direction
 document. It describes possible future work and must not be treated as shipped
 architecture.
 
-## Current indoor-navigation checkpoint
+The [outdoor obstacle avoidance TODO](obstacle-avoidance-todo.md) is
+the active post-decommission implementation roadmap. It covers the expiring
+observation contract, depth extraction, aircraft profiles, separate PX4 and
+H-Flow readiness, controller authority, acceptance, and final cleanup. The
+supporting cleanup is partly complete, but avoidance remains planned work.
 
-The functional goal, existing OAK/H-Flow foundation, implementation boundary,
-and remaining work are maintained in the
-[Indoor Operations Plan](indoor-ops-plan.md).
+The retired indoor-navigation architecture and cleanup rationale are recorded
+in the [decommission audit](indoor-navigation-decommission-audit.md). It is a
+decision record, not current system documentation.
 
 ## Repository map
 
@@ -67,7 +70,7 @@ and remaining work are maintained in the
 | --- | --- | --- |
 | [`atlas/`](../atlas/) | Tauri v2 desktop ground station: React UI plus Rust operational host | [`src/App.tsx`](../atlas/src/App.tsx), [`src-tauri/src/lib.rs`](../atlas/src-tauri/src/lib.rs) |
 | [`atlas-agent/`](../atlas-agent/) | Go onboard runtime, setup tooling, package, and services | [`cmd/atlas-agent/main.go`](../atlas-agent/cmd/atlas-agent/main.go), [`cmd/atlas-setup/main.go`](../atlas-agent/cmd/atlas-setup/main.go) |
-| [`atlas-spatial-runtime/`](../atlas-spatial-runtime/) | Vendor-neutral ROS 2 RGB-D/IMU/VIO runtime, bounded live cloud, and container | [`launch/spatial_runtime.launch.py`](../atlas-spatial-runtime/ros2_ws/src/atlas_spatial_runtime/launch/spatial_runtime.launch.py), [`live_cloud_node.py`](../atlas-spatial-runtime/ros2_ws/src/atlas_spatial_runtime/atlas_spatial_runtime/live_cloud_node.py) |
+| [`atlas-spatial-runtime/`](../atlas-spatial-runtime/) | Pi-native calibrated-depth provider and local health service | [`runtime.py`](../atlas-spatial-runtime/src/atlas_spatial_runtime/runtime.py), [`depthai_provider.py`](../atlas-spatial-runtime/src/atlas_spatial_runtime/depthai_provider.py) |
 | [`atlas-backend/`](../atlas-backend/) | Independent Go/Gin/PostgreSQL identity and coordinated-services foundation | [`cmd/atlas-backend/main.go`](../atlas-backend/cmd/atlas-backend/main.go) |
 | [`proto/atlas/ground_station.proto`](../proto/atlas/ground_station.proto) | Shared Native-Agent wire contract | Generated into Rust at build time and committed as Go code |
 | [`scripts/`](../scripts/) | SITL, isolated Native development, database reset, and code generation | [`start-sitl.sh`](../scripts/start-sitl.sh) |

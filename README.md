@@ -18,7 +18,7 @@ PX4 flight controller
 
 SIYI A8 clean RTSP stream -------------------------> Atlas Native/FFmpeg
 SIYI A8 stream -> Hailo inference -> Atlas Agent --> perception metadata
-OAK-D Lite -> independent Atlas Spatial Runtime ----> RGB-D + BMI270 + live non-authoritative VIO
+Depth camera -> independent Atlas Spatial Runtime --> calibrated metric depth
 ```
 
 This separation is intentional:
@@ -27,10 +27,10 @@ This separation is intentional:
   mission records, SQLite, RTSP decoding, and the ground-station gRPC server.
 - **Atlas Agent** owns PX4/MAVSDK integration, physical gimbal and camera
   control, perception-runtime supervision, and the outbound Native session.
-- **Atlas Spatial Runtime** independently owns the OAK RGB-D and BMI270 driver,
-  normalized topics, calibration/transform identity, live Basalt VIO, health,
-  and the bounded VIO-local cloud used by Indoor Explore. VIO is observational
-  only: the runtime does not fuse it into PX4 or authorize movement.
+- **Atlas Spatial Runtime** independently owns the configured depth-camera
+  provider, normalized metric depth and calibration, and bounded local health.
+  It does not map, estimate aircraft pose, stream to Native, or authorize
+  movement.
 - **Atlas Backend** is a separate Go/Gin/PostgreSQL foundation for identity and
   future coordinated services. It is not on the current aircraft-control path.
 
@@ -40,10 +40,11 @@ This separation is intentional:
 | --- | --- |
 | `atlas/` | React + Tauri v2 Native ground station |
 | `atlas-agent/` | Go onboard Agent, setup tools, systemd units, and Debian packaging |
-| `atlas-spatial-runtime/` | Independent ROS 2 RGB-D runtime, provider adapters, health contract, and container |
+| `atlas-spatial-runtime/` | Independent Pi-native depth runtime, direct DepthAI provider, health contract, and Debian packaging |
 | `atlas-backend/` | Optional Go/Gin/PostgreSQL backend foundation |
 | `proto/atlas/ground_station.proto` | Shared Native/Agent transport contract |
 | `scripts/start-sitl.sh` | Complete local PX4 Gazebo development stack |
+| `scripts/transfer-onboard-release.sh` | Transfer one selected Agent/Spatial package pair to a Pi |
 | `scripts/tauri-dev-isolated.sh` | Native development with a repository-local SQLite database |
 | `scripts/reset-databases.sh` | Destructive reset for current local development databases |
 | `scripts/archive/deprecated-stack/` | Unsupported historical scripts; never used by current workflows |
@@ -68,7 +69,6 @@ repository map. The detailed architecture set covers:
 - [Aircraft operations, missions, commands, and safety](docs/aircraft-operations-implementation.md)
 - [Video and perception](docs/video-perception.md)
 - [Spatial camera runtime](docs/spatial-runtime.md)
-- [Indoor operations plan](docs/indoor-ops-plan.md)
 - [The separate Atlas Backend](docs/atlas-backend.md)
 - [Development, validation, and debugging workflows](docs/development-guide.md)
 
@@ -102,14 +102,21 @@ future direction remain separate in
   Bounded-Orbit response plans with durable arrival actions.
 - Durable Hold, Return-to-Launch, Land, mission, gimbal, and zoom command
   lifecycles.
-- A hardware-accepted, independent OAK-D Lite USB 3 runtime with synchronized
-  RGB-D, BMI270 health, live non-authoritative Basalt VIO, transform provenance,
-  and a bounded VIO-local point cloud. The installed PX4-configured H-Flow and
-  OAK runtime are not yet indoor-navigation authority.
+- An independent Pi-native OAK-D Lite USB 3 depth-provider runtime with
+  calibrated `uint16` millimetre depth and local health. It does not yet
+  produce obstacle observations or authorize avoidance.
 
-The detailed component contracts and configuration live in
+The detailed component contracts are indexed in
+[`docs/README.md`](docs/README.md). Source-tree entry points live in
 [`atlas/README.md`](atlas/README.md) and
-[`atlas-agent/README.md`](atlas-agent/README.md).
+[`atlas-agent/README.md`](atlas-agent/README.md); Pi configuration and service
+operation live in
+[`atlas-agent/INSTALLATION.md`](atlas-agent/INSTALLATION.md).
+
+The aircraft installs two independently built Debian packages:
+`atlas-agent` and `atlas-spatial-runtime`. They can be transferred together and
+installed in one `apt` transaction; `atlas-setup` then performs the one
+hardware-discovery and configuration pass for both.
 
 ## Prerequisites
 
@@ -223,8 +230,8 @@ for the exact assertions and endpoint overrides.
 ## Install or upgrade the onboard Agent
 
 The supported hardware profile is Raspberry Pi 5 on Ubuntu 24.04 arm64 with a
-Raspberry Pi AI HAT+ and SIYI A8 camera. Build, clean-install, upgrade,
-same-version replacement, validation, and rollback are documented in
+Raspberry Pi AI HAT+ and SIYI A8 camera. Build, installation, update,
+validation, and latest-version retention are documented in
 [`atlas-agent/INSTALLATION.md`](atlas-agent/INSTALLATION.md).
 
 Native and Agent share `proto/atlas/ground_station.proto`. When that contract

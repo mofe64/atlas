@@ -56,23 +56,14 @@ func Discover(ctx context.Context, runner Runner, options Options) (Discovery, e
 }
 
 func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configuration map[string]string) SpatialStatus {
-	releaseImage := readEnvironmentFile(paths.ReleaseManifest)["ATLAS_SPATIAL_CONTAINER_IMAGE"]
 	status := SpatialStatus{
-		Configured:     strings.EqualFold(configuration["ATLAS_SPATIAL_ENABLED"], "true"),
-		Provider:       configuration["ATLAS_SPATIAL_PROVIDER"],
-		DeviceID:       configuration["ATLAS_SPATIAL_DEVICE_ID"],
-		Model:          configuration["ATLAS_SPATIAL_MODEL"],
-		USBTransport:   fallback(configuration["ATLAS_SPATIAL_USB_TRANSPORT"], "unknown"),
-		ContainerImage: configuration["ATLAS_SPATIAL_CONTAINER_IMAGE"],
-		SourceID:       fallback(configuration["ATLAS_SPATIAL_SOURCE_ID"], DefaultSpatialSource),
-	}
-	if releaseImage != "" {
-		// A package upgrade moves the desired image. Existing spatial.env may
-		// contain the immutable ID resolved for the previous release.
-		status.ContainerImage = releaseImage
-	}
-	if status.ContainerImage == "" {
-		status.ContainerImage = DefaultSpatialImage
+		Configured:       strings.EqualFold(configuration["ATLAS_SPATIAL_ENABLED"], "true"),
+		Provider:         configuration["ATLAS_SPATIAL_PROVIDER"],
+		DeviceID:         configuration["ATLAS_SPATIAL_DEVICE_ID"],
+		Model:            configuration["ATLAS_SPATIAL_MODEL"],
+		USBTransport:     fallback(configuration["ATLAS_SPATIAL_USB_TRANSPORT"], "unknown"),
+		SourceID:         fallback(configuration["ATLAS_SPATIAL_SOURCE_ID"], DefaultSpatialSource),
+		RuntimeInstalled: fileExists(paths.SpatialRuntimeBinary),
 	}
 	if fileExists(paths.SpatialCheck) {
 		arguments := []string{"--discover", "--sysfs-root", rootPath(paths.Root, "/sys")}
@@ -90,9 +81,6 @@ func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configurat
 			status.USBSpeedMbps, _ = strconv.Atoi(values["USB_SPEED_MBPS"])
 		}
 	}
-	if status.ContainerImage != "" && commandSucceeds(ctx, runner, "docker", "image", "inspect", status.ContainerImage) {
-		status.RuntimeInstalled = true
-	}
 	service := runner.Run(ctx, "systemctl", "is-active", "atlas-spatial-runtime.service")
 	status.ServiceRunning = service.Err == nil && strings.TrimSpace(service.Output) == "active"
 	if status.ServiceRunning && fileExists(paths.SpatialCheck) {
@@ -101,10 +89,10 @@ func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configurat
 		values := parseKeyValueOutput(result.Output)
 		status.Ready = result.Err == nil && strings.EqualFold(values["READY"], "true")
 		status.Status = values["STATUS"]
-		status.ColorFPS = values["COLOR_FPS"]
 		status.DepthFPS = values["DEPTH_FPS"]
-		status.SyncSkewMS = values["SYNC_SKEW_MS"]
-		status.CalibrationHash = values["CALIBRATION_HASH"]
+		status.DepthFrameID = values["DEPTH_FRAME_ID"]
+		status.CalibrationValid = strings.EqualFold(values["CALIBRATION_VALID"], "true")
+		status.CalibrationFrame = values["CALIBRATION_FRAME_ID"]
 		status.LastError = values["LAST_ERROR"]
 	}
 	return status
@@ -474,7 +462,6 @@ func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
 	config.SpatialDeviceID = status.DeviceID
 	config.SpatialModel = status.Model
 	config.SpatialUSBTransport = fallback(status.USBTransport, "unknown")
-	config.SpatialContainerImage = status.ContainerImage
 	if value, exists := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_ENABLED"]; exists {
 		config.SpatialEnabled = strings.EqualFold(value, "true")
 	} else {
@@ -500,6 +487,9 @@ func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
 }
 
 func applyExistingConfig(config *InstallConfig, values map[string]string) {
+	if value := values["ATLAS_AIRCRAFT_PROFILE_ID"]; value != "" {
+		config.AircraftProfileID = value
+	}
 	if value := values["ATLAS_DRONE_NAME"]; value != "" {
 		config.DroneName = value
 	}

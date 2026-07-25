@@ -71,7 +71,7 @@ type Outputs struct {
 	Snapshots   <-chan telemetry.Snapshot
 	StatusTexts <-chan telemetry.StatusTextEvent
 	Latest      func() (telemetry.Snapshot, bool)
-	Navigation  *navigation.Plane
+	navigation  *navigation.Plane
 }
 
 // Start begins the MAVSDK subscriptions and returns a latest-only stream at the
@@ -147,7 +147,7 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
-	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current, Navigation: navigationPlane}, nil
+	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current, navigation: navigationPlane}, nil
 }
 
 func (s *source) publish(ctx context.Context, updates chan telemetry.Snapshot, interval time.Duration) {
@@ -265,7 +265,7 @@ func (s *source) streamConnectionState(ctx context.Context) {
 			s.connectionKnown = true
 			s.connected = response.GetConnectionState().GetIsConnected()
 			s.mu.Unlock()
-			s.navigation.SetConnected(response.GetConnectionState().GetIsConnected(), time.Now())
+			s.navigation.SetConnected(response.GetConnectionState().GetIsConnected())
 		}
 		sleepOrDone(ctx, streamRetryDelay)
 	}

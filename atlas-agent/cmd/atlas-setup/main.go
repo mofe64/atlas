@@ -26,6 +26,7 @@ func run(arguments []string) int {
 	dryRun := flags.Bool("dry-run", false, "show the installation plan without changing the computer")
 	nonInteractive := flags.Bool("non-interactive", false, "use discovered/default values without prompting")
 	allowUnsupported := flags.Bool("allow-unsupported", false, "allow development validation on a non-target platform")
+	aircraftProfile := flags.String("aircraft-profile", "", "installed aircraft profile id (required for a first non-interactive setup)")
 	installHailo := flags.Bool("install-hailo", false, "deprecated: use sudo atlas-hailo-setup before atlas-setup")
 	if err := flags.Parse(arguments); err != nil {
 		return 2
@@ -50,6 +51,7 @@ func run(arguments []string) int {
 		Input:                os.Stdin,
 		Output:               os.Stdout,
 		ArchitectureOverride: runtime.GOARCH,
+		AircraftProfileID:    *aircraftProfile,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

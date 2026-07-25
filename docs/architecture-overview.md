@@ -31,16 +31,15 @@ flowchart TB
         Spatial["Atlas Spatial Runtime"]
         PX4["PX4 flight controller"]
         Camera["SIYI A8 camera"]
-        OAK["OAK-D Lite"]
+        OAK["Configured depth camera"]
         HFlow["Downward H-Flow"]
         Agent -->|"local gRPC"| MAVSDK
         MAVSDK -->|"MAVLink"| PX4
         Perception -->|"protected Unix socket"| Agent
         Camera -->|"RTSP"| Perception
-        OAK -->|"USB 3 RGB-D + BMI270"| Spatial
+        OAK -->|"USB calibrated depth"| Spatial
         HFlow -->|"DroneCAN flow + range"| PX4
         MAVSDK -->|"read-only navigation state"| Agent
-        Agent -->|"capture-time sample socket"| Spatial
     end
 
     Agent -->|"outbound control + telemetry gRPC"| Rust
@@ -71,11 +70,11 @@ Detailed operational behavior is split into
 | React UI | Operator navigation, forms, map interaction, rendering, polling Native state | Network sessions, durable policy, direct MAVSDK or PX4 access |
 | Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog | Physical flight-controller, gimbal, camera, or accelerator drivers |
 | SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history | Multi-user tenancy or cross-ground-station synchronization |
-| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, read-only PX4/H-Flow navigation-state plane, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, indoor mapping |
+| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, in-process PX4/H-Flow observation health, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, depth-camera processing |
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
-| Spatial runtime | Independent OAK RGB-D/BMI270 ownership through standard DepthAI, normalized topics, external non-authoritative RGB-D inertial odometry, calibration/transform identity, bounded local health, and a bounded odometry-local point cloud | PX4 external-vision fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
+| Spatial runtime | Independent depth-camera ownership, normalized metric depth and matching calibration, direct projection math, and bounded local health | Mapping, pose estimation, PX4 fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
 | Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
 
 ## Deployment topology
@@ -97,18 +96,16 @@ PX4 flight controller
 
 OAK-D Lite
     -> direct Raspberry Pi USB 3
-        -> independent Atlas Spatial Runtime container
-            -> capture-time query to Atlas Agent navigation socket
-            -> optional finalized RGB-D/IMU/VIO/PX4 sessions
+        -> independent native Atlas Spatial Runtime service
+            -> calibrated metric depth and local health
 ```
 
 Atlas Agent initiates the session to `192.168.144.50:7443`. This direction is
 important: the onboard computer reconnects whenever the local radio/Ethernet path
 returns, while Native only needs a stable listener address.
 
-Field installation and address details live in
-[`atlas-agent/INSTALLATION.md`](../atlas-agent/INSTALLATION.md) and
-[`atlas-agent/README.md`](../atlas-agent/README.md).
+Field installation and address configuration live in
+[`atlas-agent/INSTALLATION.md`](../atlas-agent/INSTALLATION.md).
 
 ## Control flow
 

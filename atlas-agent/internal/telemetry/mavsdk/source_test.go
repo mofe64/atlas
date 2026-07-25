@@ -223,11 +223,15 @@ statusText:
 			t.Fatal("high-rate timestamped aircraft pose was not buffered")
 		}
 	}
-	for outputs.Navigation.Latest(time.Now()).Status != navigation.StatusReady {
+	for {
+		state := outputs.navigation.Latest(time.Now())
+		if state.Status == navigation.StatusReady && state.HFlowReady {
+			break
+		}
 		select {
 		case <-time.After(10 * time.Millisecond):
 		case <-ctx.Done():
-			t.Fatalf("navigation plane did not become ready: %#v", outputs.Navigation.Latest(time.Now()))
+			t.Fatalf("PX4/H-Flow health did not become ready: %#v", state)
 		}
 	}
 }

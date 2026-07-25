@@ -2,7 +2,6 @@ package onboardsetup
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/sunnyside/atlas/atlas-agent/internal/aircraftprofile"
 )
 
 type CheckLevel string
@@ -32,13 +33,12 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 	if len(configuration) == 0 {
 		return nil, fmt.Errorf("Atlas is not configured; run sudo atlas-setup first")
 	}
-	release := readEnvironmentFile(paths.ReleaseManifest)
 	checks := []Check{
 		fileCheck("configuration", paths.ConfigFile, true),
 		fileCheck("release manifest", paths.ReleaseManifest, true),
+		aircraftProfileCheck(paths.AircraftProfileConfig, configuration["ATLAS_AIRCRAFT_PROFILE_ID"]),
 		fileCheck("atlas-agent binary", paths.AgentBinary, true),
 		fileCheck("mavsdk_server binary", paths.MAVSDKBinary, true),
-		checksumCheck("mavsdk_server package", paths.MAVSDKBinary, release["ATLAS_MAVSDK_SHA256"]),
 		serviceCheck(ctx, runner, "atlas-mavsdk.service"),
 		serviceCheck(ctx, runner, "atlas-agent.service"),
 	}
@@ -83,15 +83,32 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 	return checks, nil
 }
 
+func aircraftProfileCheck(path, expectedID string) Check {
+	profile, err := aircraftprofile.Load(path)
+	if err != nil {
+		return Check{Name: "aircraft profile", Level: CheckFail, Message: err.Error()}
+	}
+	if expectedID == "" || profile.ProfileID != expectedID {
+		return Check{
+			Name:    "aircraft profile",
+			Level:   CheckFail,
+			Message: fmt.Sprintf("loaded id=%s configured id=%s", profile.ProfileID, fallback(expectedID, "missing")),
+		}
+	}
+	return Check{
+		Name:    "aircraft profile",
+		Level:   CheckPass,
+		Message: fmt.Sprintf("id=%s depth_camera=%s", profile.ProfileID, profile.Payloads.DepthCamera.DeviceID),
+	}
+}
+
 func doctorSpatial(ctx context.Context, runner Runner, paths Paths, configuration map[string]string) []Check {
-	image := configuration["ATLAS_SPATIAL_CONTAINER_IMAGE"]
 	checks := []Check{
 		fileCheck("spatial configuration", paths.SpatialConfigFile, true),
-		fileCheck("spatial runtime check", paths.SpatialCheck, true),
+		fileCheck("spatial runtime", paths.SpatialRuntimeBinary, true),
+		fileCheck("spatial diagnostics", paths.SpatialCheck, true),
 		serviceCheck(ctx, runner, "atlas-spatial-runtime.service"),
 	}
-	imageResult := runner.Run(ctx, "docker", "image", "inspect", image)
-	checks = append(checks, booleanCheck("spatial container image", image != "" && imageResult.Err == nil, fallback(image, "not configured")))
 
 	provider := configuration["ATLAS_SPATIAL_PROVIDER"]
 	if provider == SpatialProviderDepthAI {
@@ -103,6 +120,19 @@ func doctorSpatial(ctx context.Context, runner Runner, paths Paths, configuratio
 		device := parseKeyValueOutput(discoveryResult.Output)
 		present := discoveryResult.Err == nil && strings.EqualFold(device["DEVICE_PRESENT"], "true")
 		message := fmt.Sprintf("%s id=%s transport=%s", fallback(device["MODEL"], "DepthAI camera"), fallback(device["DEVICE_ID"], "unknown"), fallback(device["USB_TRANSPORT"], "unknown"))
+		if !present {
+			if deviceID := configuration["ATLAS_SPATIAL_DEVICE_ID"]; deviceID != "" {
+				message = "configured DepthAI camera id=" + deviceID + " not found"
+			} else {
+				message = "no DepthAI camera found"
+			}
+			if strings.EqualFold(device["OTHER_DEVICE_PRESENT"], "true") {
+				message += "; another DepthAI camera is connected"
+			}
+		}
+		if failure := diagnosticFailure(discoveryResult, device); failure != "" {
+			message += " error=" + failure
+		}
 		checks = append(checks, booleanCheck("spatial USB camera", present, message))
 		if present && device["USB_TRANSPORT"] == "usb2" {
 			checks = append(checks, Check{Name: "spatial USB transport", Level: CheckWarn, Message: "USB 2 limits RGB-D throughput; use a USB 3 port/cable"})
@@ -117,12 +147,37 @@ func doctorSpatial(ctx context.Context, runner Runner, paths Paths, configuratio
 	probeResult := runner.Run(ctx, paths.SpatialCheck, "--socket", socketPath)
 	probe := parseKeyValueOutput(probeResult.Output)
 	ready := probeResult.Err == nil && strings.EqualFold(probe["READY"], "true")
-	message := fmt.Sprintf("status=%s color=%sfps depth=%sfps skew=%sms calibration=%s", fallback(probe["STATUS"], "unknown"), fallback(probe["COLOR_FPS"], "0"), fallback(probe["DEPTH_FPS"], "0"), fallback(probe["SYNC_SKEW_MS"], "unknown"), fallback(probe["CALIBRATION_HASH"], "missing"))
-	if probe["LAST_ERROR"] != "" {
-		message += " error=" + probe["LAST_ERROR"]
+	message := fmt.Sprintf(
+		"status=%s depth=%sfps format=%s/%s depth_frame=%s calibration_valid=%s calibration_frame=%s",
+		fallback(probe["STATUS"], "unknown"),
+		fallback(probe["DEPTH_FPS"], "0"),
+		fallback(probe["DEPTH_ENCODING"], "unknown"),
+		fallback(probe["DEPTH_UNIT"], "unknown"),
+		fallback(probe["DEPTH_FRAME_ID"], "missing"),
+		fallback(probe["CALIBRATION_VALID"], "false"),
+		fallback(probe["CALIBRATION_FRAME_ID"], "missing"),
+	)
+	if reason := probe["CALIBRATION_REASON"]; reason != "" {
+		message += " calibration_error=" + reason
 	}
-	checks = append(checks, booleanCheck("spatial RGB-D contract", ready, message))
+	if failure := diagnosticFailure(probeResult, probe); failure != "" {
+		message += " error=" + failure
+	}
+	checks = append(checks, booleanCheck("spatial depth contract", ready, message))
 	return checks
+}
+
+func diagnosticFailure(result CommandResult, values map[string]string) string {
+	if lastError := strings.TrimSpace(values["LAST_ERROR"]); lastError != "" {
+		return lastError
+	}
+	if result.Err == nil {
+		return ""
+	}
+	if output := strings.TrimSpace(result.Output); output != "" {
+		return strings.ReplaceAll(strings.ReplaceAll(output, "\n", " "), "\r", " ")
+	}
+	return result.Err.Error()
 }
 
 func doctorHailoContainer(ctx context.Context, runner Runner, configuration map[string]string, hailo HailoStatus) []Check {
@@ -192,27 +247,6 @@ func fileCheck(name, path string, required bool) Check {
 		level = CheckFail
 	}
 	return Check{Name: name, Level: level, Message: path + " is missing"}
-}
-
-func checksumCheck(name, path, expected string) Check {
-	if expected == "" {
-		return Check{Name: name, Level: CheckFail, Message: "expected checksum is missing from release manifest"}
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		return Check{Name: name, Level: CheckFail, Message: err.Error()}
-	}
-	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
-		return Check{Name: name, Level: CheckFail, Message: err.Error()}
-	}
-	actual := fmt.Sprintf("%x", hash.Sum(nil))
-	message := fmt.Sprintf("actual=%s expected=%s", actual, expected)
-	if actual == expected {
-		return Check{Name: name, Level: CheckPass, Message: message}
-	}
-	return Check{Name: name, Level: CheckFail, Message: message}
 }
 
 func serviceCheck(ctx context.Context, runner Runner, service string) Check {

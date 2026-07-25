@@ -26,6 +26,7 @@ Install only what your workflow needs:
 | Protocol generation | `protoc`, `protoc-gen-go`, `protoc-gen-go-grpc` |
 | Full SITL | PX4 checkout, PX4 Python environment, Gazebo, `mavsdk_server` |
 | Agent package | Linux build host, Debian packaging tools, network access for pinned artifacts |
+| Spatial package | Python 3 with pip, Debian packaging tools, network access for ARM64 DepthAI/NumPy wheels |
 
 The repository README recommends Node `22.13.1`; `package.json` requires at
 least `20.19.0`. Rust `1.97.0` is the toolchain validated against the current
@@ -455,6 +456,18 @@ go test ./...
 go vet ./...
 ```
 
+### Spatial
+
+```sh
+cd atlas-spatial-runtime
+./scripts/test-source.sh
+```
+
+`packaging/release.sh build VERSION` reruns the Spatial source tests and then
+creates the self-contained ARM64 `.deb`. The Pi does not rerun the suite against
+the installed package; `sudo atlas-setup doctor` is the operator-facing
+hardware/runtime smoke check and invokes Spatial's private diagnostic.
+
 ### Backend
 
 ```sh
@@ -508,9 +521,11 @@ sudo atlas-setup doctor
 systemctl --no-pager --full status \
   atlas-mavsdk.service \
   atlas-agent.service \
-  atlas-hailo-adapter.service
+  atlas-hailo-adapter.service \
+  atlas-spatial-runtime.service
 journalctl -u atlas-agent.service -f
 journalctl -u atlas-hailo-adapter.service -f
+journalctl -u atlas-spatial-runtime.service -f
 ```
 
 ## Database safety

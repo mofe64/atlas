@@ -32,12 +32,6 @@ func TestLoadUsesExplicitAbsoluteStateDirectory(t *testing.T) {
 	if config.PerceptionSocketPath != filepath.Join(want, "perception", "runtime.sock") {
 		t.Fatalf("PerceptionSocketPath = %q", config.PerceptionSocketPath)
 	}
-	if config.NavigationSocketPath != filepath.Join(want, "navigation.sock") {
-		t.Fatalf("NavigationSocketPath = %q", config.NavigationSocketPath)
-	}
-	if config.SpatialEnabled || config.SpatialCloudSocketPath != filepath.Join(want, "spatial-cloud.sock") || config.SpatialSourceID != "front-depth" {
-		t.Fatalf("spatial defaults = %#v", config)
-	}
 	if config.PerceptionAdapterPath != "atlas-hailort-adapter" {
 		t.Fatalf("PerceptionAdapterPath = %q", config.PerceptionAdapterPath)
 	}
@@ -231,6 +225,30 @@ func TestLoadRejectsRelativeStateDirectory(t *testing.T) {
 	t.Setenv("ATLAS_AGENT_STATE_DIR", "relative/state")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want relative-path validation error")
+	}
+}
+
+func TestLoadReadsAndValidatesSelectedAircraftProfile(t *testing.T) {
+	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
+	path, err := filepath.Abs(filepath.Join("..", "..", "..", "aircraft-profiles", "ariadne.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ATLAS_AIRCRAFT_PROFILE_ID", "ariadne")
+	t.Setenv("ATLAS_AIRCRAFT_PROFILE_PATH", path)
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.AircraftProfile.ProfileID != "ariadne" ||
+		loaded.AircraftProfilePath != path ||
+		loaded.AircraftProfile.Payloads.DepthCamera.DeviceID != "19443010F122147E00" {
+		t.Fatalf("aircraft profile = %#v path=%q", loaded.AircraftProfile, loaded.AircraftProfilePath)
+	}
+
+	t.Setenv("ATLAS_AIRCRAFT_PROFILE_ID", "another-aircraft")
+	if _, err := Load(); err == nil {
+		t.Fatal("accepted aircraft profile id that does not match the selected file")
 	}
 }
 

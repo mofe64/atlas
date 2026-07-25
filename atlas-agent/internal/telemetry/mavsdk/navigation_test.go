@@ -14,7 +14,7 @@ func TestMavlinkDirectNavigationFieldsAreNormalized(t *testing.T) {
 	}
 	s := &source{navigation: plane}
 	base := time.Unix(1_800_000_000, 0)
-	plane.SetConnected(true, base)
+	plane.SetConnected(true)
 	plane.SetLocalPositionValid(true, base)
 	inputs := []struct {
 		handle func(string, time.Time) error

@@ -1,10 +1,7 @@
 package onboardsetup
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,8 +16,6 @@ type ApplyResult struct {
 	PerceptionReady bool
 	SpatialReady    bool
 }
-
-const legacySpatialTransformHash = "sha256:30a90b90711af18a0bd5de3c0a2800aeb057f2ba1f59925151cc7179cd3c9304"
 
 func Install(ctx context.Context, runner Runner, options Options) (ApplyResult, error) {
 	if options.Input == nil {
@@ -98,14 +93,9 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 			}
 		}
 	}
-	spatialReady, err := ensureSpatialRuntime(ctx, commandRunner, runner, options, &plan.Config)
+	spatialReady, err := ensureSpatialRuntime(ctx, runner, options, &plan.Config)
 	if err != nil {
 		return ApplyResult{}, err
-	}
-	if plan.Config.SpatialEnabled {
-		if err := ensureSpatialTransformBundle(ctx, commandRunner, runner, options.Paths); err != nil {
-			return ApplyResult{}, err
-		}
 	}
 	if err := writeConfiguration(ctx, runner, options, plan.Config); err != nil {
 		return ApplyResult{}, err
@@ -132,6 +122,14 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	if err := runner.Run(ctx, "systemctl", append([]string{"enable", "--now"}, configuredServices(plan.Config)...)...); err != nil {
 		return ApplyResult{}, err
 	}
+	if plan.Config.SpatialEnabled {
+		// A package upgrade may have restarted Spatial with its previous
+		// environment. Restart once so this setup run's device selection and
+		// frame contract are applied immediately.
+		if err := runner.Run(ctx, "systemctl", "restart", "atlas-spatial-runtime.service"); err != nil {
+			return ApplyResult{}, err
+		}
+	}
 	if options.DryRun {
 		_, _ = fmt.Fprintln(output, "Atlas onboard dry-run complete; no files or services were changed.")
 		return result, nil
@@ -140,74 +138,9 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	return result, nil
 }
 
-func ensureSpatialTransformBundle(ctx context.Context, commandRunner Runner, runner ApplyRunner, paths Paths) error {
-	if commandRunner.Run(ctx, "test", "-e", paths.SpatialTransformBundle).Err != nil {
-		return runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle)
-	}
-
-	currentHash, err := canonicalTransformBundleHash(paths.SpatialTransformBundle)
-	if err != nil {
-		return fmt.Errorf("inspect existing spatial transform bundle: %w", err)
-	}
-	if currentHash != legacySpatialTransformHash {
-		return nil
-	}
-
-	// This exact hash is the uncommissioned v2 Atlas seed. It is safe to
-	// migrate because any physical commissioning changes the canonical hash.
-	// Stop the reader, preserve the original, and install the packaged v3
-	// bundle that adds only the required aligned optical-frame edge.
-	if err := runner.Run(ctx, "systemctl", "stop", "atlas-spatial-runtime.service"); err != nil {
-		return err
-	}
-	backupPath := paths.SpatialTransformBundle + ".pre-optical-chain"
-	if err := runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.SpatialTransformBundle, backupPath); err != nil {
-		return err
-	}
-	if err := runner.Run(ctx, "install", "-D", "-m", "0640", "-o", "root", "-g", "atlas-agent", paths.DefaultSpatialTransformBundle, paths.SpatialTransformBundle); err != nil {
-		return err
-	}
-	if runner.Output != nil {
-		_, _ = fmt.Fprintf(runner.Output, "Migrated the unchanged Atlas spatial transform seed; backup: %s\n", backupPath)
-	}
-	return nil
-}
-
-func canonicalTransformBundleHash(path string) (string, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return "", err
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var bundle map[string]any
-	if err := decoder.Decode(&bundle); err != nil {
-		return "", fmt.Errorf("decode %s: %w", path, err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return "", fmt.Errorf("decode %s: trailing JSON value", path)
-		}
-		return "", fmt.Errorf("decode %s: %w", path, err)
-	}
-	delete(bundle, "sha256")
-	canonical, err := json.Marshal(bundle)
-	if err != nil {
-		return "", fmt.Errorf("canonicalize %s: %w", path, err)
-	}
-	digest := sha256.Sum256(canonical)
-	return fmt.Sprintf("sha256:%x", digest), nil
-}
-
-func ensureSpatialRuntime(ctx context.Context, commandRunner Runner, runner ApplyRunner, options Options, config *InstallConfig) (bool, error) {
+func ensureSpatialRuntime(ctx context.Context, runner ApplyRunner, options Options, config *InstallConfig) (bool, error) {
 	if !config.SpatialEnabled {
 		return true, nil
-	}
-	imageReady := commandRunner.Run(ctx, "docker", "image", "inspect", config.SpatialContainerImage).Err == nil
-	if !imageReady {
-		if err := runner.Run(ctx, options.Paths.SpatialSetupBinary, "--image", config.SpatialContainerImage, "--build-local"); err != nil {
-			return false, fmt.Errorf("prepare spatial runtime: %w", err)
-		}
 	}
 	if config.SpatialProvider == SpatialProviderDepthAI {
 		runner.RunOptional(ctx, "udevadm", "control", "--reload-rules")
@@ -216,15 +149,7 @@ func ensureSpatialRuntime(ctx context.Context, commandRunner Runner, runner Appl
 	if options.DryRun {
 		return true, nil
 	}
-	if result := commandRunner.Run(ctx, "docker", "image", "inspect", config.SpatialContainerImage); result.Err != nil {
-		return false, fmt.Errorf("spatial runtime image is not available after setup: %s", config.SpatialContainerImage)
-	}
-	resolved := commandRunner.Run(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", config.SpatialContainerImage)
-	if resolved.Err != nil || !strings.HasPrefix(strings.TrimSpace(resolved.Output), "sha256:") {
-		return false, fmt.Errorf("could not resolve immutable spatial runtime image id for %s", config.SpatialContainerImage)
-	}
-	config.SpatialContainerImage = strings.TrimSpace(resolved.Output)
-	return true, nil
+	return fileExists(options.Paths.SpatialRuntimeBinary), nil
 }
 
 func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) error {
@@ -237,12 +162,16 @@ func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) er
 	} else if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeContainer {
 		required = append(required, paths.HailoContainerService, paths.HailoContainerEnv)
 	}
-	if config.SpatialEnabled {
-		required = append(required, paths.SpatialSetupBinary, paths.SpatialContainerRun, paths.SpatialCheck, paths.SpatialService, paths.DefaultSpatialTransformBundle, filepath.Join(paths.SpatialContext, "packaging", "Dockerfile"))
-	}
 	for _, path := range required {
 		if !fileExists(path) {
 			return fmt.Errorf("Atlas package payload is incomplete; missing %s", path)
+		}
+	}
+	if config.SpatialEnabled {
+		for _, path := range []string{paths.SpatialRuntimeBinary, paths.SpatialCheck, paths.SpatialService} {
+			if !fileExists(path) {
+				return fmt.Errorf("Atlas Spatial Runtime is not installed; install atlas-spatial-runtime on the Pi before enabling front-depth (missing %s)", path)
+			}
 		}
 	}
 	return nil
@@ -306,9 +235,30 @@ func writeConfiguration(ctx context.Context, runner ApplyRunner, options Options
 		return err
 	}
 	if options.DryRun {
+		_, _ = fmt.Fprintf(
+			options.Output,
+			"--- %s -> %s (0640 root:atlas-agent) ---\n",
+			config.AircraftProfileSourcePath,
+			options.Paths.AircraftProfileConfig,
+		)
 		_, _ = fmt.Fprintf(options.Output, "--- %s (0640 root:atlas-agent) ---\n%s", options.Paths.ConfigFile, content)
 		_, _ = fmt.Fprintf(options.Output, "--- %s (0640 root:atlas-agent) ---\n%s", options.Paths.SpatialConfigFile, spatialContent)
 		return nil
+	}
+	if err := runner.Run(
+		ctx,
+		"install",
+		"-D",
+		"-m",
+		"0640",
+		"-o",
+		"root",
+		"-g",
+		"atlas-agent",
+		config.AircraftProfileSourcePath,
+		options.Paths.AircraftProfileConfig,
+	); err != nil {
+		return err
 	}
 	if err := installEnvironmentFile(ctx, runner, content, options.Paths.ConfigFile); err != nil {
 		return err
@@ -316,7 +266,7 @@ func writeConfiguration(ctx context.Context, runner ApplyRunner, options Options
 	if err := installEnvironmentFile(ctx, runner, spatialContent, options.Paths.SpatialConfigFile); err != nil {
 		return err
 	}
-	if err := runner.Run(ctx, "install", "-d", "-m", "0750", "-o", "atlas-agent", "-g", "atlas-agent", options.Paths.StateDirectory, options.Paths.RuntimeDirectory, options.Paths.SpatialStateDirectory, filepath.Join(options.Paths.SpatialStateDirectory, "log")); err != nil {
+	if err := runner.Run(ctx, "install", "-d", "-m", "0750", "-o", "atlas-agent", "-g", "atlas-agent", options.Paths.StateDirectory, options.Paths.RuntimeDirectory); err != nil {
 		return err
 	}
 	return nil
@@ -347,6 +297,8 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 	values := [][2]string{
 		{"ATLAS_AGENT_STATE_DIR", paths.StateDirectory},
 		{"ATLAS_AGENT_VERSION", config.AgentVersion},
+		{"ATLAS_AIRCRAFT_PROFILE_ID", config.AircraftProfileID},
+		{"ATLAS_AIRCRAFT_PROFILE_PATH", paths.AircraftProfileConfig},
 		{"ATLAS_GROUND_STATION_ADDR", config.GroundStationAddress},
 		{"ATLAS_DRONE_NAME", config.DroneName},
 		{"ATLAS_FLIGHT_CONTROLLER_TRANSPORT", "serial"},
@@ -355,10 +307,6 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 		{"ATLAS_MAVLINK_SYSTEM_ID", strconv.FormatUint(uint64(config.MAVLinkSystemID), 10)},
 		{"ATLAS_MAVLINK_COMPONENT_ID", strconv.FormatUint(uint64(config.MAVLinkComponentID), 10)},
 		{"ATLAS_MAVSDK_GRPC_ADDR", DefaultMAVSDKAddr},
-		{"ATLAS_NAVIGATION_SOCKET_PATH", "/run/atlas-agent/navigation.sock"},
-		{"ATLAS_SPATIAL_ENABLED", strconv.FormatBool(config.SpatialEnabled)},
-		{"ATLAS_SPATIAL_SOURCE_ID", config.SpatialSourceID},
-		{"ATLAS_SPATIAL_CLOUD_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial-cloud.sock")},
 		{"ATLAS_MAVSDK_GRPC_PORT", "50051"},
 		{"ATLAS_MAVSDK_SYSTEM_ADDRESS", "serial://" + config.SerialDevice + ":" + strconv.FormatUint(uint64(config.BaudRate), 10)},
 		{"ATLAS_CAMERA_TRANSPORT", string(config.CameraTransport)},
@@ -406,21 +354,19 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 func RenderSpatialEnvironment(config InstallConfig, paths Paths) (string, error) {
 	values := [][2]string{
 		{"ATLAS_SPATIAL_ENABLED", strconv.FormatBool(config.SpatialEnabled)},
-		{"ATLAS_SPATIAL_CONTRACT_VERSION", "1"},
+		{"ATLAS_SPATIAL_CONTRACT_VERSION", "2"},
+		{"ATLAS_AIRCRAFT_PROFILE_ID", config.AircraftProfileID},
+		{"ATLAS_AIRCRAFT_PROFILE_PATH", paths.AircraftProfileConfig},
 		{"ATLAS_SPATIAL_PROVIDER", config.SpatialProvider},
 		{"ATLAS_SPATIAL_SOURCE_ID", config.SpatialSourceID},
 		{"ATLAS_SPATIAL_DEVICE_ID", config.SpatialDeviceID},
 		{"ATLAS_SPATIAL_MODEL", config.SpatialModel},
 		{"ATLAS_SPATIAL_USB_TRANSPORT", config.SpatialUSBTransport},
 		{"ATLAS_SPATIAL_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial.sock")},
-		{"ATLAS_SPATIAL_CLOUD_SOCKET_PATH", filepath.Join(paths.RuntimeDirectory, "spatial-cloud.sock")},
-		{"ATLAS_SPATIAL_TRANSFORM_BUNDLE_PATH", paths.SpatialTransformBundle},
-		{"ATLAS_SPATIAL_VIO_ENABLED", "true"},
-		{"ATLAS_SPATIAL_LIVE_CLOUD_ENABLED", "true"},
-		{"ATLAS_SPATIAL_PX4_VIO_FUSION_ENABLED", "false"},
-		{"ATLAS_SPATIAL_MOVEMENT_ENABLED", "false"},
-		{"ATLAS_SPATIAL_CONTAINER_IMAGE", config.SpatialContainerImage},
-		{"ATLAS_SPATIAL_CONTAINER_NAME", "atlas-spatial-runtime"},
+		{"ATLAS_SPATIAL_FRAME_ID", config.SpatialFrameID},
+		{"ATLAS_SPATIAL_WIDTH", "640"},
+		{"ATLAS_SPATIAL_HEIGHT", "400"},
+		{"ATLAS_SPATIAL_FPS", "20"},
 	}
 	var builder strings.Builder
 	builder.WriteString("# Generated by atlas-setup. Camera-vendor details stop at this boundary.\n")

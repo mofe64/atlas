@@ -21,55 +21,6 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type SpatialCloudSubscriptionAction int32
-
-const (
-	SpatialCloudSubscriptionAction_SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED    SpatialCloudSubscriptionAction = 0
-	SpatialCloudSubscriptionAction_SPATIAL_CLOUD_SUBSCRIPTION_ACTION_START_OR_RENEW SpatialCloudSubscriptionAction = 1
-	SpatialCloudSubscriptionAction_SPATIAL_CLOUD_SUBSCRIPTION_ACTION_STOP           SpatialCloudSubscriptionAction = 2
-)
-
-// Enum value maps for SpatialCloudSubscriptionAction.
-var (
-	SpatialCloudSubscriptionAction_name = map[int32]string{
-		0: "SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED",
-		1: "SPATIAL_CLOUD_SUBSCRIPTION_ACTION_START_OR_RENEW",
-		2: "SPATIAL_CLOUD_SUBSCRIPTION_ACTION_STOP",
-	}
-	SpatialCloudSubscriptionAction_value = map[string]int32{
-		"SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED":    0,
-		"SPATIAL_CLOUD_SUBSCRIPTION_ACTION_START_OR_RENEW": 1,
-		"SPATIAL_CLOUD_SUBSCRIPTION_ACTION_STOP":           2,
-	}
-)
-
-func (x SpatialCloudSubscriptionAction) Enum() *SpatialCloudSubscriptionAction {
-	p := new(SpatialCloudSubscriptionAction)
-	*p = x
-	return p
-}
-
-func (x SpatialCloudSubscriptionAction) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (SpatialCloudSubscriptionAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[0].Descriptor()
-}
-
-func (SpatialCloudSubscriptionAction) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[0]
-}
-
-func (x SpatialCloudSubscriptionAction) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use SpatialCloudSubscriptionAction.Descriptor instead.
-func (SpatialCloudSubscriptionAction) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{0}
-}
-
 type PerceptionFrameSubscriptionAction int32
 
 const (
@@ -103,11 +54,11 @@ func (x PerceptionFrameSubscriptionAction) String() string {
 }
 
 func (PerceptionFrameSubscriptionAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[1].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[0].Descriptor()
 }
 
 func (PerceptionFrameSubscriptionAction) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[1]
+	return &file_atlas_ground_station_proto_enumTypes[0]
 }
 
 func (x PerceptionFrameSubscriptionAction) Number() protoreflect.EnumNumber {
@@ -116,7 +67,7 @@ func (x PerceptionFrameSubscriptionAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use PerceptionFrameSubscriptionAction.Descriptor instead.
 func (PerceptionFrameSubscriptionAction) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{1}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{0}
 }
 
 type VehicleCommandType int32
@@ -190,11 +141,11 @@ func (x VehicleCommandType) String() string {
 }
 
 func (VehicleCommandType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[2].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[1].Descriptor()
 }
 
 func (VehicleCommandType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[2]
+	return &file_atlas_ground_station_proto_enumTypes[1]
 }
 
 func (x VehicleCommandType) Number() protoreflect.EnumNumber {
@@ -203,7 +154,7 @@ func (x VehicleCommandType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VehicleCommandType.Descriptor instead.
 func (VehicleCommandType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{2}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{1}
 }
 
 type VehicleCommandUpdateType int32
@@ -260,11 +211,11 @@ func (x VehicleCommandUpdateType) String() string {
 }
 
 func (VehicleCommandUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[2].Descriptor()
 }
 
 func (VehicleCommandUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[3]
+	return &file_atlas_ground_station_proto_enumTypes[2]
 }
 
 func (x VehicleCommandUpdateType) Number() protoreflect.EnumNumber {
@@ -273,7 +224,7 @@ func (x VehicleCommandUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VehicleCommandUpdateType.Descriptor instead.
 func (VehicleCommandUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{2}
 }
 
 // Aircraft following is a separate supervised navigation authority. It never
@@ -317,11 +268,11 @@ func (x AircraftFollowControlAction) String() string {
 }
 
 func (AircraftFollowControlAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[4].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[3].Descriptor()
 }
 
 func (AircraftFollowControlAction) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[4]
+	return &file_atlas_ground_station_proto_enumTypes[3]
 }
 
 func (x AircraftFollowControlAction) Number() protoreflect.EnumNumber {
@@ -330,7 +281,7 @@ func (x AircraftFollowControlAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AircraftFollowControlAction.Descriptor instead.
 func (AircraftFollowControlAction) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{3}
 }
 
 type AircraftFollowSessionUpdateType int32
@@ -378,11 +329,11 @@ func (x AircraftFollowSessionUpdateType) String() string {
 }
 
 func (AircraftFollowSessionUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[5].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[4].Descriptor()
 }
 
 func (AircraftFollowSessionUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[5]
+	return &file_atlas_ground_station_proto_enumTypes[4]
 }
 
 func (x AircraftFollowSessionUpdateType) Number() protoreflect.EnumNumber {
@@ -391,123 +342,7 @@ func (x AircraftFollowSessionUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use AircraftFollowSessionUpdateType.Descriptor instead.
 func (AircraftFollowSessionUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
-}
-
-// Indoor Explore has a dedicated mission contract because it uses
-// short-range local navigation and an explicit return-to-start behavior, not
-// PX4's uploaded waypoint mission or geographic RTL.
-type IndoorExploreControlAction int32
-
-const (
-	IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED      IndoorExploreControlAction = 0
-	IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_START            IndoorExploreControlAction = 1
-	IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN IndoorExploreControlAction = 2
-)
-
-// Enum value maps for IndoorExploreControlAction.
-var (
-	IndoorExploreControlAction_name = map[int32]string{
-		0: "INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED",
-		1: "INDOOR_EXPLORE_CONTROL_ACTION_START",
-		2: "INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN",
-	}
-	IndoorExploreControlAction_value = map[string]int32{
-		"INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED":      0,
-		"INDOOR_EXPLORE_CONTROL_ACTION_START":            1,
-		"INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN": 2,
-	}
-)
-
-func (x IndoorExploreControlAction) Enum() *IndoorExploreControlAction {
-	p := new(IndoorExploreControlAction)
-	*p = x
-	return p
-}
-
-func (x IndoorExploreControlAction) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (IndoorExploreControlAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[6].Descriptor()
-}
-
-func (IndoorExploreControlAction) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[6]
-}
-
-func (x IndoorExploreControlAction) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use IndoorExploreControlAction.Descriptor instead.
-func (IndoorExploreControlAction) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
-}
-
-type IndoorExploreMissionState int32
-
-const (
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED IndoorExploreMissionState = 0
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_STARTING    IndoorExploreMissionState = 1
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF  IndoorExploreMissionState = 2
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_EXPLORING   IndoorExploreMissionState = 3
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_RETURNING   IndoorExploreMissionState = 4
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_COMPLETE    IndoorExploreMissionState = 5
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_HOLDING     IndoorExploreMissionState = 6
-	IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_FAILED      IndoorExploreMissionState = 7
-)
-
-// Enum value maps for IndoorExploreMissionState.
-var (
-	IndoorExploreMissionState_name = map[int32]string{
-		0: "INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED",
-		1: "INDOOR_EXPLORE_MISSION_STATE_STARTING",
-		2: "INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF",
-		3: "INDOOR_EXPLORE_MISSION_STATE_EXPLORING",
-		4: "INDOOR_EXPLORE_MISSION_STATE_RETURNING",
-		5: "INDOOR_EXPLORE_MISSION_STATE_COMPLETE",
-		6: "INDOOR_EXPLORE_MISSION_STATE_HOLDING",
-		7: "INDOOR_EXPLORE_MISSION_STATE_FAILED",
-	}
-	IndoorExploreMissionState_value = map[string]int32{
-		"INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED": 0,
-		"INDOOR_EXPLORE_MISSION_STATE_STARTING":    1,
-		"INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF":  2,
-		"INDOOR_EXPLORE_MISSION_STATE_EXPLORING":   3,
-		"INDOOR_EXPLORE_MISSION_STATE_RETURNING":   4,
-		"INDOOR_EXPLORE_MISSION_STATE_COMPLETE":    5,
-		"INDOOR_EXPLORE_MISSION_STATE_HOLDING":     6,
-		"INDOOR_EXPLORE_MISSION_STATE_FAILED":      7,
-	}
-)
-
-func (x IndoorExploreMissionState) Enum() *IndoorExploreMissionState {
-	p := new(IndoorExploreMissionState)
-	*p = x
-	return p
-}
-
-func (x IndoorExploreMissionState) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (IndoorExploreMissionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[7].Descriptor()
-}
-
-func (IndoorExploreMissionState) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[7]
-}
-
-func (x IndoorExploreMissionState) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use IndoorExploreMissionState.Descriptor instead.
-func (IndoorExploreMissionState) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
 }
 
 // Mission operations use the same durable request/update boundary as vehicle
@@ -557,11 +392,11 @@ func (x MissionOperationType) String() string {
 }
 
 func (MissionOperationType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[8].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[5].Descriptor()
 }
 
 func (MissionOperationType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[8]
+	return &file_atlas_ground_station_proto_enumTypes[5]
 }
 
 func (x MissionOperationType) Number() protoreflect.EnumNumber {
@@ -570,7 +405,7 @@ func (x MissionOperationType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionOperationType.Descriptor instead.
 func (MissionOperationType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{8}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
 }
 
 type MissionRunUpdateType int32
@@ -659,11 +494,11 @@ func (x MissionRunUpdateType) String() string {
 }
 
 func (MissionRunUpdateType) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[9].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[6].Descriptor()
 }
 
 func (MissionRunUpdateType) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[9]
+	return &file_atlas_ground_station_proto_enumTypes[6]
 }
 
 func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
@@ -672,7 +507,7 @@ func (x MissionRunUpdateType) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionRunUpdateType.Descriptor instead.
 func (MissionRunUpdateType) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{9}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
 }
 
 type MissionActionState int32
@@ -720,11 +555,11 @@ func (x MissionActionState) String() string {
 }
 
 func (MissionActionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_atlas_ground_station_proto_enumTypes[10].Descriptor()
+	return file_atlas_ground_station_proto_enumTypes[7].Descriptor()
 }
 
 func (MissionActionState) Type() protoreflect.EnumType {
-	return &file_atlas_ground_station_proto_enumTypes[10]
+	return &file_atlas_ground_station_proto_enumTypes[7]
 }
 
 func (x MissionActionState) Number() protoreflect.EnumNumber {
@@ -733,7 +568,7 @@ func (x MissionActionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use MissionActionState.Descriptor instead.
 func (MissionActionState) EnumDescriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
 }
 
 type AgentToGroundStation struct {
@@ -748,7 +583,6 @@ type AgentToGroundStation struct {
 	//	*AgentToGroundStation_CommandUpdate
 	//	*AgentToGroundStation_MissionRunUpdate
 	//	*AgentToGroundStation_AircraftFollowSessionUpdate
-	//	*AgentToGroundStation_IndoorExploreMissionUpdate
 	Payload       isAgentToGroundStation_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -861,15 +695,6 @@ func (x *AgentToGroundStation) GetAircraftFollowSessionUpdate() *AircraftFollowS
 	return nil
 }
 
-func (x *AgentToGroundStation) GetIndoorExploreMissionUpdate() *IndoorExploreMissionUpdate {
-	if x != nil {
-		if x, ok := x.Payload.(*AgentToGroundStation_IndoorExploreMissionUpdate); ok {
-			return x.IndoorExploreMissionUpdate
-		}
-	}
-	return nil
-}
-
 type isAgentToGroundStation_Payload interface {
 	isAgentToGroundStation_Payload()
 }
@@ -902,10 +727,6 @@ type AgentToGroundStation_AircraftFollowSessionUpdate struct {
 	AircraftFollowSessionUpdate *AircraftFollowSessionUpdate `protobuf:"bytes,8,opt,name=aircraft_follow_session_update,json=aircraftFollowSessionUpdate,proto3,oneof"`
 }
 
-type AgentToGroundStation_IndoorExploreMissionUpdate struct {
-	IndoorExploreMissionUpdate *IndoorExploreMissionUpdate `protobuf:"bytes,9,opt,name=indoor_explore_mission_update,json=indoorExploreMissionUpdate,proto3,oneof"`
-}
-
 func (*AgentToGroundStation_Registration) isAgentToGroundStation_Payload() {}
 
 func (*AgentToGroundStation_Heartbeat) isAgentToGroundStation_Payload() {}
@@ -920,8 +741,6 @@ func (*AgentToGroundStation_MissionRunUpdate) isAgentToGroundStation_Payload() {
 
 func (*AgentToGroundStation_AircraftFollowSessionUpdate) isAgentToGroundStation_Payload() {}
 
-func (*AgentToGroundStation_IndoorExploreMissionUpdate) isAgentToGroundStation_Payload() {}
-
 type GroundStationToAgent struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Payload:
@@ -932,7 +751,6 @@ type GroundStationToAgent struct {
 	//	*GroundStationToAgent_MissionOperationRequest
 	//	*GroundStationToAgent_MissionReconciliationRequest
 	//	*GroundStationToAgent_AircraftFollowControlRequest
-	//	*GroundStationToAgent_IndoorExploreControlRequest
 	Payload       isGroundStationToAgent_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1029,15 +847,6 @@ func (x *GroundStationToAgent) GetAircraftFollowControlRequest() *AircraftFollow
 	return nil
 }
 
-func (x *GroundStationToAgent) GetIndoorExploreControlRequest() *IndoorExploreControlRequest {
-	if x != nil {
-		if x, ok := x.Payload.(*GroundStationToAgent_IndoorExploreControlRequest); ok {
-			return x.IndoorExploreControlRequest
-		}
-	}
-	return nil
-}
-
 type isGroundStationToAgent_Payload interface {
 	isGroundStationToAgent_Payload()
 }
@@ -1066,10 +875,6 @@ type GroundStationToAgent_AircraftFollowControlRequest struct {
 	AircraftFollowControlRequest *AircraftFollowControlRequest `protobuf:"bytes,6,opt,name=aircraft_follow_control_request,json=aircraftFollowControlRequest,proto3,oneof"`
 }
 
-type GroundStationToAgent_IndoorExploreControlRequest struct {
-	IndoorExploreControlRequest *IndoorExploreControlRequest `protobuf:"bytes,7,opt,name=indoor_explore_control_request,json=indoorExploreControlRequest,proto3,oneof"`
-}
-
 func (*GroundStationToAgent_RegistrationAccepted) isGroundStationToAgent_Payload() {}
 
 func (*GroundStationToAgent_CommandRequest) isGroundStationToAgent_Payload() {}
@@ -1081,8 +886,6 @@ func (*GroundStationToAgent_MissionOperationRequest) isGroundStationToAgent_Payl
 func (*GroundStationToAgent_MissionReconciliationRequest) isGroundStationToAgent_Payload() {}
 
 func (*GroundStationToAgent_AircraftFollowControlRequest) isGroundStationToAgent_Payload() {}
-
-func (*GroundStationToAgent_IndoorExploreControlRequest) isGroundStationToAgent_Payload() {}
 
 // AgentPerception is deliberately accelerator-neutral. Hailo HEF/TAPPAS,
 // NVIDIA DeepStream/TensorRT, and software ONNX runtimes must translate their
@@ -1315,628 +1118,6 @@ func (*GroundStationPerception_FrameSubscription) isGroundStationPerception_Payl
 
 func (*GroundStationPerception_CountingRules) isGroundStationPerception_Payload() {}
 
-// Spatial transport carries complete, replaceable map snapshots. `latest-only`
-// describes queue behaviour: it never means a partial or sampled point cloud.
-type AgentSpatial struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	SessionId string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
-	DroneId   string                 `protobuf:"bytes,2,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
-	// Types that are valid to be assigned to Payload:
-	//
-	//	*AgentSpatial_Registration
-	//	*AgentSpatial_Cloud
-	Payload       isAgentSpatial_Payload `protobuf_oneof:"payload"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *AgentSpatial) Reset() {
-	*x = AgentSpatial{}
-	mi := &file_atlas_ground_station_proto_msgTypes[4]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *AgentSpatial) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*AgentSpatial) ProtoMessage() {}
-
-func (x *AgentSpatial) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[4]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use AgentSpatial.ProtoReflect.Descriptor instead.
-func (*AgentSpatial) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
-}
-
-func (x *AgentSpatial) GetSessionId() string {
-	if x != nil {
-		return x.SessionId
-	}
-	return ""
-}
-
-func (x *AgentSpatial) GetDroneId() string {
-	if x != nil {
-		return x.DroneId
-	}
-	return ""
-}
-
-func (x *AgentSpatial) GetPayload() isAgentSpatial_Payload {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
-func (x *AgentSpatial) GetRegistration() *SpatialStreamRegistration {
-	if x != nil {
-		if x, ok := x.Payload.(*AgentSpatial_Registration); ok {
-			return x.Registration
-		}
-	}
-	return nil
-}
-
-func (x *AgentSpatial) GetCloud() *SpatialCloudSnapshot {
-	if x != nil {
-		if x, ok := x.Payload.(*AgentSpatial_Cloud); ok {
-			return x.Cloud
-		}
-	}
-	return nil
-}
-
-type isAgentSpatial_Payload interface {
-	isAgentSpatial_Payload()
-}
-
-type AgentSpatial_Registration struct {
-	Registration *SpatialStreamRegistration `protobuf:"bytes,3,opt,name=registration,proto3,oneof"`
-}
-
-type AgentSpatial_Cloud struct {
-	Cloud *SpatialCloudSnapshot `protobuf:"bytes,4,opt,name=cloud,proto3,oneof"`
-}
-
-func (*AgentSpatial_Registration) isAgentSpatial_Payload() {}
-
-func (*AgentSpatial_Cloud) isAgentSpatial_Payload() {}
-
-type GroundStationSpatial struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Types that are valid to be assigned to Payload:
-	//
-	//	*GroundStationSpatial_StreamAccepted
-	//	*GroundStationSpatial_CloudSubscription
-	Payload       isGroundStationSpatial_Payload `protobuf_oneof:"payload"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *GroundStationSpatial) Reset() {
-	*x = GroundStationSpatial{}
-	mi := &file_atlas_ground_station_proto_msgTypes[5]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *GroundStationSpatial) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*GroundStationSpatial) ProtoMessage() {}
-
-func (x *GroundStationSpatial) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[5]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use GroundStationSpatial.ProtoReflect.Descriptor instead.
-func (*GroundStationSpatial) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
-}
-
-func (x *GroundStationSpatial) GetPayload() isGroundStationSpatial_Payload {
-	if x != nil {
-		return x.Payload
-	}
-	return nil
-}
-
-func (x *GroundStationSpatial) GetStreamAccepted() *SpatialStreamAccepted {
-	if x != nil {
-		if x, ok := x.Payload.(*GroundStationSpatial_StreamAccepted); ok {
-			return x.StreamAccepted
-		}
-	}
-	return nil
-}
-
-func (x *GroundStationSpatial) GetCloudSubscription() *SpatialCloudSubscription {
-	if x != nil {
-		if x, ok := x.Payload.(*GroundStationSpatial_CloudSubscription); ok {
-			return x.CloudSubscription
-		}
-	}
-	return nil
-}
-
-type isGroundStationSpatial_Payload interface {
-	isGroundStationSpatial_Payload()
-}
-
-type GroundStationSpatial_StreamAccepted struct {
-	StreamAccepted *SpatialStreamAccepted `protobuf:"bytes,1,opt,name=stream_accepted,json=streamAccepted,proto3,oneof"`
-}
-
-type GroundStationSpatial_CloudSubscription struct {
-	CloudSubscription *SpatialCloudSubscription `protobuf:"bytes,2,opt,name=cloud_subscription,json=cloudSubscription,proto3,oneof"`
-}
-
-func (*GroundStationSpatial_StreamAccepted) isGroundStationSpatial_Payload() {}
-
-func (*GroundStationSpatial_CloudSubscription) isGroundStationSpatial_Payload() {}
-
-// Native renews a short lease only while the indoor view is mounted. The
-// runtime may continue building its bounded map, but the Agent suppresses the
-// expensive radio transfer when nobody is viewing it.
-type SpatialCloudSubscription struct {
-	state           protoimpl.MessageState         `protogen:"open.v1"`
-	SubscriptionId  string                         `protobuf:"bytes,1,opt,name=subscription_id,json=subscriptionId,proto3" json:"subscription_id,omitempty"`
-	Purpose         string                         `protobuf:"bytes,2,opt,name=purpose,proto3" json:"purpose,omitempty"`
-	Action          SpatialCloudSubscriptionAction `protobuf:"varint,3,opt,name=action,proto3,enum=atlas.groundstation.v1.SpatialCloudSubscriptionAction" json:"action,omitempty"`
-	LeaseDurationMs int64                          `protobuf:"varint,4,opt,name=lease_duration_ms,json=leaseDurationMs,proto3" json:"lease_duration_ms,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *SpatialCloudSubscription) Reset() {
-	*x = SpatialCloudSubscription{}
-	mi := &file_atlas_ground_station_proto_msgTypes[6]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SpatialCloudSubscription) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SpatialCloudSubscription) ProtoMessage() {}
-
-func (x *SpatialCloudSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[6]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SpatialCloudSubscription.ProtoReflect.Descriptor instead.
-func (*SpatialCloudSubscription) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
-}
-
-func (x *SpatialCloudSubscription) GetSubscriptionId() string {
-	if x != nil {
-		return x.SubscriptionId
-	}
-	return ""
-}
-
-func (x *SpatialCloudSubscription) GetPurpose() string {
-	if x != nil {
-		return x.Purpose
-	}
-	return ""
-}
-
-func (x *SpatialCloudSubscription) GetAction() SpatialCloudSubscriptionAction {
-	if x != nil {
-		return x.Action
-	}
-	return SpatialCloudSubscriptionAction_SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED
-}
-
-func (x *SpatialCloudSubscription) GetLeaseDurationMs() int64 {
-	if x != nil {
-		return x.LeaseDurationMs
-	}
-	return 0
-}
-
-type SpatialStreamRegistration struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	StreamId         string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
-	InstallationId   string                 `protobuf:"bytes,2,opt,name=installation_id,json=installationId,proto3" json:"installation_id,omitempty"`
-	ProtocolVersion  string                 `protobuf:"bytes,3,opt,name=protocol_version,json=protocolVersion,proto3" json:"protocol_version,omitempty"`
-	SourceId         string                 `protobuf:"bytes,4,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	MaximumPoints    uint32                 `protobuf:"varint,5,opt,name=maximum_points,json=maximumPoints,proto3" json:"maximum_points,omitempty"`
-	ObservedAtUnixMs int64                  `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *SpatialStreamRegistration) Reset() {
-	*x = SpatialStreamRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[7]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SpatialStreamRegistration) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SpatialStreamRegistration) ProtoMessage() {}
-
-func (x *SpatialStreamRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[7]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SpatialStreamRegistration.ProtoReflect.Descriptor instead.
-func (*SpatialStreamRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
-}
-
-func (x *SpatialStreamRegistration) GetStreamId() string {
-	if x != nil {
-		return x.StreamId
-	}
-	return ""
-}
-
-func (x *SpatialStreamRegistration) GetInstallationId() string {
-	if x != nil {
-		return x.InstallationId
-	}
-	return ""
-}
-
-func (x *SpatialStreamRegistration) GetProtocolVersion() string {
-	if x != nil {
-		return x.ProtocolVersion
-	}
-	return ""
-}
-
-func (x *SpatialStreamRegistration) GetSourceId() string {
-	if x != nil {
-		return x.SourceId
-	}
-	return ""
-}
-
-func (x *SpatialStreamRegistration) GetMaximumPoints() uint32 {
-	if x != nil {
-		return x.MaximumPoints
-	}
-	return 0
-}
-
-func (x *SpatialStreamRegistration) GetObservedAtUnixMs() int64 {
-	if x != nil {
-		return x.ObservedAtUnixMs
-	}
-	return 0
-}
-
-type SpatialStreamAccepted struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	StreamId         string                 `protobuf:"bytes,1,opt,name=stream_id,json=streamId,proto3" json:"stream_id,omitempty"`
-	AcceptedAtUnixMs int64                  `protobuf:"varint,2,opt,name=accepted_at_unix_ms,json=acceptedAtUnixMs,proto3" json:"accepted_at_unix_ms,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *SpatialStreamAccepted) Reset() {
-	*x = SpatialStreamAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[8]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SpatialStreamAccepted) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SpatialStreamAccepted) ProtoMessage() {}
-
-func (x *SpatialStreamAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[8]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SpatialStreamAccepted.ProtoReflect.Descriptor instead.
-func (*SpatialStreamAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *SpatialStreamAccepted) GetStreamId() string {
-	if x != nil {
-		return x.StreamId
-	}
-	return ""
-}
-
-func (x *SpatialStreamAccepted) GetAcceptedAtUnixMs() int64 {
-	if x != nil {
-		return x.AcceptedAtUnixMs
-	}
-	return 0
-}
-
-type SpatialCloudSnapshot struct {
-	state            protoimpl.MessageState `protogen:"open.v1"`
-	SourceId         string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
-	StreamEpoch      string                 `protobuf:"bytes,2,opt,name=stream_epoch,json=streamEpoch,proto3" json:"stream_epoch,omitempty"`
-	Sequence         uint64                 `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
-	ObservedAtUnixMs int64                  `protobuf:"varint,4,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	CaptureNs        int64                  `protobuf:"varint,5,opt,name=capture_ns,json=captureNs,proto3" json:"capture_ns,omitempty"`
-	FrameId          string                 `protobuf:"bytes,6,opt,name=frame_id,json=frameId,proto3" json:"frame_id,omitempty"`
-	VoxelSizeM       float32                `protobuf:"fixed32,7,opt,name=voxel_size_m,json=voxelSizeM,proto3" json:"voxel_size_m,omitempty"`
-	PointCount       uint32                 `protobuf:"varint,8,opt,name=point_count,json=pointCount,proto3" json:"point_count,omitempty"`
-	// Tightly packed little-endian XYZ float32 triples: exactly 12 bytes/point.
-	XyzF32Le      []byte       `protobuf:"bytes,9,opt,name=xyz_f32_le,json=xyzF32Le,proto3" json:"xyz_f32_le,omitempty"`
-	Pose          *SpatialPose `protobuf:"bytes,10,opt,name=pose,proto3" json:"pose,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SpatialCloudSnapshot) Reset() {
-	*x = SpatialCloudSnapshot{}
-	mi := &file_atlas_ground_station_proto_msgTypes[9]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SpatialCloudSnapshot) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SpatialCloudSnapshot) ProtoMessage() {}
-
-func (x *SpatialCloudSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[9]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SpatialCloudSnapshot.ProtoReflect.Descriptor instead.
-func (*SpatialCloudSnapshot) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{9}
-}
-
-func (x *SpatialCloudSnapshot) GetSourceId() string {
-	if x != nil {
-		return x.SourceId
-	}
-	return ""
-}
-
-func (x *SpatialCloudSnapshot) GetStreamEpoch() string {
-	if x != nil {
-		return x.StreamEpoch
-	}
-	return ""
-}
-
-func (x *SpatialCloudSnapshot) GetSequence() uint64 {
-	if x != nil {
-		return x.Sequence
-	}
-	return 0
-}
-
-func (x *SpatialCloudSnapshot) GetObservedAtUnixMs() int64 {
-	if x != nil {
-		return x.ObservedAtUnixMs
-	}
-	return 0
-}
-
-func (x *SpatialCloudSnapshot) GetCaptureNs() int64 {
-	if x != nil {
-		return x.CaptureNs
-	}
-	return 0
-}
-
-func (x *SpatialCloudSnapshot) GetFrameId() string {
-	if x != nil {
-		return x.FrameId
-	}
-	return ""
-}
-
-func (x *SpatialCloudSnapshot) GetVoxelSizeM() float32 {
-	if x != nil {
-		return x.VoxelSizeM
-	}
-	return 0
-}
-
-func (x *SpatialCloudSnapshot) GetPointCount() uint32 {
-	if x != nil {
-		return x.PointCount
-	}
-	return 0
-}
-
-func (x *SpatialCloudSnapshot) GetXyzF32Le() []byte {
-	if x != nil {
-		return x.XyzF32Le
-	}
-	return nil
-}
-
-func (x *SpatialCloudSnapshot) GetPose() *SpatialPose {
-	if x != nil {
-		return x.Pose
-	}
-	return nil
-}
-
-type SpatialPose struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	CaptureNs     int64                  `protobuf:"varint,1,opt,name=capture_ns,json=captureNs,proto3" json:"capture_ns,omitempty"`
-	FrameId       string                 `protobuf:"bytes,2,opt,name=frame_id,json=frameId,proto3" json:"frame_id,omitempty"`
-	ChildFrameId  string                 `protobuf:"bytes,3,opt,name=child_frame_id,json=childFrameId,proto3" json:"child_frame_id,omitempty"`
-	X             float64                `protobuf:"fixed64,4,opt,name=x,proto3" json:"x,omitempty"`
-	Y             float64                `protobuf:"fixed64,5,opt,name=y,proto3" json:"y,omitempty"`
-	Z             float64                `protobuf:"fixed64,6,opt,name=z,proto3" json:"z,omitempty"`
-	Qw            float64                `protobuf:"fixed64,7,opt,name=qw,proto3" json:"qw,omitempty"`
-	Qx            float64                `protobuf:"fixed64,8,opt,name=qx,proto3" json:"qx,omitempty"`
-	Qy            float64                `protobuf:"fixed64,9,opt,name=qy,proto3" json:"qy,omitempty"`
-	Qz            float64                `protobuf:"fixed64,10,opt,name=qz,proto3" json:"qz,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *SpatialPose) Reset() {
-	*x = SpatialPose{}
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *SpatialPose) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*SpatialPose) ProtoMessage() {}
-
-func (x *SpatialPose) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[10]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use SpatialPose.ProtoReflect.Descriptor instead.
-func (*SpatialPose) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
-}
-
-func (x *SpatialPose) GetCaptureNs() int64 {
-	if x != nil {
-		return x.CaptureNs
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetFrameId() string {
-	if x != nil {
-		return x.FrameId
-	}
-	return ""
-}
-
-func (x *SpatialPose) GetChildFrameId() string {
-	if x != nil {
-		return x.ChildFrameId
-	}
-	return ""
-}
-
-func (x *SpatialPose) GetX() float64 {
-	if x != nil {
-		return x.X
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetY() float64 {
-	if x != nil {
-		return x.Y
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetZ() float64 {
-	if x != nil {
-		return x.Z
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetQw() float64 {
-	if x != nil {
-		return x.Qw
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetQx() float64 {
-	if x != nil {
-		return x.Qx
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetQy() float64 {
-	if x != nil {
-		return x.Qy
-	}
-	return 0
-}
-
-func (x *SpatialPose) GetQz() float64 {
-	if x != nil {
-		return x.Qz
-	}
-	return 0
-}
-
 // Native renews short consumer leases while a live view is mounted. The agent
 // keeps inference and health reporting active but suppresses high-rate frame
 // metadata when no subscription or active mission requires it.
@@ -1952,7 +1133,7 @@ type PerceptionFrameSubscription struct {
 
 func (x *PerceptionFrameSubscription) Reset() {
 	*x = PerceptionFrameSubscription{}
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1964,7 +1145,7 @@ func (x *PerceptionFrameSubscription) String() string {
 func (*PerceptionFrameSubscription) ProtoMessage() {}
 
 func (x *PerceptionFrameSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[11]
+	mi := &file_atlas_ground_station_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1977,7 +1158,7 @@ func (x *PerceptionFrameSubscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionFrameSubscription.ProtoReflect.Descriptor instead.
 func (*PerceptionFrameSubscription) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PerceptionFrameSubscription) GetSubscriptionId() string {
@@ -2022,7 +1203,7 @@ type PerceptionStreamRegistration struct {
 
 func (x *PerceptionStreamRegistration) Reset() {
 	*x = PerceptionStreamRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2034,7 +1215,7 @@ func (x *PerceptionStreamRegistration) String() string {
 func (*PerceptionStreamRegistration) ProtoMessage() {}
 
 func (x *PerceptionStreamRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[12]
+	mi := &file_atlas_ground_station_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2047,7 +1228,7 @@ func (x *PerceptionStreamRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionStreamRegistration.ProtoReflect.Descriptor instead.
 func (*PerceptionStreamRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *PerceptionStreamRegistration) GetStreamId() string {
@@ -2102,7 +1283,7 @@ type PerceptionStreamAccepted struct {
 
 func (x *PerceptionStreamAccepted) Reset() {
 	*x = PerceptionStreamAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2114,7 +1295,7 @@ func (x *PerceptionStreamAccepted) String() string {
 func (*PerceptionStreamAccepted) ProtoMessage() {}
 
 func (x *PerceptionStreamAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[13]
+	mi := &file_atlas_ground_station_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2127,7 +1308,7 @@ func (x *PerceptionStreamAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionStreamAccepted.ProtoReflect.Descriptor instead.
 func (*PerceptionStreamAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PerceptionStreamAccepted) GetStreamId() string {
@@ -2162,7 +1343,7 @@ type PerceptionFrame struct {
 
 func (x *PerceptionFrame) Reset() {
 	*x = PerceptionFrame{}
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2174,7 +1355,7 @@ func (x *PerceptionFrame) String() string {
 func (*PerceptionFrame) ProtoMessage() {}
 
 func (x *PerceptionFrame) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[14]
+	mi := &file_atlas_ground_station_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2187,7 +1368,7 @@ func (x *PerceptionFrame) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionFrame.ProtoReflect.Descriptor instead.
 func (*PerceptionFrame) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *PerceptionFrame) GetSourceId() string {
@@ -2271,7 +1452,7 @@ type PerceptionModelIdentity struct {
 
 func (x *PerceptionModelIdentity) Reset() {
 	*x = PerceptionModelIdentity{}
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2283,7 +1464,7 @@ func (x *PerceptionModelIdentity) String() string {
 func (*PerceptionModelIdentity) ProtoMessage() {}
 
 func (x *PerceptionModelIdentity) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[15]
+	mi := &file_atlas_ground_station_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2296,7 +1477,7 @@ func (x *PerceptionModelIdentity) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionModelIdentity.ProtoReflect.Descriptor instead.
 func (*PerceptionModelIdentity) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *PerceptionModelIdentity) GetName() string {
@@ -2334,7 +1515,7 @@ type PerceptionDetection struct {
 
 func (x *PerceptionDetection) Reset() {
 	*x = PerceptionDetection{}
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2346,7 +1527,7 @@ func (x *PerceptionDetection) String() string {
 func (*PerceptionDetection) ProtoMessage() {}
 
 func (x *PerceptionDetection) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[16]
+	mi := &file_atlas_ground_station_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2359,7 +1540,7 @@ func (x *PerceptionDetection) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionDetection.ProtoReflect.Descriptor instead.
 func (*PerceptionDetection) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *PerceptionDetection) GetTrackId() string {
@@ -2427,7 +1608,7 @@ type PerceptionTrackUpdateBatch struct {
 
 func (x *PerceptionTrackUpdateBatch) Reset() {
 	*x = PerceptionTrackUpdateBatch{}
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2439,7 +1620,7 @@ func (x *PerceptionTrackUpdateBatch) String() string {
 func (*PerceptionTrackUpdateBatch) ProtoMessage() {}
 
 func (x *PerceptionTrackUpdateBatch) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[17]
+	mi := &file_atlas_ground_station_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2452,7 +1633,7 @@ func (x *PerceptionTrackUpdateBatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionTrackUpdateBatch.ProtoReflect.Descriptor instead.
 func (*PerceptionTrackUpdateBatch) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *PerceptionTrackUpdateBatch) GetSourceId() string {
@@ -2556,7 +1737,7 @@ type NormalizedPoint struct {
 
 func (x *NormalizedPoint) Reset() {
 	*x = NormalizedPoint{}
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2568,7 +1749,7 @@ func (x *NormalizedPoint) String() string {
 func (*NormalizedPoint) ProtoMessage() {}
 
 func (x *NormalizedPoint) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[18]
+	mi := &file_atlas_ground_station_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2581,7 +1762,7 @@ func (x *NormalizedPoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedPoint.ProtoReflect.Descriptor instead.
 func (*NormalizedPoint) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *NormalizedPoint) GetX() float64 {
@@ -2610,7 +1791,7 @@ type PerceptionCountingRuleSet struct {
 
 func (x *PerceptionCountingRuleSet) Reset() {
 	*x = PerceptionCountingRuleSet{}
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2622,7 +1803,7 @@ func (x *PerceptionCountingRuleSet) String() string {
 func (*PerceptionCountingRuleSet) ProtoMessage() {}
 
 func (x *PerceptionCountingRuleSet) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[19]
+	mi := &file_atlas_ground_station_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2635,7 +1816,7 @@ func (x *PerceptionCountingRuleSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionCountingRuleSet.ProtoReflect.Descriptor instead.
 func (*PerceptionCountingRuleSet) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *PerceptionCountingRuleSet) GetSourceId() string {
@@ -2666,7 +1847,7 @@ type PerceptionCountingRule struct {
 
 func (x *PerceptionCountingRule) Reset() {
 	*x = PerceptionCountingRule{}
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2678,7 +1859,7 @@ func (x *PerceptionCountingRule) String() string {
 func (*PerceptionCountingRule) ProtoMessage() {}
 
 func (x *PerceptionCountingRule) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[20]
+	mi := &file_atlas_ground_station_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2691,7 +1872,7 @@ func (x *PerceptionCountingRule) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionCountingRule.ProtoReflect.Descriptor instead.
 func (*PerceptionCountingRule) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *PerceptionCountingRule) GetRuleId() string {
@@ -2751,7 +1932,7 @@ type PerceptionTrackRuleCount struct {
 
 func (x *PerceptionTrackRuleCount) Reset() {
 	*x = PerceptionTrackRuleCount{}
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2763,7 +1944,7 @@ func (x *PerceptionTrackRuleCount) String() string {
 func (*PerceptionTrackRuleCount) ProtoMessage() {}
 
 func (x *PerceptionTrackRuleCount) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[21]
+	mi := &file_atlas_ground_station_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2776,7 +1957,7 @@ func (x *PerceptionTrackRuleCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionTrackRuleCount.ProtoReflect.Descriptor instead.
 func (*PerceptionTrackRuleCount) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *PerceptionTrackRuleCount) GetRuleId() string {
@@ -2844,7 +2025,7 @@ type PerceptionTrackCountEvent struct {
 
 func (x *PerceptionTrackCountEvent) Reset() {
 	*x = PerceptionTrackCountEvent{}
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2856,7 +2037,7 @@ func (x *PerceptionTrackCountEvent) String() string {
 func (*PerceptionTrackCountEvent) ProtoMessage() {}
 
 func (x *PerceptionTrackCountEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[22]
+	mi := &file_atlas_ground_station_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2869,7 +2050,7 @@ func (x *PerceptionTrackCountEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionTrackCountEvent.ProtoReflect.Descriptor instead.
 func (*PerceptionTrackCountEvent) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *PerceptionTrackCountEvent) GetEventId() string {
@@ -2954,7 +2135,7 @@ type PerceptionTrackSnapshot struct {
 
 func (x *PerceptionTrackSnapshot) Reset() {
 	*x = PerceptionTrackSnapshot{}
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2966,7 +2147,7 @@ func (x *PerceptionTrackSnapshot) String() string {
 func (*PerceptionTrackSnapshot) ProtoMessage() {}
 
 func (x *PerceptionTrackSnapshot) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[23]
+	mi := &file_atlas_ground_station_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2979,7 +2160,7 @@ func (x *PerceptionTrackSnapshot) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionTrackSnapshot.ProtoReflect.Descriptor instead.
 func (*PerceptionTrackSnapshot) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *PerceptionTrackSnapshot) GetTrackId() string {
@@ -3120,7 +2301,7 @@ type NormalizedBoundingBox struct {
 
 func (x *NormalizedBoundingBox) Reset() {
 	*x = NormalizedBoundingBox{}
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3132,7 +2313,7 @@ func (x *NormalizedBoundingBox) String() string {
 func (*NormalizedBoundingBox) ProtoMessage() {}
 
 func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[24]
+	mi := &file_atlas_ground_station_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3145,7 +2326,7 @@ func (x *NormalizedBoundingBox) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NormalizedBoundingBox.ProtoReflect.Descriptor instead.
 func (*NormalizedBoundingBox) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *NormalizedBoundingBox) GetX() float64 {
@@ -3202,7 +2383,7 @@ type PerceptionHealth struct {
 
 func (x *PerceptionHealth) Reset() {
 	*x = PerceptionHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3214,7 +2395,7 @@ func (x *PerceptionHealth) String() string {
 func (*PerceptionHealth) ProtoMessage() {}
 
 func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[25]
+	mi := &file_atlas_ground_station_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3227,7 +2408,7 @@ func (x *PerceptionHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionHealth.ProtoReflect.Descriptor instead.
 func (*PerceptionHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PerceptionHealth) GetSourceId() string {
@@ -3362,7 +2543,7 @@ type PerceptionTrackingHealth struct {
 
 func (x *PerceptionTrackingHealth) Reset() {
 	*x = PerceptionTrackingHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3374,7 +2555,7 @@ func (x *PerceptionTrackingHealth) String() string {
 func (*PerceptionTrackingHealth) ProtoMessage() {}
 
 func (x *PerceptionTrackingHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[26]
+	mi := &file_atlas_ground_station_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3387,7 +2568,7 @@ func (x *PerceptionTrackingHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PerceptionTrackingHealth.ProtoReflect.Descriptor instead.
 func (*PerceptionTrackingHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PerceptionTrackingHealth) GetAlgorithm() string {
@@ -3477,7 +2658,7 @@ type AgentRegistration struct {
 
 func (x *AgentRegistration) Reset() {
 	*x = AgentRegistration{}
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3489,7 +2670,7 @@ func (x *AgentRegistration) String() string {
 func (*AgentRegistration) ProtoMessage() {}
 
 func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[27]
+	mi := &file_atlas_ground_station_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3502,7 +2683,7 @@ func (x *AgentRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentRegistration.ProtoReflect.Descriptor instead.
 func (*AgentRegistration) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *AgentRegistration) GetRegistrationRequestId() string {
@@ -3583,7 +2764,7 @@ type DeviceProfile struct {
 
 func (x *DeviceProfile) Reset() {
 	*x = DeviceProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3595,7 +2776,7 @@ func (x *DeviceProfile) String() string {
 func (*DeviceProfile) ProtoMessage() {}
 
 func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[28]
+	mi := &file_atlas_ground_station_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3608,7 +2789,7 @@ func (x *DeviceProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeviceProfile.ProtoReflect.Descriptor instead.
 func (*DeviceProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DeviceProfile) GetDeviceName() string {
@@ -3673,7 +2854,7 @@ type DroneProfile struct {
 
 func (x *DroneProfile) Reset() {
 	*x = DroneProfile{}
-	mi := &file_atlas_ground_station_proto_msgTypes[29]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3685,7 +2866,7 @@ func (x *DroneProfile) String() string {
 func (*DroneProfile) ProtoMessage() {}
 
 func (x *DroneProfile) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[29]
+	mi := &file_atlas_ground_station_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3698,7 +2879,7 @@ func (x *DroneProfile) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DroneProfile.ProtoReflect.Descriptor instead.
 func (*DroneProfile) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{29}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DroneProfile) GetDroneId() string {
@@ -3749,7 +2930,7 @@ type FlightControllerAttachment struct {
 
 func (x *FlightControllerAttachment) Reset() {
 	*x = FlightControllerAttachment{}
-	mi := &file_atlas_ground_station_proto_msgTypes[30]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3761,7 +2942,7 @@ func (x *FlightControllerAttachment) String() string {
 func (*FlightControllerAttachment) ProtoMessage() {}
 
 func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[30]
+	mi := &file_atlas_ground_station_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3774,7 +2955,7 @@ func (x *FlightControllerAttachment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlightControllerAttachment.ProtoReflect.Descriptor instead.
 func (*FlightControllerAttachment) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{30}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *FlightControllerAttachment) GetTransport() string {
@@ -3821,7 +3002,7 @@ type AgentHeartbeat struct {
 
 func (x *AgentHeartbeat) Reset() {
 	*x = AgentHeartbeat{}
-	mi := &file_atlas_ground_station_proto_msgTypes[31]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3833,7 +3014,7 @@ func (x *AgentHeartbeat) String() string {
 func (*AgentHeartbeat) ProtoMessage() {}
 
 func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[31]
+	mi := &file_atlas_ground_station_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3846,7 +3027,7 @@ func (x *AgentHeartbeat) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentHeartbeat.ProtoReflect.Descriptor instead.
 func (*AgentHeartbeat) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{31}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *AgentHeartbeat) GetObservedAtUnixMs() int64 {
@@ -3894,7 +3075,7 @@ type AircraftTelemetry struct {
 
 func (x *AircraftTelemetry) Reset() {
 	*x = AircraftTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[32]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3906,7 +3087,7 @@ func (x *AircraftTelemetry) String() string {
 func (*AircraftTelemetry) ProtoMessage() {}
 
 func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[32]
+	mi := &file_atlas_ground_station_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3919,7 +3100,7 @@ func (x *AircraftTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftTelemetry.ProtoReflect.Descriptor instead.
 func (*AircraftTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{32}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *AircraftTelemetry) GetObservedAtUnixMs() int64 {
@@ -4127,7 +3308,7 @@ type BatteryTelemetry struct {
 
 func (x *BatteryTelemetry) Reset() {
 	*x = BatteryTelemetry{}
-	mi := &file_atlas_ground_station_proto_msgTypes[33]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4139,7 +3320,7 @@ func (x *BatteryTelemetry) String() string {
 func (*BatteryTelemetry) ProtoMessage() {}
 
 func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[33]
+	mi := &file_atlas_ground_station_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4152,7 +3333,7 @@ func (x *BatteryTelemetry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatteryTelemetry.ProtoReflect.Descriptor instead.
 func (*BatteryTelemetry) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{33}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *BatteryTelemetry) GetId() uint32 {
@@ -4226,7 +3407,7 @@ type VehicleHealth struct {
 
 func (x *VehicleHealth) Reset() {
 	*x = VehicleHealth{}
-	mi := &file_atlas_ground_station_proto_msgTypes[34]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4238,7 +3419,7 @@ func (x *VehicleHealth) String() string {
 func (*VehicleHealth) ProtoMessage() {}
 
 func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[34]
+	mi := &file_atlas_ground_station_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4251,7 +3432,7 @@ func (x *VehicleHealth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleHealth.ProtoReflect.Descriptor instead.
 func (*VehicleHealth) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{34}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *VehicleHealth) GetGyrometerCalibrationOk() bool {
@@ -4314,7 +3495,7 @@ type RcStatus struct {
 
 func (x *RcStatus) Reset() {
 	*x = RcStatus{}
-	mi := &file_atlas_ground_station_proto_msgTypes[35]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4326,7 +3507,7 @@ func (x *RcStatus) String() string {
 func (*RcStatus) ProtoMessage() {}
 
 func (x *RcStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[35]
+	mi := &file_atlas_ground_station_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4339,7 +3520,7 @@ func (x *RcStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RcStatus.ProtoReflect.Descriptor instead.
 func (*RcStatus) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{35}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *RcStatus) GetAvailable() bool {
@@ -4375,7 +3556,7 @@ type HomePosition struct {
 
 func (x *HomePosition) Reset() {
 	*x = HomePosition{}
-	mi := &file_atlas_ground_station_proto_msgTypes[36]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4387,7 +3568,7 @@ func (x *HomePosition) String() string {
 func (*HomePosition) ProtoMessage() {}
 
 func (x *HomePosition) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[36]
+	mi := &file_atlas_ground_station_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4400,7 +3581,7 @@ func (x *HomePosition) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HomePosition.ProtoReflect.Descriptor instead.
 func (*HomePosition) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{36}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *HomePosition) GetLatitude() float64 {
@@ -4445,7 +3626,7 @@ type GpsQuality struct {
 
 func (x *GpsQuality) Reset() {
 	*x = GpsQuality{}
-	mi := &file_atlas_ground_station_proto_msgTypes[37]
+	mi := &file_atlas_ground_station_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4457,7 +3638,7 @@ func (x *GpsQuality) String() string {
 func (*GpsQuality) ProtoMessage() {}
 
 func (x *GpsQuality) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[37]
+	mi := &file_atlas_ground_station_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4470,7 +3651,7 @@ func (x *GpsQuality) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GpsQuality.ProtoReflect.Descriptor instead.
 func (*GpsQuality) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{37}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *GpsQuality) GetHdop() float64 {
@@ -4529,7 +3710,7 @@ type AgentStatusText struct {
 
 func (x *AgentStatusText) Reset() {
 	*x = AgentStatusText{}
-	mi := &file_atlas_ground_station_proto_msgTypes[38]
+	mi := &file_atlas_ground_station_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4541,7 +3722,7 @@ func (x *AgentStatusText) String() string {
 func (*AgentStatusText) ProtoMessage() {}
 
 func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[38]
+	mi := &file_atlas_ground_station_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4554,7 +3735,7 @@ func (x *AgentStatusText) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStatusText.ProtoReflect.Descriptor instead.
 func (*AgentStatusText) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{38}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *AgentStatusText) GetObservedAtUnixMs() int64 {
@@ -4598,7 +3779,7 @@ type RegistrationAccepted struct {
 
 func (x *RegistrationAccepted) Reset() {
 	*x = RegistrationAccepted{}
-	mi := &file_atlas_ground_station_proto_msgTypes[39]
+	mi := &file_atlas_ground_station_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4610,7 +3791,7 @@ func (x *RegistrationAccepted) String() string {
 func (*RegistrationAccepted) ProtoMessage() {}
 
 func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[39]
+	mi := &file_atlas_ground_station_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4623,7 +3804,7 @@ func (x *RegistrationAccepted) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RegistrationAccepted.ProtoReflect.Descriptor instead.
 func (*RegistrationAccepted) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{39}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *RegistrationAccepted) GetAgentId() string {
@@ -4676,7 +3857,7 @@ type VehicleCommandRequest struct {
 
 func (x *VehicleCommandRequest) Reset() {
 	*x = VehicleCommandRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[40]
+	mi := &file_atlas_ground_station_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4688,7 +3869,7 @@ func (x *VehicleCommandRequest) String() string {
 func (*VehicleCommandRequest) ProtoMessage() {}
 
 func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[40]
+	mi := &file_atlas_ground_station_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4701,7 +3882,7 @@ func (x *VehicleCommandRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandRequest.ProtoReflect.Descriptor instead.
 func (*VehicleCommandRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{40}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *VehicleCommandRequest) GetCommandId() string {
@@ -4763,7 +3944,7 @@ type VehicleCommandCancellation struct {
 
 func (x *VehicleCommandCancellation) Reset() {
 	*x = VehicleCommandCancellation{}
-	mi := &file_atlas_ground_station_proto_msgTypes[41]
+	mi := &file_atlas_ground_station_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4775,7 +3956,7 @@ func (x *VehicleCommandCancellation) String() string {
 func (*VehicleCommandCancellation) ProtoMessage() {}
 
 func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[41]
+	mi := &file_atlas_ground_station_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4788,7 +3969,7 @@ func (x *VehicleCommandCancellation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandCancellation.ProtoReflect.Descriptor instead.
 func (*VehicleCommandCancellation) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{41}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *VehicleCommandCancellation) GetCommandId() string {
@@ -4821,7 +4002,7 @@ type VehicleCommandUpdate struct {
 
 func (x *VehicleCommandUpdate) Reset() {
 	*x = VehicleCommandUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[42]
+	mi := &file_atlas_ground_station_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4833,7 +4014,7 @@ func (x *VehicleCommandUpdate) String() string {
 func (*VehicleCommandUpdate) ProtoMessage() {}
 
 func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[42]
+	mi := &file_atlas_ground_station_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4846,7 +4027,7 @@ func (x *VehicleCommandUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VehicleCommandUpdate.ProtoReflect.Descriptor instead.
 func (*VehicleCommandUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{42}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *VehicleCommandUpdate) GetEventId() string {
@@ -4927,7 +4108,7 @@ type AircraftFollowEnvelope struct {
 
 func (x *AircraftFollowEnvelope) Reset() {
 	*x = AircraftFollowEnvelope{}
-	mi := &file_atlas_ground_station_proto_msgTypes[43]
+	mi := &file_atlas_ground_station_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4939,7 +4120,7 @@ func (x *AircraftFollowEnvelope) String() string {
 func (*AircraftFollowEnvelope) ProtoMessage() {}
 
 func (x *AircraftFollowEnvelope) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[43]
+	mi := &file_atlas_ground_station_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4952,7 +4133,7 @@ func (x *AircraftFollowEnvelope) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftFollowEnvelope.ProtoReflect.Descriptor instead.
 func (*AircraftFollowEnvelope) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{43}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *AircraftFollowEnvelope) GetStandoffM() float64 {
@@ -5077,7 +4258,7 @@ type AircraftFollowTargetState struct {
 
 func (x *AircraftFollowTargetState) Reset() {
 	*x = AircraftFollowTargetState{}
-	mi := &file_atlas_ground_station_proto_msgTypes[44]
+	mi := &file_atlas_ground_station_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5089,7 +4270,7 @@ func (x *AircraftFollowTargetState) String() string {
 func (*AircraftFollowTargetState) ProtoMessage() {}
 
 func (x *AircraftFollowTargetState) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[44]
+	mi := &file_atlas_ground_station_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5102,7 +4283,7 @@ func (x *AircraftFollowTargetState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftFollowTargetState.ProtoReflect.Descriptor instead.
 func (*AircraftFollowTargetState) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{44}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *AircraftFollowTargetState) GetGeolocationId() string {
@@ -5236,7 +4417,7 @@ type AircraftFollowControlRequest struct {
 
 func (x *AircraftFollowControlRequest) Reset() {
 	*x = AircraftFollowControlRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[45]
+	mi := &file_atlas_ground_station_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5248,7 +4429,7 @@ func (x *AircraftFollowControlRequest) String() string {
 func (*AircraftFollowControlRequest) ProtoMessage() {}
 
 func (x *AircraftFollowControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[45]
+	mi := &file_atlas_ground_station_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5261,7 +4442,7 @@ func (x *AircraftFollowControlRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftFollowControlRequest.ProtoReflect.Descriptor instead.
 func (*AircraftFollowControlRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{45}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *AircraftFollowControlRequest) GetOperationId() string {
@@ -5357,7 +4538,7 @@ type AircraftFollowSessionUpdate struct {
 
 func (x *AircraftFollowSessionUpdate) Reset() {
 	*x = AircraftFollowSessionUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[46]
+	mi := &file_atlas_ground_station_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5369,7 +4550,7 @@ func (x *AircraftFollowSessionUpdate) String() string {
 func (*AircraftFollowSessionUpdate) ProtoMessage() {}
 
 func (x *AircraftFollowSessionUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[46]
+	mi := &file_atlas_ground_station_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5382,7 +4563,7 @@ func (x *AircraftFollowSessionUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AircraftFollowSessionUpdate.ProtoReflect.Descriptor instead.
 func (*AircraftFollowSessionUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{46}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *AircraftFollowSessionUpdate) GetEventId() string {
@@ -5441,208 +4622,6 @@ func (x *AircraftFollowSessionUpdate) GetEvidenceJson() string {
 	return ""
 }
 
-type IndoorExploreControlRequest struct {
-	state       protoimpl.MessageState     `protogen:"open.v1"`
-	OperationId string                     `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
-	MissionId   string                     `protobuf:"bytes,2,opt,name=mission_id,json=missionId,proto3" json:"mission_id,omitempty"`
-	DroneId     string                     `protobuf:"bytes,3,opt,name=drone_id,json=droneId,proto3" json:"drone_id,omitempty"`
-	Action      IndoorExploreControlAction `protobuf:"varint,4,opt,name=action,proto3,enum=atlas.groundstation.v1.IndoorExploreControlAction" json:"action,omitempty"`
-	// The only valid values are exactly 0.5, 1.0, and 2.0 metres relative to
-	// the recorded mission-start floor/height reference.
-	AltitudeM         float64 `protobuf:"fixed64,5,opt,name=altitude_m,json=altitudeM,proto3" json:"altitude_m,omitempty"`
-	RequestedAtUnixMs int64   `protobuf:"varint,6,opt,name=requested_at_unix_ms,json=requestedAtUnixMs,proto3" json:"requested_at_unix_ms,omitempty"`
-	DeadlineAtUnixMs  int64   `protobuf:"varint,7,opt,name=deadline_at_unix_ms,json=deadlineAtUnixMs,proto3" json:"deadline_at_unix_ms,omitempty"`
-	Reason            string  `protobuf:"bytes,8,opt,name=reason,proto3" json:"reason,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
-}
-
-func (x *IndoorExploreControlRequest) Reset() {
-	*x = IndoorExploreControlRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[47]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IndoorExploreControlRequest) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IndoorExploreControlRequest) ProtoMessage() {}
-
-func (x *IndoorExploreControlRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[47]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IndoorExploreControlRequest.ProtoReflect.Descriptor instead.
-func (*IndoorExploreControlRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{47}
-}
-
-func (x *IndoorExploreControlRequest) GetOperationId() string {
-	if x != nil {
-		return x.OperationId
-	}
-	return ""
-}
-
-func (x *IndoorExploreControlRequest) GetMissionId() string {
-	if x != nil {
-		return x.MissionId
-	}
-	return ""
-}
-
-func (x *IndoorExploreControlRequest) GetDroneId() string {
-	if x != nil {
-		return x.DroneId
-	}
-	return ""
-}
-
-func (x *IndoorExploreControlRequest) GetAction() IndoorExploreControlAction {
-	if x != nil {
-		return x.Action
-	}
-	return IndoorExploreControlAction_INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED
-}
-
-func (x *IndoorExploreControlRequest) GetAltitudeM() float64 {
-	if x != nil {
-		return x.AltitudeM
-	}
-	return 0
-}
-
-func (x *IndoorExploreControlRequest) GetRequestedAtUnixMs() int64 {
-	if x != nil {
-		return x.RequestedAtUnixMs
-	}
-	return 0
-}
-
-func (x *IndoorExploreControlRequest) GetDeadlineAtUnixMs() int64 {
-	if x != nil {
-		return x.DeadlineAtUnixMs
-	}
-	return 0
-}
-
-func (x *IndoorExploreControlRequest) GetReason() string {
-	if x != nil {
-		return x.Reason
-	}
-	return ""
-}
-
-type IndoorExploreMissionUpdate struct {
-	state            protoimpl.MessageState    `protogen:"open.v1"`
-	EventId          string                    `protobuf:"bytes,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
-	OperationId      string                    `protobuf:"bytes,2,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
-	MissionId        string                    `protobuf:"bytes,3,opt,name=mission_id,json=missionId,proto3" json:"mission_id,omitempty"`
-	State            IndoorExploreMissionState `protobuf:"varint,4,opt,name=state,proto3,enum=atlas.groundstation.v1.IndoorExploreMissionState" json:"state,omitempty"`
-	AltitudeM        float64                   `protobuf:"fixed64,5,opt,name=altitude_m,json=altitudeM,proto3" json:"altitude_m,omitempty"`
-	ObservedAtUnixMs int64                     `protobuf:"varint,6,opt,name=observed_at_unix_ms,json=observedAtUnixMs,proto3" json:"observed_at_unix_ms,omitempty"`
-	ErrorCode        string                    `protobuf:"bytes,7,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
-	Message          string                    `protobuf:"bytes,8,opt,name=message,proto3" json:"message,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
-}
-
-func (x *IndoorExploreMissionUpdate) Reset() {
-	*x = IndoorExploreMissionUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[48]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *IndoorExploreMissionUpdate) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*IndoorExploreMissionUpdate) ProtoMessage() {}
-
-func (x *IndoorExploreMissionUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[48]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use IndoorExploreMissionUpdate.ProtoReflect.Descriptor instead.
-func (*IndoorExploreMissionUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{48}
-}
-
-func (x *IndoorExploreMissionUpdate) GetEventId() string {
-	if x != nil {
-		return x.EventId
-	}
-	return ""
-}
-
-func (x *IndoorExploreMissionUpdate) GetOperationId() string {
-	if x != nil {
-		return x.OperationId
-	}
-	return ""
-}
-
-func (x *IndoorExploreMissionUpdate) GetMissionId() string {
-	if x != nil {
-		return x.MissionId
-	}
-	return ""
-}
-
-func (x *IndoorExploreMissionUpdate) GetState() IndoorExploreMissionState {
-	if x != nil {
-		return x.State
-	}
-	return IndoorExploreMissionState_INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED
-}
-
-func (x *IndoorExploreMissionUpdate) GetAltitudeM() float64 {
-	if x != nil {
-		return x.AltitudeM
-	}
-	return 0
-}
-
-func (x *IndoorExploreMissionUpdate) GetObservedAtUnixMs() int64 {
-	if x != nil {
-		return x.ObservedAtUnixMs
-	}
-	return 0
-}
-
-func (x *IndoorExploreMissionUpdate) GetErrorCode() string {
-	if x != nil {
-		return x.ErrorCode
-	}
-	return ""
-}
-
-func (x *IndoorExploreMissionUpdate) GetMessage() string {
-	if x != nil {
-		return x.Message
-	}
-	return ""
-}
-
 type MissionOperationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	OperationId   string                 `protobuf:"bytes,1,opt,name=operation_id,json=operationId,proto3" json:"operation_id,omitempty"`
@@ -5659,7 +4638,7 @@ type MissionOperationRequest struct {
 
 func (x *MissionOperationRequest) Reset() {
 	*x = MissionOperationRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[49]
+	mi := &file_atlas_ground_station_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5671,7 +4650,7 @@ func (x *MissionOperationRequest) String() string {
 func (*MissionOperationRequest) ProtoMessage() {}
 
 func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[49]
+	mi := &file_atlas_ground_station_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5684,7 +4663,7 @@ func (x *MissionOperationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionOperationRequest.ProtoReflect.Descriptor instead.
 func (*MissionOperationRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{49}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *MissionOperationRequest) GetOperationId() string {
@@ -5757,7 +4736,7 @@ type MissionReconciliationRequest struct {
 
 func (x *MissionReconciliationRequest) Reset() {
 	*x = MissionReconciliationRequest{}
-	mi := &file_atlas_ground_station_proto_msgTypes[50]
+	mi := &file_atlas_ground_station_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5769,7 +4748,7 @@ func (x *MissionReconciliationRequest) String() string {
 func (*MissionReconciliationRequest) ProtoMessage() {}
 
 func (x *MissionReconciliationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[50]
+	mi := &file_atlas_ground_station_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5782,7 +4761,7 @@ func (x *MissionReconciliationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionReconciliationRequest.ProtoReflect.Descriptor instead.
 func (*MissionReconciliationRequest) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{50}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *MissionReconciliationRequest) GetReconciliationId() string {
@@ -5869,7 +4848,7 @@ type MissionActionCheckpoint struct {
 
 func (x *MissionActionCheckpoint) Reset() {
 	*x = MissionActionCheckpoint{}
-	mi := &file_atlas_ground_station_proto_msgTypes[51]
+	mi := &file_atlas_ground_station_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5881,7 +4860,7 @@ func (x *MissionActionCheckpoint) String() string {
 func (*MissionActionCheckpoint) ProtoMessage() {}
 
 func (x *MissionActionCheckpoint) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[51]
+	mi := &file_atlas_ground_station_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5894,7 +4873,7 @@ func (x *MissionActionCheckpoint) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionActionCheckpoint.ProtoReflect.Descriptor instead.
 func (*MissionActionCheckpoint) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{51}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *MissionActionCheckpoint) GetActionSequence() uint32 {
@@ -5966,7 +4945,7 @@ type MissionRunUpdate struct {
 
 func (x *MissionRunUpdate) Reset() {
 	*x = MissionRunUpdate{}
-	mi := &file_atlas_ground_station_proto_msgTypes[52]
+	mi := &file_atlas_ground_station_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5978,7 +4957,7 @@ func (x *MissionRunUpdate) String() string {
 func (*MissionRunUpdate) ProtoMessage() {}
 
 func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
-	mi := &file_atlas_ground_station_proto_msgTypes[52]
+	mi := &file_atlas_ground_station_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5991,7 +4970,7 @@ func (x *MissionRunUpdate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissionRunUpdate.ProtoReflect.Descriptor instead.
 func (*MissionRunUpdate) Descriptor() ([]byte, []int) {
-	return file_atlas_ground_station_proto_rawDescGZIP(), []int{52}
+	return file_atlas_ground_station_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *MissionRunUpdate) GetEventId() string {
@@ -6117,7 +5096,7 @@ var File_atlas_ground_station_proto protoreflect.FileDescriptor
 
 const file_atlas_ground_station_proto_rawDesc = "" +
 	"\n" +
-	"\x1aatlas/ground_station.proto\x12\x16atlas.groundstation.v1\"\x96\x06\n" +
+	"\x1aatlas/ground_station.proto\x12\x16atlas.groundstation.v1\"\xa3\x05\n" +
 	"\x14AgentToGroundStation\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12O\n" +
@@ -6128,18 +5107,17 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"statusText\x12U\n" +
 	"\x0ecommand_update\x18\x06 \x01(\v2,.atlas.groundstation.v1.VehicleCommandUpdateH\x00R\rcommandUpdate\x12X\n" +
 	"\x12mission_run_update\x18\a \x01(\v2(.atlas.groundstation.v1.MissionRunUpdateH\x00R\x10missionRunUpdate\x12z\n" +
-	"\x1eaircraft_follow_session_update\x18\b \x01(\v23.atlas.groundstation.v1.AircraftFollowSessionUpdateH\x00R\x1baircraftFollowSessionUpdate\x12w\n" +
-	"\x1dindoor_explore_mission_update\x18\t \x01(\v22.atlas.groundstation.v1.IndoorExploreMissionUpdateH\x00R\x1aindoorExploreMissionUpdateB\t\n" +
-	"\apayload\"\xb1\x06\n" +
+	"\x1eaircraft_follow_session_update\x18\b \x01(\v23.atlas.groundstation.v1.AircraftFollowSessionUpdateH\x00R\x1baircraftFollowSessionUpdateB\t\n" +
+	"\apayloadJ\x04\b\t\x10\n" +
+	"\"\xbb\x05\n" +
 	"\x14GroundStationToAgent\x12c\n" +
 	"\x15registration_accepted\x18\x01 \x01(\v2,.atlas.groundstation.v1.RegistrationAcceptedH\x00R\x14registrationAccepted\x12X\n" +
 	"\x0fcommand_request\x18\x02 \x01(\v2-.atlas.groundstation.v1.VehicleCommandRequestH\x00R\x0ecommandRequest\x12g\n" +
 	"\x14command_cancellation\x18\x03 \x01(\v22.atlas.groundstation.v1.VehicleCommandCancellationH\x00R\x13commandCancellation\x12m\n" +
 	"\x19mission_operation_request\x18\x04 \x01(\v2/.atlas.groundstation.v1.MissionOperationRequestH\x00R\x17missionOperationRequest\x12|\n" +
 	"\x1emission_reconciliation_request\x18\x05 \x01(\v24.atlas.groundstation.v1.MissionReconciliationRequestH\x00R\x1cmissionReconciliationRequest\x12}\n" +
-	"\x1faircraft_follow_control_request\x18\x06 \x01(\v24.atlas.groundstation.v1.AircraftFollowControlRequestH\x00R\x1caircraftFollowControlRequest\x12z\n" +
-	"\x1eindoor_explore_control_request\x18\a \x01(\v23.atlas.groundstation.v1.IndoorExploreControlRequestH\x00R\x1bindoorExploreControlRequestB\t\n" +
-	"\apayload\"\x92\x03\n" +
+	"\x1faircraft_follow_control_request\x18\x06 \x01(\v24.atlas.groundstation.v1.AircraftFollowControlRequestH\x00R\x1caircraftFollowControlRequestB\t\n" +
+	"\apayloadJ\x04\b\a\x10\b\"\x92\x03\n" +
 	"\x0fAgentPerception\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x19\n" +
@@ -6153,62 +5131,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x0fstream_accepted\x18\x01 \x01(\v20.atlas.groundstation.v1.PerceptionStreamAcceptedH\x00R\x0estreamAccepted\x12d\n" +
 	"\x12frame_subscription\x18\x02 \x01(\v23.atlas.groundstation.v1.PerceptionFrameSubscriptionH\x00R\x11frameSubscription\x12Z\n" +
 	"\x0ecounting_rules\x18\x03 \x01(\v21.atlas.groundstation.v1.PerceptionCountingRuleSetH\x00R\rcountingRulesB\t\n" +
-	"\apayload\"\xf2\x01\n" +
-	"\fAgentSpatial\x12\x1d\n" +
-	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x19\n" +
-	"\bdrone_id\x18\x02 \x01(\tR\adroneId\x12W\n" +
-	"\fregistration\x18\x03 \x01(\v21.atlas.groundstation.v1.SpatialStreamRegistrationH\x00R\fregistration\x12D\n" +
-	"\x05cloud\x18\x04 \x01(\v2,.atlas.groundstation.v1.SpatialCloudSnapshotH\x00R\x05cloudB\t\n" +
-	"\apayload\"\xde\x01\n" +
-	"\x14GroundStationSpatial\x12X\n" +
-	"\x0fstream_accepted\x18\x01 \x01(\v2-.atlas.groundstation.v1.SpatialStreamAcceptedH\x00R\x0estreamAccepted\x12a\n" +
-	"\x12cloud_subscription\x18\x02 \x01(\v20.atlas.groundstation.v1.SpatialCloudSubscriptionH\x00R\x11cloudSubscriptionB\t\n" +
-	"\apayload\"\xd9\x01\n" +
-	"\x18SpatialCloudSubscription\x12'\n" +
-	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
-	"\apurpose\x18\x02 \x01(\tR\apurpose\x12N\n" +
-	"\x06action\x18\x03 \x01(\x0e26.atlas.groundstation.v1.SpatialCloudSubscriptionActionR\x06action\x12*\n" +
-	"\x11lease_duration_ms\x18\x04 \x01(\x03R\x0fleaseDurationMs\"\xff\x01\n" +
-	"\x19SpatialStreamRegistration\x12\x1b\n" +
-	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12'\n" +
-	"\x0finstallation_id\x18\x02 \x01(\tR\x0einstallationId\x12)\n" +
-	"\x10protocol_version\x18\x03 \x01(\tR\x0fprotocolVersion\x12\x1b\n" +
-	"\tsource_id\x18\x04 \x01(\tR\bsourceId\x12%\n" +
-	"\x0emaximum_points\x18\x05 \x01(\rR\rmaximumPoints\x12-\n" +
-	"\x13observed_at_unix_ms\x18\x06 \x01(\x03R\x10observedAtUnixMs\"c\n" +
-	"\x15SpatialStreamAccepted\x12\x1b\n" +
-	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12-\n" +
-	"\x13accepted_at_unix_ms\x18\x02 \x01(\x03R\x10acceptedAtUnixMs\"\xf5\x02\n" +
-	"\x14SpatialCloudSnapshot\x12\x1b\n" +
-	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12!\n" +
-	"\fstream_epoch\x18\x02 \x01(\tR\vstreamEpoch\x12\x1a\n" +
-	"\bsequence\x18\x03 \x01(\x04R\bsequence\x12-\n" +
-	"\x13observed_at_unix_ms\x18\x04 \x01(\x03R\x10observedAtUnixMs\x12\x1d\n" +
-	"\n" +
-	"capture_ns\x18\x05 \x01(\x03R\tcaptureNs\x12\x19\n" +
-	"\bframe_id\x18\x06 \x01(\tR\aframeId\x12 \n" +
-	"\fvoxel_size_m\x18\a \x01(\x02R\n" +
-	"voxelSizeM\x12\x1f\n" +
-	"\vpoint_count\x18\b \x01(\rR\n" +
-	"pointCount\x12\x1c\n" +
-	"\n" +
-	"xyz_f32_le\x18\t \x01(\fR\bxyzF32Le\x127\n" +
-	"\x04pose\x18\n" +
-	" \x01(\v2#.atlas.groundstation.v1.SpatialPoseR\x04pose\"\xd7\x01\n" +
-	"\vSpatialPose\x12\x1d\n" +
-	"\n" +
-	"capture_ns\x18\x01 \x01(\x03R\tcaptureNs\x12\x19\n" +
-	"\bframe_id\x18\x02 \x01(\tR\aframeId\x12$\n" +
-	"\x0echild_frame_id\x18\x03 \x01(\tR\fchildFrameId\x12\f\n" +
-	"\x01x\x18\x04 \x01(\x01R\x01x\x12\f\n" +
-	"\x01y\x18\x05 \x01(\x01R\x01y\x12\f\n" +
-	"\x01z\x18\x06 \x01(\x01R\x01z\x12\x0e\n" +
-	"\x02qw\x18\a \x01(\x01R\x02qw\x12\x0e\n" +
-	"\x02qx\x18\b \x01(\x01R\x02qx\x12\x0e\n" +
-	"\x02qy\x18\t \x01(\x01R\x02qy\x12\x0e\n" +
-	"\x02qz\x18\n" +
-	" \x01(\x01R\x02qz\"\xdf\x01\n" +
+	"\apayload\"\xdf\x01\n" +
 	"\x1bPerceptionFrameSubscription\x12'\n" +
 	"\x0fsubscription_id\x18\x01 \x01(\tR\x0esubscriptionId\x12\x18\n" +
 	"\apurpose\x18\x02 \x01(\tR\apurpose\x12Q\n" +
@@ -6602,30 +5525,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\vreason_code\x18\x06 \x01(\tR\n" +
 	"reasonCode\x12\x18\n" +
 	"\amessage\x18\a \x01(\tR\amessage\x12#\n" +
-	"\revidence_json\x18\b \x01(\tR\fevidenceJson\"\xdd\x02\n" +
-	"\x1bIndoorExploreControlRequest\x12!\n" +
-	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12\x1d\n" +
-	"\n" +
-	"mission_id\x18\x02 \x01(\tR\tmissionId\x12\x19\n" +
-	"\bdrone_id\x18\x03 \x01(\tR\adroneId\x12J\n" +
-	"\x06action\x18\x04 \x01(\x0e22.atlas.groundstation.v1.IndoorExploreControlActionR\x06action\x12\x1d\n" +
-	"\n" +
-	"altitude_m\x18\x05 \x01(\x01R\taltitudeM\x12/\n" +
-	"\x14requested_at_unix_ms\x18\x06 \x01(\x03R\x11requestedAtUnixMs\x12-\n" +
-	"\x13deadline_at_unix_ms\x18\a \x01(\x03R\x10deadlineAtUnixMs\x12\x16\n" +
-	"\x06reason\x18\b \x01(\tR\x06reason\"\xc9\x02\n" +
-	"\x1aIndoorExploreMissionUpdate\x12\x19\n" +
-	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12!\n" +
-	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12\x1d\n" +
-	"\n" +
-	"mission_id\x18\x03 \x01(\tR\tmissionId\x12G\n" +
-	"\x05state\x18\x04 \x01(\x0e21.atlas.groundstation.v1.IndoorExploreMissionStateR\x05state\x12\x1d\n" +
-	"\n" +
-	"altitude_m\x18\x05 \x01(\x01R\taltitudeM\x12-\n" +
-	"\x13observed_at_unix_ms\x18\x06 \x01(\x03R\x10observedAtUnixMs\x12\x1d\n" +
-	"\n" +
-	"error_code\x18\a \x01(\tR\terrorCode\x12\x18\n" +
-	"\amessage\x18\b \x01(\tR\amessage\"\xde\x02\n" +
+	"\revidence_json\x18\b \x01(\tR\fevidenceJson\"\xde\x02\n" +
 	"\x17MissionOperationRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12$\n" +
 	"\x0emission_run_id\x18\x02 \x01(\tR\fmissionRunId\x12\x19\n" +
@@ -6682,11 +5582,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x11_progress_percentB\x13\n" +
 	"\x11_current_waypointB\x12\n" +
 	"\x10_total_waypointsB\x12\n" +
-	"\x10_action_sequence*\xb5\x01\n" +
-	"\x1eSpatialCloudSubscriptionAction\x121\n" +
-	"-SPATIAL_CLOUD_SUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x124\n" +
-	"0SPATIAL_CLOUD_SUBSCRIPTION_ACTION_START_OR_RENEW\x10\x01\x12*\n" +
-	"&SPATIAL_CLOUD_SUBSCRIPTION_ACTION_STOP\x10\x02*\xc1\x01\n" +
+	"\x10_action_sequence*\xc1\x01\n" +
 	"!PerceptionFrameSubscriptionAction\x124\n" +
 	"0PERCEPTION_FRAME_SUBSCRIPTION_ACTION_UNSPECIFIED\x10\x00\x127\n" +
 	"3PERCEPTION_FRAME_SUBSCRIPTION_ACTION_START_OR_RENEW\x10\x01\x12-\n" +
@@ -6732,20 +5628,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"-AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_FOLLOWING\x10\x03\x125\n" +
 	"1AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_DEGRADED_HOLD\x10\x04\x12-\n" +
 	")AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_ENDED\x10\x05\x120\n" +
-	",AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED\x10\x06*\xa8\x01\n" +
-	"\x1aIndoorExploreControlAction\x12-\n" +
-	")INDOOR_EXPLORE_CONTROL_ACTION_UNSPECIFIED\x10\x00\x12'\n" +
-	"#INDOOR_EXPLORE_CONTROL_ACTION_START\x10\x01\x122\n" +
-	".INDOOR_EXPLORE_CONTROL_ACTION_ABORT_AND_RETURN\x10\x02*\xf7\x02\n" +
-	"\x19IndoorExploreMissionState\x12,\n" +
-	"(INDOOR_EXPLORE_MISSION_STATE_UNSPECIFIED\x10\x00\x12)\n" +
-	"%INDOOR_EXPLORE_MISSION_STATE_STARTING\x10\x01\x12+\n" +
-	"'INDOOR_EXPLORE_MISSION_STATE_TAKING_OFF\x10\x02\x12*\n" +
-	"&INDOOR_EXPLORE_MISSION_STATE_EXPLORING\x10\x03\x12*\n" +
-	"&INDOOR_EXPLORE_MISSION_STATE_RETURNING\x10\x04\x12)\n" +
-	"%INDOOR_EXPLORE_MISSION_STATE_COMPLETE\x10\x05\x12(\n" +
-	"$INDOOR_EXPLORE_MISSION_STATE_HOLDING\x10\x06\x12'\n" +
-	"#INDOOR_EXPLORE_MISSION_STATE_FAILED\x10\a*\x98\x02\n" +
+	",AIRCRAFT_FOLLOW_SESSION_UPDATE_TYPE_REJECTED\x10\x06*\x98\x02\n" +
 	"\x14MissionOperationType\x12&\n" +
 	"\"MISSION_OPERATION_TYPE_UNSPECIFIED\x10\x00\x12!\n" +
 	"\x1dMISSION_OPERATION_TYPE_UPLOAD\x10\x01\x12 \n" +
@@ -6783,11 +5666,10 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x1dMISSION_ACTION_STATE_RETRYING\x10\x03\x12\"\n" +
 	"\x1eMISSION_ACTION_STATE_SUCCEEDED\x10\x04\x12\x1f\n" +
 	"\x1bMISSION_ACTION_STATE_FAILED\x10\x05\x12'\n" +
-	"#MISSION_ACTION_STATE_POLICY_APPLIED\x10\x062\xe8\x02\n" +
+	"#MISSION_ACTION_STATE_POLICY_APPLIED\x10\x062\xfb\x01\n" +
 	"\x14GroundStationService\x12m\n" +
 	"\vOpenSession\x12,.atlas.groundstation.v1.AgentToGroundStation\x1a,.atlas.groundstation.v1.GroundStationToAgent(\x010\x01\x12t\n" +
-	"\x14OpenPerceptionStream\x12'.atlas.groundstation.v1.AgentPerception\x1a/.atlas.groundstation.v1.GroundStationPerception(\x010\x01\x12k\n" +
-	"\x11OpenSpatialStream\x12$.atlas.groundstation.v1.AgentSpatial\x1a,.atlas.groundstation.v1.GroundStationSpatial(\x010\x01B[ZYgithub.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb;groundstationpbb\x06proto3"
+	"\x14OpenPerceptionStream\x12'.atlas.groundstation.v1.AgentPerception\x1a/.atlas.groundstation.v1.GroundStationPerception(\x010\x01B[ZYgithub.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb;groundstationpbb\x06proto3"
 
 var (
 	file_atlas_ground_station_proto_rawDescOnce sync.Once
@@ -6801,148 +5683,124 @@ func file_atlas_ground_station_proto_rawDescGZIP() []byte {
 	return file_atlas_ground_station_proto_rawDescData
 }
 
-var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 53)
+var file_atlas_ground_station_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
+var file_atlas_ground_station_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_atlas_ground_station_proto_goTypes = []any{
-	(SpatialCloudSubscriptionAction)(0),    // 0: atlas.groundstation.v1.SpatialCloudSubscriptionAction
-	(PerceptionFrameSubscriptionAction)(0), // 1: atlas.groundstation.v1.PerceptionFrameSubscriptionAction
-	(VehicleCommandType)(0),                // 2: atlas.groundstation.v1.VehicleCommandType
-	(VehicleCommandUpdateType)(0),          // 3: atlas.groundstation.v1.VehicleCommandUpdateType
-	(AircraftFollowControlAction)(0),       // 4: atlas.groundstation.v1.AircraftFollowControlAction
-	(AircraftFollowSessionUpdateType)(0),   // 5: atlas.groundstation.v1.AircraftFollowSessionUpdateType
-	(IndoorExploreControlAction)(0),        // 6: atlas.groundstation.v1.IndoorExploreControlAction
-	(IndoorExploreMissionState)(0),         // 7: atlas.groundstation.v1.IndoorExploreMissionState
-	(MissionOperationType)(0),              // 8: atlas.groundstation.v1.MissionOperationType
-	(MissionRunUpdateType)(0),              // 9: atlas.groundstation.v1.MissionRunUpdateType
-	(MissionActionState)(0),                // 10: atlas.groundstation.v1.MissionActionState
-	(*AgentToGroundStation)(nil),           // 11: atlas.groundstation.v1.AgentToGroundStation
-	(*GroundStationToAgent)(nil),           // 12: atlas.groundstation.v1.GroundStationToAgent
-	(*AgentPerception)(nil),                // 13: atlas.groundstation.v1.AgentPerception
-	(*GroundStationPerception)(nil),        // 14: atlas.groundstation.v1.GroundStationPerception
-	(*AgentSpatial)(nil),                   // 15: atlas.groundstation.v1.AgentSpatial
-	(*GroundStationSpatial)(nil),           // 16: atlas.groundstation.v1.GroundStationSpatial
-	(*SpatialCloudSubscription)(nil),       // 17: atlas.groundstation.v1.SpatialCloudSubscription
-	(*SpatialStreamRegistration)(nil),      // 18: atlas.groundstation.v1.SpatialStreamRegistration
-	(*SpatialStreamAccepted)(nil),          // 19: atlas.groundstation.v1.SpatialStreamAccepted
-	(*SpatialCloudSnapshot)(nil),           // 20: atlas.groundstation.v1.SpatialCloudSnapshot
-	(*SpatialPose)(nil),                    // 21: atlas.groundstation.v1.SpatialPose
-	(*PerceptionFrameSubscription)(nil),    // 22: atlas.groundstation.v1.PerceptionFrameSubscription
-	(*PerceptionStreamRegistration)(nil),   // 23: atlas.groundstation.v1.PerceptionStreamRegistration
-	(*PerceptionStreamAccepted)(nil),       // 24: atlas.groundstation.v1.PerceptionStreamAccepted
-	(*PerceptionFrame)(nil),                // 25: atlas.groundstation.v1.PerceptionFrame
-	(*PerceptionModelIdentity)(nil),        // 26: atlas.groundstation.v1.PerceptionModelIdentity
-	(*PerceptionDetection)(nil),            // 27: atlas.groundstation.v1.PerceptionDetection
-	(*PerceptionTrackUpdateBatch)(nil),     // 28: atlas.groundstation.v1.PerceptionTrackUpdateBatch
-	(*NormalizedPoint)(nil),                // 29: atlas.groundstation.v1.NormalizedPoint
-	(*PerceptionCountingRuleSet)(nil),      // 30: atlas.groundstation.v1.PerceptionCountingRuleSet
-	(*PerceptionCountingRule)(nil),         // 31: atlas.groundstation.v1.PerceptionCountingRule
-	(*PerceptionTrackRuleCount)(nil),       // 32: atlas.groundstation.v1.PerceptionTrackRuleCount
-	(*PerceptionTrackCountEvent)(nil),      // 33: atlas.groundstation.v1.PerceptionTrackCountEvent
-	(*PerceptionTrackSnapshot)(nil),        // 34: atlas.groundstation.v1.PerceptionTrackSnapshot
-	(*NormalizedBoundingBox)(nil),          // 35: atlas.groundstation.v1.NormalizedBoundingBox
-	(*PerceptionHealth)(nil),               // 36: atlas.groundstation.v1.PerceptionHealth
-	(*PerceptionTrackingHealth)(nil),       // 37: atlas.groundstation.v1.PerceptionTrackingHealth
-	(*AgentRegistration)(nil),              // 38: atlas.groundstation.v1.AgentRegistration
-	(*DeviceProfile)(nil),                  // 39: atlas.groundstation.v1.DeviceProfile
-	(*DroneProfile)(nil),                   // 40: atlas.groundstation.v1.DroneProfile
-	(*FlightControllerAttachment)(nil),     // 41: atlas.groundstation.v1.FlightControllerAttachment
-	(*AgentHeartbeat)(nil),                 // 42: atlas.groundstation.v1.AgentHeartbeat
-	(*AircraftTelemetry)(nil),              // 43: atlas.groundstation.v1.AircraftTelemetry
-	(*BatteryTelemetry)(nil),               // 44: atlas.groundstation.v1.BatteryTelemetry
-	(*VehicleHealth)(nil),                  // 45: atlas.groundstation.v1.VehicleHealth
-	(*RcStatus)(nil),                       // 46: atlas.groundstation.v1.RcStatus
-	(*HomePosition)(nil),                   // 47: atlas.groundstation.v1.HomePosition
-	(*GpsQuality)(nil),                     // 48: atlas.groundstation.v1.GpsQuality
-	(*AgentStatusText)(nil),                // 49: atlas.groundstation.v1.AgentStatusText
-	(*RegistrationAccepted)(nil),           // 50: atlas.groundstation.v1.RegistrationAccepted
-	(*VehicleCommandRequest)(nil),          // 51: atlas.groundstation.v1.VehicleCommandRequest
-	(*VehicleCommandCancellation)(nil),     // 52: atlas.groundstation.v1.VehicleCommandCancellation
-	(*VehicleCommandUpdate)(nil),           // 53: atlas.groundstation.v1.VehicleCommandUpdate
-	(*AircraftFollowEnvelope)(nil),         // 54: atlas.groundstation.v1.AircraftFollowEnvelope
-	(*AircraftFollowTargetState)(nil),      // 55: atlas.groundstation.v1.AircraftFollowTargetState
-	(*AircraftFollowControlRequest)(nil),   // 56: atlas.groundstation.v1.AircraftFollowControlRequest
-	(*AircraftFollowSessionUpdate)(nil),    // 57: atlas.groundstation.v1.AircraftFollowSessionUpdate
-	(*IndoorExploreControlRequest)(nil),    // 58: atlas.groundstation.v1.IndoorExploreControlRequest
-	(*IndoorExploreMissionUpdate)(nil),     // 59: atlas.groundstation.v1.IndoorExploreMissionUpdate
-	(*MissionOperationRequest)(nil),        // 60: atlas.groundstation.v1.MissionOperationRequest
-	(*MissionReconciliationRequest)(nil),   // 61: atlas.groundstation.v1.MissionReconciliationRequest
-	(*MissionActionCheckpoint)(nil),        // 62: atlas.groundstation.v1.MissionActionCheckpoint
-	(*MissionRunUpdate)(nil),               // 63: atlas.groundstation.v1.MissionRunUpdate
+	(PerceptionFrameSubscriptionAction)(0), // 0: atlas.groundstation.v1.PerceptionFrameSubscriptionAction
+	(VehicleCommandType)(0),                // 1: atlas.groundstation.v1.VehicleCommandType
+	(VehicleCommandUpdateType)(0),          // 2: atlas.groundstation.v1.VehicleCommandUpdateType
+	(AircraftFollowControlAction)(0),       // 3: atlas.groundstation.v1.AircraftFollowControlAction
+	(AircraftFollowSessionUpdateType)(0),   // 4: atlas.groundstation.v1.AircraftFollowSessionUpdateType
+	(MissionOperationType)(0),              // 5: atlas.groundstation.v1.MissionOperationType
+	(MissionRunUpdateType)(0),              // 6: atlas.groundstation.v1.MissionRunUpdateType
+	(MissionActionState)(0),                // 7: atlas.groundstation.v1.MissionActionState
+	(*AgentToGroundStation)(nil),           // 8: atlas.groundstation.v1.AgentToGroundStation
+	(*GroundStationToAgent)(nil),           // 9: atlas.groundstation.v1.GroundStationToAgent
+	(*AgentPerception)(nil),                // 10: atlas.groundstation.v1.AgentPerception
+	(*GroundStationPerception)(nil),        // 11: atlas.groundstation.v1.GroundStationPerception
+	(*PerceptionFrameSubscription)(nil),    // 12: atlas.groundstation.v1.PerceptionFrameSubscription
+	(*PerceptionStreamRegistration)(nil),   // 13: atlas.groundstation.v1.PerceptionStreamRegistration
+	(*PerceptionStreamAccepted)(nil),       // 14: atlas.groundstation.v1.PerceptionStreamAccepted
+	(*PerceptionFrame)(nil),                // 15: atlas.groundstation.v1.PerceptionFrame
+	(*PerceptionModelIdentity)(nil),        // 16: atlas.groundstation.v1.PerceptionModelIdentity
+	(*PerceptionDetection)(nil),            // 17: atlas.groundstation.v1.PerceptionDetection
+	(*PerceptionTrackUpdateBatch)(nil),     // 18: atlas.groundstation.v1.PerceptionTrackUpdateBatch
+	(*NormalizedPoint)(nil),                // 19: atlas.groundstation.v1.NormalizedPoint
+	(*PerceptionCountingRuleSet)(nil),      // 20: atlas.groundstation.v1.PerceptionCountingRuleSet
+	(*PerceptionCountingRule)(nil),         // 21: atlas.groundstation.v1.PerceptionCountingRule
+	(*PerceptionTrackRuleCount)(nil),       // 22: atlas.groundstation.v1.PerceptionTrackRuleCount
+	(*PerceptionTrackCountEvent)(nil),      // 23: atlas.groundstation.v1.PerceptionTrackCountEvent
+	(*PerceptionTrackSnapshot)(nil),        // 24: atlas.groundstation.v1.PerceptionTrackSnapshot
+	(*NormalizedBoundingBox)(nil),          // 25: atlas.groundstation.v1.NormalizedBoundingBox
+	(*PerceptionHealth)(nil),               // 26: atlas.groundstation.v1.PerceptionHealth
+	(*PerceptionTrackingHealth)(nil),       // 27: atlas.groundstation.v1.PerceptionTrackingHealth
+	(*AgentRegistration)(nil),              // 28: atlas.groundstation.v1.AgentRegistration
+	(*DeviceProfile)(nil),                  // 29: atlas.groundstation.v1.DeviceProfile
+	(*DroneProfile)(nil),                   // 30: atlas.groundstation.v1.DroneProfile
+	(*FlightControllerAttachment)(nil),     // 31: atlas.groundstation.v1.FlightControllerAttachment
+	(*AgentHeartbeat)(nil),                 // 32: atlas.groundstation.v1.AgentHeartbeat
+	(*AircraftTelemetry)(nil),              // 33: atlas.groundstation.v1.AircraftTelemetry
+	(*BatteryTelemetry)(nil),               // 34: atlas.groundstation.v1.BatteryTelemetry
+	(*VehicleHealth)(nil),                  // 35: atlas.groundstation.v1.VehicleHealth
+	(*RcStatus)(nil),                       // 36: atlas.groundstation.v1.RcStatus
+	(*HomePosition)(nil),                   // 37: atlas.groundstation.v1.HomePosition
+	(*GpsQuality)(nil),                     // 38: atlas.groundstation.v1.GpsQuality
+	(*AgentStatusText)(nil),                // 39: atlas.groundstation.v1.AgentStatusText
+	(*RegistrationAccepted)(nil),           // 40: atlas.groundstation.v1.RegistrationAccepted
+	(*VehicleCommandRequest)(nil),          // 41: atlas.groundstation.v1.VehicleCommandRequest
+	(*VehicleCommandCancellation)(nil),     // 42: atlas.groundstation.v1.VehicleCommandCancellation
+	(*VehicleCommandUpdate)(nil),           // 43: atlas.groundstation.v1.VehicleCommandUpdate
+	(*AircraftFollowEnvelope)(nil),         // 44: atlas.groundstation.v1.AircraftFollowEnvelope
+	(*AircraftFollowTargetState)(nil),      // 45: atlas.groundstation.v1.AircraftFollowTargetState
+	(*AircraftFollowControlRequest)(nil),   // 46: atlas.groundstation.v1.AircraftFollowControlRequest
+	(*AircraftFollowSessionUpdate)(nil),    // 47: atlas.groundstation.v1.AircraftFollowSessionUpdate
+	(*MissionOperationRequest)(nil),        // 48: atlas.groundstation.v1.MissionOperationRequest
+	(*MissionReconciliationRequest)(nil),   // 49: atlas.groundstation.v1.MissionReconciliationRequest
+	(*MissionActionCheckpoint)(nil),        // 50: atlas.groundstation.v1.MissionActionCheckpoint
+	(*MissionRunUpdate)(nil),               // 51: atlas.groundstation.v1.MissionRunUpdate
 }
 var file_atlas_ground_station_proto_depIdxs = []int32{
-	38, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
-	42, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
-	43, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
-	49, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
-	53, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
-	63, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
-	57, // 6: atlas.groundstation.v1.AgentToGroundStation.aircraft_follow_session_update:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdate
-	59, // 7: atlas.groundstation.v1.AgentToGroundStation.indoor_explore_mission_update:type_name -> atlas.groundstation.v1.IndoorExploreMissionUpdate
-	50, // 8: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
-	51, // 9: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
-	52, // 10: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
-	60, // 11: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
-	61, // 12: atlas.groundstation.v1.GroundStationToAgent.mission_reconciliation_request:type_name -> atlas.groundstation.v1.MissionReconciliationRequest
-	56, // 13: atlas.groundstation.v1.GroundStationToAgent.aircraft_follow_control_request:type_name -> atlas.groundstation.v1.AircraftFollowControlRequest
-	58, // 14: atlas.groundstation.v1.GroundStationToAgent.indoor_explore_control_request:type_name -> atlas.groundstation.v1.IndoorExploreControlRequest
-	23, // 15: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
-	25, // 16: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
-	36, // 17: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
-	28, // 18: atlas.groundstation.v1.AgentPerception.track_updates:type_name -> atlas.groundstation.v1.PerceptionTrackUpdateBatch
-	24, // 19: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
-	22, // 20: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
-	30, // 21: atlas.groundstation.v1.GroundStationPerception.counting_rules:type_name -> atlas.groundstation.v1.PerceptionCountingRuleSet
-	18, // 22: atlas.groundstation.v1.AgentSpatial.registration:type_name -> atlas.groundstation.v1.SpatialStreamRegistration
-	20, // 23: atlas.groundstation.v1.AgentSpatial.cloud:type_name -> atlas.groundstation.v1.SpatialCloudSnapshot
-	19, // 24: atlas.groundstation.v1.GroundStationSpatial.stream_accepted:type_name -> atlas.groundstation.v1.SpatialStreamAccepted
-	17, // 25: atlas.groundstation.v1.GroundStationSpatial.cloud_subscription:type_name -> atlas.groundstation.v1.SpatialCloudSubscription
-	0,  // 26: atlas.groundstation.v1.SpatialCloudSubscription.action:type_name -> atlas.groundstation.v1.SpatialCloudSubscriptionAction
-	21, // 27: atlas.groundstation.v1.SpatialCloudSnapshot.pose:type_name -> atlas.groundstation.v1.SpatialPose
-	1,  // 28: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
-	26, // 29: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	27, // 30: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
-	35, // 31: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	34, // 32: atlas.groundstation.v1.PerceptionTrackUpdateBatch.tracks:type_name -> atlas.groundstation.v1.PerceptionTrackSnapshot
-	32, // 33: atlas.groundstation.v1.PerceptionTrackUpdateBatch.rule_counts:type_name -> atlas.groundstation.v1.PerceptionTrackRuleCount
-	33, // 34: atlas.groundstation.v1.PerceptionTrackUpdateBatch.count_events:type_name -> atlas.groundstation.v1.PerceptionTrackCountEvent
-	31, // 35: atlas.groundstation.v1.PerceptionCountingRuleSet.rules:type_name -> atlas.groundstation.v1.PerceptionCountingRule
-	29, // 36: atlas.groundstation.v1.PerceptionCountingRule.points:type_name -> atlas.groundstation.v1.NormalizedPoint
-	29, // 37: atlas.groundstation.v1.PerceptionTrackCountEvent.anchor:type_name -> atlas.groundstation.v1.NormalizedPoint
-	35, // 38: atlas.groundstation.v1.PerceptionTrackSnapshot.latest_confirmed_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	35, // 39: atlas.groundstation.v1.PerceptionTrackSnapshot.predicted_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
-	26, // 40: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
-	37, // 41: atlas.groundstation.v1.PerceptionHealth.tracking:type_name -> atlas.groundstation.v1.PerceptionTrackingHealth
-	39, // 42: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
-	40, // 43: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
-	41, // 44: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
-	44, // 45: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
-	45, // 46: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
-	46, // 47: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
-	47, // 48: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
-	48, // 49: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
-	2,  // 50: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
-	3,  // 51: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
-	4,  // 52: atlas.groundstation.v1.AircraftFollowControlRequest.action:type_name -> atlas.groundstation.v1.AircraftFollowControlAction
-	54, // 53: atlas.groundstation.v1.AircraftFollowControlRequest.envelope:type_name -> atlas.groundstation.v1.AircraftFollowEnvelope
-	55, // 54: atlas.groundstation.v1.AircraftFollowControlRequest.target:type_name -> atlas.groundstation.v1.AircraftFollowTargetState
-	5,  // 55: atlas.groundstation.v1.AircraftFollowSessionUpdate.update_type:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdateType
-	6,  // 56: atlas.groundstation.v1.IndoorExploreControlRequest.action:type_name -> atlas.groundstation.v1.IndoorExploreControlAction
-	7,  // 57: atlas.groundstation.v1.IndoorExploreMissionUpdate.state:type_name -> atlas.groundstation.v1.IndoorExploreMissionState
-	8,  // 58: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
-	62, // 59: atlas.groundstation.v1.MissionReconciliationRequest.actions:type_name -> atlas.groundstation.v1.MissionActionCheckpoint
-	9,  // 60: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
-	10, // 61: atlas.groundstation.v1.MissionRunUpdate.action_state:type_name -> atlas.groundstation.v1.MissionActionState
-	11, // 62: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
-	13, // 63: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
-	15, // 64: atlas.groundstation.v1.GroundStationService.OpenSpatialStream:input_type -> atlas.groundstation.v1.AgentSpatial
-	12, // 65: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
-	14, // 66: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
-	16, // 67: atlas.groundstation.v1.GroundStationService.OpenSpatialStream:output_type -> atlas.groundstation.v1.GroundStationSpatial
-	65, // [65:68] is the sub-list for method output_type
-	62, // [62:65] is the sub-list for method input_type
-	62, // [62:62] is the sub-list for extension type_name
-	62, // [62:62] is the sub-list for extension extendee
-	0,  // [0:62] is the sub-list for field type_name
+	28, // 0: atlas.groundstation.v1.AgentToGroundStation.registration:type_name -> atlas.groundstation.v1.AgentRegistration
+	32, // 1: atlas.groundstation.v1.AgentToGroundStation.heartbeat:type_name -> atlas.groundstation.v1.AgentHeartbeat
+	33, // 2: atlas.groundstation.v1.AgentToGroundStation.telemetry:type_name -> atlas.groundstation.v1.AircraftTelemetry
+	39, // 3: atlas.groundstation.v1.AgentToGroundStation.status_text:type_name -> atlas.groundstation.v1.AgentStatusText
+	43, // 4: atlas.groundstation.v1.AgentToGroundStation.command_update:type_name -> atlas.groundstation.v1.VehicleCommandUpdate
+	51, // 5: atlas.groundstation.v1.AgentToGroundStation.mission_run_update:type_name -> atlas.groundstation.v1.MissionRunUpdate
+	47, // 6: atlas.groundstation.v1.AgentToGroundStation.aircraft_follow_session_update:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdate
+	40, // 7: atlas.groundstation.v1.GroundStationToAgent.registration_accepted:type_name -> atlas.groundstation.v1.RegistrationAccepted
+	41, // 8: atlas.groundstation.v1.GroundStationToAgent.command_request:type_name -> atlas.groundstation.v1.VehicleCommandRequest
+	42, // 9: atlas.groundstation.v1.GroundStationToAgent.command_cancellation:type_name -> atlas.groundstation.v1.VehicleCommandCancellation
+	48, // 10: atlas.groundstation.v1.GroundStationToAgent.mission_operation_request:type_name -> atlas.groundstation.v1.MissionOperationRequest
+	49, // 11: atlas.groundstation.v1.GroundStationToAgent.mission_reconciliation_request:type_name -> atlas.groundstation.v1.MissionReconciliationRequest
+	46, // 12: atlas.groundstation.v1.GroundStationToAgent.aircraft_follow_control_request:type_name -> atlas.groundstation.v1.AircraftFollowControlRequest
+	13, // 13: atlas.groundstation.v1.AgentPerception.registration:type_name -> atlas.groundstation.v1.PerceptionStreamRegistration
+	15, // 14: atlas.groundstation.v1.AgentPerception.frame:type_name -> atlas.groundstation.v1.PerceptionFrame
+	26, // 15: atlas.groundstation.v1.AgentPerception.health:type_name -> atlas.groundstation.v1.PerceptionHealth
+	18, // 16: atlas.groundstation.v1.AgentPerception.track_updates:type_name -> atlas.groundstation.v1.PerceptionTrackUpdateBatch
+	14, // 17: atlas.groundstation.v1.GroundStationPerception.stream_accepted:type_name -> atlas.groundstation.v1.PerceptionStreamAccepted
+	12, // 18: atlas.groundstation.v1.GroundStationPerception.frame_subscription:type_name -> atlas.groundstation.v1.PerceptionFrameSubscription
+	20, // 19: atlas.groundstation.v1.GroundStationPerception.counting_rules:type_name -> atlas.groundstation.v1.PerceptionCountingRuleSet
+	0,  // 20: atlas.groundstation.v1.PerceptionFrameSubscription.action:type_name -> atlas.groundstation.v1.PerceptionFrameSubscriptionAction
+	16, // 21: atlas.groundstation.v1.PerceptionFrame.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	17, // 22: atlas.groundstation.v1.PerceptionFrame.detections:type_name -> atlas.groundstation.v1.PerceptionDetection
+	25, // 23: atlas.groundstation.v1.PerceptionDetection.bounding_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	24, // 24: atlas.groundstation.v1.PerceptionTrackUpdateBatch.tracks:type_name -> atlas.groundstation.v1.PerceptionTrackSnapshot
+	22, // 25: atlas.groundstation.v1.PerceptionTrackUpdateBatch.rule_counts:type_name -> atlas.groundstation.v1.PerceptionTrackRuleCount
+	23, // 26: atlas.groundstation.v1.PerceptionTrackUpdateBatch.count_events:type_name -> atlas.groundstation.v1.PerceptionTrackCountEvent
+	21, // 27: atlas.groundstation.v1.PerceptionCountingRuleSet.rules:type_name -> atlas.groundstation.v1.PerceptionCountingRule
+	19, // 28: atlas.groundstation.v1.PerceptionCountingRule.points:type_name -> atlas.groundstation.v1.NormalizedPoint
+	19, // 29: atlas.groundstation.v1.PerceptionTrackCountEvent.anchor:type_name -> atlas.groundstation.v1.NormalizedPoint
+	25, // 30: atlas.groundstation.v1.PerceptionTrackSnapshot.latest_confirmed_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	25, // 31: atlas.groundstation.v1.PerceptionTrackSnapshot.predicted_box:type_name -> atlas.groundstation.v1.NormalizedBoundingBox
+	16, // 32: atlas.groundstation.v1.PerceptionHealth.model:type_name -> atlas.groundstation.v1.PerceptionModelIdentity
+	27, // 33: atlas.groundstation.v1.PerceptionHealth.tracking:type_name -> atlas.groundstation.v1.PerceptionTrackingHealth
+	29, // 34: atlas.groundstation.v1.AgentRegistration.device:type_name -> atlas.groundstation.v1.DeviceProfile
+	30, // 35: atlas.groundstation.v1.AgentRegistration.drone:type_name -> atlas.groundstation.v1.DroneProfile
+	31, // 36: atlas.groundstation.v1.AgentRegistration.flight_controller:type_name -> atlas.groundstation.v1.FlightControllerAttachment
+	34, // 37: atlas.groundstation.v1.AircraftTelemetry.batteries:type_name -> atlas.groundstation.v1.BatteryTelemetry
+	35, // 38: atlas.groundstation.v1.AircraftTelemetry.health:type_name -> atlas.groundstation.v1.VehicleHealth
+	36, // 39: atlas.groundstation.v1.AircraftTelemetry.rc_status:type_name -> atlas.groundstation.v1.RcStatus
+	37, // 40: atlas.groundstation.v1.AircraftTelemetry.home_position:type_name -> atlas.groundstation.v1.HomePosition
+	38, // 41: atlas.groundstation.v1.AircraftTelemetry.gps_quality:type_name -> atlas.groundstation.v1.GpsQuality
+	1,  // 42: atlas.groundstation.v1.VehicleCommandRequest.command_type:type_name -> atlas.groundstation.v1.VehicleCommandType
+	2,  // 43: atlas.groundstation.v1.VehicleCommandUpdate.update_type:type_name -> atlas.groundstation.v1.VehicleCommandUpdateType
+	3,  // 44: atlas.groundstation.v1.AircraftFollowControlRequest.action:type_name -> atlas.groundstation.v1.AircraftFollowControlAction
+	44, // 45: atlas.groundstation.v1.AircraftFollowControlRequest.envelope:type_name -> atlas.groundstation.v1.AircraftFollowEnvelope
+	45, // 46: atlas.groundstation.v1.AircraftFollowControlRequest.target:type_name -> atlas.groundstation.v1.AircraftFollowTargetState
+	4,  // 47: atlas.groundstation.v1.AircraftFollowSessionUpdate.update_type:type_name -> atlas.groundstation.v1.AircraftFollowSessionUpdateType
+	5,  // 48: atlas.groundstation.v1.MissionOperationRequest.operation_type:type_name -> atlas.groundstation.v1.MissionOperationType
+	50, // 49: atlas.groundstation.v1.MissionReconciliationRequest.actions:type_name -> atlas.groundstation.v1.MissionActionCheckpoint
+	6,  // 50: atlas.groundstation.v1.MissionRunUpdate.update_type:type_name -> atlas.groundstation.v1.MissionRunUpdateType
+	7,  // 51: atlas.groundstation.v1.MissionRunUpdate.action_state:type_name -> atlas.groundstation.v1.MissionActionState
+	8,  // 52: atlas.groundstation.v1.GroundStationService.OpenSession:input_type -> atlas.groundstation.v1.AgentToGroundStation
+	10, // 53: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:input_type -> atlas.groundstation.v1.AgentPerception
+	9,  // 54: atlas.groundstation.v1.GroundStationService.OpenSession:output_type -> atlas.groundstation.v1.GroundStationToAgent
+	11, // 55: atlas.groundstation.v1.GroundStationService.OpenPerceptionStream:output_type -> atlas.groundstation.v1.GroundStationPerception
+	54, // [54:56] is the sub-list for method output_type
+	52, // [52:54] is the sub-list for method input_type
+	52, // [52:52] is the sub-list for extension type_name
+	52, // [52:52] is the sub-list for extension extendee
+	0,  // [0:52] is the sub-list for field type_name
 }
 
 func init() { file_atlas_ground_station_proto_init() }
@@ -6958,7 +5816,6 @@ func file_atlas_ground_station_proto_init() {
 		(*AgentToGroundStation_CommandUpdate)(nil),
 		(*AgentToGroundStation_MissionRunUpdate)(nil),
 		(*AgentToGroundStation_AircraftFollowSessionUpdate)(nil),
-		(*AgentToGroundStation_IndoorExploreMissionUpdate)(nil),
 	}
 	file_atlas_ground_station_proto_msgTypes[1].OneofWrappers = []any{
 		(*GroundStationToAgent_RegistrationAccepted)(nil),
@@ -6967,7 +5824,6 @@ func file_atlas_ground_station_proto_init() {
 		(*GroundStationToAgent_MissionOperationRequest)(nil),
 		(*GroundStationToAgent_MissionReconciliationRequest)(nil),
 		(*GroundStationToAgent_AircraftFollowControlRequest)(nil),
-		(*GroundStationToAgent_IndoorExploreControlRequest)(nil),
 	}
 	file_atlas_ground_station_proto_msgTypes[2].OneofWrappers = []any{
 		(*AgentPerception_Registration)(nil),
@@ -6980,30 +5836,22 @@ func file_atlas_ground_station_proto_init() {
 		(*GroundStationPerception_FrameSubscription)(nil),
 		(*GroundStationPerception_CountingRules)(nil),
 	}
-	file_atlas_ground_station_proto_msgTypes[4].OneofWrappers = []any{
-		(*AgentSpatial_Registration)(nil),
-		(*AgentSpatial_Cloud)(nil),
-	}
-	file_atlas_ground_station_proto_msgTypes[5].OneofWrappers = []any{
-		(*GroundStationSpatial_StreamAccepted)(nil),
-		(*GroundStationSpatial_CloudSubscription)(nil),
-	}
-	file_atlas_ground_station_proto_msgTypes[32].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[33].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[25].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[26].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[28].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[29].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[30].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[35].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[36].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[37].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[41].OneofWrappers = []any{}
 	file_atlas_ground_station_proto_msgTypes[42].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[50].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[51].OneofWrappers = []any{}
-	file_atlas_ground_station_proto_msgTypes[52].OneofWrappers = []any{}
+	file_atlas_ground_station_proto_msgTypes[43].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_atlas_ground_station_proto_rawDesc), len(file_atlas_ground_station_proto_rawDesc)),
-			NumEnums:      11,
-			NumMessages:   53,
+			NumEnums:      8,
+			NumMessages:   44,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

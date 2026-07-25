@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sunnyside/atlas/atlas-agent/internal/aircraftprofile"
 	"github.com/sunnyside/atlas/atlas-agent/internal/buildinfo"
 )
 
@@ -46,6 +47,8 @@ func (transport CameraTransport) UsesMAVSDK() bool {
 }
 
 type Config struct {
+	AircraftProfilePath                       string
+	AircraftProfile                           aircraftprofile.Profile
 	StateDirectory                            string
 	GroundStationAddress                      string
 	DroneName                                 string
@@ -54,10 +57,6 @@ type Config struct {
 	HeartbeatInterval                         time.Duration
 	TelemetryInterval                         time.Duration
 	MAVSDKGRPCAddress                         string
-	NavigationSocketPath                      string
-	SpatialEnabled                            bool
-	SpatialCloudSocketPath                    string
-	SpatialSourceID                           string
 	CameraTransport                           CameraTransport
 	SIYICameraAddress                         string
 	PerceptionProvider                        string
@@ -147,24 +146,6 @@ func Load() (Config, error) {
 	)
 	if !filepath.IsAbs(perceptionSocketPath) {
 		return Config{}, errors.New("ATLAS_PERCEPTION_SOCKET_PATH must be an absolute path")
-	}
-	navigationSocketPath := environmentOrDefault(
-		"ATLAS_NAVIGATION_SOCKET_PATH",
-		filepath.Join(stateDirectory, "navigation.sock"),
-	)
-	if !filepath.IsAbs(navigationSocketPath) {
-		return Config{}, errors.New("ATLAS_NAVIGATION_SOCKET_PATH must be an absolute path")
-	}
-	spatialEnabled, err := booleanEnvironment("ATLAS_SPATIAL_ENABLED", false)
-	if err != nil {
-		return Config{}, err
-	}
-	spatialCloudSocketPath := environmentOrDefault(
-		"ATLAS_SPATIAL_CLOUD_SOCKET_PATH",
-		filepath.Join(stateDirectory, "spatial-cloud.sock"),
-	)
-	if !filepath.IsAbs(spatialCloudSocketPath) {
-		return Config{}, errors.New("ATLAS_SPATIAL_CLOUD_SOCKET_PATH must be an absolute path")
 	}
 	perceptionAdapterMode := strings.ToLower(environmentOrDefault("ATLAS_PERCEPTION_ADAPTER_MODE", "process"))
 	if perceptionAdapterMode != "process" && perceptionAdapterMode != "container" {
@@ -319,7 +300,24 @@ func Load() (Config, error) {
 	if aircraftFollowEnabled && geolocationBoresightAlignmentReference == "" {
 		return Config{}, errors.New("ATLAS_AIRCRAFT_FOLLOW_ENABLED requires a physical ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE")
 	}
+	aircraftProfilePath := strings.TrimSpace(os.Getenv("ATLAS_AIRCRAFT_PROFILE_PATH"))
+	aircraftProfileID := strings.TrimSpace(os.Getenv("ATLAS_AIRCRAFT_PROFILE_ID"))
+	var selectedAircraftProfile aircraftprofile.Profile
+	if aircraftProfilePath != "" || aircraftProfileID != "" {
+		if !filepath.IsAbs(aircraftProfilePath) {
+			return Config{}, errors.New("ATLAS_AIRCRAFT_PROFILE_PATH must be absolute when an aircraft profile is selected")
+		}
+		selectedAircraftProfile, err = aircraftprofile.Load(aircraftProfilePath)
+		if err != nil {
+			return Config{}, err
+		}
+		if aircraftProfileID == "" || selectedAircraftProfile.ProfileID != aircraftProfileID {
+			return Config{}, errors.New("ATLAS_AIRCRAFT_PROFILE_ID must match the selected aircraft profile")
+		}
+	}
 	return Config{
+		AircraftProfilePath:                       aircraftProfilePath,
+		AircraftProfile:                           selectedAircraftProfile,
 		StateDirectory:                            filepath.Clean(stateDirectory),
 		GroundStationAddress:                      environmentOrDefault("ATLAS_GROUND_STATION_ADDR", "192.168.144.50:7443"),
 		DroneName:                                 environmentOrDefault("ATLAS_DRONE_NAME", "Atlas Drone"),
@@ -328,10 +326,6 @@ func Load() (Config, error) {
 		HeartbeatInterval:                         5 * time.Second,
 		TelemetryInterval:                         telemetryInterval,
 		MAVSDKGRPCAddress:                         environmentOrDefault("ATLAS_MAVSDK_GRPC_ADDR", "127.0.0.1:50051"),
-		NavigationSocketPath:                      filepath.Clean(navigationSocketPath),
-		SpatialEnabled:                            spatialEnabled,
-		SpatialCloudSocketPath:                    filepath.Clean(spatialCloudSocketPath),
-		SpatialSourceID:                           environmentOrDefault("ATLAS_SPATIAL_SOURCE_ID", "front-depth"),
 		CameraTransport:                           cameraTransport,
 		SIYICameraAddress:                         environmentOrDefault("ATLAS_SIYI_CAMERA_ADDR", "192.168.144.25:37260"),
 		PerceptionProvider:                        perceptionProvider,

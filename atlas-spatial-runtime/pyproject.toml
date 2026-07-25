@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "atlas-spatial-runtime"
+version = "0.1.0"
+description = "Atlas native depth-camera runtime"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy==2.4.6",
+]
+
+[project.optional-dependencies]
+depthai = [
+  "depthai==3.7.1",
+]
+
+[project.scripts]
+atlas-spatial-runtime = "atlas_spatial_runtime.runtime:main"
+atlas-spatial-probe = "atlas_spatial_runtime.probe:main"
+atlas-spatial-check = "atlas_spatial_runtime.diagnostics:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
