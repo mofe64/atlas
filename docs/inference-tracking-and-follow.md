@@ -186,8 +186,8 @@ can be more dangerous than no coordinate.
 The Agent accepts only the exact selected `ACTIVE` track. The current model uses
 a centred-boresight approximation: the bounding-box centre must be within 0.04
 normalized units of frame centre on each axis. This limitation keeps the ray
-model consistent with the commissioned physical boresight reference; it is not
-a general camera intrinsic/extrinsic projection for arbitrary pixels.
+model consistent with the configured static boresight uncertainty; it is not a
+general camera intrinsic/extrinsic projection for arbitrary pixels.
 
 ### Inputs
 
@@ -196,7 +196,7 @@ The calculation aligns:
 - retained frame capture timing;
 - aircraft position and attitude history;
 - measured gimbal orientation history;
-- the commissioned boresight relationship;
+- the static boresight model and configured angular-error bound;
 - an initial ground plane or target-centre height.
 
 It casts a downward ray and rejects geometry outside its validity envelope,
@@ -299,11 +299,11 @@ Follow from standoff commands PX4 Offboard velocity so the aircraft follows a
 moving target from a reviewed horizontal distance and altitude. It is a separate
 vehicle-control authority and does not use bounding-box error.
 
-The feature is unverified and disabled by default with
-`ATLAS_AIRCRAFT_FOLLOW_ENABLED=false`. Enabling the software flag is not enough
-to claim readiness: the aircraft must advertise a commissioned follow validation
-reference and physical boresight reference, and the operator must review the
-envelope for that airframe/site.
+The feature is available whenever the connected Agent advertises
+`aircraft_follow:standoff:v1`. There is no feature-enable environment variable
+or commissioning-reference gate. Availability is distinct from safe execution:
+the operator must review the envelope, and Native and Agent enforce live
+target-quality, aircraft-health, lease, boundary, and PX4-state checks.
 
 ### Session lifecycle
 
@@ -332,7 +332,8 @@ Native requires, among other checks:
 - a successfully converged geolocation;
 - motion-filter status `FILTERED`;
 - target age no more than 5 seconds at start;
-- commissioned follow and boresight capabilities;
+- Agent support for `aircraft_follow:standoff:v1`;
+- a finite boresight angular-error bound in the geolocation evidence;
 - armed, airborne aircraft with healthy local/global state;
 - fresh telemetry, sufficient battery, and reviewed altitude/boundary envelope.
 

@@ -35,7 +35,6 @@ type Config struct {
 	MaxSourceReferenceFutureSkew    time.Duration
 	BoresightCenterTolerance        float64
 	BoresightAngularUncertaintyDeg  float64
-	BoresightAlignmentReference     string
 	BoresightOriginUncertaintyM     float64
 	BoresightMinimumDepressionDeg   float64
 	BoresightMaximumGroundRangeM    float64
@@ -80,9 +79,6 @@ func (config Config) validate() error {
 	}
 	if !finite(config.BoresightAngularUncertaintyDeg) || config.BoresightAngularUncertaintyDeg <= 0 || config.BoresightAngularUncertaintyDeg >= 45 {
 		return errors.New("boresight angular uncertainty must be between 0 and 45 degrees")
-	}
-	if len(strings.TrimSpace(config.BoresightAlignmentReference)) > 240 {
-		return errors.New("boresight alignment reference cannot exceed 240 characters")
 	}
 	if !finite(config.BoresightOriginUncertaintyM) || config.BoresightOriginUncertaintyM < 0 {
 		return errors.New("boresight origin uncertainty must be finite and non-negative")

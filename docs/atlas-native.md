@@ -55,7 +55,7 @@ Important UI modules:
 | --- | --- |
 | [`evidence/EvidencePage.tsx`](../atlas/src/evidence/EvidencePage.tsx) | Evidence still/event-clip review, annotation, verification, trash, and retention |
 | [`operations/OperationsPage.tsx`](../atlas/src/operations/OperationsPage.tsx) | Incident intake, suitability, response preview, review, assignment, and dispatch |
-| [`follow/FollowPage.tsx`](../atlas/src/follow/FollowPage.tsx) | Selected-target geolocation review and commissioned aircraft Follow from standoff |
+| [`follow/FollowPage.tsx`](../atlas/src/follow/FollowPage.tsx) | Selected-target geolocation review and bounded aircraft Follow from standoff |
 | [`fleet/FleetPage.tsx`](../atlas/src/fleet/FleetPage.tsx) | Operational and archived aircraft list |
 | [`missions/MissionPage.tsx`](../atlas/src/missions/MissionPage.tsx) | Mission definition, map geometry, plan generation, and terrain workflow |
 | [`missions/MissionExecutionPage.tsx`](../atlas/src/missions/MissionExecutionPage.tsx) | Upload, start, progress, pause/resume, cancel, RTL, live map, and payload override |

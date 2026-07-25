@@ -1,9 +1,9 @@
 # Spatial Depth Runtime
 
 Atlas Spatial Runtime is the independently supervised depth-camera process. It
-owns acquisition, calibration, freshness, direct projection utilities, and its
-local diagnostic socket. It does not map, estimate aircraft pose, command
-movement, or stream spatial data to Atlas Agent or Native.
+owns acquisition, calibration, freshness, and its local diagnostic socket. It
+does not project obstacles, map, estimate aircraft pose, command movement, or
+stream spatial data to Atlas Agent or Native.
 
 ## Current boundary
 
@@ -14,10 +14,6 @@ flowchart LR
     DepthAI --> Calibration["Intrinsics for aligned RGB optical frame"]
     Frame --> Health["Local health socket"]
     Calibration --> Health
-    Frame --> Projection["Sampled depth projection"]
-    Calibration --> Projection
-    Profile["Aircraft camera-to-body extrinsic"] --> Projection
-    Projection -. "future work" .-> Obstacles["Fresh obstacle observations"]
 ```
 
 ROS and Docker are not part of this path. The process runs from a Python
@@ -49,9 +45,7 @@ with the selected profile.
 | Queueing | Latest frame only |
 
 Keeping native millimetres avoids converting and doubling the size of every
-frame before a consumer exists. A metres-based consumer can use
-`millimetres_to_metres`; projection can sample the native array and convert only
-selected pixels.
+frame before a consumer exists.
 
 DepthAI aligns stereo depth to the RGB optical output. This preserves Ariadne's
 verified camera-frame geometry and avoids creating a new mount calibration
@@ -85,19 +79,15 @@ at 480 Mb/s with a synthetic USB identity; diagnostics reconcile that boot
 state with the live device after DepthAI starts it. The lower-level check and
 probe executables remain private under `/opt/atlas-spatial-runtime/bin`.
 
-## Geometry
+## Aircraft profile
 
 `aircraft-profiles/ariadne.json` stores only the profile id, depth-camera
 device id, and Ariadne's direct sensor-optical-to-body-FRD rotation and
-translation. `translationM` is metres and `rotationWXYZ` rotates camera-frame
-points into body FRD. Projection has two steps:
-
-1. Intrinsics project selected fresh depth pixels into the camera optical
-   frame.
-2. One normalized quaternion and translation place those points in body FRD.
-
-There is no transform graph. A different aircraft or camera mount must supply
-and verify its own direct extrinsic.
+translation. The current acquisition runtime validates and retains this small
+physical description but does not apply it because obstacle projection does
+not exist yet. A future extractor must use it directly; there is no transform
+graph. A different aircraft or camera mount must supply and verify its own
+offset.
 
 ## Ownership and failure behavior
 
@@ -109,8 +99,8 @@ and verify its own direct extrinsic.
   it.
 - Spatial failure does not stop Agent, MAVSDK, telemetry, H-Flow, or ordinary
   commands.
-- No obstacle-avoidance capability is advertised yet. That requires an
-  expiring observation contract and a separately designed flight consumer.
+- No obstacle observations are exposed. That requires an expiring observation
+  contract and a separately designed flight consumer.
 
 ## Development, packaging, and Pi installation
 
@@ -146,6 +136,3 @@ does not access PyPI during installation. It replaces the single private
 runtime at `/opt/atlas-spatial-runtime`; the Pi does not need a repository
 checkout. Agent package builds and updates do not build, embed, test, or replace
 Spatial.
-
-See the [decommission audit](indoor-navigation-decommission-audit.md) for the
-removed indoor architecture and the remaining outdoor-avoidance work.

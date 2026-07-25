@@ -9,10 +9,9 @@ This runbook covers installing a Holybro H-Flow, configuring PX4 to consume its
 optical-flow and range data, and confirming that the data reaches the PX4
 estimator.
 
-H-Flow connects directly to PX4 over DroneCAN. Atlas Agent can read the
-resulting navigation health, but it does not fuse the measurements. The
-independent Spatial Runtime does not use H-Flow and H-Flow is not part of the
-outdoor obstacle-observation contract.
+H-Flow connects directly to PX4 over DroneCAN. PX4 owns its validation, sensor
+fusion, and any resulting estimator state. Atlas Agent does not mirror that
+state into a separate navigation layer.
 
 This procedure does not authorize autonomous flight. If the aircraft will use
 flow or range aiding in flight, finish with a low, supervised acceptance flight

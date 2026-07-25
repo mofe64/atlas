@@ -39,8 +39,8 @@ The process starts in this order:
 3. If enabled, create the protected perception Unix socket and supervise or
    await the provider adapter. The adapter reports health from `READY`; it does
    not run inference until Agent grants an activation claim.
-4. Connect telemetry subscriptions to `mavsdk_server` and maintain internal
-   PX4/H-Flow component health.
+4. Connect operator and geolocation telemetry subscriptions to
+   `mavsdk_server`.
 5. Create one shared payload controller.
 6. Create the action executor and mission executor using that controller.
 7. Discover gimbal and configured camera capabilities.
@@ -61,8 +61,6 @@ and validates process configuration. Core variables are:
 | `ATLAS_GROUND_STATION_ADDR` | `192.168.144.50:7443` | Atlas Native listener |
 | `ATLAS_DRONE_NAME` | `Atlas Drone` | Display name sent during registration |
 | `ATLAS_AGENT_VERSION` | Build version | Version sent during registration |
-| `ATLAS_AIRCRAFT_PROFILE_ID` | empty in source development | Selected installed aircraft profile |
-| `ATLAS_AIRCRAFT_PROFILE_PATH` | empty in source development | Absolute path to the active profile containing the depth-camera id and mounting offset |
 | `ATLAS_MAVSDK_GRPC_ADDR` | `127.0.0.1:50051` | Local `mavsdk_server` API |
 | `ATLAS_TELEMETRY_INTERVAL` | `1s` | Latest snapshot publication interval |
 | `ATLAS_CAMERA_TRANSPORT` | `siyi_udp` | `siyi_udp`, `mavsdk`, or `hybrid` |
@@ -76,9 +74,7 @@ and validates process configuration. Core variables are:
 | `ATLAS_GIMBAL_FOLLOW_MAX_PITCH_RATE` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW_RATE` | `20` / `30` | Bounded commanded rates in degrees per second |
 | `ATLAS_GIMBAL_FOLLOW_MIN_PITCH` / `ATLAS_GIMBAL_FOLLOW_MAX_PITCH` | `-90` / `30` | Calibrated physical pitch envelope in degrees |
 | `ATLAS_GIMBAL_FOLLOW_MIN_YAW` / `ATLAS_GIMBAL_FOLLOW_MAX_YAW` | `-180` / `180` | Calibrated aircraft-relative yaw envelope in degrees |
-| `ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE` | empty | Physical camera/gimbal alignment acceptance record; empty remains `UNVERIFIED` |
-| `ATLAS_AIRCRAFT_FOLLOW_ENABLED` | `false` | Enables aircraft translation only for a commissioned installation |
-| `ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE` | empty | Accepted simulation/HIL/controlled-flight evidence reference required by the enabled controller |
+| `ATLAS_GEOLOCATION_BORESIGHT_ANGULAR_UNCERTAINTY_DEG` | `10` | Static camera/gimbal angular-error bound propagated into geolocation evidence |
 | `ATLAS_FLIGHT_CONTROLLER_ENDPOINT` | `/dev/serial0` | Registration metadata for the attached controller |
 | `ATLAS_FLIGHT_CONTROLLER_BAUD_RATE` | `921600` | Registration and setup metadata |
 
@@ -176,11 +172,9 @@ and filtered world-space motion are durable. Arbitrary-pixel projection,
 measured range, and surveyed accuracy acceptance remain outside this
 implementation.
 
-Every estimate also declares physical boresight-alignment status. Without
-`ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE`, evidence says `UNVERIFIED`
-and explicitly does not claim that the static angular bound is field-accepted.
-A commissioned installation records its test artifact/reference and configured
-angular bound in every result.
+Every estimate records the configured static boresight angular-error bound.
+That numeric bound contributes to geolocation uncertainty; it is not a
+commissioning status or a reference to an external artifact.
 
 ## Action executor
 
@@ -277,11 +271,11 @@ failure sends zero velocity, stops Offboard, explicitly requests PX4 Hold, and
 reports a durable exit reason to Native. Ground-stream loss invokes the same
 path; RC and PX4 failsafes remain independent.
 
-The controller advertises `unverified` and refuses to start by default. It
-advertises `verified` only when startup configuration contains both a follow
-validation reference and a physical boresight-alignment reference. Renewals
-may update only the exact target sample and lease: the Agent revalidates them
-against the original envelope so authority cannot expand in flight.
+The controller always advertises `aircraft_follow:standoff:v1`; there is no
+feature-enable environment variable or commissioning-reference gate. Native
+still requires protocol support, and renewals may update only the exact target
+sample and lease. The Agent revalidates them against the original envelope so
+authority cannot expand in flight.
 
 ## Mission executor
 
@@ -378,8 +372,8 @@ atlas-spatial-runtime.service (optional, separate camera package)
 
 - MAVSDK owns the serial/MAVLink connection.
 - Agent requires MAVSDK.
-- Agent loads the selected aircraft payload profile at startup and rejects a
-  missing, malformed, or mismatched profile.
+- `atlas-setup` validates the selected aircraft profile and writes it for the
+  Spatial process; the Agent process has no profile dependency.
 - The container-backed Hailo adapter is part of the Agent lifecycle and uses the
   Agent-owned runtime socket.
 - Spatial is installed from `atlas-spatial-runtime`, runs natively through

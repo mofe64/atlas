@@ -23,7 +23,6 @@ const (
 	DefaultMAVSDKAddr        = "127.0.0.1:50051"
 	AdapterModeProcess       = "process"
 	AdapterModeContainer     = "container"
-	DefaultSpatialSource     = "front-depth"
 	SpatialProviderDepthAI   = "depthai"
 	SpatialProviderSynthetic = "synthetic"
 )
@@ -164,15 +163,6 @@ type SpatialStatus struct {
 	USBTransport     string
 	USBSpeedMbps     int
 	RuntimeInstalled bool
-	ServiceRunning   bool
-	Ready            bool
-	Status           string
-	SourceID         string
-	DepthFPS         string
-	DepthFrameID     string
-	CalibrationValid bool
-	CalibrationFrame string
-	LastError        string
 }
 
 type Discovery struct {
@@ -213,7 +203,6 @@ type InstallConfig struct {
 	PostprocessFunction       string
 	SpatialEnabled            bool
 	SpatialProvider           string
-	SpatialSourceID           string
 	SpatialDeviceID           string
 	SpatialModel              string
 	SpatialUSBTransport       string
@@ -236,7 +225,6 @@ func DefaultInstallConfig(paths Paths) InstallConfig {
 		ModelPath:             paths.DefaultModel,
 		PostprocessSO:         paths.DefaultPostprocessSO,
 		PostprocessFunction:   "filter",
-		SpatialSourceID:       DefaultSpatialSource,
 		SpatialUSBTransport:   "unknown",
 		SpatialFrameID:        "oak_rgb_camera_optical_frame",
 		AgentVersion:          "unknown",
@@ -291,9 +279,6 @@ func (config InstallConfig) Validate(paths Paths) error {
 	if config.SpatialEnabled {
 		if config.SpatialProvider != SpatialProviderDepthAI && config.SpatialProvider != SpatialProviderSynthetic {
 			return fmt.Errorf("spatial provider must be depthai or synthetic")
-		}
-		if strings.TrimSpace(config.SpatialSourceID) == "" {
-			return fmt.Errorf("spatial source id is required")
 		}
 		if config.SpatialProvider == SpatialProviderDepthAI &&
 			config.SpatialDeviceID != config.AircraftProfile.Payloads.DepthCamera.DeviceID {

@@ -55,16 +55,15 @@ type AircraftFollowTarget struct {
 }
 
 type AircraftFollowOperation struct {
-	OperationID         string
-	SessionID           string
-	DroneID             string
-	Action              string
-	Envelope            AircraftFollowEnvelope
-	Target              AircraftFollowTarget
-	LeaseExpiresAt      time.Time
-	ReasonCode          string
-	Reason              string
-	ValidationReference string
+	OperationID    string
+	SessionID      string
+	DroneID        string
+	Action         string
+	Envelope       AircraftFollowEnvelope
+	Target         AircraftFollowTarget
+	LeaseExpiresAt time.Time
+	ReasonCode     string
+	Reason         string
 }
 
 type AircraftFollowUpdate struct {
@@ -79,11 +78,9 @@ type AircraftFollowUpdate struct {
 }
 
 type AircraftFollowControllerConfig struct {
-	Enabled             bool
-	ValidationReference string
-	UpdateInterval      time.Duration
-	TargetFreshness     time.Duration
-	TelemetryFreshness  time.Duration
+	UpdateInterval     time.Duration
+	TargetFreshness    time.Duration
+	TelemetryFreshness time.Duration
 }
 
 func DefaultAircraftFollowControllerConfig() AircraftFollowControllerConfig {
@@ -171,9 +168,6 @@ func newAircraftFollowControllerWithVehicle(logger *slog.Logger, config Aircraft
 	if config.TelemetryFreshness < config.UpdateInterval {
 		return nil, errors.New("aircraft follow telemetry freshness must exceed the update interval")
 	}
-	if config.Enabled && config.ValidationReference == "" {
-		return nil, errors.New("enabled aircraft follow controller requires validation evidence")
-	}
 	return &AircraftFollowController{
 		logger: logger, config: config, latest: latest, vehicle: vehicle,
 		updates: make(chan AircraftFollowUpdate, 32),
@@ -181,13 +175,7 @@ func newAircraftFollowControllerWithVehicle(logger *slog.Logger, config Aircraft
 }
 
 func (c *AircraftFollowController) Capabilities() []string {
-	if !c.config.Enabled {
-		return []string{"aircraft_follow:standoff:v1:unverified"}
-	}
-	return []string{
-		"aircraft_follow:standoff:v1:verified",
-		"aircraft_follow:validation:" + c.config.ValidationReference,
-	}
+	return []string{"aircraft_follow:standoff:v1"}
 }
 
 func (c *AircraftFollowController) Updates() <-chan AircraftFollowUpdate { return c.updates }
@@ -240,14 +228,6 @@ func (c *AircraftFollowController) Close() error {
 }
 
 func (c *AircraftFollowController) start(ctx context.Context, operation AircraftFollowOperation) {
-	if !c.config.Enabled {
-		c.emit(operation, "DEGRADED_HOLD", "FOLLOW_CONTROL_UNVERIFIED", "Aircraft follow control is installed but not commissioned", "{}")
-		return
-	}
-	if operation.ValidationReference != c.config.ValidationReference {
-		c.emit(operation, "DEGRADED_HOLD", "VALIDATION_REFERENCE_MISMATCH", "Native authorization does not match the commissioned Agent validation reference", "{}")
-		return
-	}
 	if err := validateAircraftFollowOperation(operation, time.Now().UTC(), c.config.TargetFreshness); err != nil {
 		c.emit(operation, "DEGRADED_HOLD", "FOLLOW_AUTHORIZATION_INVALID", err.Error(), "{}")
 		return
@@ -299,9 +279,9 @@ func (c *AircraftFollowController) renew(operation AircraftFollowOperation) {
 	}
 	validatedOperation := operation
 	validatedOperation.Envelope = active.envelope
-	if operation.DroneID != active.droneID || operation.ValidationReference != c.config.ValidationReference {
+	if operation.DroneID != active.droneID {
 		c.mu.Unlock()
-		c.requestStop(operation.SessionID, followStopRequest{state: "DEGRADED_HOLD", reasonCode: "FOLLOW_AUTHORIZATION_CHANGED", reason: "Follow renewal changed the authorized aircraft or commissioning reference", operation: operation.OperationID})
+		c.requestStop(operation.SessionID, followStopRequest{state: "DEGRADED_HOLD", reasonCode: "FOLLOW_AUTHORIZATION_CHANGED", reason: "Follow renewal changed the authorized aircraft", operation: operation.OperationID})
 		return
 	}
 	if err := validateAircraftFollowOperation(validatedOperation, time.Now().UTC(), c.config.TargetFreshness); err != nil {

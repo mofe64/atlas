@@ -790,7 +790,7 @@ func (p *PayloadController) Capabilities() []string {
 			capabilities = append(capabilities, "gimbal:track_follow", "command:gimbal_follow_start", "command:gimbal_follow_stop")
 		}
 		if p.trackGeolocator != nil {
-			capabilities = append(capabilities, "geolocation:selected_track_boresight", "command:geolocate_selected_track", "geolocation:boresight_alignment:"+p.trackGeolocator.foundation.BoresightAlignmentStatus())
+			capabilities = append(capabilities, "geolocation:selected_track_boresight", "command:geolocate_selected_track")
 		}
 		for _, id := range p.gimbalIDs {
 			capabilities = append(capabilities, fmt.Sprintf("gimbal:id:%d", id))

@@ -77,7 +77,6 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
     () => followReadiness(selected, selectedAircraft, draft, activeSession),
     [activeSession, draft, selected, selectedAircraft],
   );
-  const commissioned = readiness.find((gate) => gate.id === "commissioning")?.ready === true;
 
   useEffect(() => {
     if (!activeSession || !activeStates.has(activeSession.state)) return;
@@ -197,11 +196,6 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
           <p className="eyebrow">Supervised navigation</p>
           <h1>Follow from standoff</h1>
           <p>Maintain a reviewed observation point from validated world-space target motion. Camera framing remains a separate gimbal authority.</p>
-        </div>
-        <div className={`follow-commissioning ${commissioned ? "follow-commissioning--verified" : "follow-commissioning--unverified"}`}>
-          <span>Flight-control acceptance</span>
-          <strong>{commissioned ? "VERIFIED" : "UNVERIFIED"}</strong>
-          <small>{commissioned ? "Physical reference advertised by Agent" : "Aircraft translation is hard-blocked"}</small>
         </div>
       </header>
 
@@ -355,8 +349,7 @@ function ActiveFollowPanel({ session, pending, onEnd }: {
         <div><dt>Altitude band</dt><dd>{session.minimumAltitudeRelativeM.toFixed(0)}–{session.maximumAltitudeRelativeM.toFixed(0)} m rel</dd></div>
         <div><dt>Speed / accel</dt><dd>{session.maximumGroundSpeedMps.toFixed(1)} m/s · {session.maximumAccelerationMps2.toFixed(1)} m/s²</dd></div>
         <div><dt>Position uncertainty</dt><dd>{session.target.horizontalUncertaintyM.toFixed(1)} / {session.maximumGeolocationUncertaintyM.toFixed(1)} m</dd></div>
-        <div><dt>Boresight</dt><dd>±{session.boresightErrorBoundDeg.toFixed(1)}° · {session.boresightReference}</dd></div>
-        <div><dt>Validation</dt><dd>{session.validationReference}</dd></div>
+        <div><dt>Boresight uncertainty</dt><dd>±{session.boresightErrorBoundDeg.toFixed(1)}°</dd></div>
       </dl>
       {session.state === "DEGRADED_HOLD" && (
         <div className="follow-exit-reason"><strong>{session.exitReasonCode.replace(/_/g, " ")}</strong><p>{session.exitReason}</p></div>
@@ -445,12 +438,12 @@ function followReadiness(
   const capabilities = aircraft?.agentCapabilities ?? [];
   const gates = [
     {
-      id: "commissioning",
-      label: "Commissioned flight path",
-      ready: capabilities.includes("aircraft_follow:standoff:v1:verified")
-        && capabilities.includes("geolocation:boresight_alignment:verified")
-        && capabilities.some((value) => value.startsWith("aircraft_follow:validation:") && value.length > "aircraft_follow:validation:".length),
-      detail: capabilities.includes("aircraft_follow:standoff:v1:verified") ? "Agent advertises physical acceptance evidence" : "UNVERIFIED installation cannot enter Offboard",
+      id: "support",
+      label: "Agent Follow support",
+      ready: capabilities.includes("aircraft_follow:standoff:v1"),
+      detail: capabilities.includes("aircraft_follow:standoff:v1")
+        ? "Connected Agent supports the Follow control protocol"
+        : "Connected Agent does not support Follow from standoff",
     },
     {
       id: "track",

@@ -371,7 +371,7 @@ func aircraftFollowOperation(request *pb.AircraftFollowControlRequest) (vehicle.
 			TrackConfidence: target.GetTrackConfidence(), LifecycleState: target.GetLifecycleState(), MotionStatus: target.GetMotionStatus(),
 		},
 		LeaseExpiresAt: time.UnixMilli(request.GetOperatorLeaseExpiresAtUnixMs()).UTC(), ReasonCode: request.GetReasonCode(),
-		Reason: request.GetReason(), ValidationReference: request.GetValidationReference(),
+		Reason: request.GetReason(),
 	}, nil
 }
 

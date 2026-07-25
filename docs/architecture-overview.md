@@ -70,11 +70,11 @@ Detailed operational behavior is split into
 | React UI | Operator navigation, forms, map interaction, rendering, polling Native state | Network sessions, durable policy, direct MAVSDK or PX4 access |
 | Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog | Physical flight-controller, gimbal, camera, or accelerator drivers |
 | SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history | Multi-user tenancy or cross-ground-station synchronization |
-| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry and operations, in-process PX4/H-Flow observation health, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, depth-camera processing |
+| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry, high-level mission/action execution, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and explicitly authorized aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, depth-camera processing, or a parallel local navigation stack |
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
 | Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
-| Spatial runtime | Independent depth-camera ownership, normalized metric depth and matching calibration, direct projection math, and bounded local health | Mapping, pose estimation, PX4 fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
+| Spatial runtime | Independent depth-camera ownership, fresh native depth, matching calibration, and bounded local health | Mapping, pose estimation, projection, obstacle extraction, PX4 fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
 | Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
 
 ## Deployment topology
@@ -252,7 +252,7 @@ These rules explain many implementation choices:
 | Manual payload lease expires | Inspection movement stops and ownership releases; mission override restores the current mission payload intent. |
 | Perception stream fails | Agent reconnects it separately; command and telemetry traffic remain isolated. |
 | OAK/spatial runtime fails | The independent systemd service degrades or restarts without stopping Agent/MAVSDK. Atlas does not yet send spatial health to Native or authorize obstacle response. |
-| H-Flow degrades | PX4 owns estimator fusion and flight-mode/failsafe behavior. The Agent data plane reports flow/range/estimator state as degraded, stale, or unavailable for recording and later consumers; it does not change flight mode or claim that hardware flight acceptance has passed. |
+| H-Flow degrades | PX4 owns estimator fusion and flight-mode/failsafe behavior. Atlas has no separate H-Flow readiness plane and does not change flight mode or claim that hardware flight acceptance has passed. |
 | Video decoder fails | Native reports video error state without changing the aircraft-control session. |
 | Backend or PostgreSQL fails | Current Native-Agent aircraft operations continue because neither is in that path. |
 

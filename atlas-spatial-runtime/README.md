@@ -1,8 +1,7 @@
 # Atlas Spatial Runtime
 
 `atlas-spatial-runtime` is a small native service that owns one depth camera.
-It acquires fresh calibrated depth, exposes bounded local health, and retains
-the direct projection math needed by a future obstacle extractor.
+It acquires fresh calibrated depth and exposes bounded local health.
 
 It has no ROS dependency, Docker image, map, pose estimator, transform graph,
 flight command, Agent stream, or Native UI contract.
@@ -18,9 +17,8 @@ The provider returns one in-process `DepthFrame`:
 | Frame | `oak_rgb_camera_optical_frame` by default |
 | Calibration | Intrinsics for the exact aligned depth dimensions |
 
-The runtime keeps the camera's compact native depth representation. Consumers
-convert or project only the pixels they use; the service no longer expands
-every frame into a ROS `32FC1` image.
+The runtime keeps the camera's compact native depth representation. It does not
+convert or project frames before a real obstacle consumer exists.
 
 `depthai` is the physical OAK provider. It runs stereo depth on the device,
 aligns depth to the RGB optical frame, keeps only the newest queued frame, and
@@ -37,7 +35,7 @@ The Unix socket defaults to `/run/atlas-agent/spatial.sock`. Send:
 
 Readiness requires a fresh `16UC1` millimetre depth frame and matching valid
 intrinsics. The response explicitly reports `scaleToMetres: 0.001`. It does not
-claim obstacle observations yet.
+expose obstacle observations.
 
 The operator-facing health command on the Pi is:
 

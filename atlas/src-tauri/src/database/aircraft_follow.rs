@@ -136,8 +136,6 @@ pub(crate) struct AircraftFollowSessionSnapshot {
     pub latest_target_observed_at_unix_ms: i64,
     pub operator_lease_expires_at_unix_ms: Option<i64>,
     pub last_agent_update_at_unix_ms: Option<i64>,
-    pub validation_reference: String,
-    pub boresight_reference: String,
     pub boresight_error_bound_deg: f64,
     pub exit_reason_code: String,
     pub exit_reason: String,
@@ -162,7 +160,7 @@ impl LocalDatabase {
     ) -> Result<AircraftFollowSessionSnapshot, String> {
         validate_create_input(input)?;
         let aircraft = self.operations_snapshot_for(Some(&input.drone_id))?;
-        let validation_reference = validate_aircraft_readiness(
+        validate_aircraft_readiness(
             &aircraft,
             input.minimum_battery_percent,
             input.minimum_altitude_relative_m,
@@ -202,8 +200,7 @@ impl LocalDatabase {
             now,
             FOLLOW_START_TARGET_MAX_AGE_MS,
         )?;
-        let (boresight_reference, boresight_error_bound_deg) =
-            verified_boresight(&tx, &input.geolocation_id)?;
+        let boresight_error_bound_deg = boresight_error_bound(&tx, &input.geolocation_id)?;
         let id = generate_id(&tx)?;
         tx.execute(
             r#"
@@ -218,13 +215,12 @@ impl LocalDatabase {
                 minimum_battery_percent, minimum_track_confidence,
                 maximum_geolocation_uncertainty_m,
                 maximum_velocity_uncertainty_mps, latest_geolocation_id,
-                latest_target_observed_at_unix_ms, validation_reference,
-                boresight_reference, boresight_error_bound_deg,
+                latest_target_observed_at_unix_ms, boresight_error_bound_deg,
                 created_at_unix_ms, updated_at_unix_ms
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5, ?6, 'REQUESTED', ?7, ?8, ?9, ?10,
                 ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
-                ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?10, ?10
+                ?22, ?23, ?24, ?25, ?26, ?27, ?10, ?10
             )
             "#,
             params![
@@ -254,8 +250,6 @@ impl LocalDatabase {
                 input.maximum_velocity_uncertainty_mps,
                 input.geolocation_id,
                 target.observed_at_unix_ms,
-                validation_reference,
-                boresight_reference,
                 boresight_error_bound_deg,
             ],
         )
@@ -813,7 +807,7 @@ fn validate_aircraft_readiness(
     minimum_altitude_relative_m: f64,
     maximum_altitude_relative_m: f64,
     now: i64,
-) -> Result<String, String> {
+) -> Result<(), String> {
     if aircraft.connection_status != "connected"
         || aircraft
             .last_heartbeat_at_unix_ms
@@ -824,28 +818,10 @@ fn validate_aircraft_readiness(
     if !aircraft
         .agent_capabilities
         .iter()
-        .any(|capability| capability == "aircraft_follow:standoff:v1:verified")
+        .any(|capability| capability == "aircraft_follow:standoff:v1")
     {
-        return Err("Follow from standoff remains UNVERIFIED on this installation; record accepted simulation, HIL, and controlled-flight evidence before enabling aircraft translation".into());
+        return Err("Connected Atlas Agent does not support Follow from standoff".into());
     }
-    if !aircraft
-        .agent_capabilities
-        .iter()
-        .any(|capability| capability == "geolocation:boresight_alignment:verified")
-    {
-        return Err(
-            "Follow from standoff requires VERIFIED camera/gimbal boresight alignment".into(),
-        );
-    }
-    let validation_reference = aircraft
-        .agent_capabilities
-        .iter()
-        .find_map(|capability| capability.strip_prefix("aircraft_follow:validation:"))
-        .filter(|reference| !reference.trim().is_empty())
-        .ok_or_else(|| {
-            "verified follow capability did not include its physical validation reference"
-                .to_string()
-        })?;
     let telemetry = aircraft
         .telemetry
         .as_ref()
@@ -881,7 +857,7 @@ fn validate_aircraft_readiness(
             "aircraft relative altitude {altitude:.1} m is outside the reviewed {minimum_altitude_relative_m:.1}–{maximum_altitude_relative_m:.1} m band"
         ));
     }
-    Ok(validation_reference.to_string())
+    Ok(())
 }
 
 pub(super) fn watchdog_aircraft_reason<'a>(
@@ -1121,7 +1097,7 @@ fn validate_target_for_envelope(
     Ok(())
 }
 
-fn verified_boresight(tx: &Transaction<'_>, geolocation_id: &str) -> Result<(String, f64), String> {
+fn boresight_error_bound(tx: &Transaction<'_>, geolocation_id: &str) -> Result<f64, String> {
     let evidence: String = tx
         .query_row(
             "SELECT evidence_json FROM perception_track_geolocations WHERE id = ?1",
@@ -1132,15 +1108,12 @@ fn verified_boresight(tx: &Transaction<'_>, geolocation_id: &str) -> Result<(Str
     let evidence: serde_json::Value = serde_json::from_str(&evidence)
         .map_err(|error| format!("decode boresight evidence: {error}"))?;
     let alignment = &evidence["estimate"]["boresightAlignment"];
-    let status = alignment["status"].as_str().unwrap_or_default();
-    let reference = alignment["reference"].as_str().unwrap_or_default().trim();
     let bound = alignment["errorBoundDeg"]
         .as_f64()
         .filter(|value| value.is_finite() && *value > 0.0 && *value <= 45.0);
-    if status != "VERIFIED" || reference.is_empty() || bound.is_none() {
-        return Err("Follow from standoff requires a physical boresight test reference and accepted angular bound".into());
-    }
-    Ok((reference.to_string(), bound.expect("checked bound")))
+    bound.ok_or_else(|| {
+        "Follow from standoff requires a finite boresight angular uncertainty bound".into()
+    })
 }
 
 fn insert_target_update(
@@ -1201,7 +1174,6 @@ fn read_session(
                    maximum_velocity_uncertainty_mps, latest_geolocation_id,
                    latest_target_observed_at_unix_ms,
                    operator_lease_expires_at_unix_ms, last_agent_update_at_unix_ms,
-                   validation_reference, boresight_reference,
                    boresight_error_bound_deg, exit_reason_code, exit_reason,
                    created_at_unix_ms, updated_at_unix_ms
             FROM aircraft_follow_sessions WHERE id = ?1
@@ -1241,13 +1213,11 @@ fn read_session(
                     latest_target_observed_at_unix_ms: row.get(29)?,
                     operator_lease_expires_at_unix_ms: row.get(30)?,
                     last_agent_update_at_unix_ms: row.get(31)?,
-                    validation_reference: row.get(32)?,
-                    boresight_reference: row.get(33)?,
-                    boresight_error_bound_deg: row.get(34)?,
-                    exit_reason_code: row.get(35)?,
-                    exit_reason: row.get(36)?,
-                    created_at_unix_ms: row.get(37)?,
-                    updated_at_unix_ms: row.get(38)?,
+                    boresight_error_bound_deg: row.get(32)?,
+                    exit_reason_code: row.get(33)?,
+                    exit_reason: row.get(34)?,
+                    created_at_unix_ms: row.get(35)?,
+                    updated_at_unix_ms: row.get(36)?,
                     target: AircraftFollowTargetSnapshot {
                         geolocation_id: String::new(),
                         drone_id: String::new(),

@@ -6,7 +6,7 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
     let current_version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|error| format!("read local database schema version: {error}"))?;
-    if current_version > 24 {
+    if current_version > 25 {
         return Err(format!(
             "local database schema version {current_version} is newer than this Atlas build"
         ));
@@ -1858,6 +1858,19 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
                 "#,
             )
             .map_err(|error| format!("apply local database migration 24: {error}"))?;
+    }
+    if current_version < 25 {
+        connection
+            .execute_batch(
+                r#"
+                BEGIN IMMEDIATE;
+                ALTER TABLE aircraft_follow_sessions DROP COLUMN validation_reference;
+                ALTER TABLE aircraft_follow_sessions DROP COLUMN boresight_reference;
+                PRAGMA user_version = 25;
+                COMMIT;
+                "#,
+            )
+            .map_err(|error| format!("apply local database migration 25: {error}"))?;
     }
     Ok(())
 }

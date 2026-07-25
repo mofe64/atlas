@@ -201,9 +201,9 @@ future cancellable operations.
 Follow from standoff uses dedicated messages rather than ordinary one-shot
 vehicle commands. `AircraftFollowControlRequest` carries the operation/session
 identity, action (`START`, `RENEW`, `HOLD`, or `END`), exact selected-track world
-state, immutable reviewed envelope, short operator-lease expiry, and the
-commissioning validation reference. `AircraftFollowSessionUpdate` returns the
-Agent state and explicit reason/evidence.
+state, immutable reviewed envelope, and short operator-lease expiry.
+`AircraftFollowSessionUpdate` returns the Agent state and explicit
+reason/evidence.
 
 ```mermaid
 stateDiagram-v2
@@ -219,8 +219,8 @@ stateDiagram-v2
 ```
 
 Native persists the authorization before delivery. Renewals retain the same
-drone, selection, source, track session, track, commissioning reference, and
-reviewed limits. The Agent owns the high-rate MAVSDK Offboard loop and treats
+drone, selection, source, track session, track, and reviewed limits. The Agent
+owns the high-rate MAVSDK Offboard loop and treats
 stream loss, lease expiry, stale geolocation/telemetry, position or battery
 degradation, boundary/altitude violation, and Offboard loss as Hold conditions.
 Agent event IDs make state updates idempotent. Gimbal follow messages remain in

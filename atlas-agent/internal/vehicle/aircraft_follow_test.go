@@ -60,8 +60,6 @@ func TestAircraftFollowControllerEntersHoldWhenTargetExpires(t *testing.T) {
 	snapshot := readyFollowTelemetry(now)
 	vehicle := &fakeAircraftFollowVehicle{}
 	config := DefaultAircraftFollowControllerConfig()
-	config.Enabled = true
-	config.ValidationReference = "sitl-hil-flight/accepted-1"
 	config.UpdateInterval = 10 * time.Millisecond
 	config.TargetFreshness = 45 * time.Millisecond
 	config.TelemetryFreshness = time.Second
@@ -78,7 +76,6 @@ func TestAircraftFollowControllerEntersHoldWhenTargetExpires(t *testing.T) {
 		t.Fatalf("create controller: %v", err)
 	}
 	operation := readyFollowOperation(now)
-	operation.ValidationReference = config.ValidationReference
 	operation.LeaseExpiresAt = now.Add(time.Second)
 	controller.Apply(context.Background(), operation)
 
@@ -108,8 +105,6 @@ func TestAircraftFollowSetpointRespectsSpeedAndAccelerationEnvelope(t *testing.T
 	snapshot := readyFollowTelemetry(now)
 	vehicle := &fakeAircraftFollowVehicle{}
 	config := DefaultAircraftFollowControllerConfig()
-	config.Enabled = true
-	config.ValidationReference = "simulation"
 	controller, err := newAircraftFollowControllerWithVehicle(
 		slog.Default(), config, func() (telemetry.Snapshot, bool) { return snapshot, true }, vehicle,
 	)
@@ -138,8 +133,6 @@ func TestAircraftFollowRenewalCannotWidenOriginalEnvelope(t *testing.T) {
 	now := time.Now().UTC()
 	vehicle := &fakeAircraftFollowVehicle{}
 	config := DefaultAircraftFollowControllerConfig()
-	config.Enabled = true
-	config.ValidationReference = "simulation"
 	controller, err := newAircraftFollowControllerWithVehicle(
 		slog.Default(), config, func() (telemetry.Snapshot, bool) { return readyFollowTelemetry(now), true }, vehicle,
 	)
@@ -147,7 +140,6 @@ func TestAircraftFollowRenewalCannotWidenOriginalEnvelope(t *testing.T) {
 		t.Fatalf("create controller: %v", err)
 	}
 	operation := readyFollowOperation(now)
-	operation.ValidationReference = config.ValidationReference
 	active := &activeAircraftFollow{
 		id: operation.SessionID, operationID: operation.OperationID, droneID: operation.DroneID,
 		envelope: operation.Envelope, target: operation.Target, leaseExpiresAt: operation.LeaseExpiresAt,
@@ -167,26 +159,6 @@ func TestAircraftFollowRenewalCannotWidenOriginalEnvelope(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("widened renewal was not rejected")
-	}
-}
-
-func TestAircraftFollowControllerRemainsUnverifiedByDefault(t *testing.T) {
-	config := DefaultAircraftFollowControllerConfig()
-	controller, err := newAircraftFollowControllerWithVehicle(
-		slog.Default(), config, func() (telemetry.Snapshot, bool) { return telemetry.Snapshot{}, false }, &fakeAircraftFollowVehicle{},
-	)
-	if err != nil {
-		t.Fatalf("create controller: %v", err)
-	}
-	operation := readyFollowOperation(time.Now().UTC())
-	controller.Apply(context.Background(), operation)
-	select {
-	case update := <-controller.Updates():
-		if update.State != "DEGRADED_HOLD" || update.ReasonCode != "FOLLOW_CONTROL_UNVERIFIED" {
-			t.Fatalf("unverified update = %#v", update)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("unverified controller did not reject follow start")
 	}
 }
 

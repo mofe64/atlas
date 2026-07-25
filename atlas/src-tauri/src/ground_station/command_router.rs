@@ -232,7 +232,6 @@ impl CommandRouter {
                             requested_at_unix_ms: unix_time_ms(),
                             reason_code: reason_code.to_string(),
                             reason: reason.to_string(),
-                            validation_reference: follow.validation_reference.clone(),
                         },
                     ),
                 ),

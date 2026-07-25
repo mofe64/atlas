@@ -4410,7 +4410,6 @@ type AircraftFollowControlRequest struct {
 	RequestedAtUnixMs            int64                       `protobuf:"varint,8,opt,name=requested_at_unix_ms,json=requestedAtUnixMs,proto3" json:"requested_at_unix_ms,omitempty"`
 	ReasonCode                   string                      `protobuf:"bytes,9,opt,name=reason_code,json=reasonCode,proto3" json:"reason_code,omitempty"`
 	Reason                       string                      `protobuf:"bytes,10,opt,name=reason,proto3" json:"reason,omitempty"`
-	ValidationReference          string                      `protobuf:"bytes,11,opt,name=validation_reference,json=validationReference,proto3" json:"validation_reference,omitempty"`
 	unknownFields                protoimpl.UnknownFields
 	sizeCache                    protoimpl.SizeCache
 }
@@ -4511,13 +4510,6 @@ func (x *AircraftFollowControlRequest) GetReasonCode() string {
 func (x *AircraftFollowControlRequest) GetReason() string {
 	if x != nil {
 		return x.Reason
-	}
-	return ""
-}
-
-func (x *AircraftFollowControlRequest) GetValidationReference() string {
-	if x != nil {
-		return x.ValidationReference
 	}
 	return ""
 }
@@ -5500,7 +5492,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\x18velocity_uncertainty_m_s\x18\r \x01(\x01R\x15velocityUncertaintyMS\x12)\n" +
 	"\x10track_confidence\x18\x0e \x01(\x01R\x0ftrackConfidence\x12'\n" +
 	"\x0flifecycle_state\x18\x0f \x01(\tR\x0elifecycleState\x12#\n" +
-	"\rmotion_status\x18\x10 \x01(\tR\fmotionStatus\"\xd2\x04\n" +
+	"\rmotion_status\x18\x10 \x01(\tR\fmotionStatus\"\xa5\x04\n" +
 	"\x1cAircraftFollowControlRequest\x12!\n" +
 	"\foperation_id\x18\x01 \x01(\tR\voperationId\x12*\n" +
 	"\x11follow_session_id\x18\x02 \x01(\tR\x0ffollowSessionId\x12\x19\n" +
@@ -5513,8 +5505,7 @@ const file_atlas_ground_station_proto_rawDesc = "" +
 	"\vreason_code\x18\t \x01(\tR\n" +
 	"reasonCode\x12\x16\n" +
 	"\x06reason\x18\n" +
-	" \x01(\tR\x06reason\x121\n" +
-	"\x14validation_reference\x18\v \x01(\tR\x13validationReference\"\xf0\x02\n" +
+	" \x01(\tR\x06reasonJ\x04\b\v\x10\f\"\xf0\x02\n" +
 	"\x1bAircraftFollowSessionUpdate\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\tR\aeventId\x12!\n" +
 	"\foperation_id\x18\x02 \x01(\tR\voperationId\x12*\n" +

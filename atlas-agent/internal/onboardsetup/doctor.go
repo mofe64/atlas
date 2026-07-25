@@ -36,7 +36,6 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 	checks := []Check{
 		fileCheck("configuration", paths.ConfigFile, true),
 		fileCheck("release manifest", paths.ReleaseManifest, true),
-		aircraftProfileCheck(paths.AircraftProfileConfig, configuration["ATLAS_AIRCRAFT_PROFILE_ID"]),
 		fileCheck("atlas-agent binary", paths.AgentBinary, true),
 		fileCheck("mavsdk_server binary", paths.MAVSDKBinary, true),
 		serviceCheck(ctx, runner, "atlas-mavsdk.service"),
@@ -74,6 +73,10 @@ func Doctor(ctx context.Context, runner Runner, paths Paths, output io.Writer) (
 
 	spatialConfiguration := readEnvironmentFile(paths.SpatialConfigFile)
 	if strings.EqualFold(spatialConfiguration["ATLAS_SPATIAL_ENABLED"], "true") {
+		checks = append(checks, aircraftProfileCheck(
+			paths.AircraftProfileConfig,
+			spatialConfiguration["ATLAS_AIRCRAFT_PROFILE_ID"],
+		))
 		checks = append(checks, doctorSpatial(ctx, runner, paths, spatialConfiguration)...)
 	}
 

@@ -95,7 +95,7 @@ sudo atlas-setup
 
 The Pi needs neither a repository checkout nor PyPI access. The Spatial package
 contains its Linux-arm64 DepthAI and NumPy runtime. Skip that package only on
-an aircraft that will not enable `front-depth`. Agent and Spatial remain
+an aircraft that will not use the depth camera. Agent and Spatial remain
 independent packages: installing an Agent `.deb` never replaces camera code,
 and installing Spatial never replaces Agent.
 
@@ -106,8 +106,7 @@ The interactive setup:
    optional depth hardware.
 3. Asks for the TELEM2 path, baud rate, and Native ground-station address.
 4. Selects the A8 transport and optional perception runtime.
-5. Offers the logical `front-depth` depth provider when supported hardware is
-   present.
+5. Offers the DepthAI provider when supported hardware is present.
 6. Shows the configuration and services before applying changes.
 
 For a first non-interactive setup, select the profile explicitly:
@@ -131,12 +130,13 @@ The Agent package installs all tracked aircraft profiles under:
 ```
 
 Setup copies the selected profile to
-`/etc/atlas-agent/aircraft-profile.json`; Agent and Spatial both load that
-active copy. A profile contains only its id, the depth-camera device id, and
-the camera-to-body mounting translation and rotation. It contains no runtime
-capabilities, calibration catalogue, safety thresholds, hashes, or controller
-authorization. A different aircraft must provide and verify its own physical
-measurements.
+`/etc/atlas-agent/aircraft-profile.json`. Setup validates the profile and
+Spatial loads the active copy. The Agent process does not load it because it
+currently has no depth consumer. A profile contains only its id, the
+depth-camera device id, and the camera-to-body mounting translation and
+rotation. It contains no runtime capabilities, calibration catalogue, safety
+thresholds, hashes, or controller authorization. A different aircraft must
+provide and verify its own physical measurements.
 
 ## Hailo profile
 
@@ -213,7 +213,7 @@ The selected services are:
 atlas-mavsdk.service
 atlas-agent.service
 atlas-hailo-adapter.service       # when container perception is enabled
-atlas-spatial-runtime.service     # when front-depth is enabled
+atlas-spatial-runtime.service     # when depth acquisition is enabled
 ```
 
 Spatial is independent from Agent/MAVSDK. A depth-provider failure must not
@@ -314,4 +314,3 @@ or calibration failures.
 - [Spatial runtime boundary](../docs/spatial-runtime.md)
 - [H-Flow PX4 setup](../docs/h-flow-px4-setup-and-verification.md)
 - [Inference, geolocation, and Follow](../docs/inference-tracking-and-follow.md)
-- [Indoor-navigation decommission audit](../docs/indoor-navigation-decommission-audit.md)

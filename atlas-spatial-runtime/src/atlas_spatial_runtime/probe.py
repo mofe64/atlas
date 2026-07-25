@@ -54,7 +54,6 @@ def main() -> None:
         print(f"status={response.get('status', 'unknown')}")
         print(f"ready={str(bool(response.get('ready'))).lower()}")
         print(f"provider={response.get('provider', '')}")
-        print(f"source_id={response.get('sourceId', '')}")
         device = response.get("device") or {}
         print(f"device_id={device.get('id', '')}")
         print(f"model={device.get('model', '')}")
@@ -71,4 +70,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

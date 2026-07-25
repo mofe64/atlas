@@ -257,7 +257,7 @@ Suitability filters out an aircraft when any blocker is present, including:
 - the aircraft is unarmed and not armable;
 - global position or home is invalid;
 - battery is missing or below 15%;
-- the aircraft lacks a required commissioned capability.
+- the aircraft lacks a required runtime capability.
 
 A battery between 15% and 25% is surfaced as a consideration even when it is not
 an absolute blocker.

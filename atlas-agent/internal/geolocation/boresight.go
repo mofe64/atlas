@@ -50,8 +50,6 @@ type BoresightUncertainty struct {
 }
 
 type BoresightAlignmentEvidence struct {
-	Status        string  `json:"status"`
-	Reference     string  `json:"reference,omitempty"`
 	ErrorBoundDeg float64 `json:"errorBoundDeg"`
 }
 
@@ -86,13 +84,6 @@ type BoresightGroundPlaneEstimate struct {
 	Uncertainty                       BoresightUncertainty       `json:"uncertainty"`
 	BoresightAlignment                BoresightAlignmentEvidence `json:"boresightAlignment"`
 	Assumptions                       []string                   `json:"assumptions"`
-}
-
-func (foundation *Foundation) BoresightAlignmentStatus() string {
-	if strings.TrimSpace(foundation.config.BoresightAlignmentReference) == "" {
-		return "unverified"
-	}
-	return "verified"
 }
 
 func (foundation *Foundation) EstimateBoresightGroundPlane(request BoresightGroundPlaneRequest) (BoresightGroundPlaneEstimate, error) {
@@ -149,22 +140,14 @@ func (foundation *Foundation) EstimateBoresightGroundPlane(request BoresightGrou
 		return BoresightGroundPlaneEstimate{}, err
 	}
 	alignment := BoresightAlignmentEvidence{
-		Status: "UNVERIFIED", ErrorBoundDeg: foundation.config.BoresightAngularUncertaintyDeg,
-	}
-	if reference := strings.TrimSpace(foundation.config.BoresightAlignmentReference); reference != "" {
-		alignment.Status = "VERIFIED"
-		alignment.Reference = reference
+		ErrorBoundDeg: foundation.config.BoresightAngularUncertaintyDeg,
 	}
 	assumptions := []string{
 		"centred aim point equals camera/gimbal boresight",
 		"camera optical centre equals aircraft navigation position",
 		"intersection surface is a horizontal plane",
 	}
-	if alignment.Status == "VERIFIED" {
-		assumptions = append(assumptions, "camera/gimbal boresight alignment is bounded by the referenced physical verification")
-	} else {
-		assumptions = append(assumptions, "camera/gimbal boresight alignment has not been physically verified; the static angular bound is not field-accepted")
-	}
+	assumptions = append(assumptions, "camera/gimbal boresight alignment uses the configured static angular bound")
 	return BoresightGroundPlaneEstimate{
 		Method: BoresightGroundPlaneMethod, FrameTime: context.FrameTime,
 		Origin:       GeodeticPoint{LatitudeDeg: context.Aircraft.LatitudeDeg, LongitudeDeg: context.Aircraft.LongitudeDeg, AltitudeM: context.Aircraft.AltitudeAMSLM},

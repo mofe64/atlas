@@ -8,7 +8,6 @@ import signal
 import threading
 import time
 
-from . import PROTOCOL_VERSION
 from .aircraft_profile import AircraftProfile, load_aircraft_profile
 from .depthai_provider import DepthAIProvider
 from .health_contract import SpatialHealthState
@@ -91,12 +90,7 @@ def build_provider(profile: AircraftProfile | None = None) -> DepthProvider:
     raise ValueError(f"unsupported ATLAS_SPATIAL_PROVIDER: {provider}")
 
 
-def run(
-    provider: DepthProvider, stop: threading.Event, profile: AircraftProfile
-) -> None:
-    source_id = os.environ.get("ATLAS_SPATIAL_SOURCE_ID", "front-depth").strip()
-    if not source_id:
-        raise ValueError("ATLAS_SPATIAL_SOURCE_ID is required")
+def run(provider: DepthProvider, stop: threading.Event) -> None:
     socket_path = os.environ.get(
         "ATLAS_SPATIAL_SOCKET_PATH", "/run/atlas-agent/spatial.sock"
     )
@@ -106,9 +100,7 @@ def run(
 
     state = SpatialHealthState(
         provider=provider.info.provider,
-        source_id=source_id,
         device=provider.info,
-        profile_id=profile.profile_id,
     )
     server = HealthServer(
         socket_path, lambda: state.snapshot(stale_after_ms=stale_after_ms)
@@ -159,14 +151,6 @@ def main() -> None:
     if not _environment_bool("ATLAS_SPATIAL_ENABLED", True):
         LOG.info("spatial runtime is disabled")
         return
-    requested_contract = os.environ.get(
-        "ATLAS_SPATIAL_CONTRACT_VERSION", PROTOCOL_VERSION
-    )
-    if requested_contract != PROTOCOL_VERSION:
-        raise SystemExit(
-            f"unsupported Atlas Spatial contract {requested_contract}; "
-            f"runtime implements {PROTOCOL_VERSION}"
-        )
     stop = threading.Event()
 
     def stop_handler(_signum: int, _frame: object) -> None:
@@ -175,7 +159,7 @@ def main() -> None:
     signal.signal(signal.SIGINT, stop_handler)
     signal.signal(signal.SIGTERM, stop_handler)
     profile = load_runtime_profile()
-    run(build_provider(profile), stop, profile)
+    run(build_provider(profile), stop)
 
 
 if __name__ == "__main__":

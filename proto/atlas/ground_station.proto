@@ -501,7 +501,7 @@ message AircraftFollowControlRequest {
   int64 requested_at_unix_ms = 8;
   string reason_code = 9;
   string reason = 10;
-  string validation_reference = 11;
+  reserved 11;
 }
 
 enum AircraftFollowSessionUpdateType {

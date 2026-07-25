@@ -50,15 +50,12 @@ class DiagnosticsTests(unittest.TestCase):
                     }
                 },
                 "calibration": {"valid": True, "frameId": "oak_rgb_camera_optical_frame"},
-                "capabilities": {"obstacleObservations": False},
-                "aircraftProfile": {"id": "test-aircraft"},
                 "device": {},
             }
         )
         self.assertEqual(result["DEPTH_ENCODING"], "16UC1")
         self.assertEqual(result["DEPTH_UNIT"], "millimetre")
         self.assertNotIn("COLOR_FPS", result)
-        self.assertEqual(result["AIRCRAFT_PROFILE_ID"], "test-aircraft")
 
     def test_live_usb_metadata_replaces_boot_time_transport(self):
         with tempfile.TemporaryDirectory() as directory:

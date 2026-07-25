@@ -47,46 +47,22 @@ func TestLoadUsesExplicitAbsoluteStateDirectory(t *testing.T) {
 	if config.ByteTrackWorkerPath != "atlas-bytetrack-worker" || config.ByteTrackRequestTimeout != 250*time.Millisecond || config.ByteTrackFrameRate != 30 || config.ByteTrackTrackThreshold != 0.50 || config.ByteTrackHighThreshold != 0.60 || config.ByteTrackMatchThreshold != 0.80 || config.ByteTrackBufferFrames != 30 {
 		t.Fatalf("ByteTrack defaults = %#v", config)
 	}
-	if config.GeolocationBoresightAngularUncertaintyDeg != 10 || config.GeolocationBoresightAlignmentReference != "" {
+	if config.GeolocationBoresightAngularUncertaintyDeg != 10 {
 		t.Fatalf("geolocation boresight defaults = %#v", config)
 	}
 	if config.GimbalFollowUpdateInterval != 100*time.Millisecond || config.GimbalFollowTrackFreshness != 350*time.Millisecond || config.GimbalFollowHoldTimeout != 2*time.Second || config.GimbalFollowDeadband != 0.025 || config.GimbalFollowMaxPitchRate != 20 || config.GimbalFollowMaxYawRate != 30 || config.GimbalFollowMinPitch != -90 || config.GimbalFollowMaxPitch != 30 || config.GimbalFollowMinYaw != -180 || config.GimbalFollowMaxYaw != 180 {
 		t.Fatalf("gimbal follow defaults = %#v", config)
 	}
-	if config.AircraftFollowEnabled || config.AircraftFollowValidationReference != "" {
-		t.Fatalf("uncommissioned aircraft follow must remain disabled = %#v", config)
-	}
 }
 
-func TestAircraftFollowEnablementRequiresPhysicalEvidence(t *testing.T) {
-	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
-	t.Setenv("ATLAS_AIRCRAFT_FOLLOW_ENABLED", "true")
-	if _, err := Load(); err == nil {
-		t.Fatal("aircraft follow enabled without validation or boresight evidence")
-	}
-	t.Setenv("ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE", "sitl-hil-flight/accepted-1")
-	if _, err := Load(); err == nil {
-		t.Fatal("aircraft follow enabled without physical boresight evidence")
-	}
-	t.Setenv("ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE", "commissioning/a8-gimbal-2026-07-20")
-	config, err := Load()
-	if err != nil {
-		t.Fatalf("load commissioned follow config: %v", err)
-	}
-	if !config.AircraftFollowEnabled || config.AircraftFollowValidationReference != "sitl-hil-flight/accepted-1" {
-		t.Fatalf("aircraft follow commissioning = %#v", config)
-	}
-}
-
-func TestLoadReadsBoresightCommissioningEvidence(t *testing.T) {
+func TestLoadReadsBoresightAngularUncertainty(t *testing.T) {
 	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
 	t.Setenv("ATLAS_GEOLOCATION_BORESIGHT_ANGULAR_UNCERTAINTY_DEG", "2.5")
-	t.Setenv("ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE", "commissioning/a8-gimbal-2026-07-20")
 	config, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.GeolocationBoresightAngularUncertaintyDeg != 2.5 || config.GeolocationBoresightAlignmentReference != "commissioning/a8-gimbal-2026-07-20" {
+	if config.GeolocationBoresightAngularUncertaintyDeg != 2.5 {
 		t.Fatalf("geolocation boresight config = %#v", config)
 	}
 
@@ -225,30 +201,6 @@ func TestLoadRejectsRelativeStateDirectory(t *testing.T) {
 	t.Setenv("ATLAS_AGENT_STATE_DIR", "relative/state")
 	if _, err := Load(); err == nil {
 		t.Fatal("Load() error = nil, want relative-path validation error")
-	}
-}
-
-func TestLoadReadsAndValidatesSelectedAircraftProfile(t *testing.T) {
-	t.Setenv("ATLAS_AGENT_STATE_DIR", t.TempDir())
-	path, err := filepath.Abs(filepath.Join("..", "..", "..", "aircraft-profiles", "ariadne.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("ATLAS_AIRCRAFT_PROFILE_ID", "ariadne")
-	t.Setenv("ATLAS_AIRCRAFT_PROFILE_PATH", path)
-	loaded, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.AircraftProfile.ProfileID != "ariadne" ||
-		loaded.AircraftProfilePath != path ||
-		loaded.AircraftProfile.Payloads.DepthCamera.DeviceID != "19443010F122147E00" {
-		t.Fatalf("aircraft profile = %#v path=%q", loaded.AircraftProfile, loaded.AircraftProfilePath)
-	}
-
-	t.Setenv("ATLAS_AIRCRAFT_PROFILE_ID", "another-aircraft")
-	if _, err := Load(); err == nil {
-		t.Fatal("accepted aircraft profile id that does not match the selected file")
 	}
 }
 

@@ -170,7 +170,7 @@ func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) er
 	if config.SpatialEnabled {
 		for _, path := range []string{paths.SpatialRuntimeBinary, paths.SpatialCheck, paths.SpatialService} {
 			if !fileExists(path) {
-				return fmt.Errorf("Atlas Spatial Runtime is not installed; install atlas-spatial-runtime on the Pi before enabling front-depth (missing %s)", path)
+				return fmt.Errorf("Atlas Spatial Runtime is not installed; install atlas-spatial-runtime on the Pi before enabling depth acquisition (missing %s)", path)
 			}
 		}
 	}
@@ -297,8 +297,6 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 	values := [][2]string{
 		{"ATLAS_AGENT_STATE_DIR", paths.StateDirectory},
 		{"ATLAS_AGENT_VERSION", config.AgentVersion},
-		{"ATLAS_AIRCRAFT_PROFILE_ID", config.AircraftProfileID},
-		{"ATLAS_AIRCRAFT_PROFILE_PATH", paths.AircraftProfileConfig},
 		{"ATLAS_GROUND_STATION_ADDR", config.GroundStationAddress},
 		{"ATLAS_DRONE_NAME", config.DroneName},
 		{"ATLAS_FLIGHT_CONTROLLER_TRANSPORT", "serial"},
@@ -354,11 +352,9 @@ func RenderEnvironment(config InstallConfig, paths Paths) (string, error) {
 func RenderSpatialEnvironment(config InstallConfig, paths Paths) (string, error) {
 	values := [][2]string{
 		{"ATLAS_SPATIAL_ENABLED", strconv.FormatBool(config.SpatialEnabled)},
-		{"ATLAS_SPATIAL_CONTRACT_VERSION", "2"},
 		{"ATLAS_AIRCRAFT_PROFILE_ID", config.AircraftProfileID},
 		{"ATLAS_AIRCRAFT_PROFILE_PATH", paths.AircraftProfileConfig},
 		{"ATLAS_SPATIAL_PROVIDER", config.SpatialProvider},
-		{"ATLAS_SPATIAL_SOURCE_ID", config.SpatialSourceID},
 		{"ATLAS_SPATIAL_DEVICE_ID", config.SpatialDeviceID},
 		{"ATLAS_SPATIAL_MODEL", config.SpatialModel},
 		{"ATLAS_SPATIAL_USB_TRANSPORT", config.SpatialUSBTransport},

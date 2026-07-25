@@ -33,7 +33,7 @@ func BuildInstallPlan(ctx context.Context, runner Runner, discovery Discovery, o
 	config := installConfigFromDiscovery(discovery, options.Paths)
 	requestedProfileID := strings.TrimSpace(options.AircraftProfileID)
 	if requestedProfileID == "" {
-		requestedProfileID = strings.TrimSpace(discovery.ExistingConfig["ATLAS_AIRCRAFT_PROFILE_ID"])
+		requestedProfileID = strings.TrimSpace(discovery.ExistingSpatialConfig["ATLAS_AIRCRAFT_PROFILE_ID"])
 	}
 	if options.NonInteractive {
 		if requestedProfileID == "" {
@@ -240,7 +240,7 @@ func printPlan(output io.Writer, plan InstallPlan, paths Paths) {
 	_, _ = fmt.Fprintf(output, "  Perception:  %s (%s)\n", provider, plan.Config.PerceptionAdapterMode)
 	spatial := "disabled"
 	if plan.Config.SpatialEnabled {
-		spatial = fmt.Sprintf("%s as %s", plan.Config.SpatialProvider, plan.Config.SpatialSourceID)
+		spatial = plan.Config.SpatialProvider
 	}
 	_, _ = fmt.Fprintf(output, "  Spatial:     %s\n", spatial)
 	_, _ = fmt.Fprintf(output, "  Config:      %s\n", paths.ConfigFile)

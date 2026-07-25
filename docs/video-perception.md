@@ -477,17 +477,15 @@ running.
 - Selected-track centred-boresight geolocation, iterative target-area terrain
   refinement, operational map markers, and filtered world motion are
   implemented. Arbitrary-pixel projection, measured range, physical boresight
-  commissioning, and surveyed accuracy acceptance remain.
+  calibration measurement, and surveyed accuracy acceptance remain.
 - The Hailo path can consume reconstructed RTCP/NTP reference metadata when
   available, but this has not been verified against the target camera; pipeline
   ingress therefore remains the compatible explicitly uncertain fallback.
 - One configured Native RTSP source is used at a time.
 - Detection boxes are operator aids, not flight-control authority.
 
-Future concepts in
-[`feature-gap-assessment.md`](feature-gap-assessment.md) must preserve the
-current separation between observable perception evidence and authorized
-aircraft behavior.
+Future perception work must preserve the separation between observable
+evidence and authorized aircraft behavior.
 
 ## Where to modify behavior
 

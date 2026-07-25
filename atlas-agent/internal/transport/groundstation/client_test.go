@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -93,7 +92,7 @@ func (executor fakeAircraftFollowExecutor) Updates() <-chan vehicle.AircraftFoll
 	return executor.updates
 }
 func (fakeAircraftFollowExecutor) Capabilities() []string {
-	return []string{"aircraft_follow:standoff:v1:unverified"}
+	return []string{"aircraft_follow:standoff:v1"}
 }
 func TestAircraftFollowOperationPreservesReviewedEnvelopeAndExactTrack(t *testing.T) {
 	request := &pb.AircraftFollowControlRequest{
@@ -117,7 +116,6 @@ func TestAircraftFollowOperationPreservesReviewedEnvelopeAndExactTrack(t *testin
 			TrackConfidence: 0.92, LifecycleState: "ACTIVE", MotionStatus: "FILTERED",
 		},
 		OperatorLeaseExpiresAtUnixMs: 4_000,
-		ValidationReference:          "sitl-hil-flight/accepted-1",
 	}
 	operation, err := aircraftFollowOperation(request)
 	if err != nil {
@@ -131,9 +129,6 @@ func TestAircraftFollowOperationPreservesReviewedEnvelopeAndExactTrack(t *testin
 	}
 	if operation.Target.SelectionID != "selection-1" || operation.Target.TrackSessionID != "track-session-1" || operation.Target.TrackID != "track-1" || operation.Target.MotionStatus != "FILTERED" {
 		t.Fatalf("exact target = %#v", operation.Target)
-	}
-	if operation.ValidationReference != "sitl-hil-flight/accepted-1" {
-		t.Fatalf("validation reference = %q", operation.ValidationReference)
 	}
 }
 
@@ -291,14 +286,8 @@ func TestConnectRegistersAndSendsHeartbeat(t *testing.T) {
 
 	select {
 	case registration := <-recorder.registration:
-		payload := registration.GetRegistration()
-		if payload.GetInstallationId() != "agent-1" || registration.GetSessionId() == "" {
+		if registration.GetRegistration().GetInstallationId() != "agent-1" || registration.GetSessionId() == "" {
 			t.Fatalf("registration = %#v", registration)
-		}
-		for _, capability := range payload.GetCapabilities() {
-			if strings.HasPrefix(capability, "navigation_state:") {
-				t.Fatalf("retired navigation capability advertised: %q", capability)
-			}
 		}
 	case <-ctx.Done():
 		t.Fatal("registration was not received")

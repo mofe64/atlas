@@ -166,22 +166,18 @@ func TestDiscoverSpatialParsesDeviceAndHealthContract(t *testing.T) {
 	}
 	configuration := map[string]string{
 		"ATLAS_SPATIAL_ENABLED":     "true",
-		"ATLAS_SPATIAL_SOURCE_ID":   "front-depth",
 		"ATLAS_SPATIAL_SOCKET_PATH": filepath.Join(paths.RuntimeDirectory, "spatial.sock"),
 	}
 	discoverCall := paths.SpatialCheck + " --discover --sysfs-root " + rootPath(paths.Root, "/sys")
-	probeCall := paths.SpatialCheck + " --socket " + configuration["ATLAS_SPATIAL_SOCKET_PATH"]
 	runner := &fakeRunner{results: map[string]CommandResult{
 		discoverCall: {Output: "DEVICE_PRESENT=true\nPROVIDER=depthai\nDEVICE_ID=oak-123\nMODEL=OAK-D Lite\nUSB_TRANSPORT=usb3\nUSB_SPEED_MBPS=5000"},
-		"systemctl is-active atlas-spatial-runtime.service": {Output: "active"},
-		probeCall: {Output: "READY=true\nSTATUS=ready\nDEPTH_FPS=15.0\nDEPTH_FRAME_ID=camera_optical\nCALIBRATION_VALID=true\nCALIBRATION_FRAME_ID=camera_optical"},
 	}}
 
 	status := discoverSpatial(context.Background(), runner, paths, configuration)
-	if !status.DevicePresent || !status.RuntimeInstalled || !status.ServiceRunning || !status.Ready {
-		t.Fatalf("status = %#v, want device and runtime ready", status)
+	if !status.DevicePresent || !status.RuntimeInstalled {
+		t.Fatalf("status = %#v, want device and runtime installed", status)
 	}
-	if status.Provider != SpatialProviderDepthAI || status.DeviceID != "oak-123" || status.USBTransport != "usb3" || !status.CalibrationValid || status.CalibrationFrame != "camera_optical" {
+	if status.Provider != SpatialProviderDepthAI || status.DeviceID != "oak-123" || status.USBTransport != "usb3" {
 		t.Fatalf("status = %#v, want parsed vendor boundary metadata", status)
 	}
 }
@@ -450,9 +446,7 @@ func TestRenderSpatialEnvironmentUsesVendorNeutralContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`ATLAS_SPATIAL_CONTRACT_VERSION="2"`,
 		`ATLAS_SPATIAL_PROVIDER="depthai"`,
-		`ATLAS_SPATIAL_SOURCE_ID="front-depth"`,
 		`ATLAS_SPATIAL_DEVICE_ID="device-123"`,
 		`ATLAS_SPATIAL_SOCKET_PATH="/run/atlas-agent/spatial.sock"`,
 		`ATLAS_SPATIAL_FRAME_ID="oak_rgb_camera_optical_frame"`,

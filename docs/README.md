@@ -45,24 +45,14 @@ and Agent.
 | 8 | [Aircraft operations implementation](aircraft-operations-implementation.md) | What are the general command, lifecycle, safety, and failure-state rules? |
 | 9 | [Video and perception](video-perception.md) | How are clean video and detection metadata produced, transported, aligned, rendered, and retained? |
 | 10 | [Spatial camera runtime](spatial-runtime.md) | How is USB RGB-D hardware installed behind a vendor-neutral Pi boundary? |
-| 11 | [PX4/H-Flow in-process health](navigation-state-data-plane.md) | How are PX4 and optional H-Flow observations assessed without creating movement authority or another protocol? |
-| 12 | [H-Flow PX4 setup and verification](h-flow-px4-setup-and-verification.md) | How do we reproduce the installed H-Flow integration on another aircraft? |
-| 13 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
-| 14 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
+| 11 | [H-Flow PX4 setup and verification](h-flow-px4-setup-and-verification.md) | How do we reproduce the installed PX4-owned H-Flow integration on another aircraft? |
+| 12 | [Atlas Backend](atlas-backend.md) | What does the separate backend provide today, and what is deliberately not connected? |
+| 13 | [Development guide](development-guide.md) | How do I run, test, debug, change, and validate the system? |
 
-The [feature gap assessment](feature-gap-assessment.md) is a product-direction
-document. It describes possible future work and must not be treated as shipped
-architecture.
-
-The [outdoor obstacle avoidance TODO](obstacle-avoidance-todo.md) is
-the active post-decommission implementation roadmap. It covers the expiring
-observation contract, depth extraction, aircraft profiles, separate PX4 and
-H-Flow readiness, controller authority, acceptance, and final cleanup. The
-supporting cleanup is partly complete, but avoidance remains planned work.
-
-The retired indoor-navigation architecture and cleanup rationale are recorded
-in the [decommission audit](indoor-navigation-decommission-audit.md). It is a
-decision record, not current system documentation.
+The [outdoor obstacle avoidance TODO](obstacle-avoidance-todo.md) is the
+focused forward roadmap for an expiring observation contract, bounded depth
+extraction, controller authority, and hardware acceptance. Avoidance remains
+planned work.
 
 ## Repository map
 
@@ -130,9 +120,9 @@ These are architectural facts at this checkpoint:
   Perception start and stop are separately executed as durable Agent actions:
   required inference is acknowledged before arming and released during terminal
   cleanup.
-- Aircraft Follow from standoff is an unverified, commissioned capability and is
-  disabled by default. Enabling its feature flag does not replace airframe/site
-  validation or the required runtime capability references.
+- Aircraft Follow from standoff is available whenever the connected Agent
+  advertises protocol support. Runtime target-quality, telemetry, battery,
+  envelope, lease, watchdog, and PX4-state checks remain authoritative.
 - Agent command idempotency receipts are in memory. Native command and mission
   events are durable and deduplicated, but an Agent process restart clears its
   local receipt cache.

@@ -414,13 +414,14 @@ from missions and image-space gimbal following. Native accepts a request only
 for the exact active operator selection when the latest coordinate is terrain
 `CONVERGED`, motion is `FILTERED`, uncertainty/confidence fit the reviewed
 limits, aircraft telemetry is fresh and flight-ready, and both physical
-boresight and aircraft-follow commissioning evidence are advertised.
+boresight angular uncertainty is finite and Agent Follow protocol support is
+advertised.
 
 The operator reviews a fixed standoff, relative-altitude target and band,
 groundspeed, acceleration, maximum duration, circular geographic boundary,
 battery reserve, position/velocity uncertainty, confidence, and a written
-reason. Native persists these values and the commissioning references before
-requesting control. A unique non-ended follow session prevents two authorities
+reason. Native persists these values before requesting control. A unique
+non-ended follow session prevents two authorities
 for one aircraft, and unfinished mission runs block entry.
 
 During follow, the UI repeatedly reacquires the exact track coordinate, samples

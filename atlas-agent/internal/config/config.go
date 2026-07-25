@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sunnyside/atlas/atlas-agent/internal/aircraftprofile"
 	"github.com/sunnyside/atlas/atlas-agent/internal/buildinfo"
 )
 
@@ -47,8 +46,6 @@ func (transport CameraTransport) UsesMAVSDK() bool {
 }
 
 type Config struct {
-	AircraftProfilePath                       string
-	AircraftProfile                           aircraftprofile.Profile
 	StateDirectory                            string
 	GroundStationAddress                      string
 	DroneName                                 string
@@ -80,7 +77,6 @@ type Config struct {
 	ByteTrackMatchThreshold                   float64
 	ByteTrackBufferFrames                     int
 	GeolocationBoresightAngularUncertaintyDeg float64
-	GeolocationBoresightAlignmentReference    string
 	GimbalFollowUpdateInterval                time.Duration
 	GimbalFollowTrackFreshness                time.Duration
 	GimbalFollowHoldTimeout                   time.Duration
@@ -96,8 +92,6 @@ type Config struct {
 	GimbalFollowMinYaw                        float64
 	GimbalFollowMaxYaw                        float64
 	GimbalFollowLimitMargin                   float64
-	AircraftFollowEnabled                     bool
-	AircraftFollowValidationReference         string
 	FlightControllerUID                       string
 	FlightControllerSerial                    string
 	VehicleType                               string
@@ -199,10 +193,6 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	geolocationBoresightAlignmentReference := strings.TrimSpace(os.Getenv("ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE"))
-	if len(geolocationBoresightAlignmentReference) > 240 {
-		return Config{}, errors.New("ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE cannot exceed 240 characters")
-	}
 	byteTrackTrackThreshold, err := boundedFloatEnvironment("ATLAS_BYTETRACK_TRACK_THRESHOLD", 0.50, 0, 1)
 	if err != nil {
 		return Config{}, err
@@ -286,38 +276,7 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	aircraftFollowEnabled, err := booleanEnvironment("ATLAS_AIRCRAFT_FOLLOW_ENABLED", false)
-	if err != nil {
-		return Config{}, err
-	}
-	aircraftFollowValidationReference := strings.TrimSpace(os.Getenv("ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE"))
-	if len(aircraftFollowValidationReference) > 240 {
-		return Config{}, errors.New("ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE cannot exceed 240 characters")
-	}
-	if aircraftFollowEnabled && aircraftFollowValidationReference == "" {
-		return Config{}, errors.New("ATLAS_AIRCRAFT_FOLLOW_ENABLED requires ATLAS_AIRCRAFT_FOLLOW_VALIDATION_REFERENCE")
-	}
-	if aircraftFollowEnabled && geolocationBoresightAlignmentReference == "" {
-		return Config{}, errors.New("ATLAS_AIRCRAFT_FOLLOW_ENABLED requires a physical ATLAS_GEOLOCATION_BORESIGHT_ALIGNMENT_REFERENCE")
-	}
-	aircraftProfilePath := strings.TrimSpace(os.Getenv("ATLAS_AIRCRAFT_PROFILE_PATH"))
-	aircraftProfileID := strings.TrimSpace(os.Getenv("ATLAS_AIRCRAFT_PROFILE_ID"))
-	var selectedAircraftProfile aircraftprofile.Profile
-	if aircraftProfilePath != "" || aircraftProfileID != "" {
-		if !filepath.IsAbs(aircraftProfilePath) {
-			return Config{}, errors.New("ATLAS_AIRCRAFT_PROFILE_PATH must be absolute when an aircraft profile is selected")
-		}
-		selectedAircraftProfile, err = aircraftprofile.Load(aircraftProfilePath)
-		if err != nil {
-			return Config{}, err
-		}
-		if aircraftProfileID == "" || selectedAircraftProfile.ProfileID != aircraftProfileID {
-			return Config{}, errors.New("ATLAS_AIRCRAFT_PROFILE_ID must match the selected aircraft profile")
-		}
-	}
 	return Config{
-		AircraftProfilePath:                       aircraftProfilePath,
-		AircraftProfile:                           selectedAircraftProfile,
 		StateDirectory:                            filepath.Clean(stateDirectory),
 		GroundStationAddress:                      environmentOrDefault("ATLAS_GROUND_STATION_ADDR", "192.168.144.50:7443"),
 		DroneName:                                 environmentOrDefault("ATLAS_DRONE_NAME", "Atlas Drone"),
@@ -349,7 +308,6 @@ func Load() (Config, error) {
 		ByteTrackMatchThreshold:                   byteTrackMatchThreshold,
 		ByteTrackBufferFrames:                     byteTrackBufferFrames,
 		GeolocationBoresightAngularUncertaintyDeg: geolocationBoresightAngularUncertaintyDeg,
-		GeolocationBoresightAlignmentReference:    geolocationBoresightAlignmentReference,
 		GimbalFollowUpdateInterval:                gimbalFollowUpdateInterval,
 		GimbalFollowTrackFreshness:                gimbalFollowTrackFreshness,
 		GimbalFollowHoldTimeout:                   gimbalFollowHoldTimeout,
@@ -365,8 +323,6 @@ func Load() (Config, error) {
 		GimbalFollowMinYaw:                        gimbalFollowMinYaw,
 		GimbalFollowMaxYaw:                        gimbalFollowMaxYaw,
 		GimbalFollowLimitMargin:                   gimbalFollowLimitMargin,
-		AircraftFollowEnabled:                     aircraftFollowEnabled,
-		AircraftFollowValidationReference:         aircraftFollowValidationReference,
 		FlightControllerUID:                       strings.TrimSpace(os.Getenv("ATLAS_FLIGHT_CONTROLLER_UID")),
 		FlightControllerSerial:                    strings.TrimSpace(os.Getenv("ATLAS_FLIGHT_CONTROLLER_SERIAL")),
 		VehicleType:                               environmentOrDefault("ATLAS_VEHICLE_TYPE", "unknown"),

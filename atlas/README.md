@@ -247,18 +247,16 @@ The separate **Follow** workspace authorizes bounded aircraft translation from
 a validated world-space selected track. It requires a terrain-converged
 coordinate, filtered target velocity, accepted uncertainty, fresh in-flight
 telemetry, a reviewed standoff/altitude/speed/duration/geographic envelope, and
-both boresight and aircraft-follow commissioning evidence. Native persists the
-state machine and renews a four-second operator lease only while new exact-track
-world state remains valid. Agent owns the PX4 Offboard setpoint loop and enters
-explicit Hold on lease, target, link, telemetry, battery, position, altitude,
-geofence, duration, or Offboard loss. This authority is independent of the
-image-space gimbal-follow control; enabling one never enables the other.
+Agent Follow protocol support and a finite boresight angular-error bound. Native
+persists the state machine and renews a four-second operator lease only while
+new exact-track world state remains valid. Agent owns the PX4 Offboard setpoint
+loop and enters explicit Hold on lease, target, link, telemetry, battery,
+position, altitude, geofence, duration, or Offboard loss. This authority is
+independent of the image-space gimbal-follow control.
 
-Real translation is disabled by default. An Agent remains visibly
-`UNVERIFIED` until configuration references accepted aircraft-follow validation
-and physical camera/gimbal boresight alignment evidence. Code and simulated
-controller tests do not by themselves satisfy HIL or controlled-flight
-acceptance.
+Real translation is available without an enablement environment variable or
+commissioning-reference token. Hardware-in-the-loop and controlled-flight
+acceptance remain operational responsibilities, not runtime string gates.
 
 See [Incident dispatch](../docs/incident-dispatch.md) for the complete response
 workflow and pattern semantics, and

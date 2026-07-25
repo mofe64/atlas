@@ -24,14 +24,6 @@ func main() {
 		logger.Error("invalid configuration", "error", err)
 		os.Exit(1)
 	}
-	if cfg.AircraftProfile.ProfileID != "" {
-		logger.Info(
-			"aircraft profile loaded",
-			"profile_id", cfg.AircraftProfile.ProfileID,
-			"path", cfg.AircraftProfilePath,
-			"depth_camera_device_id", cfg.AircraftProfile.Payloads.DepthCamera.DeviceID,
-		)
-	}
 	localIdentity, err := identity.LoadOrCreate(cfg.StateDirectory)
 	if err != nil {
 		logger.Error("load agent identity", "error", err)
@@ -42,7 +34,6 @@ func main() {
 	defer stop()
 	geolocationConfig := geolocation.DefaultConfig()
 	geolocationConfig.BoresightAngularUncertaintyDeg = cfg.GeolocationBoresightAngularUncertaintyDeg
-	geolocationConfig.BoresightAlignmentReference = cfg.GeolocationBoresightAlignmentReference
 	geolocationFoundation, err := geolocation.NewFoundation(geolocationConfig)
 	if err != nil {
 		logger.Error("configure geolocation temporal foundation", "error", err)
@@ -150,8 +141,6 @@ func main() {
 	defer missionExecutor.Close()
 	missionExecutor.SetPerceptionControl(perceptionOutputs.Control)
 	aircraftFollowConfig := vehicle.DefaultAircraftFollowControllerConfig()
-	aircraftFollowConfig.Enabled = cfg.AircraftFollowEnabled
-	aircraftFollowConfig.ValidationReference = cfg.AircraftFollowValidationReference
 	aircraftFollowController, err := vehicle.NewAircraftFollowController(
 		cfg.MAVSDKGRPCAddress,
 		logger,

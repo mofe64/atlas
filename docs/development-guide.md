@@ -367,7 +367,7 @@ before changing these paths. Keep their authorities separate:
 - detector/provider adapters emit normalized observations;
 - the Agent tracker owns session continuity and Atlas track IDs;
 - selected-track geolocation binds exact track, frame timing, aircraft pose,
-  gimbal pose, and the commissioned boresight model;
+  gimbal pose, and the static boresight model with its angular-error bound;
 - Native performs iterative terrain refinement and motion filtering;
 - camera follow owns only leased gimbal rates;
 - Follow from standoff owns PX4 Offboard and must enter Hold when a runtime gate
@@ -504,7 +504,7 @@ RTSP, Hailo, gimbal movement, camera zoom, and real PX4 safety behavior.
 | Video unavailable | FFmpeg path, RTSP URL/transport, camera reachability, decoder stderr |
 | No overlays | Source-ID match, perception health, frame lease, alignment delta/tolerance, Hailo adapter |
 | Selection disappeared | Tracker session reset reason, source/stream epoch, lifecycle (`LOST`/`CLOSED`), exact selection ID |
-| Geolocation rejected | Track state/centering, frame timing, pose/gimbal history, boresight commissioning, depression/range, DEM source |
+| Geolocation rejected | Track state/centering, frame timing, pose/gimbal history, boresight uncertainty, depression/range, DEM source |
 | Camera follow stopped | Exact track lifecycle/freshness, payload lease, measured gimbal state, angle limits, read/write result |
 | Follow entered `DEGRADED_HOLD` | Durable exit reason, operator lease, target/telemetry age, battery, altitude/boundary, PX4 Offboard state |
 | Evidence asset unavailable | Recorder session/segment state, evidence gap events, hash/finalization, retention/trash state, local bytes |

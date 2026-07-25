@@ -53,7 +53,7 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read schema version");
-    assert_eq!(version, 24);
+    assert_eq!(version, 25);
     let cached_identity_tables: i64 = connection
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cached_identity'",
@@ -162,7 +162,7 @@ fn migration_upgrades_existing_v3_telemetry_database_to_vehicle_tables() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read upgraded schema version");
-    assert_eq!(version, 24);
+    assert_eq!(version, 25);
     let new_columns: i64 = connection
         .query_row(
             "SELECT count(*) FROM pragma_table_info('vehicle_telemetry_current') WHERE name IN ('batteries_json', 'health_json', 'rc_status_json', 'gps_quality_json')",
@@ -1013,7 +1013,7 @@ fn perception_track_lifecycle_is_revisioned_durable_and_idempotent() {
 }
 
 #[test]
-fn aircraft_follow_requires_commissioned_world_state_and_holds_on_lease_loss() {
+fn aircraft_follow_requires_valid_world_state_and_holds_on_lease_loss() {
     let (database, path) = test_database();
     let now = unix_time_ms();
     let mut registration = alert_registration_input("follow-agent-session", now);
@@ -1021,14 +1021,12 @@ fn aircraft_follow_requires_commissioned_world_state_and_holds_on_lease_loss() {
         "registration",
         "heartbeat",
         "telemetry",
-        "geolocation:boresight_alignment:verified",
-        "aircraft_follow:standoff:v1:verified",
-        "aircraft_follow:validation:sitl-hil-flight/accepted-1"
+        "aircraft_follow:standoff:v1"
     ])
     .to_string();
     database
         .register_agent(&registration)
-        .expect("register commissioned follow Agent");
+        .expect("register Follow-capable Agent");
     let mut telemetry = dispatch_ready_telemetry(now + 10, 51.5, -0.14, 82.0);
     telemetry.relative_altitude_m = Some(30.0);
     telemetry.absolute_altitude_m = Some(80.0);
@@ -1070,8 +1068,6 @@ fn aircraft_follow_requires_commissioned_world_state_and_holds_on_lease_loss() {
     let evidence = serde_json::json!({
         "estimate": {
             "boresightAlignment": {
-                "status": "VERIFIED",
-                "reference": "commissioning/a8-gimbal-2026-07-20",
                 "errorBoundDeg": 2.5
             }
         }

@@ -114,18 +114,13 @@ def flat_probe(payload: dict[str, object]) -> dict[str, object]:
     streams = payload.get("streams") if isinstance(payload.get("streams"), dict) else {}
     depth = streams.get("depth") if isinstance(streams.get("depth"), dict) else {}
     calibration = payload.get("calibration") if isinstance(payload.get("calibration"), dict) else {}
-    capabilities = payload.get("capabilities") if isinstance(payload.get("capabilities"), dict) else {}
     device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
-    profile = payload.get("aircraftProfile") if isinstance(payload.get("aircraftProfile"), dict) else {}
     return {
         "READY": bool(payload.get("ready")),
         "STATUS": payload.get("status", "unknown"),
-        "PROTOCOL_VERSION": payload.get("protocolVersion", ""),
         "PROVIDER": payload.get("provider", ""),
-        "SOURCE_ID": payload.get("sourceId", ""),
         "DEVICE_ID": device.get("id", ""),
         "MODEL": device.get("model", ""),
-        "AIRCRAFT_PROFILE_ID": profile.get("id", ""),
         "USB_TRANSPORT": device.get("connection", "unknown"),
         "USB_SPEED_MBPS": device.get("speedMbps", 0),
         "DEPTH_FPS": depth.get("fps", 0),
@@ -135,7 +130,6 @@ def flat_probe(payload: dict[str, object]) -> dict[str, object]:
         "CALIBRATION_VALID": bool(calibration.get("valid")),
         "CALIBRATION_FRAME_ID": calibration.get("frameId", ""),
         "CALIBRATION_REASON": calibration.get("reason", ""),
-        "OBSTACLE_OBSERVATIONS": bool(capabilities.get("obstacleObservations")),
         "LAST_ERROR": payload.get("lastError", ""),
     }
 

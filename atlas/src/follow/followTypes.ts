@@ -78,8 +78,6 @@ export type AircraftFollowSession = {
   latestTargetObservedAtUnixMs: number;
   operatorLeaseExpiresAtUnixMs?: number | null;
   lastAgentUpdateAtUnixMs?: number | null;
-  validationReference: string;
-  boresightReference: string;
   boresightErrorBoundDeg: number;
   exitReasonCode: string;
   exitReason: string;

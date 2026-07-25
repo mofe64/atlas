@@ -33,7 +33,6 @@ Atlas Agent
     -> mavsdk_server -> PX4
     -> SIYI UDP or MAVSDK camera control
     -> provider-neutral perception Unix socket
-    -> in-process PX4/H-Flow observation health
 
 Atlas Spatial Runtime
     -> independent depth-camera service and local health socket
@@ -77,7 +76,6 @@ process can start but aircraft-facing capabilities remain unhealthy.
 | `internal/config/` | Environment parsing and validation |
 | `internal/identity/` | Stable installation and aircraft identity |
 | `internal/telemetry/` | MAVSDK telemetry normalization |
-| `internal/navigation/` | Read-only PX4/H-Flow diagnostic state |
 | `internal/vehicle/` | Actions, missions, gimbal, camera, and follow controllers |
 | `internal/perception/` | Provider-neutral inference and tracking boundary |
 | `internal/transport/groundstation/` | Reconnecting Native session |

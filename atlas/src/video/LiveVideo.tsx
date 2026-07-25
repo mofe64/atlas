@@ -1722,11 +1722,8 @@ function geolocationAlignment(geolocation?: TrackGeolocation) {
   const evidence = asRecord(geolocation?.evidence);
   const estimate = asRecord(evidence?.estimate);
   const alignment = asRecord(estimate?.boresightAlignment);
-  const status = typeof alignment?.status === "string" ? alignment.status : undefined;
-  if (!status) return undefined;
   const bound = Number(alignment?.errorBoundDeg);
-  const reference = typeof alignment?.reference === "string" ? alignment.reference : "";
-  return `${status}${Number.isFinite(bound) ? ` · ±${bound.toFixed(1)}°` : ""}${reference ? ` · ${reference}` : " · field verification required"}`;
+  return Number.isFinite(bound) ? `±${bound.toFixed(1)}° configured uncertainty` : undefined;
 }
 
 function requiredFinite(value: unknown, label: string) {

@@ -72,9 +72,9 @@ repository map. The detailed architecture set covers:
 - [The separate Atlas Backend](docs/atlas-backend.md)
 - [Development, validation, and debugging workflows](docs/development-guide.md)
 
-The architecture documents describe shipped behavior. Product proposals and
-future direction remain separate in
-[`docs/feature-gap-assessment.md`](docs/feature-gap-assessment.md).
+The architecture documents describe shipped behavior. Focused future work is
+kept in small feature-specific TODOs rather than mixed into current
+architecture.
 
 ## What the current application supports
 
@@ -90,9 +90,8 @@ future direction remain separate in
   perception health.
 - Explicit evidence still/event-clip capture with local provenance, segmented
   recording, integrity verification, and retention handling.
-- Camera follow that moves the gimbal in image space, plus commissioned and
-  default-disabled aircraft Follow from standoff using filtered geographic
-  target motion.
+- Camera follow that moves the gimbal in image space, plus aircraft Follow from
+  standoff using filtered geographic target motion and runtime safety checks.
 - Leased inspection gimbal/zoom control while the aircraft is freshly known to
   be disarmed and on the ground.
 - Waypoint, area-scan, and route-scan planning; immutable plans; terrain

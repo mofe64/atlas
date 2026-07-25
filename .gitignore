@@ -16,7 +16,5 @@ atlas-agent/dist/
 atlas-spatial-runtime/dist/
 sampleVids/
 
-# ROS 2 generated workspaces
-atlas-spatial-runtime/ros2_ws/build/
-atlas-spatial-runtime/ros2_ws/install/
-atlas-spatial-runtime/ros2_ws/log/
+.claude
+

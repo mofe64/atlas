@@ -40,9 +40,7 @@ class HealthContractTests(unittest.TestCase):
     def setUp(self):
         self.state = SpatialHealthState(
             provider="synthetic",
-            source_id="front-depth",
             device=ProviderInfo("synthetic", "synthetic", "synthetic", "memory"),
-            profile_id="test-aircraft",
         )
 
     def test_ready_requires_fresh_native_depth_and_matching_intrinsics(self):
@@ -54,8 +52,6 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(snapshot["streams"]["depth"]["unit"], "millimetre")
         self.assertEqual(snapshot["streams"]["depth"]["scaleToMetres"], 0.001)
         self.assertNotIn("color", snapshot["streams"])
-        self.assertFalse(snapshot["capabilities"]["obstacleObservations"])
-        self.assertEqual(snapshot["aircraftProfile"]["id"], "test-aircraft")
 
     def test_stale_depth_is_not_ready(self):
         self.state.observe(frame(arrival_ns=1_000_000_000))

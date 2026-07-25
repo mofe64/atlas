@@ -78,20 +78,8 @@ func TestEstimateBoresightGroundPlaneProjectsMeasuredNorthAttitude(t *testing.T)
 	if estimate.Uncertainty.HorizontalRadiusM <= estimate.Uncertainty.AircraftHorizontalM || len(estimate.Assumptions) != 4 {
 		t.Fatalf("uncertainty/assumptions = %#v / %#v", estimate.Uncertainty, estimate.Assumptions)
 	}
-	if estimate.BoresightAlignment.Status != "UNVERIFIED" || estimate.BoresightAlignment.ErrorBoundDeg != 10 || foundation.BoresightAlignmentStatus() != "unverified" {
+	if estimate.BoresightAlignment.ErrorBoundDeg != 10 {
 		t.Fatalf("boresight alignment evidence = %#v", estimate.BoresightAlignment)
-	}
-}
-
-func TestBoresightAlignmentStatusRequiresCommissioningReference(t *testing.T) {
-	config := DefaultConfig()
-	config.BoresightAlignmentReference = "commissioning/a8-gimbal-2026-07-20"
-	foundation, err := NewFoundation(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if foundation.BoresightAlignmentStatus() != "verified" {
-		t.Fatalf("alignment status = %q", foundation.BoresightAlignmentStatus())
 	}
 }
 

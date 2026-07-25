@@ -16,13 +16,11 @@ from .provider import CameraCalibration, DepthFrame, ProviderInfo
 @dataclass
 class StreamWindow:
     arrivals_ns: deque[int] = field(default_factory=lambda: deque(maxlen=120))
-    captures_ns: deque[int] = field(default_factory=lambda: deque(maxlen=120))
     frame_id: str = ""
     width: int = 0
     height: int = 0
 
     def observe(self, frame: DepthFrame) -> None:
-        self.captures_ns.append(frame.capture_monotonic_ns)
         self.arrivals_ns.append(frame.arrival_monotonic_ns)
         self.frame_id = frame.calibration.frame_id
         self.width = frame.calibration.width
@@ -40,11 +38,8 @@ class StreamWindow:
 @dataclass
 class SpatialHealthState:
     provider: str
-    source_id: str
     device: ProviderInfo
-    profile_id: str = ""
     last_error: str = ""
-    started_monotonic_ns: int = field(default_factory=time.monotonic_ns)
     depth: StreamWindow = field(default_factory=StreamWindow)
     calibration: CameraCalibration | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
@@ -112,18 +107,10 @@ class SpatialHealthState:
                 "status": status,
                 "ready": ready,
                 "provider": self.provider,
-                "sourceId": self.source_id,
                 "device": {
                     "id": self.device.device_id,
                     "model": self.device.model,
                     "connection": self.device.connection,
-                },
-                "aircraftProfile": {
-                    "id": self.profile_id,
-                },
-                "capabilities": {
-                    "depth": observed,
-                    "obstacleObservations": False,
                 },
                 "calibration": _calibration_snapshot(calibration),
                 "lastFrameAgeMs": age_ms,

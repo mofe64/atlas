@@ -62,7 +62,6 @@ func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configurat
 		DeviceID:         configuration["ATLAS_SPATIAL_DEVICE_ID"],
 		Model:            configuration["ATLAS_SPATIAL_MODEL"],
 		USBTransport:     fallback(configuration["ATLAS_SPATIAL_USB_TRANSPORT"], "unknown"),
-		SourceID:         fallback(configuration["ATLAS_SPATIAL_SOURCE_ID"], DefaultSpatialSource),
 		RuntimeInstalled: fileExists(paths.SpatialRuntimeBinary),
 	}
 	if fileExists(paths.SpatialCheck) {
@@ -80,20 +79,6 @@ func discoverSpatial(ctx context.Context, runner Runner, paths Paths, configurat
 			status.USBTransport = fallback(values["USB_TRANSPORT"], status.USBTransport)
 			status.USBSpeedMbps, _ = strconv.Atoi(values["USB_SPEED_MBPS"])
 		}
-	}
-	service := runner.Run(ctx, "systemctl", "is-active", "atlas-spatial-runtime.service")
-	status.ServiceRunning = service.Err == nil && strings.TrimSpace(service.Output) == "active"
-	if status.ServiceRunning && fileExists(paths.SpatialCheck) {
-		socketPath := fallback(configuration["ATLAS_SPATIAL_SOCKET_PATH"], filepath.Join(paths.RuntimeDirectory, "spatial.sock"))
-		result := runner.Run(ctx, paths.SpatialCheck, "--socket", socketPath)
-		values := parseKeyValueOutput(result.Output)
-		status.Ready = result.Err == nil && strings.EqualFold(values["READY"], "true")
-		status.Status = values["STATUS"]
-		status.DepthFPS = values["DEPTH_FPS"]
-		status.DepthFrameID = values["DEPTH_FRAME_ID"]
-		status.CalibrationValid = strings.EqualFold(values["CALIBRATION_VALID"], "true")
-		status.CalibrationFrame = values["CALIBRATION_FRAME_ID"]
-		status.LastError = values["LAST_ERROR"]
 	}
 	return status
 }
@@ -458,7 +443,6 @@ func installConfigFromDiscovery(discovery Discovery, paths Paths) InstallConfig 
 func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
 	status := discovery.Spatial
 	config.SpatialProvider = status.Provider
-	config.SpatialSourceID = fallback(status.SourceID, DefaultSpatialSource)
 	config.SpatialDeviceID = status.DeviceID
 	config.SpatialModel = status.Model
 	config.SpatialUSBTransport = fallback(status.USBTransport, "unknown")
@@ -466,9 +450,6 @@ func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
 		config.SpatialEnabled = strings.EqualFold(value, "true")
 	} else {
 		config.SpatialEnabled = status.DevicePresent
-	}
-	if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_SOURCE_ID"]; value != "" {
-		config.SpatialSourceID = value
 	}
 	if !status.DevicePresent {
 		if value := discovery.ExistingSpatialConfig["ATLAS_SPATIAL_PROVIDER"]; value != "" {
@@ -487,9 +468,6 @@ func applySpatialDiscovery(config *InstallConfig, discovery Discovery) {
 }
 
 func applyExistingConfig(config *InstallConfig, values map[string]string) {
-	if value := values["ATLAS_AIRCRAFT_PROFILE_ID"]; value != "" {
-		config.AircraftProfileID = value
-	}
 	if value := values["ATLAS_DRONE_NAME"]; value != "" {
 		config.DroneName = value
 	}
