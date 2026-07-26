@@ -1090,6 +1090,32 @@ export function LiveVideo({
         <div className="live-video__reticle" aria-hidden="true"><span /><span /></div>
       </div>
 
+      {compact && (
+        <div className={`live-video__compact-evidence live-video__compact-evidence--${(recordingSession?.status ?? recording?.diskState ?? "idle").toLowerCase()}`} aria-label="Mission evidence controls" aria-live="polite">
+          <div className="live-video__compact-evidence-status">
+            <small>Evidence</small>
+            <strong>{recordingLabel}</strong>
+          </div>
+          <div className="live-video__compact-evidence-actions">
+            <button type="button" onClick={() => void captureStill()} disabled={!nativeAvailable || !droneId || !playing || evidenceAssetPending != null}>
+              {evidenceAssetPending === "still" ? "Saving…" : "Capture still"}
+            </button>
+            <button type="button" onClick={() => void startRecording()} disabled={!nativeAvailable || !droneId || recordingActive || recordingPending != null || recording?.diskState === "STOP"}>
+              {recordingPending === "start" ? "Starting…" : "Start recording"}
+            </button>
+            <button type="button" className="live-video__compact-evidence-stop" onClick={() => void stopRecording()} disabled={!recordingActive || !recordingOwnedByAircraft || recordingPending != null}>
+              {recordingPending === "stop" ? "Finalizing…" : "Stop + verify"}
+            </button>
+          </div>
+          {(recordingError || recordingSession?.errorMessage || !recordingOwnedByAircraft) && (
+            <p role="status">
+              {!recordingOwnedByAircraft ? `Source reserved by ${recordingSession?.droneId}.` : recordingError || recordingSession?.errorMessage}
+            </p>
+          )}
+          {evidenceAssetMessage && <p className="live-video__compact-evidence-success" role="status">{evidenceAssetMessage}</p>}
+        </div>
+      )}
+
       {!compact && <footer className="live-video__controls">
         <div className="live-video__mode" role="group" aria-label="Video display mode">
           <button type="button" className={!overlayEnabled ? "live-video__mode-active" : ""} onClick={() => setOverlayEnabled(false)}>Clean feed</button>
@@ -1265,10 +1291,10 @@ export function LiveVideo({
           </div>
           <div className="evidence-recorder__actions">
             <button type="button" onClick={() => void captureStill()} disabled={!nativeAvailable || !droneId || !playing || evidenceAssetPending != null}>
-              {evidenceAssetPending === "still" ? "Saving photo…" : selection ? "Capture track photo" : "Capture photo"}
+              {evidenceAssetPending === "still" ? "Saving still…" : selection ? "Capture track still" : "Capture still"}
             </button>
             <button type="button" onClick={() => void startRecording()} disabled={!nativeAvailable || !droneId || recordingActive || recordingPending != null || recording?.diskState === "STOP"}>
-              {recordingPending === "start" ? "Requesting…" : "Start evidence"}
+              {recordingPending === "start" ? "Starting…" : "Start recording"}
             </button>
             <button type="button" className="evidence-recorder__stop" onClick={() => void stopRecording()} disabled={!recordingActive || !recordingOwnedByAircraft || recordingPending != null}>
               {recordingPending === "stop" ? "Finalizing…" : "Stop + verify"}

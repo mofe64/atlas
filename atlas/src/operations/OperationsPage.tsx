@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { highestRelatedOperationalAlert, type OperationalAlertList } from "../alerts/OperationalAlerts";
 import type {
@@ -136,6 +136,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   const [pending, setPending] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
   const [actionError, setActionError] = useState<string>();
+  const incidentDetailRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     if (!nativeAvailable) return;
@@ -159,9 +160,6 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
         setTrackGeolocations(nextTrackGeolocations);
         if (nextDetail) setDetail(nextDetail);
         setLoadError(undefined);
-        if (!selectedIncidentId && !creating && nextIncidents[0]) {
-          setSelectedIncidentId(nextIncidents[0].id);
-        }
       } catch (reason) {
         if (active) setLoadError(messageFrom(reason));
       } finally {
@@ -200,32 +198,56 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
     () => incidents.filter((incident) => incidentMatchesFilters(incident, searchQuery, priorityFilter, statusFilter)),
     [incidents, priorityFilter, searchQuery, statusFilter],
   );
-  const liveAssignment = useMemo(() => {
+  const incidentAssignments = useMemo(() => {
     if (!selectedIncident || detail?.incident.id !== selectedIncident.id) return undefined;
-    const assignments = [...detail.assignments].sort((left, right) => right.assignedAtUnixMs - left.assignedAtUnixMs);
-    return assignments.find((assignment) => {
+    return [...detail.assignments].sort((left, right) => right.assignedAtUnixMs - left.assignedAtUnixMs);
+  }, [detail, selectedIncident]);
+  const liveAssignment = useMemo(() => {
+    return incidentAssignments?.find((assignment) => {
       const run = runs.find((candidate) => candidate.id === assignment.missionRunId);
       return !assignment.endedAtUnixMs && run && !terminalMissionStates.has(run.status);
-    }) ?? assignments.find((assignment) => !assignment.endedAtUnixMs);
-  }, [detail, runs, selectedIncident]);
+    }) ?? incidentAssignments?.find((assignment) => !assignment.endedAtUnixMs);
+  }, [incidentAssignments, runs]);
+  const observationAssignment = liveAssignment ?? incidentAssignments?.[0];
   const liveRun = runs.find((run) => run.id === liveAssignment?.missionRunId);
+  const observationRun = liveRun ?? runs.find((run) => run.id === observationAssignment?.missionRunId);
+  const showLiveResponseContext = Boolean(
+    selectedIncident && (selectedIncident.status === "OPEN" || selectedIncident.status === "ACTIVE"),
+  );
   const liveDroneId = responding ? responseDraft?.droneId : liveAssignment?.droneId;
-  const liveAircraft = fleet.aircraft.find((aircraft) => aircraft.droneId === liveDroneId);
-  const workspacePlan = preparedResponse?.plan ?? responsePreview ?? livePlan;
+  const observationDroneId = responding ? responseDraft?.droneId : observationAssignment?.droneId;
+  const activeAircraft = fleet.aircraft.find((aircraft) => aircraft.droneId === liveDroneId);
+  const observationAircraft = fleet.aircraft.find((aircraft) => aircraft.droneId === observationDroneId);
+  const workspacePlan = creating
+    ? undefined
+    : responding
+      ? preparedResponse?.plan ?? responsePreview
+      : livePlan;
+  const workspaceRun = creating || responding ? undefined : observationRun;
+  const workspaceTrail = creating || responding ? [] : aircraftTrail;
+  const workspaceDroneId = creating ? undefined : observationDroneId;
   const highestAlert = useMemo(
-    () => highestRelatedOperationalAlert(alerts.alerts, { incidentId: selectedIncident?.id, droneId: liveDroneId, missionRunId: liveRun?.id }),
-    [alerts.alerts, liveDroneId, liveRun?.id, selectedIncident?.id],
+    () => highestRelatedOperationalAlert(alerts.alerts, {
+      incidentId: creating ? undefined : selectedIncident?.id,
+      droneId: workspaceDroneId,
+      missionRunId: creating || responding ? undefined : observationRun?.id,
+    }),
+    [alerts.alerts, creating, observationRun?.id, responding, selectedIncident?.id, workspaceDroneId],
   );
   const recordingPlanned = workspacePlan?.actions.some((action) => action.actionType === "START_RECORDING") ?? false;
-  const recordingMissionId = preparedResponse?.mission.id ?? liveAssignment?.missionId;
+  const recordingMissionId = creating
+    ? undefined
+    : responding
+      ? preparedResponse?.mission.id
+      : observationAssignment?.missionId;
   const canIssueSafetyCommand = Boolean(
     nativeAvailable
       && liveDroneId
       && liveRun
       && !terminalMissionStates.has(liveRun.status)
-      && liveAircraft?.connectionStatus === "connected"
-      && liveAircraft.telemetry?.status === "live"
-      && liveAircraft.telemetry.inAir === true
+      && activeAircraft?.connectionStatus === "connected"
+      && activeAircraft.telemetry?.status === "live"
+      && activeAircraft.telemetry.inAir === true
       && !safetyCommandPending,
   );
 
@@ -237,6 +259,10 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   useEffect(() => {
     window.localStorage.setItem("atlas.operations.responseLayout", layout);
   }, [layout]);
+
+  useEffect(() => {
+    if (incidentDetailRef.current) incidentDetailRef.current.scrollTop = 0;
+  }, [creating, preparedResponse?.assignment.id, responding, selectedIncidentId]);
 
   useEffect(() => {
     if (!nativeAvailable || !responding || !selectedIncident || !responseDraft) {
@@ -303,7 +329,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   }, [fleet.aircraft, responding, responseDraft, responseSuitability]);
 
   useEffect(() => {
-    const missionId = liveAssignment?.missionId;
+    const missionId = observationAssignment?.missionId;
     if (!nativeAvailable || !missionId) {
       setLivePlan(undefined);
       return;
@@ -314,19 +340,19 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
       .then((plan) => { if (active) setLivePlan(plan); })
       .catch((reason) => { if (active) setLoadError(messageFrom(reason)); });
     return () => { active = false; };
-  }, [liveAssignment?.missionId, nativeAvailable]);
+  }, [nativeAvailable, observationAssignment?.missionId]);
 
   useEffect(() => {
-    if (!nativeAvailable || !liveRun) {
+    if (!nativeAvailable || !observationRun) {
       setAircraftTrail([]);
       return;
     }
     let active = true;
     setAircraftTrail([]);
     void invoke<TelemetryHistoryPage>("vehicle_telemetry_history", {
-      droneId: liveRun.droneId,
-      fromReceivedAtUnixMs: liveRun.startedAtUnixMs ?? liveRun.createdAtUnixMs,
-      toReceivedAtUnixMs: liveRun.completedAtUnixMs ?? null,
+      droneId: observationRun.droneId,
+      fromReceivedAtUnixMs: observationRun.startedAtUnixMs ?? observationRun.createdAtUnixMs,
+      toReceivedAtUnixMs: observationRun.completedAtUnixMs ?? null,
       before: null,
       limit: 500,
     }).then((page) => {
@@ -340,15 +366,15 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
       if (active) setLoadError(messageFrom(reason));
     });
     return () => { active = false; };
-  }, [liveRun?.completedAtUnixMs, liveRun?.createdAtUnixMs, liveRun?.droneId, liveRun?.id, liveRun?.startedAtUnixMs, nativeAvailable]);
+  }, [nativeAvailable, observationRun?.completedAtUnixMs, observationRun?.createdAtUnixMs, observationRun?.droneId, observationRun?.id, observationRun?.startedAtUnixMs]);
 
   useEffect(() => {
-    const telemetry = liveAircraft?.telemetry;
+    const telemetry = observationAircraft?.telemetry;
     if (telemetry?.status !== "live") return;
     const position = validTrailPosition(telemetry);
     if (position.length === 0) return;
     setAircraftTrail((current) => appendTrailPosition(current, position[0]));
-  }, [liveAircraft?.telemetry?.latitude, liveAircraft?.telemetry?.longitude, liveAircraft?.telemetry?.status]);
+  }, [observationAircraft?.telemetry?.latitude, observationAircraft?.telemetry?.longitude, observationAircraft?.telemetry?.status]);
 
   useEffect(() => {
     if (!safetyCommand || terminalVehicleCommandStates.has(safetyCommand.status)) {
@@ -463,11 +489,11 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
       return;
     }
     if (!responsePreview) {
-      setActionError("Assess the reviewed geometry before preparing its immutable response plan.");
+      setActionError("Review the route before preparing the response.");
       return;
     }
     if (responsePreview.knownBuildingAssessment.overrideRequired && !responseDraft.knownBuildingOverrideReason.trim()) {
-      setActionError("Record an explicit operator override reason for the known-building warning before preparation.");
+      setActionError("Record why this response may continue despite the mapped-building warning.");
       return;
     }
     setActionError(undefined);
@@ -494,7 +520,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   async function abandonPreparedResponse() {
     if (!selectedIncident || !preparedResponse) return;
     const confirmed = window.confirm(
-      `Release ${preparedResponse.assignment.droneName} and abandon this prepared response? The immutable mission and audit history will be retained.`,
+      `Release ${preparedResponse.assignment.droneName} and abandon this prepared response? The saved mission and audit history will be retained.`,
     );
     if (!confirmed) return;
     setActionError(undefined);
@@ -585,11 +611,13 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
 
   function beginResponse() {
     if (!selectedIncident || !hasIncidentLocation(selectedIncident)) return;
-    const defaultObservation = offsetCoordinate(selectedIncident, 0, 50);
     setResponseDraft({
       droneId: "",
       responsePattern: "OFFSET_OBSERVE",
-      geometryPoints: [defaultObservation],
+      geometryPoints: [{
+        latitude: selectedIncident.latitude,
+        longitude: selectedIncident.longitude,
+      }],
       altitudeMeters: 30,
       speedMps: 5,
       laneSpacingMeters: 25,
@@ -615,17 +643,32 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   }
 
   function beginCreate() {
+    setSelectedIncidentId(undefined);
+    setDetail(undefined);
     setCreating(true);
     setResponding(false);
+    setResponseDraft(undefined);
+    setResponsePreview(undefined);
+    setResponseSuitability(undefined);
+    setResponseSuitabilityError(undefined);
     setPreparedResponse(undefined);
+    setLivePlan(undefined);
+    setAircraftTrail([]);
     setSelectingLocation(true);
     setActionError(undefined);
   }
 
   function selectIncident(incidentId: string) {
+    setDetail(undefined);
     setCreating(false);
     setResponding(false);
+    setResponseDraft(undefined);
+    setResponsePreview(undefined);
+    setResponseSuitability(undefined);
+    setResponseSuitabilityError(undefined);
     setPreparedResponse(undefined);
+    setLivePlan(undefined);
+    setAircraftTrail([]);
     setSelectingLocation(false);
     setActionError(undefined);
     setSelectedIncidentId(incidentId);
@@ -659,7 +702,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
       )}
       {loadError && <p className="operations-error" role="alert">{loadError}</p>}
 
-      {selectedIncident && (
+      {showLiveResponseContext && selectedIncident && (
         <section className={`response-context response-context--${selectedIncident.priority.toLowerCase()}`} aria-label="Selected live response">
           <div className="response-context__identity">
             <span className="response-context__priority"><i aria-hidden="true">{selectedIncident.priority === "CRITICAL" ? "▲" : "◆"}</i>{selectedIncident.priority}</span>
@@ -669,9 +712,15 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
             </div>
           </div>
           <dl className="response-context__facts">
-            <div><dt>Aircraft</dt><dd>{liveAircraft?.droneName || liveAssignment?.droneName || "Not assigned"}</dd></div>
-            <div><dt>Run state</dt><dd>{liveResponseState(liveRun, workspacePlan?.metadata.incidentResponse?.responsePattern)}</dd></div>
-            <div><dt>Run</dt><dd>{liveRun ? shortId(liveRun.id) : "Not started"}</dd></div>
+            <div><dt>Aircraft</dt><dd>{responding
+              ? observationAircraft?.droneName || "Not assigned"
+              : liveAssignment
+                ? activeAircraft?.droneName || liveAssignment.droneName
+                : observationAssignment
+                  ? `${observationAircraft?.droneName || observationAssignment.droneName} · last response`
+                  : "Not assigned"}</dd></div>
+            <div><dt>Run state</dt><dd>{liveResponseState(workspaceRun, workspacePlan?.metadata.incidentResponse?.responsePattern)}</dd></div>
+            <div><dt>Run</dt><dd>{workspaceRun ? shortId(workspaceRun.id) : "Not started"}</dd></div>
             <div><dt>Alert</dt><dd>{highestAlert ? `${highestAlert.severity} · ${highestAlert.title}` : "No active safety alerts"}</dd></div>
           </dl>
           <div className="response-context__safety" aria-label="Immediate aircraft safety controls">
@@ -779,7 +828,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
           </div>
           <div className={`response-live-surfaces response-live-surfaces--${layout}`} data-response-layout={layout}>
             <div className="response-live-panel response-live-panel--map" aria-label="Response map" aria-hidden={layout === "video"}>
-              <span className="response-live-panel__label">Map · {aircraftTrail.length} trail points</span>
+              <span className="response-live-panel__label">Map · {workspaceTrail.length} trail points</span>
               <OperationsMap
                 incidents={mapIncidents}
                 aircraft={fleet.aircraft}
@@ -788,8 +837,8 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
                 draftResponseGeometry={responding && !preparedResponse ? responseGeometry : undefined}
                 selectingLocation={(creating || (responding && !preparedResponse)) && selectingLocation}
                 responsePlan={workspacePlan}
-                responseDroneId={liveDroneId}
-                aircraftTrail={aircraftTrail}
+                responseDroneId={workspaceDroneId}
+                aircraftTrail={workspaceTrail}
                 trackGeolocations={trackGeolocations}
                 layers={mapLayers}
                 onIncidentSelect={selectIncident}
@@ -814,14 +863,14 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
               <span className="response-live-panel__label">Video + perception · persistent subscription</span>
               <LiveVideo
                 nativeAvailable={nativeAvailable}
-                droneId={liveDroneId}
-                aircraft={liveAircraft}
+                droneId={workspaceDroneId}
+                aircraft={creating ? undefined : observationAircraft}
                 highestAlert={highestAlert}
                 recordingPlanned={recordingPlanned}
                 recordingContext={{
                   incidentId: selectedIncident?.id ?? undefined,
                   missionId: recordingMissionId ?? undefined,
-                  missionRunId: liveRun?.id,
+                  missionRunId: workspaceRun?.id,
                 }}
                 compact={layout === "map"}
               />
@@ -829,12 +878,12 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
           </div>
           <div className="response-workspace-status">
             <span>{workspacePlan ? `${workspacePlan.generatedWaypoints.length} route waypoint${workspacePlan.generatedWaypoints.length === 1 ? "" : "s"}` : "No response route selected"}</span>
-            <span className={liveAircraft?.telemetry?.status === "live" ? "response-workspace-status__live" : "response-workspace-status__stale"}><i aria-hidden="true">{liveAircraft?.telemetry?.status === "live" ? "✓" : "!"}</i>{liveAircraft?.telemetry?.status === "live" ? "Live telemetry" : "Telemetry stale or unavailable"}</span>
+            <span className={observationAircraft?.telemetry?.status === "live" ? "response-workspace-status__live" : "response-workspace-status__stale"}><i aria-hidden="true">{observationAircraft?.telemetry?.status === "live" ? "✓" : "!"}</i>{observationAircraft?.telemetry?.status === "live" ? "Live telemetry" : "Telemetry stale or unavailable"}</span>
             <span>{highestAlert ? `${highestAlert.severity}: ${highestAlert.recommendedAction}` : "No active response alert"}</span>
           </div>
         </div>
 
-        <aside className="incident-detail" aria-label={creating ? "Create incident" : responding ? "Prepare incident response" : "Incident detail"}>
+        <aside ref={incidentDetailRef} className="incident-detail" aria-label={creating ? "Create incident" : responding ? "Prepare incident response" : "Incident detail"}>
           {creating ? (
             <IncidentCreateForm
               draft={draft}
@@ -1102,7 +1151,7 @@ function IncidentResponsePanel({
           <div><dt>Hold failure</dt><dd>{failurePolicyLabel(reviewedFailurePolicy)}</dd></div>
         </dl>
 
-        {preparedAssessment && <KnownBuildingAssessmentPanel assessment={preparedAssessment} immutable />}
+        {preparedAssessment && <KnownBuildingAssessmentPanel assessment={preparedAssessment} saved />}
 
         <section className="response-arrival-review" aria-label="Reviewed arrival action chain">
           <header><span>Arrival authority</span><strong>{preparedPattern === "HOLD_AT_STAGING" ? "Staged after Hold; awaiting operator" : "Not on scene until Hold succeeds"}</strong></header>
@@ -1131,7 +1180,7 @@ function IncidentResponsePanel({
         {error && <p className="incident-form__error" role="alert">{error}</p>}
 
         <ol className="response-handoff">
-          <li className="response-handoff--complete"><span>01</span><div><strong>Prepared atomically</strong><small>Mission, plan, and assignment committed together.</small></div></li>
+          <li className="response-handoff--complete"><span>01</span><div><strong>Response prepared</strong><small>Aircraft assignment and route saved together.</small></div></li>
           <li><span>02</span><div><strong>Confirm deployment</strong><small>Open the existing upload and preflight workspace.</small></div></li>
           <li><span>03</span><div><strong>Upload & start</strong><small>Connectivity, distance, position, and run locks are rechecked.</small></div></li>
         </ol>
@@ -1157,30 +1206,6 @@ function IncidentResponsePanel({
         <button type="button" className="incident-form__cancel" onClick={onBack}>Cancel</button>
       </header>
       <p className="incident-response__scope">Reviewed geometry · incident revision {incident.revision} · assessment and preparation do not upload or arm an aircraft</p>
-
-      <fieldset className="response-pattern-picker">
-        <legend>Response pattern</legend>
-        {(["HOLD_AT_STAGING", "OFFSET_OBSERVE", "BOUNDED_AREA_SCAN", "BOUNDED_ORBIT"] as IncidentResponsePattern[]).map((pattern) => (
-          <button
-            key={pattern}
-            type="button"
-            className={draft.responsePattern === pattern ? "response-pattern-picker__option response-pattern-picker__option--active" : "response-pattern-picker__option"}
-            aria-pressed={draft.responsePattern === pattern}
-            onClick={() => onChange({
-              ...draft,
-              responsePattern: pattern,
-              geometryPoints: pattern === "BOUNDED_AREA_SCAN"
-                ? []
-                : pattern === "BOUNDED_ORBIT" && hasIncidentLocation(incident)
-                  ? [{ latitude: incident.latitude, longitude: incident.longitude }]
-                  : draft.geometryPoints.slice(0, 1),
-            })}
-          >
-            <strong>{responsePatternLabel(pattern)}</strong>
-            <small>{responsePatternDescription(pattern)}</small>
-          </button>
-        ))}
-      </fieldset>
 
       <label>Assigned aircraft
         <select value={draft.droneId} onChange={(event) => onChange({ ...draft, droneId: event.target.value })} required>
@@ -1219,12 +1244,42 @@ function IncidentResponsePanel({
         </details>
       )}
 
+      <fieldset className="response-pattern-picker">
+        <legend>Response pattern</legend>
+        {(["HOLD_AT_STAGING", "OFFSET_OBSERVE", "BOUNDED_AREA_SCAN", "BOUNDED_ORBIT"] as IncidentResponsePattern[]).map((pattern) => (
+          <button
+            key={pattern}
+            type="button"
+            className={draft.responsePattern === pattern ? "response-pattern-picker__option response-pattern-picker__option--active" : "response-pattern-picker__option"}
+            aria-pressed={draft.responsePattern === pattern}
+            onClick={() => onChange({
+              ...draft,
+              responsePattern: pattern,
+              geometryPoints: pattern === "BOUNDED_AREA_SCAN"
+                ? []
+                : pattern === "BOUNDED_ORBIT" && hasIncidentLocation(incident)
+                  ? [{ latitude: incident.latitude, longitude: incident.longitude }]
+                  : draft.geometryPoints.slice(0, 1),
+            })}
+          >
+            <strong>{responsePatternLabel(pattern)}</strong>
+            <small>{responsePatternDescription(pattern)}</small>
+          </button>
+        ))}
+      </fieldset>
+
       <fieldset className="incident-form__location response-staging-location">
-        <legend>{draft.responsePattern === "HOLD_AT_STAGING" ? "Operator-reviewed staging point" : draft.responsePattern === "OFFSET_OBSERVE" ? "Operator-reviewed observation point" : draft.responsePattern === "BOUNDED_AREA_SCAN" ? "Operator-reviewed scan polygon" : "Operator-reviewed orbit centre"}</legend>
+        <legend>{draft.responsePattern === "HOLD_AT_STAGING" ? "Operator-reviewed staging point" : draft.responsePattern === "OFFSET_OBSERVE" ? "Response destination" : draft.responsePattern === "BOUNDED_AREA_SCAN" ? "Operator-reviewed scan polygon" : "Operator-reviewed orbit centre"}</legend>
+        {draft.responsePattern !== "BOUNDED_AREA_SCAN" && hasIncidentLocation(incident) && (
+          <div className="response-location-source">
+            <span>Initial point</span>
+            <strong>Incident location · {coordinateLabel(incident)}</strong>
+          </div>
+        )}
         <button type="button" className={selectingLocation ? "incident-form__map-select incident-form__map-select--active" : "incident-form__map-select"} onClick={onSelectLocation}>
           {selectingLocation
             ? draft.responsePattern === "BOUNDED_AREA_SCAN" ? "Click map to add polygon vertices" : "Click map to place coordinate"
-            : draft.responsePattern === "BOUNDED_AREA_SCAN" ? "Add polygon vertices on map" : "Choose coordinate on map"}
+            : draft.responsePattern === "BOUNDED_AREA_SCAN" ? "Add polygon vertices on map" : "Adjust point on map"}
         </button>
         {draft.responsePattern === "BOUNDED_AREA_SCAN" ? (
           <div className="response-geometry-sequence">
@@ -1238,10 +1293,10 @@ function IncidentResponsePanel({
         ) : (
           <div className="incident-form__row">
             <label>Latitude
-              <input type="number" min="-90" max="90" step="0.000001" value={primaryPoint?.latitude ?? ""} onChange={(event) => onChange({ ...draft, geometryPoints: [{ latitude: Number(event.target.value), longitude: primaryPoint?.longitude ?? 0 }] })} required />
+              <input type="number" min="-90" max="90" step="any" value={primaryPoint?.latitude ?? ""} onChange={(event) => onChange({ ...draft, geometryPoints: [{ latitude: Number(event.target.value), longitude: primaryPoint?.longitude ?? 0 }] })} required />
             </label>
             <label>Longitude
-              <input type="number" min="-180" max="180" step="0.000001" value={primaryPoint?.longitude ?? ""} onChange={(event) => onChange({ ...draft, geometryPoints: [{ latitude: primaryPoint?.latitude ?? 0, longitude: Number(event.target.value) }] })} required />
+              <input type="number" min="-180" max="180" step="any" value={primaryPoint?.longitude ?? ""} onChange={(event) => onChange({ ...draft, geometryPoints: [{ latitude: primaryPoint?.latitude ?? 0, longitude: Number(event.target.value) }] })} required />
             </label>
           </div>
         )}
@@ -1318,14 +1373,14 @@ function IncidentResponsePanel({
         )}
         {(draft.responsePattern === "OFFSET_OBSERVE" || draft.responsePattern === "BOUNDED_ORBIT") && (
           <label>Incident target altitude · m AMSL
-            <input type="number" min="-500" max="9000" step="1" value={draft.incidentTargetAltitudeAmslMeters ?? ""} onChange={(event) => onChange({ ...draft, incidentTargetAltitudeAmslMeters: optionalNumber(event.target.value) })} required />
+            <input type="number" min="-500" max="9000" step="any" value={draft.incidentTargetAltitudeAmslMeters ?? ""} onChange={(event) => onChange({ ...draft, incidentTargetAltitudeAmslMeters: optionalNumber(event.target.value) })} required />
             <small>Geographic gimbal targeting requires a reviewed absolute target altitude.</small>
           </label>
         )}
       </fieldset>
 
       <fieldset className="response-building-settings">
-        <legend>Known-building assessment</legend>
+        <legend>Mapped-building check</legend>
         <div className="incident-form__row">
           <label>Horizontal clearance · m
             <input type="number" min="0" max="100" step="1" value={draft.buildingHorizontalClearanceMeters} onChange={(event) => onChange({ ...draft, buildingHorizontalClearanceMeters: Number(event.target.value) })} required />
@@ -1349,16 +1404,21 @@ function IncidentResponsePanel({
       )}
 
       {preview?.knownBuildingAssessment.overrideRequired && (
-        <label className="response-building-override">Operator override reason
+        <label className="response-building-override">
+          {preview.knownBuildingAssessment.status === "DATA_UNAVAILABLE"
+            ? "Reason to continue without building data"
+            : "Operator review reason"}
           <textarea
             rows={3}
             maxLength={500}
             value={draft.knownBuildingOverrideReason}
             onChange={(event) => onChange({ ...draft, knownBuildingOverrideReason: event.target.value })}
-            placeholder="State why this supervised operation may proceed despite the identified limitation."
+            placeholder={preview.knownBuildingAssessment.status === "DATA_UNAVAILABLE"
+              ? "Record what local checks or supervised controls will be used instead."
+              : "State why this supervised operation may proceed despite the identified limitation."}
             required
           />
-          <small>The reason is revalidated and recorded when the immutable plan is prepared.</small>
+          <small>The reason is revalidated and recorded when the response is prepared.</small>
         </label>
       )}
 
@@ -1372,7 +1432,7 @@ function IncidentResponsePanel({
         {previewing ? "Assessing route…" : preview ? "Re-assess geometry" : "Assess geometry"}
       </button>
       <button type="submit" className="incident-form__submit" disabled={pending || previewing || !preview || !draft.droneId || (preview.knownBuildingAssessment.overrideRequired && !draft.knownBuildingOverrideReason.trim())}>
-        {pending ? "Preparing atomically…" : "Prepare immutable response"}
+        {pending ? "Preparing response…" : "Prepare response"}
       </button>
     </form>
   );
@@ -1410,9 +1470,10 @@ function IncidentDetailPanel({
 
       {(incident.status === "OPEN" || incident.status === "ACTIVE") && (
         <div className="incident-record__respond-block">
+          <p className="incident-record__next-step">Next: choose a dispatch-ready aircraft and review its route. Nothing is sent yet.</p>
           <button type="button" className="incident-record__respond" onClick={onRespond} disabled={Boolean(pending) || !hasIncidentLocation(incident)}>
-            <span>Offset · area · orbit</span>
-            <strong>Prepare response</strong>
+            <span>Aircraft assignment · route · response pattern</span>
+            <strong>Assign aircraft &amp; plan response</strong>
           </button>
           {!hasIncidentLocation(incident) && <small>Add an incident location before preparing a response.</small>}
         </div>
@@ -1451,9 +1512,15 @@ function IncidentDetailPanel({
                   <small>{assignment.missionName || `Mission ${shortId(assignment.missionId || "")}`}</small>
                   {assignment.onSceneAtUnixMs && <small>Hold acknowledged on scene · {formatDateTime(assignment.onSceneAtUnixMs)}</small>}
                 </div>
-                {assignment.missionId && !assignment.endedAtUnixMs && (
+                {assignment.missionId && (
                   <button type="button" onClick={() => onOpenAssignment(assignment)} disabled={pending === `review:${assignment.id}`}>
-                    {pending === `review:${assignment.id}` ? "Loading…" : assignment.status === "PREPARED" && !assignment.missionRunId ? "Review plan" : "Open mission"}
+                    {pending === `review:${assignment.id}`
+                      ? "Loading…"
+                      : assignment.status === "PREPARED" && !assignment.missionRunId
+                        ? "Review plan"
+                        : assignment.endedAtUnixMs
+                          ? "View mission"
+                          : "Open mission"}
                   </button>
                 )}
               </li>
@@ -1646,7 +1713,7 @@ function responsePatternDescription(pattern: IncidentResponsePattern) {
     ? "Lawn-mower coverage inside a reviewed polygon."
     : pattern === "BOUNDED_ORBIT"
       ? "One reviewed radius, level, lap count and direction."
-      : "Observe from an operator-placed offset, then Hold and point at the incident.";
+      : "Starts at the incident location; adjust to a reviewed observation point when required.";
 }
 
 function responseGeometrySummary(plan: Pick<MissionPlan, "generatedWaypoints" | "metadata">) {
@@ -1666,83 +1733,80 @@ function responseGeometrySummary(plan: Pick<MissionPlan, "generatedWaypoints" | 
   return `${finiteNumber(geometry.observationLatitude, 0).toFixed(5)}, ${finiteNumber(geometry.observationLongitude, 0).toFixed(5)} · operator reviewed`;
 }
 
-function KnownBuildingAssessmentPanel({ assessment, immutable = false }: { assessment: KnownBuildingAssessment; immutable?: boolean }) {
+function KnownBuildingAssessmentPanel({ assessment, saved = false }: { assessment: KnownBuildingAssessment; saved?: boolean }) {
   const icon = assessment.status === "CLEAR_OF_CHECKED_VOLUMES" ? "✓" : assessment.status === "INTERSECTIONS" ? "×" : "!";
   const headline = assessment.status === "CLEAR_OF_CHECKED_VOLUMES"
-    ? "Clear of checked known volumes"
+    ? "No mapped-building intersections found"
     : assessment.status === "INTERSECTIONS"
-      ? "Known building intersection"
+      ? "Mapped-building intersection"
       : assessment.status === "INCOMPLETE"
-        ? "Assessment incomplete"
-        : "Known-building data unavailable";
+        ? "Building coverage incomplete"
+        : "Building data unavailable";
+  const summary = assessment.status === "CLEAR_OF_CHECKED_VOLUMES"
+    ? `Checked ${assessment.checkedFeatureCount} mapped building${assessment.checkedFeatureCount === 1 ? "" : "s"} along this route.`
+    : assessment.status === "INTERSECTIONS"
+      ? `${assessment.intersectionCount} mapped intersection${assessment.intersectionCount === 1 ? "" : "s"} requires operator review.`
+      : assessment.status === "INCOMPLETE"
+        ? "The configured dataset does not fully cover this route."
+        : "No configured building dataset is available for this route.";
   return (
-    <section className={`known-building-assessment known-building-assessment--${assessment.status.toLowerCase().replace(/_/g, "-")}`} aria-label="Known-building assessment">
-      <header>
+    <details
+      className={`known-building-assessment known-building-assessment--${assessment.status.toLowerCase().replace(/_/g, "-")}`}
+      open={assessment.status === "INTERSECTIONS"}
+    >
+      <summary>
         <i aria-hidden="true">{icon}</i>
         <div>
-          <span>{immutable ? "Saved assessment" : "Geometry assessment"}</span>
+          <span>{saved ? "Saved route check" : "Route data check"}</span>
           <strong>{headline}</strong>
+          <small>{summary}</small>
         </div>
-      </header>
-      <p>{assessment.statement}</p>
-      <dl>
-        <div><dt>Route</dt><dd>{assessment.routeSegmentCount} segments</dd></div>
-        <div><dt>Features</dt><dd>{assessment.checkedFeatureCount} checked</dd></div>
-        <div><dt>Intersections</dt><dd>{assessment.intersectionCount}</dd></div>
-        <div><dt>Unknown height</dt><dd>{assessment.unknownHeightCount}</dd></div>
-        <div><dt>Clearance</dt><dd>{assessment.horizontalClearanceMeters.toFixed(0)} m H · {assessment.verticalClearanceMeters.toFixed(0)} m V</dd></div>
-        <div><dt>Coverage</dt><dd>{assessment.coverageComplete ? "Route within dataset bounds" : "Incomplete or unavailable"}</dd></div>
-      </dl>
-      {assessment.provenance && (
-        <div className="known-building-assessment__provenance">
-          <span>Dataset source</span>
-          <strong>{assessment.provenance.provider} · {assessment.provenance.product}</strong>
-          <small>{assessment.provenance.datasetId} · schema {assessment.provenance.schemaVersion} · release {assessment.provenance.release}</small>
-          <small>Retrieved {formatDateTime(assessment.provenance.retrievedAtUnixMs)}</small>
-        </div>
-      )}
-      {assessment.issues.length > 0 && (
-        <ol className="known-building-assessment__issues">
-          {assessment.issues.slice(0, 8).map((issue) => (
-            <li key={`${issue.featureId}:${issue.result}`}>
-              <span aria-hidden="true">{issue.result === "INTERSECTION" ? "×" : "?"}</span>
-              <div>
-                <strong>{issue.featureId} · {displayEnum(issue.result)}</strong>
-                <small>{issue.routeSegmentIndexes.length > 0 ? `Route segment${issue.routeSegmentIndexes.length === 1 ? "" : "s"} ${issue.routeSegmentIndexes.map((index) => index + 1).join(", ")}` : "Near the assessed route"} · {displayEnum(issue.heightSource)}</small>
-                {issue.evidenceDate && <small>Height evidence {issue.evidenceDate}{issue.heightConfidence ? ` · confidence ${issue.heightConfidence}` : ""}</small>}
-              </div>
-            </li>
-          ))}
-          {assessment.issues.length > 8 && <li><span>+</span><div><strong>{assessment.issues.length - 8} additional issues retained in the plan</strong></div></li>}
-        </ol>
-      )}
-      {assessment.overrideReason && <p className="known-building-assessment__override"><strong>Operator override recorded:</strong> {assessment.overrideReason}</p>}
-      {assessment.limitations.length > 0 && (
-        <div className="known-building-assessment__limitations">
-          <strong>Limits of this check</strong>
-          <ul>{assessment.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
-        </div>
-      )}
-      <small className="known-building-assessment__boundary">This assessment is not an obstacle-free or safe-route claim.</small>
-    </section>
+        <b aria-hidden="true">Details</b>
+      </summary>
+      <div className="known-building-assessment__body">
+        <p>{assessment.statement}</p>
+        <dl>
+          <div><dt>Route</dt><dd>{assessment.routeSegmentCount} segments</dd></div>
+          <div><dt>Features</dt><dd>{assessment.checkedFeatureCount} checked</dd></div>
+          <div><dt>Intersections</dt><dd>{assessment.intersectionCount}</dd></div>
+          <div><dt>Unknown height</dt><dd>{assessment.unknownHeightCount}</dd></div>
+          <div><dt>Clearance</dt><dd>{assessment.horizontalClearanceMeters.toFixed(0)} m H · {assessment.verticalClearanceMeters.toFixed(0)} m V</dd></div>
+          <div><dt>Coverage</dt><dd>{assessment.coverageComplete ? "Route within dataset bounds" : "Incomplete or unavailable"}</dd></div>
+        </dl>
+        {assessment.provenance && (
+          <div className="known-building-assessment__provenance">
+            <span>Dataset source</span>
+            <strong>{assessment.provenance.provider} · {assessment.provenance.product}</strong>
+            <small>{assessment.provenance.datasetId} · schema {assessment.provenance.schemaVersion} · release {assessment.provenance.release}</small>
+            <small>Retrieved {formatDateTime(assessment.provenance.retrievedAtUnixMs)}</small>
+          </div>
+        )}
+        {assessment.issues.length > 0 && (
+          <ol className="known-building-assessment__issues">
+            {assessment.issues.slice(0, 8).map((issue) => (
+              <li key={`${issue.featureId}:${issue.result}`}>
+                <span aria-hidden="true">{issue.result === "INTERSECTION" ? "×" : "?"}</span>
+                <div>
+                  <strong>{issue.featureId} · {displayEnum(issue.result)}</strong>
+                  <small>{issue.routeSegmentIndexes.length > 0 ? `Route segment${issue.routeSegmentIndexes.length === 1 ? "" : "s"} ${issue.routeSegmentIndexes.map((index) => index + 1).join(", ")}` : "Near the assessed route"} · {displayEnum(issue.heightSource)}</small>
+                  {issue.evidenceDate && <small>Height evidence {issue.evidenceDate}{issue.heightConfidence ? ` · confidence ${issue.heightConfidence}` : ""}</small>}
+                </div>
+              </li>
+            ))}
+            {assessment.issues.length > 8 && <li><span>+</span><div><strong>{assessment.issues.length - 8} additional issues retained in the plan</strong></div></li>}
+          </ol>
+        )}
+        {assessment.overrideReason && <p className="known-building-assessment__override"><strong>Operator override recorded:</strong> {assessment.overrideReason}</p>}
+        {assessment.limitations.length > 0 && (
+          <div className="known-building-assessment__limitations">
+            <strong>Limits of this check</strong>
+            <ul>{assessment.limitations.map((limitation) => <li key={limitation}>{limitation}</li>)}</ul>
+          </div>
+        )}
+        <small className="known-building-assessment__boundary">This assessment is not an obstacle-free or safe-route claim.</small>
+      </div>
+    </details>
   );
-}
-
-function offsetCoordinate(incident: IncidentSnapshot & { latitude: number; longitude: number }, bearingDegrees: number, distanceMeters: number) {
-  const earthRadiusMeters = 6_371_000;
-  const angularDistance = distanceMeters / earthRadiusMeters;
-  const bearing = bearingDegrees * Math.PI / 180;
-  const latitude = incident.latitude * Math.PI / 180;
-  const longitude = incident.longitude * Math.PI / 180;
-  const nextLatitude = Math.asin(
-    Math.sin(latitude) * Math.cos(angularDistance)
-    + Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing),
-  );
-  const nextLongitude = longitude + Math.atan2(
-    Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude),
-    Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(nextLatitude),
-  );
-  return { latitude: nextLatitude * 180 / Math.PI, longitude: nextLongitude * 180 / Math.PI };
 }
 
 function responseCoordinateFromUnknown(value: unknown) {
@@ -1803,7 +1867,7 @@ function validateResponseDraft(draft: ResponseDraft) {
   }
   if (!Number.isFinite(draft.buildingHorizontalClearanceMeters) || draft.buildingHorizontalClearanceMeters < 0 || draft.buildingHorizontalClearanceMeters > 100) return "Horizontal building clearance must be between 0 and 100 metres.";
   if (!Number.isFinite(draft.buildingVerticalClearanceMeters) || draft.buildingVerticalClearanceMeters < 0 || draft.buildingVerticalClearanceMeters > 100) return "Vertical building clearance must be between 0 and 100 metres.";
-  if (draft.knownBuildingOverrideReason.length > 500) return "Known-building override reason must be 500 characters or fewer.";
+  if (draft.knownBuildingOverrideReason.length > 500) return "Mapped-building review reason must be 500 characters or fewer.";
   return undefined;
 }
 
@@ -1924,6 +1988,7 @@ function incidentMatchesFilters(
 
 function liveResponseState(run?: MissionRun, responsePattern?: string) {
   if (!run) return "Not started";
+  if (terminalMissionStates.has(run.status)) return displayEnum(run.status);
   const hold = run.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
   if (hold?.state === "SUCCEEDED") return responsePattern === "HOLD_AT_STAGING"
     ? "STAGED · AWAITING OPERATOR"

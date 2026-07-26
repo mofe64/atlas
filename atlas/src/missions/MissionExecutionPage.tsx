@@ -106,7 +106,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   }, [missionId, nativeAvailable, preferredDroneId]);
 
   useEffect(() => {
-    window.localStorage.setItem("atlas.execution.responseLayout", liveSurface);
+    window.localStorage.setItem("atlas.execution.responseLayout.v2", liveSurface);
   }, [liveSurface]);
 
   useEffect(() => {
@@ -313,7 +313,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
             <button type="button" disabled={selectedRun?.status !== "RUNNING" || Boolean(pendingOperation)} onClick={() => void control("pause")}>Hold</button>
             <button type="button" disabled={!selectedRun || !["RUNNING", "PAUSED"].includes(selectedRun.status) || Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>RTL</button>
             <button type="button" className="execution-response-context__land" disabled={!selectedRun || terminalStates.has(selectedRun.status) || targetAircraft?.connectionStatus !== "connected" || targetAircraft.telemetry?.status !== "live" || targetAircraft.telemetry.inAir !== true || Boolean(pendingOperation)} onClick={() => void landAircraft()}>Land</button>
-            <small>{safetyCommandResult || "Safety actions remain available in every response layout."}</small>
+            {safetyCommandResult && <small role="status">{safetyCommandResult}</small>}
           </div>
         </section>
       )}
@@ -539,10 +539,10 @@ function preflightState(aircraft?: FleetAircraft) {
 
 function storedExecutionLayout(): ResponseLayout {
   try {
-    const stored = window.localStorage.getItem("atlas.execution.responseLayout");
-    return stored === "map" || stored === "video" || stored === "split" ? stored : "map";
+    const stored = window.localStorage.getItem("atlas.execution.responseLayout.v2");
+    return stored === "map" || stored === "video" || stored === "split" ? stored : "split";
   } catch {
-    return "map";
+    return "split";
   }
 }
 
@@ -600,7 +600,7 @@ function displayActionState(state: string) {
 }
 
 function actionStateDetail(state: string, attempt: number, maximum: number) {
-  if (state === "REQUESTED") return "Requested from immutable plan · waiting for final waypoint";
+  if (state === "REQUESTED") return "Requested from saved plan · waiting for final waypoint";
   if (state === "RUNNING") return `Running attempt ${attempt} of ${maximum}`;
   if (state === "RETRYING") return `Retrying after attempt ${attempt} of ${maximum}`;
   if (state === "SUCCEEDED") return `Acknowledged on attempt ${attempt}`;

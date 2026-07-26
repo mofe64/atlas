@@ -76,7 +76,7 @@ export function OperationalMissionMap({
   const aircraftMarkerRef = useRef<maplibregl.Marker | null>(null);
   const homeMarkerRef = useRef<maplibregl.Marker | null>(null);
   const payloadTargetMarkerRef = useRef<maplibregl.Marker | null>(null);
-  const appliedPlanningFocusRef = useRef<string | undefined>(undefined);
+  const planningFocusAppliedRef = useRef(false);
   const valuesRef = useRef({
     templateType, points, planWaypoints, mode, aircraft, home, aircraftTrail, currentWaypoint, followAircraft, planningFocus, payloadTarget, selectingPayloadTarget, onPayloadTargetSelect, onAddPoint, onMovePoint,
   });
@@ -117,7 +117,7 @@ export function OperationalMissionMap({
       syncPayloadTargetMarker(map, payloadTargetMarkerRef, current.payloadTarget);
       fitCoordinates(map, current.points, current.planWaypoints, current.aircraft, current.home, current.planningFocus);
       if (current.mode === "edit" && current.points.length === 0 && current.planWaypoints.length === 0 && current.planningFocus) {
-        appliedPlanningFocusRef.current = focusKey(current.planningFocus);
+        planningFocusAppliedRef.current = true;
       }
     });
     map.on("error", (event) => {
@@ -193,9 +193,8 @@ export function OperationalMissionMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || mode !== "edit" || points.length > 0 || planWaypoints.length > 0 || !planningFocus) return;
-    const key = focusKey(planningFocus);
-    if (appliedPlanningFocusRef.current === key) return;
-    appliedPlanningFocusRef.current = key;
+    if (planningFocusAppliedRef.current) return;
+    planningFocusAppliedRef.current = true;
     if (home) {
       fitCoordinates(map, points, planWaypoints, aircraft, home, planningFocus);
     } else {
@@ -410,8 +409,4 @@ function trackingInstruction(aircraft?: TrackedAircraft) {
   if (!aircraft) return "Waiting for a live aircraft position.";
   if (aircraft.telemetryStatus === "stale") return "Aircraft position is stale; use the event report before commanding flight.";
   return "Aircraft position updates from live vehicle telemetry.";
-}
-
-function focusKey(position: { latitude: number; longitude: number }) {
-  return `${position.latitude.toFixed(5)}:${position.longitude.toFixed(5)}`;
 }

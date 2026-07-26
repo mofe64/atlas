@@ -13,20 +13,24 @@ import {
   type Mission,
   type MissionPlan,
   type MissionPoint,
+  type MissionRun,
   type MissionSettings,
   type MissionTemplate,
   type MissionTemplateType,
 } from "./missionTypes";
 import "./MissionPage.css";
 
-export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, onMissionReady }: {
+export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, missionRuns, initialMissionId, onInitialMissionLoaded, onMissionReady, onOpenHistory }: {
   nativeAvailable: boolean;
   fleetAircraft: FleetAircraft[];
   preferredDroneId?: string;
-  onMissionReady: (missionId: string) => void;
+  missionRuns: MissionRun[];
+  initialMissionId?: string;
+  onInitialMissionLoaded: () => void;
+  onMissionReady: (missionId: string, droneId?: string) => void;
+  onOpenHistory: () => void;
 }) {
   const [templates, setTemplates] = useState<MissionTemplate[]>(fallbackTemplates);
-  const [missions, setMissions] = useState<Mission[]>([]);
   const [templateType, setTemplateType] = useState<MissionTemplateType>("WAYPOINT");
   const [name, setName] = useState("New waypoint mission");
   const [description, setDescription] = useState("");
@@ -40,14 +44,45 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
 
   useEffect(() => {
     if (!nativeAvailable) return;
-    void Promise.all([
-      invoke<MissionTemplate[]>("mission_templates"),
-      invoke<Mission[]>("mission_list"),
-    ]).then(([nextTemplates, nextMissions]) => {
-      setTemplates(nextTemplates);
-      setMissions(nextMissions);
-    }).catch((reason) => setError(String(reason)));
+    void invoke<MissionTemplate[]>("mission_templates")
+      .then(setTemplates)
+      .catch((reason) => setError(String(reason)));
   }, [nativeAvailable]);
+
+  useEffect(() => {
+    if (!nativeAvailable || !initialMissionId) return;
+    let active = true;
+
+    async function loadInitialMission() {
+      try {
+        const mission = await invoke<Mission>("mission_detail", { missionId: initialMissionId });
+        let existingPlan: MissionPlan | undefined;
+        try {
+          existingPlan = await invoke<MissionPlan>("mission_plan", { missionId: initialMissionId });
+        } catch {
+          existingPlan = undefined;
+        }
+        if (!active) return;
+        const nextType = mission.templateType;
+        setTemplateType(nextType);
+        setName(mission.name);
+        setDescription(mission.description);
+        setEditingMissionId(mission.id);
+        setSettings(settingsFromMission(nextType, mission.params));
+        setPoints(pointsFromMission(nextType, mission.params));
+        setPlan(existingPlan);
+        setError(undefined);
+        onInitialMissionLoaded();
+      } catch (reason) {
+        if (active) setError(reason instanceof Error ? reason.message : String(reason));
+      }
+    }
+
+    void loadInitialMission();
+    return () => {
+      active = false;
+    };
+  }, [initialMissionId, nativeAvailable, onInitialMissionLoaded]);
 
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.templateType === templateType) ?? fallbackTemplates[0],
@@ -63,6 +98,12 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
   const planningReference = planningPositionReference(planningAircraft);
   const planningHome = homePositionReference(planningAircraft);
   const draftDistance = points[0] && planningAircraft ? missionDistanceStatus(points[0], planningAircraft) : undefined;
+  const activeMissionRuns = useMemo(
+    () => missionRuns
+      .filter((run) => ["UPLOADING", "READY", "RUNNING", "PAUSED"].includes(run.status))
+      .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs),
+    [missionRuns],
+  );
 
   function selectTemplate(next: MissionTemplateType) {
     setTemplateType(next);
@@ -72,6 +113,13 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
     setPlan(undefined);
     setEditingMissionId(undefined);
     setError(undefined);
+  }
+
+  function beginNewMission() {
+    selectTemplate(templateType);
+    window.requestAnimationFrame(() => {
+      document.getElementById("mission-definition-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   }
 
   function addPoint(latitude: number, longitude: number) {
@@ -139,29 +187,11 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
       }
       setEditingMissionId(mission.id);
       setPlan(generated);
-      setMissions(await invoke<Mission[]>("mission_list"));
       onMissionReady(mission.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function loadMission(mission: Mission) {
-    setError(undefined);
-    try {
-      const nextType = mission.templateType;
-      setTemplateType(nextType);
-      setName(mission.name);
-      setDescription(mission.description);
-      setEditingMissionId(mission.id);
-      setSettings(settingsFromMission(nextType, mission.params));
-      setPoints(pointsFromMission(nextType, mission.params));
-      setPlan(await invoke<MissionPlan>("mission_plan", { missionId: mission.id }));
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    } catch (reason) {
-      setError(String(reason));
     }
   }
 
@@ -174,35 +204,45 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
         </div>
         <div className="mission-safety-note">
           <span><strong>Nothing is sent while planning.</strong> Save the flight path, then open it in Command when an aircraft is ready.</span>
-          <button type="button" onClick={() => selectTemplate(templateType)}>New mission</button>
+          <button type="button" onClick={onOpenHistory}>Mission history</button>
         </div>
       </header>
 
       <section className="mission-builder" aria-label="Mission builder">
         <aside className="mission-control-rail">
-          <section className="mission-library mission-library--rail" aria-labelledby="mission-library-title">
-            <header>
-              <div><p className="eyebrow">Local mission library</p><h2 id="mission-library-title">Saved missions</h2></div>
-              <span>{missions.length}</span>
-            </header>
-            {missions.length === 0 ? (
-              <p className="mission-library-empty">No missions are saved on this ground station.</p>
-            ) : (
-              <div className="mission-table" role="list">
-                {missions.map((mission) => (
-                  <div key={mission.id} className="mission-table__row" role="listitem">
-                    <button className="mission-table__open" type="button" onClick={() => onMissionReady(mission.id)} disabled={!mission.generatedPlanId}>
-                      <span><strong>{mission.name}</strong><small>{missionTypeLabel(mission.templateType)} · {mission.selectedPattern.replace(/_/g, " ").toLowerCase()}</small></span>
-                      <span className="mission-table__status">{mission.generatedPlanId ? "Ready" : "Draft"}</span>
+          <section className="mission-launchpad" aria-label="Mission actions">
+            <button type="button" className="mission-new-primary" onClick={beginNewMission}>
+              <span>Primary action</span>
+              <strong>Create new mission</strong>
+              <small>Define a route, coverage area, or waypoint operation.</small>
+            </button>
+
+            <section className="active-missions" aria-labelledby="active-missions-title">
+              <header>
+                <h2 id="active-missions-title">Active missions</h2>
+                <span>{activeMissionRuns.length}</span>
+              </header>
+              {activeMissionRuns.length === 0 ? (
+                <p>No missions are currently being prepared or flown.</p>
+              ) : (
+                <div role="list">
+                  {activeMissionRuns.map((run) => (
+                    <button key={run.id} type="button" role="listitem" onClick={() => onMissionReady(run.missionId, run.droneId)}>
+                      <span><strong>{run.missionName}</strong><small>{run.droneName}</small></span>
+                      <i>{run.status.replace(/_/g, " ")}</i>
                     </button>
-                    <button className="mission-table__edit" type="button" onClick={() => void loadMission(mission)}>Edit</button>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <button type="button" className="mission-history-cta" onClick={onOpenHistory}>
+              <span>Mission history</span>
+              <strong>Review saved plans and past runs →</strong>
+            </button>
           </section>
 
-          <header className="control-rail-heading">
+          <header className="control-rail-heading" id="mission-definition-title">
             <div><span>01</span><strong>Mission definition</strong></div>
             <small>{selectedTemplate.defaultPattern.replace(/_/g, " ")}</small>
           </header>
@@ -255,7 +295,7 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
             <span>{planningReference ? "Planning reference" : "Map reference"}</span>
             <strong>{planningReference ? planningReference.droneName : "No connected aircraft position"}</strong>
             <small>{planningReference
-              ? `Centred on ${planningReference.source === "aircraft" ? "live aircraft position" : "reported home position"}.${planningHome ? " Home is marked on the map." : ""}`
+              ? `The initial view uses the ${planningReference.source === "aircraft" ? "live aircraft position" : "reported home position"}; distance checks keep updating without moving the planning map.${planningHome ? " Home is marked on the map." : ""}`
               : "Using the default map location until an aircraft reports its position."}</small>
           </div>
           {draftDistance && !draftDistance.ok && (
@@ -827,12 +867,6 @@ function geometryTitle(templateType: MissionTemplateType) {
   if (templateType === "AREA_SCAN") return "Coverage polygon";
   if (templateType === "ROUTE_SCAN") return "Route centreline";
   return "Waypoint path";
-}
-
-function missionTypeLabel(templateType: MissionTemplateType) {
-  if (templateType === "AREA_SCAN") return "Area scan";
-  if (templateType === "ROUTE_SCAN") return "Route scan";
-  return "Waypoints";
 }
 
 function vertexLabel(templateType: MissionTemplateType) {

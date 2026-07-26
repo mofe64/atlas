@@ -1,0 +1,158 @@
+.mission-history-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--surface-base);
+}
+
+.mission-history-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--s-5);
+  padding: clamp(1.5rem, 3vw, 3rem);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.mission-history-heading button {
+  margin: 0 0 var(--s-4);
+  padding: 0;
+  border: 0;
+  color: var(--field);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.mission-history-heading h1 {
+  margin: .25rem 0 .5rem;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 4rem);
+  letter-spacing: .02em;
+  line-height: .95;
+  text-transform: uppercase;
+}
+
+.mission-history-heading p:last-child {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--t-sm);
+}
+
+.mission-history-heading > span {
+  color: var(--text-tertiary);
+  font-family: var(--font-instrument);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+
+.mission-history-error {
+  margin: var(--s-4) clamp(1.5rem, 3vw, 3rem) 0;
+  padding: var(--s-3);
+  border-left: 3px solid var(--critical);
+  background: var(--critical-soft);
+  font-size: var(--t-xs);
+}
+
+.mission-history-sections {
+  display: grid;
+  gap: var(--s-5);
+  padding: clamp(1.5rem, 3vw, 3rem);
+}
+
+.mission-history-section {
+  border: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+}
+
+.mission-history-section > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--s-4);
+  min-height: 5.25rem;
+  padding: var(--s-4);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+}
+
+.mission-history-section h2 {
+  margin: .2rem 0 0;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.mission-history-section > header > span {
+  color: var(--text-tertiary);
+  font-family: var(--font-instrument);
+  font-size: 1.1rem;
+}
+
+.mission-history-list {
+  display: grid;
+}
+
+.mission-history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-4);
+  align-items: center;
+  min-height: 5.25rem;
+  padding: var(--s-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.mission-history-item:last-child { border-bottom: 0; }
+.mission-history-item > div { min-width: 0; }
+.mission-history-item span,
+.mission-history-item strong,
+.mission-history-item small { display: block; }
+.mission-history-item > div > span { color: var(--field); font-size: var(--t-micro); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.mission-history-item strong { margin-top: .25rem; overflow: hidden; font-size: var(--t-sm); text-overflow: ellipsis; white-space: nowrap; }
+.mission-history-item small { margin-top: .3rem; color: var(--text-tertiary); font-size: var(--t-xs); }
+
+.mission-history-item__actions {
+  display: flex;
+  gap: var(--s-2);
+}
+
+.mission-history-item button {
+  min-height: 2.5rem;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-micro);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mission-history-item button:hover:not(:disabled) { border-color: var(--field); color: var(--panel); background: var(--field); }
+.mission-history-item button:disabled { cursor: not-allowed; opacity: .4; }
+.mission-history-status--failed,
+.mission-history-status--cancelled { color: var(--critical) !important; }
+.mission-history-status--completed { color: var(--field) !important; }
+.mission-history-status--rtl { color: var(--sky) !important; }
+
+.mission-history-empty {
+  margin: 0;
+  padding: var(--s-5) var(--s-4);
+  color: var(--text-tertiary);
+  font-size: var(--t-sm);
+}
+
+@media (max-width: 42rem) {
+  .mission-history-heading { align-items: start; flex-direction: column; }
+  .mission-history-item { grid-template-columns: 1fr; }
+  .mission-history-item__actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .mission-history-item button { width: 100%; }
+}

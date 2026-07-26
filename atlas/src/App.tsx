@@ -18,12 +18,13 @@ import "./AppFrame.css";
 
 const CommandPage = lazy(() => import("./command/CommandPage").then((module) => ({ default: module.CommandPage })));
 const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
+const MissionHistoryPage = lazy(() => import("./missions/MissionHistoryPage").then((module) => ({ default: module.MissionHistoryPage })));
 const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
 const OperationsPage = lazy(() => import("./operations/OperationsPage").then((module) => ({ default: module.OperationsPage })));
 const EvidencePage = lazy(() => import("./evidence/EvidencePage").then((module) => ({ default: module.EvidencePage })));
 const FollowPage = lazy(() => import("./follow/FollowPage").then((module) => ({ default: module.FollowPage })));
 
-type WorkspaceView = "command" | "operations" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence";
+type WorkspaceView = "command" | "operations" | "fleet" | "aircraft" | "missions" | "mission-history" | "mission-execution" | "evidence";
 type AircraftSection = "overview" | "live" | "follow" | "missions" | "history" | "settings";
 type DisplayMode = "desk" | "field";
 
@@ -153,7 +154,8 @@ function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("command");
   const [selectedDroneId, setSelectedDroneId] = useState<string>();
   const [selectedMissionId, setSelectedMissionId] = useState<string>();
-  const [missionOrigin, setMissionOrigin] = useState<"missions" | "operations">("missions");
+  const [missionDraftId, setMissionDraftId] = useState<string>();
+  const [missionOrigin, setMissionOrigin] = useState<"missions" | "mission-history" | "operations">("missions");
   const [aircraftSection, setAircraftSection] = useState<AircraftSection>("overview");
   const [showArchived, setShowArchived] = useState(false);
   const [alerts, setAlerts] = useState<OperationalAlertList>(emptyOperationalAlerts);
@@ -351,10 +353,28 @@ function App() {
   const activeMissionRuns = operationalMissionRuns
     .filter((run) => ["RUNNING", "PAUSED"].includes(run.status))
     .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs);
+  const heldMissionRuns = operationalMissionRuns
+    .filter((run) => {
+      if (run.status !== "COMPLETED") return false;
+      const arrivalHoldAcknowledged = run.actions.some(
+        (action) => action.actionType === "HOLD_AT_ARRIVAL" && action.state === "SUCCEEDED",
+      );
+      const aircraft = operationalAircraft.find((candidate) => candidate.droneId === run.droneId);
+      return arrivalHoldAcknowledged
+        && aircraft?.connectionStatus === "connected"
+        && aircraft.telemetry?.status === "live"
+        && aircraft.telemetry.inAir === true
+        && !activeMissionRuns.some((activeRun) => activeRun.droneId === run.droneId);
+    })
+    .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs)
+    .filter((run, index, runs) => runs.findIndex((candidate) => candidate.droneId === run.droneId) === index);
   const primaryFollow = activeFollowSessions[0];
-  const primaryMission = activeMissionRuns[0];
+  const primaryMission = activeMissionRuns[0] ?? heldMissionRuns[0];
+  const primaryMissionIsHeldOnScene = Boolean(
+    primaryMission && heldMissionRuns.some((run) => run.id === primaryMission.id),
+  );
   const selectedFollow = activeFollowSessions.find((session) => session.droneId === selectedDroneId);
-  const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length;
+  const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length + heldMissionRuns.length;
   const additionalAuthorityCopy = activeAuthorityCount > 1
     ? ` · ${activeAuthorityCount - 1} more under control`
     : "";
@@ -369,8 +389,8 @@ function App() {
         <nav className="workspace-nav" aria-label="Atlas workspace">
           <button
             type="button"
-            className={["command", "mission-execution"].includes(workspaceView) ? "workspace-nav__active" : undefined}
-            aria-current={["command", "mission-execution"].includes(workspaceView) ? "page" : undefined}
+            className={workspaceView === "command" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "command" ? "page" : undefined}
             onClick={() => {
               setSelectedDroneId(undefined);
               setWorkspaceView("command");
@@ -380,8 +400,8 @@ function App() {
           </button>
           <button
             type="button"
-            className={workspaceView === "operations" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "operations" ? "page" : undefined}
+            className={workspaceView === "operations" || (workspaceView === "mission-execution" && missionOrigin === "operations") ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "operations" || (workspaceView === "mission-execution" && missionOrigin === "operations") ? "page" : undefined}
             onClick={() => {
               setSelectedDroneId(undefined);
               setWorkspaceView("operations");
@@ -399,9 +419,10 @@ function App() {
           </button>
           <button
             type="button"
-            className={workspaceView === "missions" || workspaceView === "mission-execution" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "missions" || workspaceView === "mission-execution" ? "page" : undefined}
+            className={workspaceView === "missions" || workspaceView === "mission-history" || (workspaceView === "mission-execution" && missionOrigin !== "operations") ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "missions" || workspaceView === "mission-history" || (workspaceView === "mission-execution" && missionOrigin !== "operations") ? "page" : undefined}
             onClick={() => {
+              setMissionDraftId(undefined);
               setWorkspaceView("missions");
             }}
           >
@@ -441,7 +462,9 @@ function App() {
                   <strong>
                     {primaryFollow
                       ? `${aircraftName(fleet.aircraft, primaryFollow.droneId)} is following a target`
-                      : `${primaryMission?.droneName || "Aircraft"} is flying ${primaryMission?.missionName || "a mission"}`}
+                      : primaryMissionIsHeldOnScene
+                        ? `${primaryMission?.droneName || "Aircraft"} is holding after ${primaryMission?.missionName || "a mission"}`
+                        : `${primaryMission?.droneName || "Aircraft"} is flying ${primaryMission?.missionName || "a mission"}`}
                   </strong>
                   <small>
                     {primaryFollow
@@ -450,7 +473,9 @@ function App() {
                             ? "Follow stopped · holding"
                             : "Offboard · Atlas is flying it"
                         }${additionalAuthorityCopy}`
-                      : `${displayEnum(primaryMission?.status)}${additionalAuthorityCopy}`}
+                      : primaryMissionIsHeldOnScene
+                        ? `On scene · mission complete${additionalAuthorityCopy}`
+                        : `${displayEnum(primaryMission?.status)}${additionalAuthorityCopy}`}
                   </small>
                 </span>
               </button>
@@ -469,7 +494,7 @@ function App() {
                   }
                 }}
               >
-                {primaryFollow ? authorityPending ? "Stopping…" : "Stop" : "Open"}
+                {primaryFollow ? authorityPending ? "Stopping…" : "Stop" : "Open mission"}
               </button>
             </div>
           )}
@@ -598,9 +623,35 @@ function App() {
             nativeAvailable={nativeState === "available"}
             fleetAircraft={operationalAircraft}
             preferredDroneId={selectedDroneId}
-            onMissionReady={(missionId) => {
+            missionRuns={operationalMissionRuns}
+            initialMissionId={missionDraftId}
+            onInitialMissionLoaded={() => setMissionDraftId(undefined)}
+            onMissionReady={(missionId, droneId) => {
+              setMissionDraftId(undefined);
               setSelectedMissionId(missionId);
+              if (droneId) setSelectedDroneId(droneId);
               setMissionOrigin("missions");
+              setWorkspaceView("mission-execution");
+            }}
+            onOpenHistory={() => setWorkspaceView("mission-history")}
+          />
+        </Suspense>
+      ) : workspaceView === "mission-history" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading mission history…</p></main>}>
+          <MissionHistoryPage
+            nativeAvailable={nativeState === "available"}
+            onBack={() => {
+              setMissionDraftId(undefined);
+              setWorkspaceView("missions");
+            }}
+            onEditMission={(missionId) => {
+              setMissionDraftId(missionId);
+              setWorkspaceView("missions");
+            }}
+            onOpenMission={(missionId, droneId) => {
+              setSelectedMissionId(missionId);
+              if (droneId) setSelectedDroneId(droneId);
+              setMissionOrigin("mission-history");
               setWorkspaceView("mission-execution");
             }}
           />
@@ -612,7 +663,7 @@ function App() {
             missionId={selectedMissionId}
             preferredDroneId={selectedDroneId}
             lockedDroneId={missionOrigin === "operations" ? selectedDroneId : undefined}
-            backLabel={missionOrigin === "operations" ? "Dispatch" : "Plan"}
+            backLabel={missionOrigin === "operations" ? "Dispatch" : missionOrigin === "mission-history" ? "Mission history" : "Plan"}
             alerts={alerts}
             onBack={() => setWorkspaceView(missionOrigin)}
           />

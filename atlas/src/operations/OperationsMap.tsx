@@ -4,6 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { atlasMapStyle, ATLAS_MAP_INITIAL_CENTER } from "../maps/atlasMapStyle";
 import type { MissionPlan } from "../missions/missionTypes";
 import type { FleetAircraft, IncidentSnapshot, OperationalTrackGeolocation } from "../operationsTypes";
+import "./OperationsMap.css";
 
 type DraftLocation = { latitude: number; longitude: number };
 type DraftResponseGeometry = {
