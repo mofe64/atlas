@@ -1,0 +1,438 @@
+/* Fixed application frame shared by every Atlas workspace. */
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+}
+
+.operations-shell {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--surface-base);
+}
+
+.operations-shell button,
+.operations-shell input,
+.operations-shell select,
+.operations-shell textarea {
+  border-radius: 0;
+}
+
+.operations-shell :where(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--authority);
+  outline-offset: 2px;
+}
+
+.operations-shell .operations-header {
+  z-index: 20;
+  display: flex;
+  flex: 0 0 var(--header-h);
+  width: 100%;
+  min-height: var(--header-h);
+  gap: var(--s-5);
+  padding: 0 var(--s-4);
+  border: 0;
+  background: var(--surface-inverse);
+  color: var(--text-inverse);
+}
+
+.operations-header__spacer {
+  margin-left: auto;
+}
+
+.operations-shell .wordmark {
+  flex: 0 0 auto;
+  gap: var(--s-2);
+  color: var(--text-inverse);
+}
+
+.operations-shell .wordmark-mark {
+  display: none;
+}
+
+.operations-shell .wordmark > span:last-child {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+}
+
+.operations-shell .wordmark strong {
+  color: var(--text-inverse);
+  font-family: var(--font-instrument);
+  font-size: var(--t-md);
+  letter-spacing: 0.14em;
+}
+
+.operations-shell .wordmark small {
+  color: color-mix(in oklch, var(--text-inverse) 62%, transparent);
+  font-size: var(--t-micro);
+  letter-spacing: 0.1em;
+}
+
+.operations-shell .workspace-nav {
+  align-self: stretch;
+  overflow-x: auto;
+}
+
+.operations-shell .workspace-nav button {
+  min-width: 0;
+  min-height: var(--header-h);
+  padding: 0 var(--s-4);
+  border-bottom: 3px solid transparent;
+  color: color-mix(in oklch, var(--text-inverse) 68%, transparent);
+  font-size: var(--t-micro);
+  letter-spacing: 0.1em;
+}
+
+.operations-shell .workspace-nav button:hover {
+  color: var(--text-inverse);
+}
+
+.operations-shell .workspace-nav .workspace-nav__active {
+  border-color: oklch(72% 0.14 150);
+  color: var(--text-inverse);
+}
+
+.operations-shell .header-operational-state {
+  flex: 0 0 auto;
+  gap: var(--s-3);
+}
+
+.persistent-authority {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 2rem;
+  border: 1px solid oklch(62% 0.13 240);
+  background: oklch(30% 0.06 240);
+  color: oklch(92% 0.04 240);
+}
+
+.persistent-authority__summary {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: 0 var(--s-3);
+  border: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.persistent-authority__dot {
+  width: 0.4rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.persistent-authority__summary > span:last-child {
+  display: grid;
+  max-width: 18rem;
+  line-height: 1.2;
+}
+
+.persistent-authority strong,
+.persistent-authority small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.persistent-authority strong {
+  font-size: var(--t-micro);
+  letter-spacing: 0.07em;
+}
+
+.persistent-authority small {
+  opacity: 0.72;
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+}
+
+.persistent-authority > button:not(.persistent-authority__summary) {
+  align-self: stretch;
+  min-width: 3rem;
+  padding: 0 var(--s-2);
+  border: 0;
+  border-left: 1px solid oklch(62% 0.13 240);
+  color: oklch(92% 0.04 240);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--t-micro);
+  font-weight: 800;
+}
+
+.persistent-authority .persistent-authority__stop {
+  border-color: oklch(58% 0.17 27);
+  color: oklch(96% 0.02 27);
+  background: oklch(42% 0.14 27);
+}
+
+.persistent-authority__summary:hover,
+.persistent-authority__summary:focus-visible {
+  background: oklch(36% 0.07 240);
+}
+
+.authority-freshness,
+.authority-action-error {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: 2rem;
+  padding: 0 var(--s-2);
+  border-left: var(--line-weight) solid var(--line-strong);
+  color: var(--text-secondary);
+}
+
+.authority-freshness > span:first-child {
+  color: var(--caution);
+  font-family: var(--font-instrument);
+  font-weight: 800;
+}
+
+.authority-freshness > span:last-child {
+  display: grid;
+}
+
+.authority-freshness strong,
+.authority-freshness small {
+  font-size: var(--t-micro);
+  line-height: 1.15;
+}
+
+.authority-freshness small {
+  color: var(--text-tertiary);
+}
+
+.authority-action-error {
+  max-width: 22rem;
+  color: var(--critical);
+  font-size: var(--t-micro);
+}
+
+.authority-action-error span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.operations-shell .operational-alert-button {
+  min-height: 2rem;
+  padding: 0 var(--s-3);
+  border-color: color-mix(in oklch, var(--text-inverse) 32%, transparent);
+  color: var(--text-inverse);
+  background: transparent;
+}
+
+.operations-shell .operational-alert-button > span:first-child {
+  width: 1rem;
+  color: currentColor;
+  background: transparent;
+  font-family: var(--font-instrument);
+  font-size: var(--t-md);
+}
+
+.operations-shell .operational-alert-button small {
+  display: none;
+}
+
+.operations-shell .operational-alert-button strong {
+  color: inherit;
+  font-size: var(--t-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.operations-shell .operational-alert-button--attention {
+  border-color: oklch(60% 0.17 27);
+  color: oklch(96% 0.02 27);
+  background: oklch(34% 0.1 27);
+}
+
+.display-mode-toggle {
+  display: flex;
+  border: 1px solid color-mix(in oklch, var(--text-inverse) 30%, transparent);
+}
+
+.display-mode-toggle button {
+  min-width: 2.65rem;
+  padding: 0 var(--s-2);
+  border: 0;
+  color: color-mix(in oklch, var(--text-inverse) 58%, transparent);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--t-micro);
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.display-mode-toggle button[aria-pressed="true"] {
+  color: var(--surface-inverse);
+  background: var(--text-inverse);
+}
+
+.critical-ribbon {
+  z-index: 18;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--s-4);
+  min-height: 2.75rem;
+  padding: var(--s-2) var(--s-4);
+  border-bottom: var(--line-weight) solid var(--critical);
+  background: var(--critical-bg);
+  color: var(--critical);
+  animation: critical-arrival 420ms var(--ease) both;
+}
+
+.critical-ribbon > span {
+  padding: 0.15rem var(--s-2);
+  color: var(--surface-raised);
+  background: var(--critical);
+  font-size: var(--t-micro);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.critical-ribbon p {
+  margin: 0;
+  font-size: var(--t-sm);
+}
+
+.critical-ribbon button {
+  min-height: 2rem;
+  margin-left: auto;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--critical);
+  color: var(--surface-raised);
+  background: var(--critical);
+  cursor: pointer;
+  font-size: var(--t-micro);
+  font-weight: 800;
+}
+
+.operations-shell .operational-alert-center {
+  top: calc(var(--header-h) + var(--s-2));
+  right: var(--s-4);
+  max-height: calc(100dvh - var(--header-h) - var(--s-4));
+  border: var(--line-weight) solid var(--line-strong);
+  background: var(--surface-raised);
+  box-shadow: none;
+}
+
+.operations-shell .workspace-loading,
+.operations-shell > main,
+.operations-shell > .command-workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.operations-shell .workspace-loading {
+  background: var(--surface-base);
+}
+
+.operations-shell .operations-footer {
+  display: none;
+}
+
+@keyframes critical-arrival {
+  from {
+    opacity: 0;
+    transform: translateY(-0.6rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .critical-ribbon {
+    animation: none;
+  }
+
+  .operations-shell *,
+  .operations-shell *::before,
+  .operations-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@media (max-width: 76rem) {
+  .operations-shell .operations-header {
+    gap: var(--s-3);
+  }
+
+  .operations-shell .wordmark small,
+  .persistent-authority small {
+    display: none;
+  }
+
+  .persistent-authority > span:nth-child(2) {
+    max-width: 12rem;
+  }
+
+  .operations-shell .workspace-nav button {
+    padding-inline: var(--s-3);
+  }
+
+}
+
+@media (max-width: 64rem) {
+  .persistent-authority {
+    display: none;
+  }
+
+}
+
+@media (max-width: 48rem) {
+  .operations-shell .operations-header {
+    gap: var(--s-2);
+    padding-inline: var(--s-2);
+  }
+
+  .operations-shell .wordmark {
+    display: none;
+  }
+
+  .operations-header__spacer {
+    display: none;
+  }
+
+  .operations-shell .workspace-nav {
+    flex: 1;
+  }
+
+  .operations-shell .workspace-nav button {
+    flex: 1;
+    padding-inline: var(--s-2);
+  }
+
+  .display-mode-toggle {
+    display: none;
+  }
+
+}

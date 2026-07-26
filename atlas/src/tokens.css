@@ -1,0 +1,85 @@
+:root {
+  color-scheme: light;
+
+  --surface-base: oklch(94% 0.008 148);
+  --surface-raised: oklch(97% 0.006 148);
+  --surface-sunken: oklch(90% 0.01 148);
+  --surface-inverse: oklch(22% 0.016 150);
+  --text-primary: oklch(22% 0.016 150);
+  --text-secondary: oklch(40% 0.015 150);
+  --text-tertiary: oklch(46% 0.014 150);
+  --text-inverse: oklch(96% 0.006 148);
+  --line-subtle: oklch(87% 0.01 148);
+  --line: oklch(78% 0.014 148);
+  --line-strong: oklch(58% 0.02 148);
+  --line-weight: 1px;
+  --nominal: oklch(45% 0.1 150);
+  --caution: oklch(52% 0.14 55);
+  --critical: oklch(48% 0.17 27);
+  --authority: oklch(48% 0.11 240);
+  --idle: oklch(52% 0.01 150);
+  --nominal-bg: oklch(93% 0.035 150);
+  --caution-bg: oklch(93% 0.05 60);
+  --critical-bg: oklch(92% 0.05 27);
+  --authority-bg: oklch(93% 0.04 240);
+  --idle-bg: oklch(91% 0.008 150);
+  --font-ui: "Avenir Next", Avenir, "Segoe UI", system-ui, sans-serif;
+  --font-instrument: "Avenir Next Condensed", "DIN Condensed", "Oswald", "Avenir Next", sans-serif;
+  --font-display: var(--font-instrument);
+  --t-micro: 0.6875rem;
+  --t-xs: 0.75rem;
+  --t-sm: 0.8125rem;
+  --t-md: 0.9375rem;
+  --t-lg: 1.125rem;
+  --t-readout: 1.75rem;
+  --t-readout-lg: 2.5rem;
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-5: 1.5rem;
+  --s-6: 2rem;
+  --header-h: 3rem;
+  --ease: cubic-bezier(0.25, 1, 0.5, 1);
+
+  /* Compatibility aliases retained while feature styles adopt semantic names. */
+  --ink: var(--text-primary);
+  --ink-soft: var(--text-secondary);
+  --muted: var(--text-tertiary);
+  --mist: var(--surface-base);
+  --panel: var(--surface-raised);
+  --field: var(--nominal);
+  --field-soft: var(--nominal-bg);
+  --signal: var(--caution);
+  --signal-soft: var(--caution-bg);
+  --critical-soft: var(--critical-bg);
+  --sky: var(--authority);
+  --ease-out-quart: var(--ease);
+}
+
+:root[data-mode="field"] {
+  --surface-base: oklch(97% 0.004 148);
+  --surface-raised: oklch(99% 0.003 148);
+  --surface-sunken: oklch(94% 0.006 148);
+  --surface-inverse: oklch(16% 0.014 150);
+  --text-primary: oklch(15% 0.012 150);
+  --text-secondary: oklch(30% 0.012 150);
+  --text-tertiary: oklch(38% 0.012 150);
+  --line-subtle: oklch(78% 0.012 148);
+  --line: oklch(62% 0.018 148);
+  --line-strong: oklch(38% 0.022 148);
+  --line-weight: 2px;
+  --nominal: oklch(38% 0.13 150);
+  --caution: oklch(45% 0.17 52);
+  --critical: oklch(41% 0.2 27);
+  --authority: oklch(40% 0.14 240);
+  --idle: oklch(40% 0.012 150);
+  --nominal-bg: oklch(95% 0.045 150);
+  --caution-bg: oklch(95% 0.06 60);
+  --critical-bg: oklch(95% 0.055 27);
+  --authority-bg: oklch(95% 0.05 240);
+  --t-micro: 0.75rem;
+  --t-xs: 0.8125rem;
+  --t-sm: 0.875rem;
+  --t-md: 1rem;
+}

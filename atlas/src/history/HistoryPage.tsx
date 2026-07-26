@@ -182,11 +182,11 @@ export function HistoryPage({
 
   if (!nativeAvailable) {
     return (
-      <main className="history-main history-main--empty" id="main-content">
+      <section className="history-main history-main--empty" aria-label="Aircraft history">
         <p className="eyebrow">Flight record</p>
         <h1>History is unavailable</h1>
         <p>Atlas Native must be running to read telemetry stored on this computer.</p>
-      </main>
+      </section>
     );
   }
 
@@ -203,15 +203,15 @@ export function HistoryPage({
   }
 
   return (
-    <main className="history-main" id="main-content">
+    <section className="history-main" aria-label="Aircraft history">
       <button type="button" className="history-back" onClick={onBackToOverview}>
-        <span aria-hidden="true">←</span> All drone history
+        <span aria-hidden="true">←</span> All aircraft history
       </button>
       <header className="history-hero">
         <div>
           <p className="eyebrow">Flight record</p>
-          <h1>{droneName || "Drone history"}</h1>
-          <p className="history-intro">Telemetry trends and drone events retained on this computer.</p>
+          <h1>{droneName || "Aircraft history"}</h1>
+          <p className="history-intro">Telemetry trends and aircraft events retained on this computer.</p>
         </div>
         <div className="history-retention">
           <span>Rolling retention</span>
@@ -287,7 +287,7 @@ export function HistoryPage({
                   ]}
                 />
                 <LineChart
-                  title="Drone motion"
+                  title="Aircraft motion"
                   description="Ground speed and vertical climb rate"
                   points={series?.points ?? []}
                   series={[
@@ -310,14 +310,14 @@ export function HistoryPage({
             <section className="history-no-data">
               <p className="eyebrow">Selected period</p>
               <h2>No telemetry snapshots</h2>
-              <p>Choose a wider range or operate the drone to begin building its flight record.</p>
+              <p>Choose a wider range or operate the aircraft to begin building its flight record.</p>
             </section>
           )}
 
           <EventTimeline events={events} />
         </>
       )}
-    </main>
+    </section>
   );
 }
 
@@ -340,13 +340,13 @@ function HistoryOverview({
   const eventCount = drones.reduce((total, drone) => total + drone.eventCount, 0);
 
   return (
-    <main className="history-main history-overview" id="main-content">
+    <section className="history-main history-overview" aria-label="All aircraft history">
       <header className="history-hero history-overview__hero">
         <div>
           <p className="eyebrow">Local flight records</p>
           <h1>History</h1>
           <p className="history-intro">
-            Review retained telemetry and events across the fleet, then open a drone for charts and its flight timeline.
+            Review retained telemetry and events across the fleet, then open an aircraft for charts and its flight timeline.
           </p>
         </div>
         <div className="history-retention">
@@ -359,15 +359,15 @@ function HistoryOverview({
       </header>
 
       <section className="history-summary history-overview__summary" aria-label="History storage summary">
-        <HistoryMetric label="Registered drones" value={String(drones.length).padStart(2, "0")} detail={`${dronesWithHistory} with telemetry`} />
+        <HistoryMetric label="Registered aircraft" value={String(drones.length)} detail={`${dronesWithHistory} with telemetry`} />
         <HistoryMetric label="Telemetry samples" value={formatCount(snapshotCount)} detail="Within retention window" />
-        <HistoryMetric label="Drone events" value={formatCount(eventCount)} detail="Status and derived events" />
+        <HistoryMetric label="Aircraft events" value={formatCount(eventCount)} detail="Status and derived events" />
         <HistoryMetric label="Retention" value={`${overview?.retentionDays ?? 7} days`} detail="Rolling local storage" />
       </section>
 
       <div className="history-overview__toolbar">
         <div>
-          <h2>Drone records</h2>
+          <h2>Aircraft records</h2>
           <span>{drones.length} registered locally</span>
         </div>
         <button type="button" disabled={loading} onClick={onRefresh}>
@@ -384,9 +384,9 @@ function HistoryOverview({
       )}
 
       {loading && !overview ? <HistoryOverviewSkeleton /> : drones.length > 0 ? (
-        <section className="history-records" aria-label="Drone history records">
+        <section className="history-records" aria-label="Aircraft history records">
           <div className="history-records__columns" aria-hidden="true">
-            <span>Drone</span>
+            <span>Aircraft</span>
             <span>Latest record</span>
             <span>Latest state</span>
             <span>Stored records</span>
@@ -421,12 +421,12 @@ function HistoryOverview({
         </section>
       ) : !error ? (
         <section className="history-overview__empty">
-          <p className="eyebrow">No registered drones</p>
+          <p className="eyebrow">No registered aircraft</p>
           <h2>History begins after registration</h2>
-          <p>Connect Atlas Agent. Telemetry samples and drone events will be retained here automatically.</p>
+          <p>Connect Atlas Agent. Telemetry samples and aircraft events will be retained here automatically.</p>
         </section>
       ) : null}
-    </main>
+    </section>
   );
 }
 
@@ -618,7 +618,7 @@ function EventTimeline({ events }: { events: VehicleEvent[] }) {
     <section className="history-events" aria-labelledby="history-events-title">
       <header>
         <div>
-          <p className="eyebrow">Drone timeline</p>
+          <p className="eyebrow">Aircraft timeline</p>
           <h2 id="history-events-title">Events</h2>
         </div>
         <span>{events.length} in selected period</span>
@@ -646,7 +646,7 @@ function EventTimeline({ events }: { events: VehicleEvent[] }) {
         </ol>
       ) : (
         <div className="history-events__empty">
-          <strong>No drone events</strong>
+          <strong>No aircraft events</strong>
           <p>PX4 messages and meaningful telemetry transitions will appear here.</p>
         </div>
       )}

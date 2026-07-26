@@ -1,32 +1,38 @@
 .follow-workspace {
-  flex: 1;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
   min-width: 0;
-  padding: clamp(2rem, 4vw, 3.75rem) 0 1rem;
-  animation: surface-enter 420ms var(--ease-out-quart) both;
+  padding: 0 var(--s-4) var(--s-4);
+  overflow-y: auto;
+  background: var(--surface-raised);
 }
 
 .follow-heading {
   display: flex;
-  align-items: end;
+  min-height: 3rem;
+  align-items: center;
   justify-content: space-between;
-  gap: clamp(2rem, 6vw, 7rem);
-  padding-bottom: clamp(1.5rem, 3vw, 2.5rem);
+  gap: var(--s-4);
+  padding: var(--s-2) 0;
+  border-bottom: var(--line-weight) solid var(--line);
 }
 
 .follow-heading h1 {
   margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(3.2rem, 6vw, 6.4rem);
-  font-weight: 620;
-  letter-spacing: -0.045em;
-  line-height: 0.84;
+  font-family: var(--font-ui);
+  font-size: var(--t-lg);
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1.1;
 }
 
 .follow-heading > div:first-child > p:last-child {
   max-width: 60ch;
-  margin: 1rem 0 0;
+  margin: var(--s-1) 0 0;
   color: var(--ink-soft);
-  line-height: 1.55;
+  font-size: var(--t-xs);
+  line-height: 1.4;
 }
 
 .follow-status-ribbon {
@@ -60,7 +66,7 @@
 
 .follow-layout {
   display: grid;
-  grid-template-columns: minmax(30rem, 1.55fr) minmax(22rem, 0.8fr);
+  grid-template-columns: minmax(28rem, 1.55fr) minmax(21rem, 0.8fr);
   gap: clamp(1rem, 2vw, 1.75rem);
   align-items: start;
   margin-top: 1rem;

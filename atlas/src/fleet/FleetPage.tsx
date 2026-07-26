@@ -31,11 +31,11 @@ export function FleetPage({
       <header className="fleet-heading">
         <div>
           <p className="eyebrow">{showArchived ? "Retained aircraft" : "Local operations"}</p>
-          <h1>{showArchived ? "Archive" : "Fleet"}</h1>
+          <h1>{showArchived ? "Archived aircraft" : "Aircraft"}</h1>
           <p>
             {showArchived
               ? "Aircraft removed from operations. Their missions, telemetry, events, and command history remain available."
-              : "Drones registered with this ground station, ordered by most recent telemetry."}
+              : "Aircraft registered with this ground station, ordered by most recent telemetry."}
           </p>
         </div>
         <div className="fleet-heading__controls">
@@ -59,7 +59,7 @@ export function FleetPage({
           </>
         ) : (
           <>
-            <FleetMetric label="Drones" value={aircraft.length} />
+            <FleetMetric label="Aircraft" value={aircraft.length} />
             <FleetMetric label="Connected" value={connected} tone={connected > 0 ? "positive" : "neutral"} />
             <FleetMetric label="Link alerts" value={linkAlerts} tone={linkAlerts > 0 ? "warning" : "neutral"} />
             <FleetMetric label="Airborne" value={airborne} tone={airborne > 0 ? "positive" : "neutral"} />
@@ -89,13 +89,13 @@ export function FleetPage({
       {nativeState !== "unavailable" && aircraft.length === 0 && !showArchived && (
         <section className="fleet-empty" aria-labelledby="fleet-empty-title">
           <div>
-            <p className="eyebrow">No registered drones</p>
+            <p className="eyebrow">No registered aircraft</p>
             <h2 id="fleet-empty-title">Waiting for Atlas Agent</h2>
           </div>
           <div>
             <p>
               Power the onboard computer and confirm the HM30 network link. The agent will
-              register the drone automatically when it reaches this ground station.
+              register the aircraft automatically when it reaches this ground station.
             </p>
             <dl>
               <div>
@@ -110,11 +110,11 @@ export function FleetPage({
       {aircraft.length > 0 && (
         <section className="fleet-list" aria-labelledby="fleet-list-title">
           <header>
-            <h2 id="fleet-list-title">{showArchived ? "Archived aircraft" : "Drones"}</h2>
+            <h2 id="fleet-list-title">{showArchived ? "Archived aircraft" : "Aircraft"}</h2>
             <span>{aircraft.length} {showArchived ? "retained" : "registered locally"}</span>
           </header>
           <div className="fleet-list__columns" aria-hidden="true">
-            <span>Drone</span>
+            <span>Aircraft</span>
             <span>Link</span>
             <span>Flight</span>
             <span>Battery</span>
@@ -143,7 +143,7 @@ function FleetMetric({ label, value, tone = "neutral" }: { label: string; value:
   return (
     <article className={`fleet-metric fleet-metric--${tone}`}>
       <span>{label}</span>
-      <strong>{value.toString().padStart(2, "0")}</strong>
+      <strong>{value}</strong>
     </article>
   );
 }
@@ -168,7 +168,7 @@ function FleetRow({
       <div className="fleet-aircraft-identity">
         <span className="state-dot" aria-hidden="true" />
         <div>
-          <strong>{aircraft.droneName || "Unnamed drone"}</strong>
+          <strong>{aircraft.droneName || "Unnamed aircraft"}</strong>
           <span>{droneIdentity(aircraft.vehicleType, aircraft.droneId)}</span>
         </div>
       </div>
@@ -207,7 +207,7 @@ function FleetRow({
       />
       <div className="fleet-row__actions">
         <button type="button" className="text-action" onClick={onOpenHistory}>History</button>
-        <button type="button" className="primary-action" onClick={onOpen}>{archived ? "Review" : "Open drone"}</button>
+        <button type="button" className="primary-action" onClick={onOpen}>{archived ? "Review" : "Open aircraft"}</button>
       </div>
     </article>
   );

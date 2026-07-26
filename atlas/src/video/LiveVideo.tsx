@@ -822,7 +822,7 @@ export function LiveVideo({
         });
         setEvidenceAssetMessage(
           clip.status === "READY"
-            ? "Track event clip is ready in Evidence."
+            ? "Track clip is ready in Evidence."
             : "Track event marked. The clip will publish after verified post-roll arrives.",
         );
       }
@@ -851,7 +851,7 @@ export function LiveVideo({
           actor: "operator",
         },
       });
-      setEvidenceAssetMessage(asset.trackId ? "Track-linked still saved to Evidence." : "Still saved to Evidence.");
+      setEvidenceAssetMessage(asset.trackId ? "Track-linked photo saved to Evidence." : "Photo saved to Evidence.");
     } catch (reason) {
       setRecordingError(messageFrom(reason));
     } finally {
@@ -1073,7 +1073,7 @@ export function LiveVideo({
             <HudMetric label="Flight" value={telemetry?.inAir == null ? "UNKNOWN" : telemetry.inAir ? "IN AIR" : "ON GROUND"} important={telemetry?.inAir === true} />
             <HudMetric label="Mode" value={telemetry?.flightMode || "UNKNOWN"} />
             <HudMetric label="Battery" value={formatHudMetric(telemetry?.batteryPercent, "%", 0)} />
-            <HudMetric label="Rel altitude" value={formatHudMetric(telemetry?.relativeAltitudeM, " M", 1)} />
+            <HudMetric label="Altitude (AGL)" value={formatHudMetric(telemetry?.relativeAltitudeM, " M", 1)} />
             <HudMetric label="Ground speed" value={formatHudMetric(telemetry?.groundSpeedMps, " M/S", 1)} />
             <HudMetric label="Heading" value={formatHudMetric(telemetry?.headingDeg, "°", 0)} />
             <HudMetric label="GPS" value={gpsLabel(aircraft)} />
@@ -1206,7 +1206,7 @@ export function LiveVideo({
                     {geolocationPending ? "Estimating…" : "Estimate coordinates"}
                   </button>
                   <p>
-                    Atlas first bounds the observation ray with an aircraft-origin plane, then samples the configured DEM at the estimated target and iterates on that same ray. Observation time, terrain provenance, target-centre assumption, residual, and uncertainty remain attached to the result.
+                    Atlas first bounds the observation ray with an aircraft-origin plane, then samples the configured DEM at the estimated target and iterates on that same ray. Observation time, terrain source, target-centre assumption, residual, and uncertainty remain attached to the result.
                     {latestTrackGeolocation?.terrainSource
                       ? ` Latest terrain: ${latestTrackGeolocation.terrainSource} · ${latestTrackGeolocation.terrainIterationCount} iteration${latestTrackGeolocation.terrainIterationCount === 1 ? "" : "s"} · ${latestTrackGeolocation.terrainResidualM?.toFixed(1) ?? "?"} m residual.`
                       : latestTrackGeolocation ? ` Initial plane: ${latestTrackGeolocation.groundAltitudeAmslM.toFixed(1)} m AMSL ±${latestTrackGeolocation.groundAltitudeUncertaintyM.toFixed(1)} m · ${latestTrackGeolocation.groundAltitudeSource}.` : ""}
@@ -1226,7 +1226,7 @@ export function LiveVideo({
                   </label>
                   <button type="submit" disabled={!trackNote.trim() || selectionPending}>Add note</button>
                   <button type="button" disabled={recordingSession?.status !== "RUNNING" || selectionPending} onClick={() => void annotateTrack("EVIDENCE_MARKER")}>
-                    {evidenceAssetPending === "clip" ? "Queueing clip…" : "Mark + event clip"}
+                    {evidenceAssetPending === "clip" ? "Queueing clip…" : "Mark + clip"}
                   </button>
                 </form>
               </>
@@ -1265,7 +1265,7 @@ export function LiveVideo({
           </div>
           <div className="evidence-recorder__actions">
             <button type="button" onClick={() => void captureStill()} disabled={!nativeAvailable || !droneId || !playing || evidenceAssetPending != null}>
-              {evidenceAssetPending === "still" ? "Saving still…" : selection ? "Capture track still" : "Capture still"}
+              {evidenceAssetPending === "still" ? "Saving photo…" : selection ? "Capture track photo" : "Capture photo"}
             </button>
             <button type="button" onClick={() => void startRecording()} disabled={!nativeAvailable || !droneId || recordingActive || recordingPending != null || recording?.diskState === "STOP"}>
               {recordingPending === "start" ? "Requesting…" : "Start evidence"}

@@ -1,62 +1,108 @@
 .mission-workspace {
-  width: 100%;
-  margin: 0;
-  padding: clamp(1.5rem, 3vw, 3rem) 0 4rem;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-base);
 }
 
 .mission-heading {
   display: flex;
-  align-items: end;
+  flex: 0 0 auto;
+  min-height: 3.25rem;
+  align-items: center;
   justify-content: space-between;
-  gap: 3rem;
-  padding: 0 0 1.6rem;
-  border-bottom: 1px solid var(--ink);
+  gap: var(--s-4);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.mission-heading > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.mission-heading .eyebrow {
+  display: none;
 }
 
 .mission-heading h1 {
-  margin: .2rem 0 .65rem;
-  font-family: var(--font-display);
-  font-size: clamp(2rem, 3.5vw, 3.5rem);
-  font-weight: 760;
-  letter-spacing: .015em;
-  line-height: .95;
+  flex: 0 0 auto;
+  margin: 0;
+  padding: .25rem var(--s-2);
+  color: var(--text-inverse);
+  background: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--t-micro);
+  font-weight: 780;
+  letter-spacing: .09em;
+  line-height: 1.2;
   text-transform: uppercase;
 }
 
 .mission-heading > div:first-child > p:last-child {
-  max-width: 46rem;
   margin: 0;
-  color: var(--muted);
-  font-size: .96rem;
-  line-height: 1.55;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--t-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mission-safety-note {
-  min-width: 17rem;
-  max-width: 20rem;
-  padding: .9rem 1rem;
-  border: 1px solid color-mix(in oklch, var(--signal) 50%, var(--line));
-  background: var(--signal-soft);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
 }
 
 .mission-safety-note strong,
-.mission-safety-note span { display: block; }
-.mission-safety-note strong { font-size: .78rem; }
-.mission-safety-note span { margin-top: .3rem; color: var(--ink-soft); font-size: .7rem; line-height: 1.4; }
+.mission-safety-note span { font-size: var(--t-micro); }
+.mission-safety-note span { color: var(--text-secondary); }
+.mission-safety-note button {
+  min-height: 2.25rem;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--text-primary);
+  color: var(--text-inverse);
+  background: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 760;
+}
 
 .mission-builder {
   display: grid;
-  grid-template-columns: minmax(21rem, 25rem) minmax(0, 1fr);
-  margin-top: 1rem;
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-template-columns: minmax(19rem, 21rem) minmax(0, 1fr) minmax(21rem, 23rem);
+  overflow: hidden;
+  background: var(--surface-raised);
 }
 
-.mission-control-rail {
+.mission-control-rail,
+.mission-plan-rail,
+.mission-map-stage {
   min-width: 0;
-  padding: 1.2rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mission-control-rail,
+.mission-plan-rail {
+  padding: var(--s-3);
   border-right: 1px solid var(--line-strong);
-  background: color-mix(in oklch, var(--panel) 82%, var(--mist));
+  background: var(--surface-raised);
+}
+
+.mission-plan-rail {
+  border-right: 0;
+  border-left: 1px solid var(--line-strong);
 }
 
 .control-rail-heading,
@@ -99,6 +145,14 @@
   font-size: .76rem;
   letter-spacing: .07em;
   text-transform: uppercase;
+}
+
+.mission-plan-rail > .control-rail-heading {
+  min-height: 2.75rem;
+  margin: calc(var(--s-3) * -1);
+  margin-bottom: 0;
+  padding: 0 var(--s-3);
+  border-bottom: 1px solid var(--line);
 }
 
 .control-rail-heading small,
@@ -398,9 +452,8 @@
 }
 
 .plan-button:disabled { opacity: .38; cursor: not-allowed; }
-.native-boundary-note { margin: .6rem 0 0; color: var(--muted); font-size: .64rem; line-height: 1.4; }
 
-.mission-map-stage { min-width: 0; }
+.mission-map-stage { background: var(--surface-raised); }
 .map-stage-heading { min-height: 3rem; padding: .65rem .9rem; border-bottom: 1px solid var(--line-strong); }
 .map-stage-actions { display: flex; gap: .35rem; }
 .map-stage-actions button,
@@ -754,25 +807,77 @@
 .run-dot--rtl { background: var(--sky); }
 .mission-history-empty { margin: 0; padding: 1.4rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
 
-.mission-library { margin-top: 1rem; padding: 1.2rem; border: 1px solid var(--line-strong); background: var(--panel); }
-.mission-library > header { display: flex; justify-content: space-between; align-items: start; }
-.mission-library h2 { margin: .15rem 0 0; font-family: var(--font-display); font-size: 1.35rem; letter-spacing: .03em; text-transform: uppercase; }
-.mission-library > header > span { color: var(--muted); font-size: .67rem; }
-.mission-library-empty { margin: 1rem 0 0; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .74rem; }
-.mission-table { margin-top: 1rem; border-top: 1px solid var(--line); }
+.mission-library {
+  margin: calc(var(--s-3) * -1);
+  margin-bottom: var(--s-3);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-sunken);
+}
+.mission-library > header { display: flex; min-height: 2.75rem; align-items: center; justify-content: space-between; padding: 0 var(--s-3); }
+.mission-library .eyebrow { display: none; }
+.mission-library h2 { margin: 0; font-family: var(--font-ui); font-size: var(--t-xs); letter-spacing: .04em; text-transform: uppercase; }
+.mission-library > header > span { color: var(--text-tertiary); font-family: var(--font-instrument); font-size: var(--t-sm); }
+.mission-library-empty { margin: 0; padding: var(--s-3); border-top: 1px solid var(--line); color: var(--text-tertiary); font-size: var(--t-xs); }
+.mission-table { border-top: 1px solid var(--line); background: var(--surface-raised); }
 .mission-table__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; border-bottom: 1px solid var(--line); }
 .mission-table button { border: 0; background: transparent; color: var(--ink); cursor: pointer; }
 .mission-table button:disabled { opacity: .55; cursor: default; }
-.mission-table__open { display: flex; justify-content: space-between; gap: 1rem; width: 100%; padding: .8rem .2rem; text-align: left; }
-.mission-table__edit { align-self: stretch; padding: .5rem .75rem; border-left: 1px solid var(--line) !important; color: var(--field) !important; font-size: .61rem; font-weight: 760; text-transform: uppercase; }
+.mission-table__open { display: flex; justify-content: space-between; gap: var(--s-2); width: 100%; padding: var(--s-2) var(--s-3); text-align: left; }
+.mission-table__edit { align-self: stretch; padding: .5rem var(--s-2); border-left: 1px solid var(--line) !important; color: var(--authority) !important; font-size: var(--t-micro); font-weight: 760; text-transform: uppercase; }
 .mission-table__row:hover { background: var(--mist); }
 .mission-table strong,
 .mission-table small { display: block; }
-.mission-table small { margin-top: .25rem; color: var(--muted); font-size: .63rem; }
-.mission-table__status { align-self: center; color: var(--field); font-size: .62rem; font-weight: 800; letter-spacing: .06em; }
+.mission-table small { margin-top: .18rem; color: var(--text-tertiary); font-size: var(--t-micro); }
+.mission-table__status { align-self: center; color: var(--nominal); font-size: var(--t-micro); font-weight: 800; letter-spacing: .04em; }
 
-@media (max-width: 74rem) {
-  .mission-builder { grid-template-columns: 21rem minmax(0, 1fr); }
+.mission-plan-rail .plan-console {
+  margin: 0 calc(var(--s-3) * -1);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.mission-plan-rail .plan-console--empty {
+  display: grid;
+  min-height: 12rem;
+  align-content: center;
+  gap: var(--s-2);
+}
+
+.mission-plan-rail .plan-console--empty p {
+  line-height: 1.45;
+}
+
+.mission-plan-rail .plan-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mission-plan-rail .plan-metrics > div:nth-child(even) {
+  border-right: 0;
+}
+
+.mission-plan-rail .plan-metrics > div:nth-child(-n + 2) {
+  border-bottom: 1px solid var(--line);
+}
+
+.mission-plan-rail .plan-console ol {
+  grid-template-columns: 1fr;
+}
+
+.mission-plan-rail .plan-button {
+  margin-top: var(--s-3);
+}
+
+.plan-command-note,
+.native-boundary-note {
+  margin: var(--s-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+  line-height: 1.45;
+}
+
+@media (max-width: 80rem) {
+  .mission-builder { grid-template-columns: minmax(18rem, 20rem) minmax(25rem, 1fr) minmax(19rem, 21rem); }
   .coordinate-editor li { grid-template-columns: 2rem minmax(7rem, 1fr) minmax(7rem, 1fr) auto; }
   .coordinate-editor li label:nth-of-type(n+3) { display: none; }
   .waypoint-view-fields label { display: block !important; }
@@ -781,11 +886,16 @@
 
 @media (max-width: 58rem) {
   .mission-builder { grid-template-columns: 1fr; }
+  .mission-builder { overflow-y: auto; }
+  .mission-control-rail,
+  .mission-plan-rail,
+  .mission-map-stage { overflow: visible; }
   .mission-control-rail { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+  .mission-plan-rail { border-left: 0; border-top: 1px solid var(--line-strong); }
   .settings-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .settings-grid--single { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .mission-heading { align-items: start; flex-direction: column; gap: 1rem; }
-  .mission-safety-note { min-width: 0; max-width: none; }
+  .mission-heading { align-items: start; flex-direction: column; gap: var(--s-2); }
+  .mission-safety-note { width: 100%; justify-content: space-between; }
   .mission-execution__grid { grid-template-columns: 1fr; }
   .mission-deployment { border-right: 0; border-bottom: 1px solid var(--line-strong); }
   .mission-run-table { overflow-x: auto; }
@@ -794,7 +904,6 @@
 }
 
 @media (max-width: 42rem) {
-  .mission-workspace { padding-top: 1.2rem; }
   .template-picker,
   .settings-grid,
   .settings-grid--single { grid-template-columns: 1fr; }

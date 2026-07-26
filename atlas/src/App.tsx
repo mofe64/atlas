@@ -1,27 +1,31 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FleetPage } from "./fleet/FleetPage";
+import type { AircraftFollowSession } from "./follow/followTypes";
 import { HistoryPage } from "./history/HistoryPage";
-import { InspectionPayloadControl } from "./missions/MissionPayloadControl";
 import type { MissionRun } from "./missions/missionTypes";
 import type { ConnectionStatus, FleetSnapshot, NativeState, Nullable, StatusTone } from "./operationsTypes";
-import { LiveVideo } from "./video/LiveVideo";
+import { CameraWorkspace } from "./video/CameraWorkspace";
 import {
   emptyOperationalAlerts,
   OperationalAlertButton,
   OperationalAlertCenter,
   type OperationalAlertList,
 } from "./alerts/OperationalAlerts";
-import "./App.css";
+import "./AppShell.css";
+import "./tokens.css";
+import "./AppFrame.css";
 
+const CommandPage = lazy(() => import("./command/CommandPage").then((module) => ({ default: module.CommandPage })));
 const MissionPage = lazy(() => import("./missions/MissionPage").then((module) => ({ default: module.MissionPage })));
 const MissionExecutionPage = lazy(() => import("./missions/MissionExecutionPage").then((module) => ({ default: module.MissionExecutionPage })));
 const OperationsPage = lazy(() => import("./operations/OperationsPage").then((module) => ({ default: module.OperationsPage })));
 const EvidencePage = lazy(() => import("./evidence/EvidencePage").then((module) => ({ default: module.EvidencePage })));
 const FollowPage = lazy(() => import("./follow/FollowPage").then((module) => ({ default: module.FollowPage })));
 
-type WorkspaceView = "operations" | "follow" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence" | "history";
-type AircraftSection = "overview" | "live" | "missions" | "settings";
+type WorkspaceView = "command" | "operations" | "fleet" | "aircraft" | "missions" | "mission-execution" | "evidence";
+type AircraftSection = "overview" | "live" | "follow" | "missions" | "history" | "settings";
+type DisplayMode = "desk" | "field";
 
 type GroundStationSnapshot = {
   listenAddress: string;
@@ -146,7 +150,7 @@ function App() {
   const [snapshot, setSnapshot] = useState<GroundStationSnapshot>(emptySnapshot);
   const [fleet, setFleet] = useState<FleetSnapshot>({ generatedAtUnixMs: 0, aircraft: [] });
   const [nativeState, setNativeState] = useState<NativeState>("starting");
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("operations");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("command");
   const [selectedDroneId, setSelectedDroneId] = useState<string>();
   const [selectedMissionId, setSelectedMissionId] = useState<string>();
   const [missionOrigin, setMissionOrigin] = useState<"missions" | "operations">("missions");
@@ -156,6 +160,13 @@ function App() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertError, setAlertError] = useState<string>();
   const [pendingAlertId, setPendingAlertId] = useState<string>();
+  const [operationalMissionRuns, setOperationalMissionRuns] = useState<MissionRun[]>([]);
+  const [followSessions, setFollowSessions] = useState<AircraftFollowSession[]>([]);
+  const [authorityPending, setAuthorityPending] = useState(false);
+  const [authorityActionError, setAuthorityActionError] = useState<string>();
+  const [authorityRefreshError, setAuthorityRefreshError] = useState<string>();
+  const [authorityUpdatedAtUnixMs, setAuthorityUpdatedAtUnixMs] = useState<number>();
+  const [displayMode, setDisplayMode] = useState<DisplayMode>(initialDisplayMode);
 
   useEffect(() => {
     let active = true;
@@ -211,6 +222,58 @@ function App() {
     };
   }, [nativeState]);
 
+  useEffect(() => {
+    document.documentElement.dataset.mode = displayMode;
+    try {
+      window.localStorage.setItem("atlas.displayMode", displayMode);
+    } catch {
+      // The selected mode still applies for this session when storage is unavailable.
+    }
+  }, [displayMode]);
+
+  useEffect(() => {
+    if (nativeState !== "available") {
+      setOperationalMissionRuns([]);
+      setFollowSessions([]);
+      setAuthorityRefreshError(undefined);
+      setAuthorityUpdatedAtUnixMs(undefined);
+      return;
+    }
+    let active = true;
+    let reading = false;
+    async function refreshOperationalAuthority() {
+      if (reading) return;
+      reading = true;
+      try {
+        const [nextMissionRuns, nextFollowSessions] = await Promise.all([
+          invoke<MissionRun[]>("mission_run_history", { limit: 100 }),
+          invoke<AircraftFollowSession[]>("aircraft_follow_sessions", {
+            includeEnded: false,
+            limit: 50,
+          }),
+        ]);
+        if (active) {
+          setOperationalMissionRuns(nextMissionRuns);
+          setFollowSessions(nextFollowSessions);
+          setAuthorityRefreshError(undefined);
+          setAuthorityUpdatedAtUnixMs(Date.now());
+        }
+      } catch (reason) {
+        if (active) {
+          setAuthorityRefreshError(reason instanceof Error ? reason.message : String(reason));
+        }
+      } finally {
+        reading = false;
+      }
+    }
+    void refreshOperationalAuthority();
+    const interval = window.setInterval(refreshOperationalAuthority, 2_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [nativeState]);
+
   async function acknowledgeAlert(alertId: string) {
     if (pendingAlertId) return;
     setPendingAlertId(alertId);
@@ -229,13 +292,36 @@ function App() {
     }
   }
 
+  async function stopActiveFollow(session: AircraftFollowSession) {
+    if (authorityPending) return;
+    setAuthorityPending(true);
+    setAuthorityActionError(undefined);
+    try {
+      const updated = await invoke<AircraftFollowSession>("end_aircraft_follow_session", {
+        input: {
+          sessionId: session.id,
+          reason: session.state === "DEGRADED_HOLD"
+            ? "Operator ended the held follow session from the persistent control"
+            : "Operator requested immediate Stop Follow and PX4 Hold from the persistent control",
+          actor: "operator",
+        },
+      });
+      setFollowSessions((current) => current.map(
+        (candidate) => candidate.id === updated.id ? updated : candidate,
+      ));
+    } catch (reason) {
+      setAuthorityActionError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAuthorityPending(false);
+    }
+  }
+
   const heartbeat = formatRelativeTime(snapshot.lastHeartbeatAtUnixMs);
   const view = operatorView(snapshot, nativeState, heartbeat);
   const operationalAircraft = fleet.aircraft.filter((aircraft) => aircraft.vehicleStatus !== "archived");
   const visibleAircraft = showArchived
     ? fleet.aircraft.filter((aircraft) => aircraft.vehicleStatus === "archived")
     : operationalAircraft;
-  const fleetView = fleetSystemView({ ...fleet, aircraft: operationalAircraft }, nativeState);
   const hasAircraft = Boolean(snapshot.droneId || snapshot.droneName);
   const sessionState = nativeState !== "available"
     ? nativeState === "starting" ? "Checking" : "Unknown"
@@ -259,12 +345,68 @@ function App() {
     ? snapshot.sessionId ? compactIdentifier(snapshot.sessionId) : "No active session"
     : "Live state is not available";
   const selectedAircraft = fleet.aircraft.find((aircraft) => aircraft.droneId === selectedDroneId);
+  const activeFollowSessions = followSessions
+    .filter((session) => session.state !== "ENDED")
+    .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs);
+  const activeMissionRuns = operationalMissionRuns
+    .filter((run) => ["RUNNING", "PAUSED"].includes(run.status))
+    .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs);
+  const primaryFollow = activeFollowSessions[0];
+  const primaryMission = activeMissionRuns[0];
+  const selectedFollow = activeFollowSessions.find((session) => session.droneId === selectedDroneId);
+  const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length;
+  const additionalAuthorityCopy = activeAuthorityCount > 1
+    ? ` · ${activeAuthorityCount - 1} more under control`
+    : "";
+  const criticalAlert = alerts.alerts
+    .filter((alert) => alert.severity === "CRITICAL" && (alert.state === "ACTIVE" || alert.state === "ACKNOWLEDGED"))
+    .sort((left, right) => right.lastSeenAtUnixMs - left.lastSeenAtUnixMs)[0];
 
   return (
-    <div className="operations-shell">
+    <div className="operations-shell" data-mode={displayMode}>
       <header className="operations-header">
         <BrandMark />
         <nav className="workspace-nav" aria-label="Atlas workspace">
+          <button
+            type="button"
+            className={["command", "mission-execution"].includes(workspaceView) ? "workspace-nav__active" : undefined}
+            aria-current={["command", "mission-execution"].includes(workspaceView) ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("command");
+            }}
+          >
+            Command
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "operations" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "operations" ? "page" : undefined}
+            onClick={() => {
+              setSelectedDroneId(undefined);
+              setWorkspaceView("operations");
+            }}
+          >
+            Dispatch
+          </button>
+          <button
+            type="button"
+            className={["fleet", "aircraft"].includes(workspaceView) ? "workspace-nav__active" : undefined}
+            aria-current={["fleet", "aircraft"].includes(workspaceView) ? "page" : undefined}
+            onClick={() => setWorkspaceView("fleet")}
+          >
+            Aircraft
+          </button>
+          <button
+            type="button"
+            className={workspaceView === "missions" || workspaceView === "mission-execution" ? "workspace-nav__active" : undefined}
+            aria-current={workspaceView === "missions" || workspaceView === "mission-execution" ? "page" : undefined}
+            onClick={() => {
+              setWorkspaceView("missions");
+            }}
+          >
+            Plan
+          </button>
           <button
             type="button"
             className={workspaceView === "evidence" ? "workspace-nav__active" : undefined}
@@ -276,77 +418,99 @@ function App() {
           >
             Evidence
           </button>
-          <button
-            type="button"
-            className={workspaceView === "operations" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "operations" ? "page" : undefined}
-            onClick={() => {
-              setSelectedDroneId(undefined);
-              setWorkspaceView("operations");
-            }}
-          >
-            Operations
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "follow" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "follow" ? "page" : undefined}
-            onClick={() => {
-              setSelectedDroneId(undefined);
-              setWorkspaceView("follow");
-            }}
-          >
-            Follow
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "fleet" || workspaceView === "aircraft" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "fleet" || workspaceView === "aircraft" ? "page" : undefined}
-            onClick={() => setWorkspaceView("fleet")}
-          >
-            Fleet
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "missions" || workspaceView === "mission-execution" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "missions" || workspaceView === "mission-execution" ? "page" : undefined}
-            onClick={() => {
-              setWorkspaceView("missions");
-            }}
-          >
-            Missions
-          </button>
-          <button
-            type="button"
-            className={workspaceView === "history" ? "workspace-nav__active" : undefined}
-            aria-current={workspaceView === "history" ? "page" : undefined}
-            onClick={() => {
-              setSelectedDroneId(undefined);
-              setWorkspaceView("history");
-            }}
-          >
-            History
-          </button>
         </nav>
+        <div className="operations-header__spacer" />
         <div className="header-operational-state">
+          {(primaryFollow || primaryMission) && (
+            <div className="persistent-authority" role="status" aria-live="polite">
+              <button
+                type="button"
+                className="persistent-authority__summary"
+                aria-label={`Open Command with ${
+                  primaryFollow
+                    ? aircraftName(fleet.aircraft, primaryFollow.droneId)
+                    : primaryMission?.droneName || "aircraft"
+                } selected`}
+                onClick={() => {
+                  setSelectedDroneId(primaryFollow?.droneId ?? primaryMission?.droneId);
+                  setWorkspaceView("command");
+                }}
+              >
+                <span className="persistent-authority__dot" aria-hidden="true" />
+                <span>
+                  <strong>
+                    {primaryFollow
+                      ? `${aircraftName(fleet.aircraft, primaryFollow.droneId)} is following a target`
+                      : `${primaryMission?.droneName || "Aircraft"} is flying ${primaryMission?.missionName || "a mission"}`}
+                  </strong>
+                  <small>
+                    {primaryFollow
+                      ? `${
+                          primaryFollow.state === "DEGRADED_HOLD"
+                            ? "Follow stopped · holding"
+                            : "Offboard · Atlas is flying it"
+                        }${additionalAuthorityCopy}`
+                      : `${displayEnum(primaryMission?.status)}${additionalAuthorityCopy}`}
+                  </small>
+                </span>
+              </button>
+              <button
+                type="button"
+                disabled={authorityPending}
+                className={primaryFollow ? "persistent-authority__stop" : undefined}
+                onClick={() => {
+                  if (primaryFollow) {
+                    void stopActiveFollow(primaryFollow);
+                  } else if (primaryMission) {
+                    setSelectedMissionId(primaryMission.missionId);
+                    setSelectedDroneId(primaryMission.droneId);
+                    setMissionOrigin("missions");
+                    setWorkspaceView("mission-execution");
+                  }
+                }}
+              >
+                {primaryFollow ? authorityPending ? "Stopping…" : "Stop" : "Open"}
+              </button>
+            </div>
+          )}
+          {authorityRefreshError && (
+            <div className="authority-freshness" title={authorityRefreshError}>
+              <span aria-hidden="true">!</span>
+              <span>
+                <strong>Mission and follow status stale</strong>
+                <small>{authorityFreshnessCopy(authorityUpdatedAtUnixMs)}</small>
+              </span>
+            </div>
+          )}
+          {authorityActionError && (
+            <div className="authority-action-error" role="alert">
+              <strong>Control action failed.</strong>
+              <span>{authorityActionError}</span>
+            </div>
+          )}
           <OperationalAlertButton
             alerts={alerts}
             expanded={alertsOpen}
             onClick={() => setAlertsOpen((open) => !open)}
           />
-          <div
-            className={`system-state system-state--${fleetView.tone}`}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="state-dot" aria-hidden="true" />
-            <span>
-              <small>Fleet status</small>
-              <strong>{fleetView.statusLabel}</strong>
-            </span>
+          <div className="display-mode-toggle" role="group" aria-label="Display mode">
+            <button type="button" aria-pressed={displayMode === "desk"} onClick={() => setDisplayMode("desk")}>Desk</button>
+            <button type="button" aria-pressed={displayMode === "field"} onClick={() => setDisplayMode("field")}>Field</button>
           </div>
         </div>
       </header>
+
+      {criticalAlert && (
+        <div className="critical-ribbon" role="alert">
+          <span>Needs you</span>
+          <p>
+            <strong>{criticalAlert.title}</strong>
+            {" "}
+            {criticalAlert.recommendedAction}
+          </p>
+          <button type="button" onClick={() => setAlertsOpen(true)}>Review alert</button>
+        </div>
+      )}
 
       {alertsOpen && (
         <OperationalAlertCenter
@@ -358,7 +522,35 @@ function App() {
         />
       )}
 
-      {workspaceView === "operations" ? (
+      {workspaceView === "command" ? (
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening Command…</p></main>}>
+          <CommandPage
+            nativeAvailable={nativeState === "available"}
+            fleet={{ ...fleet, aircraft: operationalAircraft }}
+            alerts={alerts}
+            missionRuns={operationalMissionRuns}
+            followSessions={followSessions}
+            preferredDroneId={selectedDroneId}
+            onOpenAircraft={(droneId) => {
+              setSelectedDroneId(droneId);
+              setAircraftSection("overview");
+              setWorkspaceView("aircraft");
+            }}
+            onOpenDispatch={() => setWorkspaceView("operations")}
+            onOpenFollow={() => {
+              setSelectedDroneId(primaryFollow?.droneId ?? operationalAircraft[0]?.droneId);
+              setAircraftSection("follow");
+              setWorkspaceView("aircraft");
+            }}
+            onOpenMission={(missionId, droneId) => {
+              setSelectedMissionId(missionId);
+              setSelectedDroneId(droneId);
+              setMissionOrigin("missions");
+              setWorkspaceView("mission-execution");
+            }}
+          />
+        </Suspense>
+      ) : workspaceView === "operations" ? (
         <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Loading operational map…</p></main>}>
           <OperationsPage
             nativeAvailable={nativeState === "available"}
@@ -375,13 +567,6 @@ function App() {
               setMissionOrigin("operations");
               setWorkspaceView("mission-execution");
             }}
-          />
-        </Suspense>
-      ) : workspaceView === "follow" ? (
-        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening supervised follow…</p></main>}>
-          <FollowPage
-            nativeAvailable={nativeState === "available"}
-            fleet={{ ...fleet, aircraft: operationalAircraft }}
           />
         </Suspense>
       ) : workspaceView === "fleet" ? (
@@ -403,7 +588,8 @@ function App() {
           }}
           onOpenHistory={(droneId) => {
             setSelectedDroneId(droneId);
-            setWorkspaceView("history");
+            setAircraftSection("history");
+            setWorkspaceView("aircraft");
           }}
         />
       ) : workspaceView === "missions" ? (
@@ -426,7 +612,7 @@ function App() {
             missionId={selectedMissionId}
             preferredDroneId={selectedDroneId}
             lockedDroneId={missionOrigin === "operations" ? selectedDroneId : undefined}
-            backLabel={missionOrigin === "operations" ? "Operations" : "Mission planner"}
+            backLabel={missionOrigin === "operations" ? "Dispatch" : "Plan"}
             alerts={alerts}
             onBack={() => setWorkspaceView(missionOrigin)}
           />
@@ -435,50 +621,35 @@ function App() {
         <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening evidence ledger…</p></main>}>
           <EvidencePage nativeAvailable={nativeState === "available"} />
         </Suspense>
-      ) : workspaceView === "history" ? (
-        <HistoryPage
-          droneId={selectedDroneId}
-          droneName={snapshot.droneId === selectedDroneId ? snapshot.droneName : undefined}
-          nativeAvailable={nativeState === "available"}
-          onOpenDroneHistory={setSelectedDroneId}
-          onBackToOverview={() => setSelectedDroneId(undefined)}
-        />
       ) : (
       <main className="operations-main" id="main-content">
-        <button type="button" className="back-to-fleet" onClick={() => setWorkspaceView("fleet")}>
-          <span aria-hidden="true">←</span> Fleet
-        </button>
-        <section className="aircraft-overview aircraft-overview--workspace" aria-labelledby="aircraft-title">
-          <div className="overview-copy">
-            <p className="eyebrow">{aircraftSectionLabel(aircraftSection)}</p>
-            <h1 id="aircraft-title">{view.title}</h1>
-            <p className="overview-guidance">{aircraftSectionGuidance(aircraftSection, view.guidance)}</p>
-          </div>
-
-          <div className={`state-readout state-readout--${view.tone}`}>
-            <span className="readout-label">Current state</span>
-            <strong>{view.statusLabel}</strong>
-            <p>{view.stateDetail}</p>
-          </div>
-        </section>
-
-        <section className="aircraft-context-strip" aria-label="Selected aircraft context">
-          <StatusItem label="Ground link" value={view.statusLabel} detail={groundLinkDetail} tone={view.tone} />
-          <StatusItem label="Aircraft" value={flightState(snapshot.telemetry?.armed, snapshot.telemetry?.inAir, snapshot.telemetry?.landedState)} detail={displayEnum(snapshot.telemetry?.flightMode)} tone={snapshot.telemetry?.armed ? "warning" : "neutral"} />
-          <StatusItem label="Lifecycle" value={displayEnum(snapshot.vehicleStatus)} detail={snapshot.droneId ? compactIdentifier(snapshot.droneId) : "No aircraft identity"} tone={snapshot.vehicleStatus === "active" ? "positive" : "neutral"} />
+        <section className="aircraft-camera-context" aria-label="Selected aircraft">
+          <label>
+            <span>Aircraft</span>
+            <select value={selectedDroneId ?? ""} onChange={(event) => setSelectedDroneId(event.target.value || undefined)}>
+              {!operationalAircraft.length && <option value="">No operational aircraft</option>}
+              {operationalAircraft.map((aircraft) => (
+                <option key={aircraft.droneId ?? aircraft.droneName ?? "unknown"} value={aircraft.droneId ?? ""}>
+                  {aircraft.droneName || "Unnamed aircraft"} — {aircraftContextState(aircraft)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p>{aircraftSection === "live" || aircraftSection === "follow" ? cameraContextSummary(selectedAircraft) : `${view.title} · ${view.statusLabel}`}</p>
+          <button type="button" onClick={() => setWorkspaceView("command")}>← Command</button>
         </section>
 
         <nav className="aircraft-section-nav" aria-label={`${view.title} workspace`}>
-          {(["overview", "live", "missions", "settings"] as AircraftSection[]).map((section) => (
+          {(["overview", "live", "follow", "missions", "history", "settings"] as AircraftSection[]).map((section) => (
             <button key={section} type="button" className={aircraftSection === section ? "aircraft-section-nav__active" : undefined} aria-current={aircraftSection === section ? "page" : undefined} onClick={() => setAircraftSection(section)}>
-              {displayEnum(section)}
+              {section === "live" ? "Camera" : section === "follow" ? "Aircraft follow" : displayEnum(section)}
             </button>
           ))}
-          <button type="button" onClick={() => setWorkspaceView("history")}>History</button>
         </nav>
 
+        <div className={`aircraft-section-content aircraft-section-content--${aircraftSection}`}>
         {aircraftSection === "overview" && <>
-        <section className="status-grid" aria-label="Live drone status">
+        <section className="status-grid" aria-label="Live aircraft status">
           <StatusItem
             label="Ground link"
             value={view.statusLabel}
@@ -521,18 +692,24 @@ function App() {
         </>}
 
         {aircraftSection === "live" && (
-          <section className="aircraft-live-workspace" aria-label="Live aircraft inspection">
-            <div className="aircraft-live-video">
-              <LiveVideo
-                nativeAvailable={nativeState === "available"}
-                droneId={snapshot.droneId ?? undefined}
-                aircraft={selectedAircraft}
-              />
-            </div>
-            <aside className="aircraft-live-control" aria-label="Inspection payload controls">
-              <InspectionPayloadControl aircraft={selectedAircraft} />
-            </aside>
-          </section>
+          <CameraWorkspace
+            nativeAvailable={nativeState === "available"}
+            aircraft={selectedAircraft}
+            activeFollow={selectedFollow}
+            stopPending={authorityPending}
+            onOpenFollow={() => setAircraftSection("follow")}
+            onStopFollow={(session) => void stopActiveFollow(session)}
+            onOpenCommand={() => setWorkspaceView("command")}
+          />
+        )}
+
+        {aircraftSection === "follow" && (
+          <Suspense fallback={<div className="workspace-loading"><p>Opening supervised follow…</p></div>}>
+            <FollowPage
+              nativeAvailable={nativeState === "available"}
+              fleet={{ ...fleet, aircraft: operationalAircraft }}
+            />
+          </Suspense>
         )}
 
         {aircraftSection === "missions" && snapshot.droneId && (
@@ -553,13 +730,20 @@ function App() {
             onLifecycleChanged={(operations) => setSnapshot((current) => ({ ...current, ...operations }))}
           />
         )}
+        {aircraftSection === "history" && (
+          <HistoryPage
+            droneId={selectedDroneId}
+            droneName={snapshot.droneId === selectedDroneId ? snapshot.droneName : undefined}
+            nativeAvailable={nativeState === "available"}
+            onOpenDroneHistory={setSelectedDroneId}
+            onBackToOverview={() => setAircraftSection("overview")}
+          />
+        )}
+        </div>
       </main>
       )}
 
-      <footer className="operations-footer">
-        <span>Atlas Ground Station</span>
-        <span>Local data · 7-day telemetry history</span>
-      </footer>
+      <footer className="operations-footer" aria-hidden="true" />
     </div>
   );
 }
@@ -645,6 +829,7 @@ function AircraftSettings({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [archiveReason, setArchiveReason] = useState("");
   const archived = snapshot.vehicleStatus === "archived";
   const connected = snapshot.connectionStatus === "connected";
 
@@ -657,11 +842,12 @@ function AircraftSettings({
       const operations = await invoke<Partial<GroundStationSnapshot>>(
         action === "archive" ? "archive_drone" : "restore_drone",
         action === "archive"
-          ? { droneId: snapshot.droneId, reason: "operator archived aircraft from settings" }
+          ? { droneId: snapshot.droneId, reason: archiveReason.trim() }
           : { droneId: snapshot.droneId },
       );
       onLifecycleChanged(operations);
       setConfirmingArchive(false);
+      setArchiveReason("");
       setNotice(action === "archive"
         ? "Aircraft archived. Missions, telemetry, events, and command history remain available."
         : "Aircraft restored. It will remain disconnected until Atlas Agent registers again.");
@@ -681,7 +867,7 @@ function AircraftSettings({
       </header>
       <dl>
         <div><dt>Name</dt><dd>{snapshot.droneName || "Not reported"}</dd></div>
-        <div><dt>Drone ID</dt><dd>{snapshot.droneId || "Not reported"}</dd></div>
+        <div><dt>Aircraft ID</dt><dd>{snapshot.droneId || "Not reported"}</dd></div>
         <div><dt>Vehicle type</dt><dd>{displayEnum(snapshot.vehicleType)}</dd></div>
         <div><dt>Lifecycle</dt><dd>{displayEnum(snapshot.vehicleStatus)}</dd></div>
         <div><dt>Binding</dt><dd>{snapshot.bindingId || "No binding"}</dd></div>
@@ -699,16 +885,37 @@ function AircraftSettings({
           </button>
         ) : confirmingArchive ? (
           <div className="aircraft-lifecycle-confirmation">
-            <p>This removes the aircraft from operational fleet views and blocks reconnects until it is restored.</p>
+            <strong>Archive {snapshot.droneName || "this aircraft"}</strong>
+            <ul className="aircraft-lifecycle-effects">
+              <li data-effect="kept">Flights, telemetry, messages, and evidence stay searchable.</li>
+              <li data-effect="kept">You can restore this aircraft at any time.</li>
+              <li data-effect="changed">It disappears from Command, Dispatch, and Plan.</li>
+              <li data-effect="changed">It cannot reconnect until you restore it.</li>
+            </ul>
+            <label>
+              Why are you archiving it?
+              <textarea
+                value={archiveReason}
+                maxLength={500}
+                placeholder="For example: returned to the supplier for repair"
+                onChange={(event) => setArchiveReason(event.target.value)}
+              />
+            </label>
             <div>
-              <button type="button" disabled={busy} onClick={() => setConfirmingArchive(false)}>Cancel</button>
-              <button type="button" className="aircraft-lifecycle-danger" disabled={busy} onClick={() => void changeLifecycle("archive")}>
-                {busy ? "Archiving…" : "Confirm archive"}
+              <button type="button" disabled={busy} onClick={() => {
+                setConfirmingArchive(false);
+                setArchiveReason("");
+              }}>Keep aircraft</button>
+              <button type="button" className="aircraft-lifecycle-danger" disabled={busy || !archiveReason.trim()} onClick={() => void changeLifecycle("archive")}>
+                {busy ? "Archiving…" : "Archive aircraft"}
               </button>
             </div>
           </div>
         ) : (
-          <button type="button" disabled={connected || busy || !snapshot.droneId} onClick={() => setConfirmingArchive(true)}>
+          <button type="button" disabled={connected || busy || !snapshot.droneId} onClick={() => {
+            setArchiveReason("");
+            setConfirmingArchive(true);
+          }}>
             {connected ? "Disconnect before archiving" : "Archive aircraft"}
           </button>
         )}
@@ -717,20 +924,6 @@ function AircraftSettings({
       {notice && <p className="aircraft-workspace-notice" role="status">{notice}</p>}
     </section>
   );
-}
-
-function aircraftSectionLabel(section: AircraftSection) {
-  if (section === "live") return "Live inspection";
-  if (section === "missions") return "Aircraft missions";
-  if (section === "settings") return "Aircraft settings";
-  return "Drone overview";
-}
-
-function aircraftSectionGuidance(section: AircraftSection, overviewGuidance: string) {
-  if (section === "live") return "Observe clean video and perception readiness first. Physical gimbal and zoom controls require an explicit, renewable inspection lease.";
-  if (section === "missions") return "Review the current assignment and retained execution history for this aircraft.";
-  if (section === "settings") return "Manage aircraft identity and service lifecycle without deleting operational history.";
-  return overviewGuidance;
 }
 
 function formatDateTime(value: number) {
@@ -872,7 +1065,7 @@ function StatusEventFeed({ events }: { events: StatusEvent[] }) {
     <section className="event-feed" aria-labelledby="event-feed-title">
       <header>
         <div>
-          <p className="eyebrow">Drone events</p>
+          <p className="eyebrow">Aircraft events</p>
           <h2 id="event-feed-title">PX4 messages</h2>
         </div>
         <span>{events.length > 0 ? `${events.length} recent` : "No messages"}</span>
@@ -918,16 +1111,16 @@ function StatusItem({
 
 function ConnectionGuide() {
   const steps = [
-    ["Power drone systems", "Start the flight controller and onboard computer."],
+    ["Power aircraft systems", "Start the flight controller and onboard computer."],
     ["Confirm the HM30 link", "Keep both endpoints on the same local network."],
-    ["Start Atlas Agent", "The drone appears automatically after it connects."],
+    ["Start Atlas Agent", "The aircraft appears automatically after it connects."],
   ];
 
   return (
     <section className="connection-guide" aria-labelledby="connection-guide-title">
       <div className="guide-heading">
         <p className="eyebrow">First connection</p>
-        <h2 id="connection-guide-title">Connect a drone</h2>
+        <h2 id="connection-guide-title">Connect an aircraft</h2>
       </div>
       <ol>
         {steps.map(([title, detail], index) => (
@@ -961,7 +1154,7 @@ function ConnectionDetails({ snapshot }: { snapshot: GroundStationSnapshot }) {
   const details = [
     ["Listener", snapshot.listenAddress],
     ["Remote endpoint", snapshot.remoteAddress || "—"],
-    ["Drone ID", snapshot.droneId || "—"],
+    ["Aircraft ID", snapshot.droneId || "—"],
     ["Agent ID", snapshot.agentId || "—"],
     ["Binding ID", snapshot.bindingId || "—"],
     ["Communication link ID", snapshot.communicationLinkId || "—"],
@@ -1004,7 +1197,7 @@ function operatorView(
     return {
       title: "Starting ground station",
       statusLabel: "Starting",
-      guidance: "Preparing local drone services and connection state.",
+      guidance: "Preparing local aircraft services and connection state.",
       stateDetail: "Checking local services.",
       tone: "neutral",
     };
@@ -1032,7 +1225,7 @@ function operatorView(
 
   if (snapshot.connectionStatus === "connected") {
     return {
-      title: snapshot.droneName || "Drone connected",
+      title: snapshot.droneName || "Aircraft connected",
       statusLabel: "Connected",
       guidance: "The onboard agent is responding over the local link.",
       stateDetail: `Heartbeat ${heartbeat.toLowerCase()}.`,
@@ -1042,7 +1235,7 @@ function operatorView(
 
   if (snapshot.connectionStatus === "stale") {
     return {
-      title: snapshot.droneName || "Drone link degraded",
+      title: snapshot.droneName || "Aircraft link degraded",
       statusLabel: "Degraded",
       guidance: "Heartbeat updates have stopped. Check the HM30 link and onboard computer.",
       stateDetail: `Last heartbeat ${heartbeat.toLowerCase()}.`,
@@ -1052,7 +1245,7 @@ function operatorView(
 
   if (snapshot.droneId || snapshot.droneName) {
     return {
-      title: snapshot.droneName || "Drone offline",
+      title: snapshot.droneName || "Aircraft offline",
       statusLabel: "Offline",
       guidance: "Atlas will restore the session when the onboard agent reconnects.",
       stateDetail: snapshot.lastHeartbeatAtUnixMs
@@ -1063,7 +1256,7 @@ function operatorView(
   }
 
   return {
-    title: "No drone connected",
+    title: "No aircraft connected",
     statusLabel: "Waiting",
     guidance: "Power the onboard computer and confirm the HM30 network link. Atlas Agent connects automatically.",
     stateDetail: `Listening at ${snapshot.listenAddress}.`,
@@ -1071,22 +1264,41 @@ function operatorView(
   };
 }
 
-function fleetSystemView(fleet: FleetSnapshot, nativeState: NativeState): Pick<OperatorView, "statusLabel" | "tone"> {
-  if (nativeState === "starting") return { statusLabel: "Starting", tone: "neutral" };
-  if (nativeState === "unavailable") return { statusLabel: "Unavailable", tone: "critical" };
-  if (fleet.aircraft.length === 0) return { statusLabel: "Waiting for drones", tone: "neutral" };
-
-  const connected = fleet.aircraft.filter((aircraft) => aircraft.connectionStatus === "connected").length;
-  const degraded = fleet.aircraft.some((aircraft) => aircraft.connectionStatus === "stale");
-  if (degraded) return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "warning" };
-  if (connected === fleet.aircraft.length) {
-    return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "positive" };
-  }
-  return { statusLabel: `${connected}/${fleet.aircraft.length} connected`, tone: "neutral" };
-}
-
 function compactIdentifier(value: string) {
   return value.length > 18 ? `${value.slice(0, 8)}…${value.slice(-6)}` : value;
+}
+
+function aircraftName(aircraft: FleetSnapshot["aircraft"], droneId: string) {
+  const match = aircraft.find((candidate) => candidate.droneId === droneId);
+  return match?.droneName || droneId.slice(0, 8).toUpperCase();
+}
+
+function aircraftContextState(aircraft: FleetSnapshot["aircraft"][number]) {
+  if (aircraft.connectionStatus !== "connected") return displayEnum(aircraft.connectionStatus);
+  if (aircraft.telemetry?.inAir) return displayEnum(aircraft.telemetry.flightMode || "in air");
+  return "On the ground";
+}
+
+function cameraContextSummary(aircraft?: FleetSnapshot["aircraft"][number]) {
+  if (!aircraft) return "Select an aircraft to open its camera and follow controls.";
+  const connection = displayEnum(aircraft.connectionStatus);
+  const flight = aircraft.telemetry?.inAir ? "in air" : aircraft.telemetry?.inAir === false ? "on the ground" : "flight state unknown";
+  const battery = aircraft.telemetry?.batteryPercent == null ? "battery unavailable" : `${aircraft.telemetry.batteryPercent.toFixed(0)}% battery`;
+  return `${connection} · ${flight} · ${battery}`;
+}
+
+function initialDisplayMode(): DisplayMode {
+  try {
+    return window.localStorage.getItem("atlas.displayMode") === "field" ? "field" : "desk";
+  } catch {
+    return "desk";
+  }
+}
+
+function authorityFreshnessCopy(lastUpdatedAtUnixMs: number | undefined) {
+  if (!lastUpdatedAtUnixMs) return "No current refresh · retrying";
+  const ageSeconds = Math.max(0, Math.round((Date.now() - lastUpdatedAtUnixMs) / 1000));
+  return `Last updated ${ageSeconds} s ago · retrying`;
 }
 
 function formatRelativeTime(timestamp: Nullable<number>) {

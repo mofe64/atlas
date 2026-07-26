@@ -150,8 +150,8 @@ function PayloadControl({
         leaseDurationMs,
       }, true).catch((reason) => {
         setError(context.kind === "inspection"
-          ? `Inspection lease could not be renewed. Movement will stop and gimbal ownership will release automatically: ${messageFrom(reason)}`
-          : `Manual-control lease could not be renewed. Mission view will restore automatically: ${messageFrom(reason)}`);
+          ? `Camera control could not be renewed. Movement will stop and camera control will release automatically: ${messageFrom(reason)}`
+          : `Manual camera control could not be renewed. The mission view will return automatically: ${messageFrom(reason)}`);
       });
     }, 3_000);
     return () => window.clearInterval(interval);
@@ -239,7 +239,7 @@ function PayloadControl({
       setOverrideState("automatic");
       onClearPayloadTarget();
       setError(context.kind === "inspection"
-        ? `Inspection control ended, but Atlas could not confirm gimbal ownership was released: ${messageFrom(reason)}`
+        ? `Camera control ended, but Atlas could not confirm that the gimbal was released: ${messageFrom(reason)}`
         : `Manual control ended, but Atlas could not confirm the mission view was restored: ${messageFrom(reason)}`);
     }
   }
@@ -307,7 +307,7 @@ function PayloadControl({
       <div className="payload-mission-view">
         <span>{context.kind === "inspection" ? "Control context" : "Mission view now"}</span>
         <strong>{context.kind === "inspection" ? "Ground inspection" : displayMode(missionView.cameraMode)}</strong>
-        <small>{context.kind === "inspection" ? "No mission intent is active. Ending or losing the lease stops movement and releases gimbal ownership." : `${missionView.pitchDegrees}° pitch · ${displayMode(missionView.yawMode)}${zoomSupported ? ` · ${Math.round(missionView.zoomPercent)}% zoom` : ""}`}</small>
+        <small>{context.kind === "inspection" ? "No mission is aiming the camera. Leaving this control stops movement and releases the gimbal." : `${missionView.pitchDegrees}° pitch · ${displayMode(missionView.yawMode)}${zoomSupported ? ` · ${Math.round(missionView.zoomPercent)}% zoom` : ""}`}</small>
       </div>
 
       {!manual && overrideState === "automatic" && (
@@ -323,22 +323,22 @@ function PayloadControl({
         <p className="payload-transition" role="status">{overrideState === "acquiring"
           ? "Claiming primary gimbal control…"
           : context.kind === "inspection"
-            ? "Stopping movement and releasing gimbal ownership…"
-            : "Stopping manual movement and restoring mission intent…"}</p>
+            ? "Stopping movement and releasing the gimbal…"
+            : "Stopping manual movement and returning to the mission view…"}</p>
       )}
 
-      {manual && (
-        <div className="payload-manual-controls">
+      {(manual || context.kind === "inspection") && (
+        <div className="payload-manual-controls" data-locked={!manual ? "true" : undefined} aria-disabled={!manual || undefined}>
           <div className="payload-angle-fields">
-            <label>Pitch<input type="number" min={-90} max={30} value={pitch} onChange={(event) => setPitch(Number(event.target.value))} /><small>degrees</small></label>
-            <label>Gimbal yaw<input type="number" min={-180} max={180} value={yaw} onChange={(event) => setYaw(Number(event.target.value))} /><small>degrees</small></label>
-            <label>Yaw reference<select value={yawFrame} onChange={(event) => setYawFrame(event.target.value as typeof yawFrame)}><option value="AIRCRAFT_RELATIVE">Aircraft nose</option><option value="NORTH_LOCKED">North locked</option></select></label>
+            <label>Pitch<input type="number" min={-90} max={30} value={pitch} disabled={!manual} onChange={(event) => setPitch(Number(event.target.value))} /><small>degrees</small></label>
+            <label>Gimbal yaw<input type="number" min={-180} max={180} value={yaw} disabled={!manual} onChange={(event) => setYaw(Number(event.target.value))} /><small>degrees</small></label>
+            <label>Yaw reference<select value={yawFrame} disabled={!manual} onChange={(event) => setYawFrame(event.target.value as typeof yawFrame)}><option value="AIRCRAFT_RELATIVE">Aircraft nose</option><option value="NORTH_LOCKED">North locked</option></select></label>
             <div className="payload-angle-actions">
-              <button type="button" disabled={Boolean(pendingLabel)} onClick={() => {
+              <button type="button" disabled={!manual || Boolean(pendingLabel)} onClick={() => {
                 onClearPayloadTarget();
                 void manualCommand("gimbal_set_angles", { pitchDegrees: pitch, yawDegrees: yaw, yawFrame });
               }}>Set view</button>
-              <button type="button" disabled={Boolean(pendingLabel)} onClick={() => {
+              <button type="button" disabled={!manual || Boolean(pendingLabel)} onClick={() => {
                 onClearPayloadTarget();
                 void manualCommand("gimbal_center", {});
               }}>Centre</button>
@@ -347,11 +347,11 @@ function PayloadControl({
 
           <div className="payload-rate-pad" aria-label="Gimbal rate control">
             <span>Rate pad<small>Arrow keys supported</small></span>
-            <RateButton label="Tilt up" glyph="↑" onStart={() => rate(15, 0)} onStop={stopRate} />
-            <RateButton label="Pan left" glyph="←" onStart={() => rate(0, -15)} onStop={stopRate} />
-            <button type="button" aria-label="Stop gimbal" onClick={stopRate}>■</button>
-            <RateButton label="Pan right" glyph="→" onStart={() => rate(0, 15)} onStop={stopRate} />
-            <RateButton label="Tilt down" glyph="↓" onStart={() => rate(-15, 0)} onStop={stopRate} />
+            <RateButton label="Tilt up" glyph="↑" disabled={!manual} onStart={() => rate(15, 0)} onStop={stopRate} />
+            <RateButton label="Pan left" glyph="←" disabled={!manual} onStart={() => rate(0, -15)} onStop={stopRate} />
+            <button type="button" aria-label="Stop gimbal" disabled={!manual} onClick={stopRate}>■</button>
+            <RateButton label="Pan right" glyph="→" disabled={!manual} onStart={() => rate(0, 15)} onStop={stopRate} />
+            <RateButton label="Tilt down" glyph="↓" disabled={!manual} onStart={() => rate(-15, 0)} onStop={stopRate} />
           </div>
 
           {context.kind === "mission_override" && roiSupported && (
@@ -385,12 +385,12 @@ function PayloadControl({
           {zoomSupported && (
             <label className="payload-zoom">
               <span>Digital zoom<strong>{Math.round(zoomPercent)}%</strong></span>
-              <input type="range" min={0} max={100} step={5} value={zoomPercent} onChange={(event) => setZoomPercent(Number(event.target.value))} />
-              <button type="button" disabled={Boolean(pendingLabel)} onClick={() => void manualCommand("camera_set_zoom", { zoomPercent })}>Apply zoom</button>
+              <input type="range" min={0} max={100} step={5} value={zoomPercent} disabled={!manual} onChange={(event) => setZoomPercent(Number(event.target.value))} />
+              <button type="button" disabled={!manual || Boolean(pendingLabel)} onClick={() => void manualCommand("camera_set_zoom", { zoomPercent })}>Apply zoom</button>
             </label>
           )}
 
-          <button type="button" className="execution-primary-action payload-return" disabled={Boolean(pendingLabel)} onClick={() => void endManual()}>{context.kind === "inspection" ? "Release inspection control" : "Return to mission view"}</button>
+          {manual && <button type="button" className="execution-primary-action payload-return" disabled={Boolean(pendingLabel)} onClick={() => void endManual()}>{context.kind === "inspection" ? "Release inspection control" : "Return to mission view"}</button>}
         </div>
       )}
 
@@ -399,8 +399,8 @@ function PayloadControl({
   );
 }
 
-function RateButton({ label, glyph, onStart, onStop }: { label: string; glyph: string; onStart: () => void; onStop: () => void }) {
-  return <button type="button" aria-label={label} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onStart(); }} onPointerUp={onStop} onPointerCancel={onStop} onLostPointerCapture={onStop}>{glyph}</button>;
+function RateButton({ label, glyph, disabled, onStart, onStop }: { label: string; glyph: string; disabled?: boolean; onStart: () => void; onStop: () => void }) {
+  return <button type="button" aria-label={label} disabled={disabled} onPointerDown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onStart(); }} onPointerUp={onStop} onPointerCancel={onStop} onLostPointerCapture={onStop}>{glyph}</button>;
 }
 
 function commandIdentity(controlContext: ControlContext, controlSessionId: string, gimbalId: number, cameraComponentId: number) {
@@ -426,7 +426,7 @@ function controlGuidance(context: ControlContext, aircraft: FleetAircraft | unde
   if (aircraft?.connectionStatus !== "connected") return "Connect the aircraft before taking inspection control.";
   if (aircraft.telemetry?.status !== "live") return "Atlas requires live telemetry before enabling physical inspection controls.";
   if (aircraft.telemetry.armed !== false || aircraft.telemetry.inAir !== false) return "Inspection control is available only when PX4 explicitly reports disarmed and on the ground.";
-  return "Atlas holds a short renewable lease. Leaving this view stops movement and releases gimbal ownership.";
+  return "Manual camera control stays active while this view is open. Leaving stops movement and releases the gimbal.";
 }
 
 async function awaitCommandResult(initial: CommandReceipt) {

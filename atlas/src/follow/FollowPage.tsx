@@ -190,20 +190,20 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
   }
 
   return (
-    <main className="follow-workspace" id="main-content">
+    <section className="follow-workspace" aria-label="Aircraft follow">
       <header className="follow-heading">
         <div>
           <p className="eyebrow">Supervised navigation</p>
-          <h1>Follow from standoff</h1>
-          <p>Maintain a reviewed observation point from validated world-space target motion. Camera framing remains a separate gimbal authority.</p>
+          <h1>Aircraft follow</h1>
+          <p>Moves the aircraft from a reviewed standoff point. Camera follow remains camera-only.</p>
         </div>
       </header>
 
-      <section className="follow-status-ribbon" aria-label="Follow authority status">
-        <StatusDatum label="Authority" value={latestSession ? formatState(latestSession.state) : "Not requested"} />
+      <section className="follow-status-ribbon" aria-label="Follow control status">
+        <StatusDatum label="Control" value={latestSession ? formatState(latestSession.state) : "Not requested"} />
         <StatusDatum label="Exact track" value={latestSession ? shortId(latestSession.trackId) : selected ? shortId(selected.geolocation.trackId) : "None"} />
         <StatusDatum label="Target age" value={formatAge(latestSession?.latestTargetObservedAtUnixMs ?? selected?.geolocation.frameObservedAtUnixMs)} />
-        <StatusDatum label="Lease" value={leaseLabel(latestSession)} />
+        <StatusDatum label="Watchdog" value={leaseLabel(latestSession)} />
         <StatusDatum label="PX4 response" value={latestSession?.state === "FOLLOWING" ? "OFFBOARD" : latestSession?.state === "DEGRADED_HOLD" ? "HOLD" : "No translation"} />
       </section>
 
@@ -317,7 +317,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
                   >
                     {pending === "start" ? "Validating + acquiring…" : "Authorize Follow from standoff"}
                   </button>
-                  <p className="follow-authority-note">Authorization starts a 4-second renewable operator lease. Closing this workspace or losing valid target updates stops renewal and causes Hold.</p>
+                  <p className="follow-authority-note">Starting Aircraft follow enables PX4 Offboard control. If this view closes or target updates stop, Atlas commands Hold within 4 seconds.</p>
                 </section>
               )}
             </>
@@ -326,7 +326,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
           {latestSession && latestSession.state === "ENDED" && <FollowHistory session={latestSession} />}
         </aside>
       </div>
-    </main>
+    </section>
   );
 }
 
@@ -338,7 +338,7 @@ function ActiveFollowPanel({ session, pending, onEnd }: {
   const stages = ["REQUESTED", "VALIDATING", "ACQUIRING", "FOLLOWING"];
   return (
     <section className={`follow-active follow-active--${session.state.toLowerCase()}`}>
-      <header><p className="eyebrow">Active authority</p><h2>{formatState(session.state)}</h2></header>
+      <header><p className="eyebrow">Aircraft control</p><h2>{formatState(session.state)}</h2></header>
       <div className="follow-state-machine" aria-label={`Follow state ${session.state}`}>
         {stages.map((stage) => <span key={stage} className={stage === session.state || (session.state === "FOLLOWING" && stages.indexOf(stage) < 4) ? "follow-stage--reached" : undefined}>{stage}</span>)}
         {session.state === "DEGRADED_HOLD" && <span className="follow-stage--hold">DEGRADED HOLD</span>}
@@ -366,7 +366,7 @@ function ActiveFollowPanel({ session, pending, onEnd }: {
 function FollowHistory({ session }: { session: AircraftFollowSession }) {
   return (
     <section className="follow-history">
-      <header><p className="eyebrow">Durable trace</p><h2>Authority events</h2></header>
+      <header><p className="eyebrow">Saved activity</p><h2>Follow events</h2></header>
       <ol>
         {[...session.events].reverse().slice(0, 12).map((event) => (
           <li key={event.id}>
@@ -491,7 +491,7 @@ function followReadiness(
     },
     {
       id: "authority",
-      label: "Navigation authority available",
+      label: "PX4 Offboard available",
       ready: !activeSession,
       detail: activeSession ? `Session ${shortId(activeSession.id)} is ${formatState(activeSession.state)}` : "No other follow session owns the aircraft",
     },

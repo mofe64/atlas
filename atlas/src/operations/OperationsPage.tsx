@@ -635,13 +635,13 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
     <main className="operations-workspace" id="main-content">
       <header className="operations-workspace__heading">
         <div>
-          <p className="eyebrow">Live coordination</p>
-          <h1>Operations</h1>
-          <p>Manual incidents and fleet readiness share one local operational picture.</p>
+          <p className="eyebrow">Incident preparation</p>
+          <h1>Dispatch</h1>
+          <p>Preparing holds an aircraft for an incident. Nothing is sent until you fly it from Command.</p>
         </div>
         <div className="operations-workspace__heading-actions">
-          <span>Updated {formatRelativeTime(fleet.generatedAtUnixMs)}</span>
-          <button type="button" onClick={beginCreate} disabled={!nativeAvailable || pending === "create"}>
+          <span>{fleet.generatedAtUnixMs ? `Updated ${formatRelativeTime(fleet.generatedAtUnixMs)}` : "Waiting for fleet update"}</span>
+          <button className="operations-workspace__new-incident" type="button" onClick={beginCreate} disabled={!nativeAvailable || pending === "create"}>
             New incident
           </button>
         </div>
@@ -655,7 +655,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
       </section>
 
       {!nativeAvailable && (
-        <p className="operations-boundary" role="status">Incident records are available only inside Atlas Native.</p>
+        <p className="operations-boundary" role="status">Incident records are unavailable while local services are offline. Reopen Atlas to continue.</p>
       )}
       {loadError && <p className="operations-error" role="alert">{loadError}</p>}
 
@@ -664,7 +664,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
           <div className="response-context__identity">
             <span className="response-context__priority"><i aria-hidden="true">{selectedIncident.priority === "CRITICAL" ? "▲" : "◆"}</i>{selectedIncident.priority}</span>
             <div>
-              <small>Incident {shortId(selectedIncident.id)} · revision {selectedIncident.revision}</small>
+              <small>Incident {shortId(selectedIncident.id)} · version {selectedIncident.revision}</small>
               <strong>{selectedIncident.summary}</strong>
             </div>
           </div>
@@ -956,7 +956,7 @@ function IncidentCreateForm({
         </div>
         <button type="button" className="incident-form__cancel" onClick={onCancel}>Cancel</button>
       </header>
-      <p className="incident-form__source">Source locked to Atlas Native · manual entry</p>
+      <p className="incident-form__source">Source · manual entry on this ground station</p>
 
       <div className="incident-form__row">
         <label>
@@ -1097,7 +1097,7 @@ function IncidentResponsePanel({
           <div><dt>Route</dt><dd>{prepared.plan.generatedWaypoints.length} waypoints · {formatDistance(Number(prepared.plan.metadata.estimatedDistanceMeters ?? 0))}</dd></div>
           <div><dt>Altitude</dt><dd>{waypoint ? `${waypoint.altitudeMeters.toFixed(0)} m home-relative` : "—"}</dd></div>
           <div><dt>Departure</dt><dd>{distance.distanceMeters !== undefined ? `${formatDistance(distance.distanceMeters)} from ${distance.reference?.source ?? "aircraft"}` : "Revalidated before upload"}</dd></div>
-          <div><dt>Incident evidence</dt><dd>Revision {prepared.incident.revision} · location {prepared.incident.locationRevision}</dd></div>
+          <div><dt>Incident record</dt><dd>Version {prepared.incident.revision} · location {prepared.incident.locationRevision}</dd></div>
           <div><dt>Arrival</dt><dd>{preparedPattern === "HOLD_AT_STAGING" ? "Hold then wait for operator" : "Hold must be acknowledged"} · {Number(arrivalActions[0]?.params.maxAttempts ?? 3)} attempts</dd></div>
           <div><dt>Hold failure</dt><dd>{failurePolicyLabel(reviewedFailurePolicy)}</dd></div>
         </dl>
@@ -1342,7 +1342,7 @@ function IncidentResponsePanel({
           <div className="response-preview-summary" role="status">
             <span>Generated route preview</span>
             <strong>{preview.generatedWaypoints.length} waypoints · {formatDistance(Number(preview.metadata.estimatedDistanceMeters ?? 0))}</strong>
-            <small>{responseGeometrySummary(preview)} · revalidated during atomic preparation</small>
+            <small>{responseGeometrySummary(preview)} · rechecked when this response is prepared</small>
           </div>
           <KnownBuildingAssessmentPanel assessment={preview.knownBuildingAssessment} />
         </>
@@ -1680,7 +1680,7 @@ function KnownBuildingAssessmentPanel({ assessment, immutable = false }: { asses
       <header>
         <i aria-hidden="true">{icon}</i>
         <div>
-          <span>{immutable ? "Locked assessment evidence" : "Geometry assessment"}</span>
+          <span>{immutable ? "Saved assessment" : "Geometry assessment"}</span>
           <strong>{headline}</strong>
         </div>
       </header>
@@ -1695,7 +1695,7 @@ function KnownBuildingAssessmentPanel({ assessment, immutable = false }: { asses
       </dl>
       {assessment.provenance && (
         <div className="known-building-assessment__provenance">
-          <span>Dataset provenance</span>
+          <span>Dataset source</span>
           <strong>{assessment.provenance.provider} · {assessment.provenance.product}</strong>
           <small>{assessment.provenance.datasetId} · schema {assessment.provenance.schemaVersion} · release {assessment.provenance.release}</small>
           <small>Retrieved {formatDateTime(assessment.provenance.retrievedAtUnixMs)}</small>
@@ -1934,7 +1934,14 @@ function liveResponseState(run?: MissionRun, responsePattern?: string) {
 }
 
 function mapLayerLabel(layer: keyof OperationsMapLayerVisibility) {
-  return layer === "responseRoute" ? "Route" : layer === "aircraftTrail" ? "Trail" : displayEnum(layer);
+  const labels: Record<keyof OperationsMapLayerVisibility, string> = {
+    incidents: "Incidents",
+    aircraft: "Aircraft",
+    responseRoute: "Route",
+    aircraftTrail: "Trail",
+    trackTargets: "Tracked targets",
+  };
+  return labels[layer];
 }
 
 function validTrailPosition(telemetry: { latitude?: number | null; longitude?: number | null }) {

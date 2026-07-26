@@ -1,0 +1,372 @@
+.aircraft-camera-context {
+  display: flex;
+  min-height: 3.25rem;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-sunken);
+}
+
+.aircraft-camera-context label {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.aircraft-camera-context label > span {
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+  font-weight: 750;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.aircraft-camera-context select {
+  min-height: 2.25rem;
+  min-width: 16rem;
+  padding: 0 var(--s-2);
+  border: 1px solid var(--line-strong);
+  border-radius: 0;
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  font: inherit;
+  font-size: var(--t-xs);
+}
+
+.aircraft-camera-context p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--t-xs);
+}
+
+.aircraft-camera-context > button {
+  min-height: 2.25rem;
+  margin-left: auto;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--line-strong);
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 720;
+}
+
+.camera-workspace {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1.58fr) minmax(22rem, .74fr);
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-base);
+}
+
+.camera-feed-panel,
+.camera-control-panel {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.camera-control-panel {
+  overflow: auto;
+  border-right: 0;
+}
+
+.camera-panel-heading {
+  display: flex;
+  min-height: 3.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.camera-panel-heading .eyebrow,
+.camera-follow-modes .eyebrow {
+  margin: 0 0 .12rem;
+  color: var(--text-tertiary);
+}
+
+.camera-panel-heading h2,
+.camera-follow-modes h2,
+.camera-mode-card h3 {
+  margin: 0;
+  font-family: var(--font-ui);
+  letter-spacing: 0;
+}
+
+.camera-panel-heading h2,
+.camera-follow-modes h2 {
+  font-size: var(--t-sm);
+}
+
+.camera-panel-heading > span,
+.camera-follow-modes > header > span {
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.camera-feed-panel .live-video {
+  border: 0;
+  background: var(--surface-raised);
+}
+
+.camera-feed-panel .live-video__viewport {
+  min-height: clamp(24rem, 48vh, 38rem);
+  border-bottom-color: var(--line-strong);
+}
+
+.camera-feed-panel .live-video__controls {
+  border-top: 0;
+}
+
+.camera-control-panel .payload-control--inspection {
+  padding: var(--s-3);
+  border: 0;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface-raised);
+}
+
+.camera-control-panel .payload-control__heading > strong {
+  font-family: var(--font-ui);
+  font-size: var(--t-sm);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.camera-control-panel .payload-mission-view {
+  border-color: var(--line);
+  background: var(--surface-sunken);
+}
+
+.camera-control-panel .payload-rate-pad {
+  border-color: var(--line);
+}
+
+.camera-control-panel .payload-manual-controls[data-locked="true"] {
+  opacity: .5;
+}
+
+.camera-follow-modes {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.camera-follow-modes > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.camera-mode-card {
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.camera-mode-card:last-child {
+  border-bottom: 0;
+}
+
+.camera-mode-card--active {
+  box-shadow: inset 3px 0 var(--authority);
+  background: var(--authority-bg);
+}
+
+.camera-mode-card__heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.camera-mode-card h3 {
+  font-size: var(--t-sm);
+}
+
+.camera-mode-card__heading > span {
+  color: var(--authority);
+  font-size: var(--t-micro);
+  font-weight: 750;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.camera-mode-card > p {
+  margin: var(--s-2) 0;
+  color: var(--text-secondary);
+  font-size: var(--t-xs);
+  line-height: 1.45;
+}
+
+.camera-gates {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  list-style: none;
+  background: var(--line);
+}
+
+.camera-gates li {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: var(--s-2);
+  align-items: center;
+  padding: var(--s-2);
+  background: var(--surface-raised);
+}
+
+.camera-gates li > span {
+  color: var(--critical);
+  font-weight: 850;
+  text-align: center;
+}
+
+.camera-gates li[data-ready="true"] > span {
+  color: var(--nominal);
+}
+
+.camera-gates li[data-ready="unknown"] > span {
+  color: var(--idle);
+}
+
+.camera-gates strong,
+.camera-gates small {
+  display: block;
+}
+
+.camera-gates strong {
+  font-size: var(--t-xs);
+}
+
+.camera-gates small {
+  margin-top: .12rem;
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+  line-height: 1.35;
+}
+
+.camera-primary-action,
+.camera-danger-action,
+.camera-safety-link button {
+  min-height: 2.75rem;
+  padding: 0 var(--s-3);
+  border: 1px solid var(--text-primary);
+  color: var(--text-inverse);
+  background: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-xs);
+  font-weight: 780;
+}
+
+.camera-primary-action,
+.camera-danger-action {
+  width: 100%;
+}
+
+.camera-danger-action {
+  border-color: var(--critical);
+  background: var(--critical);
+}
+
+.camera-primary-action:disabled,
+.camera-danger-action:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+.camera-mode-card .camera-mode-card__action-note {
+  margin-bottom: 0;
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+}
+
+.camera-follow-state {
+  display: grid;
+  grid-template-columns: .75rem minmax(0, 1fr);
+  gap: var(--s-2);
+  align-items: center;
+  margin-bottom: var(--s-2);
+  padding: var(--s-2);
+  color: var(--authority);
+  background: var(--surface-raised);
+}
+
+.camera-follow-state > span {
+  width: .55rem;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.camera-follow-state strong,
+.camera-follow-state small {
+  display: block;
+}
+
+.camera-follow-state small {
+  margin-top: .12rem;
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+}
+
+.camera-follow-state--degraded_hold {
+  color: var(--caution);
+}
+
+.camera-safety-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--surface-sunken);
+}
+
+.camera-safety-link strong,
+.camera-safety-link span {
+  display: block;
+}
+
+.camera-safety-link strong {
+  font-size: var(--t-xs);
+  text-transform: uppercase;
+}
+
+.camera-safety-link span {
+  max-width: 38ch;
+  margin-top: .18rem;
+  color: var(--text-tertiary);
+  font-size: var(--t-micro);
+  line-height: 1.35;
+}
+
+@media (max-width: 80rem) {
+  .camera-workspace {
+    grid-template-columns: minmax(0, 1.35fr) minmax(20rem, .75fr);
+  }
+
+  .camera-feed-panel .live-video__viewport {
+    min-height: 24rem;
+  }
+}
+
+@media (max-width: 64rem) {
+  .camera-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .camera-feed-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line-strong);
+  }
+}

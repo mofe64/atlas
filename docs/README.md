@@ -35,6 +35,7 @@ and Agent.
 
 | Order | Document | What it answers |
 | --- | --- | --- |
+| Start | [Design language](design-language.md) | How should the operator interface communicate authority, state, safety, and operational intent? |
 | 1 | [Architecture overview](architecture-overview.md) | What are the major components, boundaries, and invariants? |
 | 2 | [Atlas Native](atlas-native.md) | How does the desktop application, Rust host, SQLite, and React UI work? |
 | 3 | [Atlas Agent](atlas-agent.md) | How does the onboard runtime integrate with MAVSDK, PX4, payload hardware, and perception? |

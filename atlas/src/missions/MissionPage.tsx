@@ -169,18 +169,39 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
     <main className="mission-workspace" id="main-content">
       <header className="mission-heading">
         <div>
-          <p className="eyebrow">Mission operations</p>
-          <h1>Plan the flight</h1>
-          <p>Draw the mission geometry and verify the generated path. Saving a valid plan opens a separate live execution workspace.</p>
+          <p className="eyebrow">Mission authoring</p>
+          <h1>Plan</h1>
         </div>
         <div className="mission-safety-note">
-          <strong>Operational boundary</strong>
-          <span>Planning never commands an aircraft. Upload, preflight checks, arm, start, and tracking happen in the execution workspace.</span>
+          <span><strong>Nothing is sent while planning.</strong> Save the flight path, then open it in Command when an aircraft is ready.</span>
+          <button type="button" onClick={() => selectTemplate(templateType)}>New mission</button>
         </div>
       </header>
 
       <section className="mission-builder" aria-label="Mission builder">
         <aside className="mission-control-rail">
+          <section className="mission-library mission-library--rail" aria-labelledby="mission-library-title">
+            <header>
+              <div><p className="eyebrow">Local mission library</p><h2 id="mission-library-title">Saved missions</h2></div>
+              <span>{missions.length}</span>
+            </header>
+            {missions.length === 0 ? (
+              <p className="mission-library-empty">No missions are saved on this ground station.</p>
+            ) : (
+              <div className="mission-table" role="list">
+                {missions.map((mission) => (
+                  <div key={mission.id} className="mission-table__row" role="listitem">
+                    <button className="mission-table__open" type="button" onClick={() => onMissionReady(mission.id)} disabled={!mission.generatedPlanId}>
+                      <span><strong>{mission.name}</strong><small>{missionTypeLabel(mission.templateType)} · {mission.selectedPattern.replace(/_/g, " ").toLowerCase()}</small></span>
+                      <span className="mission-table__status">{mission.generatedPlanId ? "Ready" : "Draft"}</span>
+                    </button>
+                    <button className="mission-table__edit" type="button" onClick={() => void loadMission(mission)}>Edit</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
           <header className="control-rail-heading">
             <div><span>01</span><strong>Mission definition</strong></div>
             <small>{selectedTemplate.defaultPattern.replace(/_/g, " ")}</small>
@@ -246,11 +267,6 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
           {draftDistance?.ok && draftDistance.distanceMeters !== undefined && (
             <p className="mission-distance-ready">First waypoint · {formatSafetyDistance(draftDistance.distanceMeters)} from {draftDistance.reference?.source} position</p>
           )}
-          {error && <p className="mission-error" role="alert">{error}</p>}
-          <button className="plan-button" type="button" disabled={!nativeAvailable || busy || !geometryReady} onClick={() => void createAndPlan()}>
-            {busy ? busyLabel : editingMissionId ? "Update & generate new plan" : "Save & generate plan"}
-          </button>
-          {!nativeAvailable && <p className="native-boundary-note">Open this workspace in Atlas Native to persist and generate plans.</p>}
         </aside>
 
         <div className="mission-map-stage">
@@ -278,30 +294,21 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
             onRemove={removePoint}
             onMove={movePoint}
           />
-          <PlanConsole plan={plan} />
         </div>
-      </section>
 
-      <section className="mission-library" aria-labelledby="mission-library-title">
-        <header>
-          <div><p className="eyebrow">Local mission library</p><h2 id="mission-library-title">Saved definitions</h2></div>
-          <span>{missions.length} total</span>
-        </header>
-        {missions.length === 0 ? (
-          <p className="mission-library-empty">No missions have been saved in this local ground station.</p>
-        ) : (
-          <div className="mission-table" role="list">
-            {missions.map((mission) => (
-              <div key={mission.id} className="mission-table__row" role="listitem">
-                <button className="mission-table__open" type="button" onClick={() => onMissionReady(mission.id)} disabled={!mission.generatedPlanId}>
-                  <span><strong>{mission.name}</strong><small>{mission.templateType.replace(/_/g, " ")} · {mission.selectedPattern.replace(/_/g, " ")}</small></span>
-                  <span className="mission-table__status">{mission.generatedPlanId ? "Open execution" : mission.status}</span>
-                </button>
-                <button className="mission-table__edit" type="button" onClick={() => void loadMission(mission)}>Edit</button>
-              </div>
-            ))}
-          </div>
-        )}
+        <aside className="mission-plan-rail" aria-label="Generated flight path">
+          <header className="control-rail-heading">
+            <div><span>03</span><strong>Flight path</strong></div>
+            <small>{plan ? "Generated" : "Not generated"}</small>
+          </header>
+          <PlanConsole plan={plan} />
+          {error && <p className="mission-error" role="alert">{error}</p>}
+          <button className="plan-button" type="button" disabled={!nativeAvailable || busy || !geometryReady} onClick={() => void createAndPlan()}>
+            {busy ? busyLabel : editingMissionId ? "Update & generate flight path" : "Save & generate flight path"}
+          </button>
+          <p className="plan-command-note">Saving stores this flight path. Open it in Command to choose an aircraft and send it after Atlas rechecks the aircraft and home position.</p>
+          {!nativeAvailable && <p className="native-boundary-note">Flight paths can be saved and generated when local services are available.</p>}
+        </aside>
       </section>
     </main>
   );
@@ -419,7 +426,7 @@ function ViewSettings({ templateType, settings, onChange }: {
         <NumberField label="Mission zoom" unit="%" value={settings.zoomPercent} min={0} max={100} step={5} onChange={(value) => onChange({ zoomPercent: value })} />
         <label>Yaw behaviour
           <select value={settings.gimbalYawMode} onChange={(event) => onChange({ gimbalYawMode: event.target.value as GimbalYawMode })}>
-            <option value="FOLLOW_DRONE_HEADING">Follow drone heading</option>
+            <option value="FOLLOW_DRONE_HEADING">Follow aircraft heading</option>
             <option value="FOLLOW_LANE_DIRECTION">Follow lane direction</option>
             <option value="FOLLOW_ROUTE_BEARING">Follow route bearing</option>
             <option value="LOOK_AT_POINT">Look at point</option>
@@ -474,7 +481,7 @@ function CoordinateEditor({ templateType, points, settings, onUpdate, onRemove, 
 }) {
   return (
     <section className="coordinate-editor" aria-labelledby="coordinate-editor-title">
-      <header><div><span>03</span><strong id="coordinate-editor-title">{vertexLabel(templateType)} coordinates</strong></div><small>Drag on map or edit precisely</small></header>
+      <header><div><span>02</span><strong id="coordinate-editor-title">{vertexLabel(templateType)} coordinates</strong></div><small>Drag on map or edit precisely</small></header>
       {points.length === 0 ? (
         <p className="coordinate-empty">Click the map to begin drawing.</p>
       ) : (
@@ -820,6 +827,12 @@ function geometryTitle(templateType: MissionTemplateType) {
   if (templateType === "AREA_SCAN") return "Coverage polygon";
   if (templateType === "ROUTE_SCAN") return "Route centreline";
   return "Waypoint path";
+}
+
+function missionTypeLabel(templateType: MissionTemplateType) {
+  if (templateType === "AREA_SCAN") return "Area scan";
+  if (templateType === "ROUTE_SCAN") return "Route scan";
+  return "Waypoints";
 }
 
 function vertexLabel(templateType: MissionTemplateType) {
