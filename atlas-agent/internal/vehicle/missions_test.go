@@ -163,7 +163,7 @@ func TestMissionPerceptionFailureBlocksArming(t *testing.T) {
 	}
 }
 
-func TestPerceptionStopFailureDoesNotBlockMissionCompletion(t *testing.T) {
+func TestPerceptionStopFailureDoesNotBlockCompletionAfterRecovery(t *testing.T) {
 	control := &recordingPerceptionControl{releaseErr: errors.New("adapter did not stop")}
 	executor := &MissionExecutor{
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)), perceptionControl: control,
@@ -171,7 +171,7 @@ func TestPerceptionStopFailureDoesNotBlockMissionCompletion(t *testing.T) {
 		startPerceptionHandled: true, updates: make(chan MissionUpdate, 16), uploadedRunID: "run-perception", activeRunID: "run-perception", state: "RUNNING", watchCancel: func() {},
 	}
 
-	executor.completeRun(context.Background(), "run-perception", 100, 1, 1, "Mission completed")
+	executor.completeRecoveredRun(context.Background(), "run-perception")
 	if executor.currentState("progress") != "COMPLETED" {
 		t.Fatalf("stop failure blocked completion: state=%s", executor.currentState("progress"))
 	}
@@ -184,6 +184,71 @@ func TestPerceptionStopFailureDoesNotBlockMissionCompletion(t *testing.T) {
 	}
 	if !foundPolicy {
 		t.Fatal("stop failure did not emit its reviewed skip-and-notify policy")
+	}
+}
+
+func TestEveryRouteBasedMissionRemainsActiveAfterRouteCompletion(t *testing.T) {
+	for _, missionType := range []string{
+		"WAYPOINT",
+		"AREA_SCAN",
+		"ROUTE_SCAN",
+		"INCIDENT_OFFSET_OBSERVE",
+		"INCIDENT_BOUNDED_AREA_SCAN",
+		"INCIDENT_BOUNDED_ORBIT",
+	} {
+		t.Run(missionType, func(t *testing.T) {
+			executor := &MissionExecutor{
+				logger:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+				action:        &recordingActionClient{},
+				updates:       make(chan MissionUpdate, 8),
+				uploadedRunID: "run-" + missionType,
+				activeRunID:   "run-" + missionType,
+				state:         "RUNNING",
+				watchCancel:   func() {},
+			}
+
+			executor.finishRoute(context.Background(), context.Background(), "run-"+missionType, 100, 4, 4, "Reviewed route complete")
+
+			if state := executor.currentState("progress"); state != "ROUTE_COMPLETE" {
+				t.Fatalf("route completion released %s mission authority: state=%s", missionType, state)
+			}
+			var routeCompleted bool
+			for len(executor.updates) > 0 {
+				update := <-executor.updates
+				if update.Type == "completed" {
+					t.Fatalf("%s emitted terminal completion before recovery", missionType)
+				}
+				if update.Type == "route_completed" && update.State == "ROUTE_COMPLETE" {
+					routeCompleted = true
+				}
+			}
+			if !routeCompleted {
+				t.Fatalf("%s did not publish its non-terminal route completion", missionType)
+			}
+		})
+	}
+}
+
+func TestAutomaticRTLRemainsActiveUntilRecovery(t *testing.T) {
+	executor := &MissionExecutor{
+		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		updates:         make(chan MissionUpdate, 8),
+		uploadedRunID:   "run-rtl",
+		activeRunID:     "run-rtl",
+		state:           "RUNNING",
+		rtlAfterMission: true,
+		watchCancel:     func() {},
+	}
+
+	executor.finishRoute(context.Background(), context.Background(), "run-rtl", 100, 2, 2, "Reviewed route complete")
+
+	if state := executor.currentState("progress"); state != "RTL" {
+		t.Fatalf("automatic RTL should remain operational, state=%s", state)
+	}
+	for len(executor.updates) > 0 {
+		if update := <-executor.updates; update.Type == "completed" {
+			t.Fatal("automatic RTL emitted terminal completion before landing")
+		}
 	}
 }
 
@@ -762,7 +827,7 @@ func TestSITLBatch6ArrivalActionAcceptance(t *testing.T) {
 
 	successClient := &sitlFaultActionClient{ActionServiceClient: realActionClient}
 	executor.action = successClient
-	updates := runSITLArrivalScenario(t, executor, "sitl-batch6-arrival", sitlArrivalPlan("RETURN_TO_LAUNCH", false), "completed")
+	updates := runSITLArrivalScenario(t, executor, "sitl-batch6-arrival", sitlArrivalPlan("RETURN_TO_LAUNCH", false), "route_completed")
 	assertActionStates(t, updates, "HOLD_AT_ARRIVAL", "RUNNING", "SUCCEEDED")
 	if successClient.holdCalls != 1 || successClient.forwardedHoldCalls != 1 {
 		t.Fatalf("Hold calls=%d forwarded=%d, want one real PX4 acknowledgement", successClient.holdCalls, successClient.forwardedHoldCalls)
@@ -924,9 +989,9 @@ func TestSITLAgentRestartReconcilesOnboardMissionAndActionCheckpoint(t *testing.
 				if update.ActionType == "HOLD_AT_ARRIVAL" && update.ActionState == "SUCCEEDED" {
 					holdSucceeded = true
 				}
-			case "completed":
+			case "route_completed":
 				if !reconciliationAccepted || !holdSucceeded {
-					t.Fatalf("mission completed before reconciliation and Hold acknowledgement: accepted=%t hold=%t", reconciliationAccepted, holdSucceeded)
+					t.Fatalf("route completed before reconciliation and Hold acknowledgement: accepted=%t hold=%t", reconciliationAccepted, holdSucceeded)
 				}
 				if actions.holdCalls != 1 || actions.forwardedHoldCalls != 1 {
 					t.Fatalf("restarted Agent Hold calls=%d forwarded=%d, want one durable requested attempt", actions.holdCalls, actions.forwardedHoldCalls)

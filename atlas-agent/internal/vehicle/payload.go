@@ -371,7 +371,7 @@ func (p *PayloadController) beginManual(ctx context.Context, input payloadComman
 	p.mu.Lock()
 	if kind == missionOverride && (p.runID != runID || !matchesActiveMissionState(p.runState)) {
 		p.mu.Unlock()
-		err := errors.New("manual payload control requires the active RUNNING or PAUSED mission")
+		err := errors.New("manual payload control requires an active mission operation")
 		return CommandResult{Code: "MISSION_NOT_ACTIVE", Message: err.Error()}, err
 	}
 	if kind == inspectionControl && matchesActiveMissionState(p.runState) {
@@ -849,7 +849,7 @@ func payloadLease(milliseconds int64) (time.Duration, error) {
 }
 
 func matchesActiveMissionState(state string) bool {
-	return state == "RUNNING" || state == "PAUSED"
+	return state == "RUNNING" || state == "PAUSED" || state == "ROUTE_COMPLETE" || state == "RTL"
 }
 
 func gimbalResponse(result *gimbalpb.GimbalResult, err error) (CommandResult, error) {

@@ -2568,10 +2568,13 @@ pub(super) fn sync_incident_assignment_run_state(
     };
     let assignment_run_state = if assignment_status == "STAGED"
         && !terminal
-        && matches!(run_state, "RUNNING" | "PAUSED")
+        && matches!(run_state, "RUNNING" | "PAUSED" | "ROUTE_COMPLETE")
     {
         "STAGED"
-    } else if on_scene_at.is_some() && !terminal && matches!(run_state, "RUNNING" | "PAUSED") {
+    } else if on_scene_at.is_some()
+        && !terminal
+        && matches!(run_state, "RUNNING" | "PAUSED" | "ROUTE_COMPLETE")
+    {
         "ON_SCENE"
     } else {
         run_state

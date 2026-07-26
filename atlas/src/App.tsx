@@ -351,30 +351,13 @@ function App() {
     .filter((session) => session.state !== "ENDED")
     .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs);
   const activeMissionRuns = operationalMissionRuns
-    .filter((run) => ["RUNNING", "PAUSED"].includes(run.status))
+    .filter((run) => !run.completedAtUnixMs && ["RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"].includes(run.status))
     .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs);
-  const heldMissionRuns = operationalMissionRuns
-    .filter((run) => {
-      if (run.status !== "COMPLETED") return false;
-      const arrivalHoldAcknowledged = run.actions.some(
-        (action) => action.actionType === "HOLD_AT_ARRIVAL" && action.state === "SUCCEEDED",
-      );
-      const aircraft = operationalAircraft.find((candidate) => candidate.droneId === run.droneId);
-      return arrivalHoldAcknowledged
-        && aircraft?.connectionStatus === "connected"
-        && aircraft.telemetry?.status === "live"
-        && aircraft.telemetry.inAir === true
-        && !activeMissionRuns.some((activeRun) => activeRun.droneId === run.droneId);
-    })
-    .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs)
-    .filter((run, index, runs) => runs.findIndex((candidate) => candidate.droneId === run.droneId) === index);
   const primaryFollow = activeFollowSessions[0];
-  const primaryMission = activeMissionRuns[0] ?? heldMissionRuns[0];
-  const primaryMissionIsHeldOnScene = Boolean(
-    primaryMission && heldMissionRuns.some((run) => run.id === primaryMission.id),
-  );
+  const primaryMission = activeMissionRuns[0];
+  const primaryMissionIsHeldOnScene = primaryMission?.status === "ROUTE_COMPLETE";
   const selectedFollow = activeFollowSessions.find((session) => session.droneId === selectedDroneId);
-  const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length + heldMissionRuns.length;
+  const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length;
   const additionalAuthorityCopy = activeAuthorityCount > 1
     ? ` · ${activeAuthorityCount - 1} more under control`
     : "";
@@ -463,7 +446,7 @@ function App() {
                     {primaryFollow
                       ? `${aircraftName(fleet.aircraft, primaryFollow.droneId)} is following a target`
                       : primaryMissionIsHeldOnScene
-                        ? `${primaryMission?.droneName || "Aircraft"} is holding after ${primaryMission?.missionName || "a mission"}`
+                        ? `${primaryMission?.droneName || "Aircraft"} is holding after completing the route for ${primaryMission?.missionName || "a mission"}`
                         : `${primaryMission?.droneName || "Aircraft"} is flying ${primaryMission?.missionName || "a mission"}`}
                   </strong>
                   <small>
@@ -474,7 +457,7 @@ function App() {
                             : "Offboard · Atlas is flying it"
                         }${additionalAuthorityCopy}`
                       : primaryMissionIsHeldOnScene
-                        ? `On scene · mission complete${additionalAuthorityCopy}`
+                        ? `Route complete · Land or RTL required${additionalAuthorityCopy}`
                         : `${displayEnum(primaryMission?.status)}${additionalAuthorityCopy}`}
                   </small>
                 </span>
@@ -835,7 +818,7 @@ function AircraftMissionRuns({
     };
   }, [droneId, nativeAvailable]);
 
-  const activeRun = runs.find((run) => !["COMPLETED", "FAILED", "CANCELLED", "RTL"].includes(run.status));
+  const activeRun = runs.find((run) => !run.completedAtUnixMs && !["COMPLETED", "FAILED", "CANCELLED"].includes(run.status));
   const previousRuns = runs.filter((run) => run !== activeRun);
 
   return (

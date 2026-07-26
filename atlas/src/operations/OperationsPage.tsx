@@ -104,7 +104,7 @@ const emptyDraft: IncidentDraft = {
   occurredAt: "",
 };
 
-const terminalMissionStates = new Set(["COMPLETED", "FAILED", "CANCELLED", "RTL"]);
+const terminalMissionStates = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const terminalVehicleCommandStates = new Set(["succeeded", "failed", "rejected", "timed_out", "cancelled"]);
 
 export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft, onConfirmResponse }: OperationsPageProps) {
@@ -205,7 +205,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   const liveAssignment = useMemo(() => {
     return incidentAssignments?.find((assignment) => {
       const run = runs.find((candidate) => candidate.id === assignment.missionRunId);
-      return !assignment.endedAtUnixMs && run && !terminalMissionStates.has(run.status);
+      return !assignment.endedAtUnixMs && run && !run.completedAtUnixMs && !terminalMissionStates.has(run.status);
     }) ?? incidentAssignments?.find((assignment) => !assignment.endedAtUnixMs);
   }, [incidentAssignments, runs]);
   const observationAssignment = liveAssignment ?? incidentAssignments?.[0];
@@ -244,6 +244,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
     nativeAvailable
       && liveDroneId
       && liveRun
+      && !liveRun.completedAtUnixMs
       && !terminalMissionStates.has(liveRun.status)
       && activeAircraft?.connectionStatus === "connected"
       && activeAircraft.telemetry?.status === "live"
@@ -727,7 +728,7 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
             <span>Flight safety</span>
             <div>
               <button type="button" disabled={!canIssueSafetyCommand || liveRun?.status !== "RUNNING"} onClick={() => void requestSafetyCommand("hold")}>Hold</button>
-              <button type="button" disabled={!canIssueSafetyCommand || !liveRun || !["RUNNING", "PAUSED"].includes(liveRun.status)} onClick={() => void requestSafetyCommand("return_to_launch")}>RTL</button>
+              <button type="button" disabled={!canIssueSafetyCommand || !liveRun || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(liveRun.status)} onClick={() => void requestSafetyCommand("return_to_launch")}>RTL</button>
               <button type="button" className="response-context__land" disabled={!canIssueSafetyCommand} onClick={() => void requestSafetyCommand("land")}>Land</button>
             </div>
             <small>{safetyCommandPending
@@ -1988,7 +1989,7 @@ function incidentMatchesFilters(
 
 function liveResponseState(run?: MissionRun, responsePattern?: string) {
   if (!run) return "Not started";
-  if (terminalMissionStates.has(run.status)) return displayEnum(run.status);
+  if (run.completedAtUnixMs || terminalMissionStates.has(run.status)) return displayEnum(run.status);
   const hold = run.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
   if (hold?.state === "SUCCEEDED") return responsePattern === "HOLD_AT_STAGING"
     ? "STAGED · AWAITING OPERATOR"

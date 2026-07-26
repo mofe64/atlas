@@ -507,7 +507,7 @@ pub(super) fn observe_incident_revision_alerts(
             .prepare(
                 r#"
                 SELECT a.id, a.drone_id, a.mission_run_id, a.status,
-                       m.id, m.params_json, r.status
+                       m.id, m.params_json, r.status, r.completed_at_unix_ms
                 FROM incident_assignments a
                 JOIN missions m ON m.id = a.mission_id
                 LEFT JOIN mission_runs r ON r.id = a.mission_run_id
@@ -525,6 +525,7 @@ pub(super) fn observe_incident_revision_alerts(
                     row.get::<_, String>(4)?,
                     row.get::<_, String>(5)?,
                     row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             })
             .map_err(|error| format!("query incident revision alert assignments: {error}"))?
@@ -540,6 +541,7 @@ pub(super) fn observe_incident_revision_alerts(
         mission_id,
         params_json,
         run_state,
+        run_completed_at,
     ) in assignments
     {
         let params: Value = serde_json::from_str(&params_json)
@@ -552,9 +554,7 @@ pub(super) fn observe_incident_revision_alerts(
         if planned_revision.is_none_or(|planned| planned >= current_revision) {
             continue;
         }
-        let active_run = run_state
-            .as_deref()
-            .is_some_and(|state| !matches!(state, "COMPLETED" | "FAILED" | "CANCELLED" | "RTL"));
+        let active_run = run_state.is_some() && run_completed_at.is_none();
         observe_alert(
             tx,
             &AlertObservation {

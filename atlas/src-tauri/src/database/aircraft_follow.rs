@@ -176,7 +176,7 @@ impl LocalDatabase {
             .map_err(|error| format!("begin aircraft follow request: {error}"))?;
         let unfinished_mission: bool = tx
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE drone_id = ?1 AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED', 'RTL'))",
+                "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE drone_id = ?1 AND completed_at_unix_ms IS NULL)",
                 [&input.drone_id],
                 |row| row.get(0),
             )

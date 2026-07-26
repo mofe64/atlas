@@ -34,7 +34,7 @@ type CommandPageProps = {
   onOpenMission: (missionId: string, droneId: string) => void;
 };
 
-const activeMissionStates = new Set(["UPLOADING", "READY", "RUNNING", "PAUSED"]);
+const activeMissionStates = new Set(["UPLOADING", "READY", "RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"]);
 const safetyCommandTimeoutMs = 15_000;
 
 type AircraftAuthorityTone =
@@ -129,7 +129,7 @@ export function CommandPage({
     [followSessions],
   );
   const activeMissionRuns = useMemo(
-    () => missionRuns.filter((run) => activeMissionStates.has(run.status)),
+    () => missionRuns.filter((run) => !run.completedAtUnixMs && activeMissionStates.has(run.status)),
     [missionRuns],
   );
 
@@ -671,7 +671,7 @@ function aircraftAuthority(
   }
 
   const run = missionRuns.find(
-    (candidate) => candidate.droneId === aircraft.droneId && activeMissionStates.has(candidate.status),
+    (candidate) => candidate.droneId === aircraft.droneId && !candidate.completedAtUnixMs && activeMissionStates.has(candidate.status),
   );
   if (run) {
     return {

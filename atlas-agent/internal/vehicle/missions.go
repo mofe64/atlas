@@ -16,6 +16,7 @@ import (
 	"github.com/sunnyside/atlas/atlas-agent/internal/identity"
 	actionpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/action"
 	missionpb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/mission"
+	telemetrypb "github.com/sunnyside/atlas/atlas-agent/internal/mavsdkpb/telemetry"
 	"github.com/sunnyside/atlas/atlas-agent/internal/perception"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -72,6 +73,7 @@ type MissionExecutor struct {
 	logger                 *slog.Logger
 	mission                missionpb.MissionServiceClient
 	action                 actionpb.ActionServiceClient
+	telemetry              telemetrypb.TelemetryServiceClient
 	payload                *PayloadController
 	ownsPayload            bool
 	updates                chan MissionUpdate
@@ -81,6 +83,8 @@ type MissionExecutor struct {
 	activeRunID            string
 	state                  string
 	watchCancel            context.CancelFunc
+	recoveryCancel         context.CancelFunc
+	rtlAfterMission        bool
 	arrivalActions         []runtimeMissionAction
 	arrivalHandled         bool
 	perceptionControl      perception.Control
@@ -115,6 +119,7 @@ func NewMissionExecutor(address string, logger *slog.Logger, sharedPayload ...*P
 		logger:      logger,
 		mission:     missionpb.NewMissionServiceClient(connection),
 		action:      actionpb.NewActionServiceClient(connection),
+		telemetry:   telemetrypb.NewTelemetryServiceClient(connection),
 		payload:     payload,
 		ownsPayload: ownsPayload,
 		updates:     make(chan MissionUpdate, 64),
@@ -127,6 +132,9 @@ func (e *MissionExecutor) Close() error {
 	e.mu.Lock()
 	if e.watchCancel != nil {
 		e.watchCancel()
+	}
+	if e.recoveryCancel != nil {
+		e.recoveryCancel()
 	}
 	e.mu.Unlock()
 	err := e.connection.Close()
@@ -198,12 +206,12 @@ func (e *MissionExecutor) Reconcile(ctx context.Context, reconciliation MissionR
 	startPerception, stopPerception, arrivalActions := splitRuntimeActions(actions)
 
 	e.mu.Lock()
-	if e.uploadedRunID != "" && e.uploadedRunID != reconciliation.RunID && e.watchCancel != nil {
+	if e.uploadedRunID != "" && e.uploadedRunID != reconciliation.RunID && (e.watchCancel != nil || e.recoveryCancel != nil) {
 		e.mu.Unlock()
 		failed(reconciliation.State, "RECONCILIATION_RUN_CONFLICT", errors.New("Agent is already watching a different mission run"))
 		return
 	}
-	alreadyWatching := e.uploadedRunID == reconciliation.RunID && e.watchCancel != nil
+	alreadyWatching := e.uploadedRunID == reconciliation.RunID && (e.watchCancel != nil || e.recoveryCancel != nil)
 	reconciledState := reconciliation.State
 	if reconciledState == "UPLOADING" {
 		reconciledState = "READY"
@@ -211,10 +219,11 @@ func (e *MissionExecutor) Reconcile(ctx context.Context, reconciliation MissionR
 	if !alreadyWatching {
 		e.uploadedRunID = reconciliation.RunID
 		e.activeRunID = ""
-		if reconciledState == "RUNNING" || reconciledState == "PAUSED" {
+		if reconciledState == "RUNNING" || reconciledState == "PAUSED" || reconciledState == "ROUTE_COMPLETE" || reconciledState == "RTL" {
 			e.activeRunID = reconciliation.RunID
 		}
 		e.state = reconciledState
+		e.rtlAfterMission = translated.returnToLaunch
 		e.startPerception = startPerception
 		e.stopPerception = stopPerception
 		e.startPerceptionHandled = startPerception == nil || startPerception.durableState == "SUCCEEDED"
@@ -228,13 +237,13 @@ func (e *MissionExecutor) Reconcile(ctx context.Context, reconciliation MissionR
 
 	if e.payload != nil && !alreadyWatching {
 		e.payload.ConfigureMission(reconciliation.RunID, translated.payload)
-		if reconciledState == "RUNNING" || reconciledState == "PAUSED" {
+		if isOperationalRunState(reconciledState) {
 			if payloadErr := e.payload.ActivateMission(operationContext, reconciliation.RunID, reconciledState); payloadErr != nil {
 				e.emitPayloadEvent(PayloadEvent{RunID: reconciliation.RunID, Type: "payload_restore_failed", State: reconciledState, ErrorCode: "MISSION_PAYLOAD_RECONCILIATION_FAILED", Message: payloadErr.Error()})
 			}
 		}
 	}
-	if !alreadyWatching && (reconciledState == "RUNNING" || reconciledState == "PAUSED") && startPerception != nil && startPerception.durableState == "SUCCEEDED" {
+	if !alreadyWatching && isOperationalRunState(reconciledState) && startPerception != nil && startPerception.durableState == "SUCCEEDED" {
 		e.mu.Lock()
 		control := e.perceptionControl
 		e.mu.Unlock()
@@ -266,6 +275,8 @@ func (e *MissionExecutor) Reconcile(ctx context.Context, reconciliation MissionR
 	})
 	if !alreadyWatching && reconciledState == "RUNNING" {
 		e.startWatcher(ctx, reconciliation.RunID)
+	} else if !alreadyWatching && (reconciledState == "ROUTE_COMPLETE" || reconciledState == "RTL") {
+		e.startRecoveryWatcher(ctx, reconciliation.RunID)
 	}
 }
 
@@ -325,6 +336,7 @@ func (e *MissionExecutor) upload(ctx context.Context, operation MissionOperation
 		return fmt.Errorf("translate Atlas mission plan: %w", err)
 	}
 	e.stopWatcher()
+	e.stopRecoveryWatcher()
 	e.mu.Lock()
 	e.arrivalActions = append([]runtimeMissionAction(nil), translated.arrivalActions...)
 	e.arrivalHandled = false
@@ -332,6 +344,7 @@ func (e *MissionExecutor) upload(ctx context.Context, operation MissionOperation
 	e.stopPerception = cloneRuntimeAction(translated.stopPerception)
 	e.startPerceptionHandled = translated.startPerception == nil
 	e.stopPerceptionHandled = translated.stopPerception == nil
+	e.rtlAfterMission = translated.returnToLaunch
 	e.mu.Unlock()
 	if e.payload != nil {
 		e.payload.ConfigureMission(operation.RunID, translated.payload)
@@ -589,12 +602,12 @@ func (e *MissionExecutor) returnToLaunch(ctx context.Context, operation MissionO
 		return fmt.Errorf("return to launch: %w", err)
 	}
 	e.stopWatcher()
-	e.stopMissionPerception(ctx, operation.RunID)
 	e.setState(operation.RunID, "RTL")
 	if e.payload != nil {
-		e.payload.EndMission(ctx, operation.RunID)
+		e.payload.SetMissionState(operation.RunID, "RTL")
 	}
-	e.emit(ctx, operation, "rtl_started", "RTL", nil, nil, nil, "", "Return to launch accepted; mission execution ended", "")
+	e.emit(ctx, operation, "rtl_started", "RTL", nil, nil, nil, "", "Return to launch accepted; mission remains active until the aircraft lands and disarms", "")
+	e.startRecoveryWatcher(context.WithoutCancel(ctx), operation.RunID)
 	return nil
 }
 
@@ -655,7 +668,7 @@ func (e *MissionExecutor) startWatcher(ctx context.Context, runID string) {
 						return
 					}
 					if current >= total {
-						e.completeRun(watchContext, runID, percent, current, total, "Arrival Hold acknowledged; mission actions completed")
+						e.finishRoute(ctx, watchContext, runID, percent, current, total, "Arrival Hold acknowledged; route complete")
 						return
 					}
 					if e.payload != nil {
@@ -666,10 +679,11 @@ func (e *MissionExecutor) startWatcher(ctx context.Context, runID string) {
 				case outcome.policyRunState == "RTL":
 					e.setState(runID, "RTL")
 					if e.payload != nil {
-						e.payload.EndMission(watchContext, runID)
+						e.payload.SetMissionState(runID, "RTL")
 					}
 					e.emitForRun(watchContext, runID, "rtl_started", "RTL", &percent, &current, &total, outcome.errorCode, outcome.message)
 					e.stopWatcherFromWatcher()
+					e.startRecoveryWatcher(ctx, runID)
 				default:
 					e.emitForRun(watchContext, runID, "operation_failed", "RUNNING", &percent, &current, &total, outcome.errorCode, outcome.message)
 					e.stopWatcherFromWatcher()
@@ -677,7 +691,7 @@ func (e *MissionExecutor) startWatcher(ctx context.Context, runID string) {
 				return
 			}
 			if current >= total && total > 0 {
-				e.completeRun(watchContext, runID, percent, current, total, "Mission completed")
+				e.finishRoute(ctx, watchContext, runID, percent, current, total, "Reviewed route complete")
 				return
 			}
 			if e.payload != nil {
@@ -705,14 +719,51 @@ func (e *MissionExecutor) markArrivalActionsHandled(runID string) {
 	e.mu.Unlock()
 }
 
-func (e *MissionExecutor) completeRun(ctx context.Context, runID string, percent float64, current, total uint32, message string) {
+func (e *MissionExecutor) finishRoute(parentContext, ctx context.Context, runID string, percent float64, current, total uint32, message string) {
+	e.mu.Lock()
+	returnToLaunch := e.rtlAfterMission
+	alreadyHolding := e.arrivalHandled
+	if count := len(e.arrivalActions); count == 0 || e.arrivalActions[count-1].actionType == "RESUME_AFTER_ARRIVAL" {
+		alreadyHolding = false
+	}
+	e.mu.Unlock()
+	state := "ROUTE_COMPLETE"
+	updateType := "route_completed"
+	if returnToLaunch {
+		state = "RTL"
+		updateType = "rtl_started"
+		message += "; PX4 return-to-launch phase active"
+	} else if !alreadyHolding {
+		response, err := e.action.Hold(ctx, &actionpb.HoldRequest{})
+		if err != nil {
+			e.emitForRun(ctx, runID, "operation_failed", "RUNNING", &percent, &current, &total, "ROUTE_COMPLETE_HOLD_FAILED", fmt.Sprintf("route completed but Hold could not be requested: %v", err))
+			e.stopWatcherFromWatcher()
+			return
+		}
+		if err := actionResultError(response.GetActionResult()); err != nil {
+			e.emitForRun(ctx, runID, "operation_failed", "RUNNING", &percent, &current, &total, "ROUTE_COMPLETE_HOLD_REJECTED", fmt.Sprintf("route completed but PX4 rejected Hold: %v", err))
+			e.stopWatcherFromWatcher()
+			return
+		}
+		message += "; aircraft holding until Land or RTL"
+	}
+	e.setState(runID, state)
+	if e.payload != nil {
+		e.payload.SetMissionState(runID, state)
+	}
+	e.emitForRun(ctx, runID, updateType, state, &percent, &current, &total, "", message)
+	e.stopWatcherFromWatcher()
+	e.startRecoveryWatcher(parentContext, runID)
+}
+
+func (e *MissionExecutor) completeRecoveredRun(ctx context.Context, runID string) {
 	e.stopMissionPerception(ctx, runID)
 	e.setState(runID, "COMPLETED")
 	if e.payload != nil {
 		e.payload.EndMission(ctx, runID)
 	}
-	e.emitForRun(ctx, runID, "completed", "COMPLETED", &percent, &current, &total, "", message)
-	e.stopWatcherFromWatcher()
+	e.emitForRun(ctx, runID, "completed", "COMPLETED", nil, nil, nil, "", "Aircraft landed and disarmed; mission operation completed")
+	e.stopRecoveryWatcherFromWatcher()
 }
 
 func (e *MissionExecutor) pauseForOperatorDecision(ctx context.Context, runID string, percent float64, current, total uint32) {
@@ -1022,6 +1073,86 @@ func (e *MissionExecutor) stopWatcher() {
 func (e *MissionExecutor) stopWatcherFromWatcher() {
 	e.mu.Lock()
 	e.watchCancel = nil
+	e.mu.Unlock()
+}
+
+func (e *MissionExecutor) startRecoveryWatcher(ctx context.Context, runID string) {
+	e.mu.Lock()
+	if e.recoveryCancel != nil || e.uploadedRunID != runID {
+		e.mu.Unlock()
+		return
+	}
+	if e.telemetry == nil {
+		e.mu.Unlock()
+		e.emitForRun(ctx, runID, "operation_failed", e.currentState("recovery"), nil, nil, nil, "RECOVERY_MONITOR_UNAVAILABLE", "mission recovery telemetry is unavailable; keep the run open and monitor the aircraft")
+		return
+	}
+	recoveryContext, cancel := context.WithCancel(ctx)
+	e.recoveryCancel = cancel
+	e.mu.Unlock()
+
+	go func() {
+		inAirStream, err := e.telemetry.SubscribeInAir(recoveryContext, &telemetrypb.SubscribeInAirRequest{})
+		if err != nil {
+			if recoveryContext.Err() == nil {
+				e.emitForRun(recoveryContext, runID, "operation_failed", e.currentState("recovery"), nil, nil, nil, "RECOVERY_IN_AIR_SUBSCRIPTION_FAILED", fmt.Sprintf("monitor aircraft landing: %v", err))
+			}
+			e.stopRecoveryWatcherFromWatcher()
+			return
+		}
+		for {
+			response, receiveErr := inAirStream.Recv()
+			if receiveErr != nil {
+				if recoveryContext.Err() == nil {
+					e.emitForRun(recoveryContext, runID, "operation_failed", e.currentState("recovery"), nil, nil, nil, "RECOVERY_IN_AIR_STREAM_FAILED", fmt.Sprintf("monitor aircraft landing: %v", receiveErr))
+				}
+				e.stopRecoveryWatcherFromWatcher()
+				return
+			}
+			if response.GetIsInAir() {
+				continue
+			}
+			break
+		}
+
+		armedStream, err := e.telemetry.SubscribeArmed(recoveryContext, &telemetrypb.SubscribeArmedRequest{})
+		if err != nil {
+			if recoveryContext.Err() == nil {
+				e.emitForRun(recoveryContext, runID, "operation_failed", e.currentState("recovery"), nil, nil, nil, "RECOVERY_ARMED_SUBSCRIPTION_FAILED", fmt.Sprintf("confirm aircraft disarm: %v", err))
+			}
+			e.stopRecoveryWatcherFromWatcher()
+			return
+		}
+		for {
+			response, receiveErr := armedStream.Recv()
+			if receiveErr != nil {
+				if recoveryContext.Err() == nil {
+					e.emitForRun(recoveryContext, runID, "operation_failed", e.currentState("recovery"), nil, nil, nil, "RECOVERY_ARMED_STREAM_FAILED", fmt.Sprintf("confirm aircraft disarm: %v", receiveErr))
+				}
+				e.stopRecoveryWatcherFromWatcher()
+				return
+			}
+			if response.GetIsArmed() {
+				continue
+			}
+			e.completeRecoveredRun(recoveryContext, runID)
+			return
+		}
+	}()
+}
+
+func (e *MissionExecutor) stopRecoveryWatcher() {
+	e.mu.Lock()
+	if e.recoveryCancel != nil {
+		e.recoveryCancel()
+		e.recoveryCancel = nil
+	}
+	e.mu.Unlock()
+}
+
+func (e *MissionExecutor) stopRecoveryWatcherFromWatcher() {
+	e.mu.Lock()
+	e.recoveryCancel = nil
 	e.mu.Unlock()
 }
 
@@ -1500,7 +1631,11 @@ func actionsFromCheckpoints(actions []runtimeMissionAction, checkpoints []Missio
 }
 
 func matchesRunState(value string) bool {
-	return value == "UPLOADING" || value == "READY" || value == "RUNNING" || value == "PAUSED"
+	return value == "UPLOADING" || value == "READY" || isOperationalRunState(value)
+}
+
+func isOperationalRunState(value string) bool {
+	return value == "RUNNING" || value == "PAUSED" || value == "ROUTE_COMPLETE" || value == "RTL"
 }
 
 func reconciliationFailureState(value string) string {

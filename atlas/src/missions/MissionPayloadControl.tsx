@@ -117,7 +117,7 @@ function PayloadControl({
     && aircraft.telemetry.inAir === false;
   const activeRun = context.kind === "inspection"
     ? inspectionSafe
-    : run?.status === "RUNNING" || run?.status === "PAUSED";
+    : Boolean(run && ["RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"].includes(run.status));
   const manual = overrideState === "manual";
   const contextKey = context.kind === "inspection" ? context.kind : context.missionRunId;
   const terrainElevation = payloadTarget?.terrainElevationMeters;

@@ -31,8 +31,9 @@ type VehicleCommandReceipt = {
   resultMessage: string;
 };
 
-const terminalStates = new Set(["COMPLETED", "FAILED", "CANCELLED", "RTL"]);
+const terminalStates = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 const terminalCommandStates = new Set(["succeeded", "failed", "rejected", "timed_out", "cancelled"]);
+const isTerminalRun = (run?: MissionRun) => Boolean(run?.completedAtUnixMs) || Boolean(run && terminalStates.has(run.status));
 
 type TelemetryHistoryPage = {
   snapshots: Array<{
@@ -87,7 +88,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
         if (nextMission) setMission(nextMission);
         if (nextPlan) setPlan(nextPlan);
         const missionRuns = nextRuns.filter((run) => run.missionId === missionId);
-        const preferredRun = missionRuns.find((run) => !terminalStates.has(run.status)) ?? missionRuns[0];
+        const preferredRun = missionRuns.find((run) => !isTerminalRun(run)) ?? missionRuns[0];
         const connected = nextFleet.aircraft.find((candidate) => candidate.connectionStatus === "connected" && candidate.droneId)?.droneId;
         setSelectedRunId((current) => current && nextRuns.some((run) => run.id === current) ? current : preferredRun?.id);
         setSelectedDroneId((current) => current || preferredDroneId || preferredRun?.droneId || connected || "");
@@ -134,14 +135,14 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
 
   const missionRuns = useMemo(() => runs.filter((run) => run.missionId === missionId), [missionId, runs]);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? missionRuns[0];
-  const activeRun = missionRuns.find((run) => !terminalStates.has(run.status));
+  const activeRun = missionRuns.find((run) => !isTerminalRun(run));
   const targetDroneId = selectedRun?.droneId || selectedDroneId;
   const targetAircraft = fleet?.aircraft.find((candidate) => candidate.droneId === targetDroneId);
   const connectedAircraft = fleet?.aircraft.filter((candidate) => candidate.connectionStatus === "connected" && candidate.droneId) ?? [];
   const deploymentAircraftOptions = lockedDroneId
     ? fleet?.aircraft.filter((candidate) => candidate.droneId === lockedDroneId) ?? []
     : connectedAircraft;
-  const targetActiveRun = runs.find((run) => run.droneId === selectedDroneId && !terminalStates.has(run.status));
+  const targetActiveRun = runs.find((run) => run.droneId === selectedDroneId && !isTerminalRun(run));
   const deploymentAircraft = fleet?.aircraft.find((candidate) => candidate.droneId === selectedDroneId);
   const uploadDistance = selectedDroneId ? missionDistanceStatus(plan?.generatedWaypoints[0], deploymentAircraft) : undefined;
   const trackedAircraft = trackedPosition(targetAircraft);
@@ -240,7 +241,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   }
 
   async function landAircraft() {
-    if (!targetDroneId || !selectedRun || terminalStates.has(selectedRun.status)) return;
+    if (!targetDroneId || !selectedRun || isTerminalRun(selectedRun)) return;
     const confirmed = window.confirm("Request immediate Land for this aircraft? Use only when the landing area is safe.");
     if (!confirmed) return;
     setPendingOperation("land");
@@ -280,7 +281,11 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   const latestEvent = selectedRun?.events[selectedRun.events.length - 1];
   const arrivalHold = selectedRun?.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
   const onSceneAcknowledged = arrivalHold?.state === "SUCCEEDED";
-  const displayedRunState = onSceneAcknowledged && selectedRun && !terminalStates.has(selectedRun.status) ? "ON SCENE" : selectedRun?.status ?? "NOT UPLOADED";
+  const displayedRunState = onSceneAcknowledged
+    && selectedRun
+    && ["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status)
+    ? "ON SCENE"
+    : selectedRun?.status ?? "NOT UPLOADED";
 
   return (
     <main className="execution-workspace" id="main-content">
@@ -311,8 +316,8 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
           </dl>
           <div className="execution-response-context__controls">
             <button type="button" disabled={selectedRun?.status !== "RUNNING" || Boolean(pendingOperation)} onClick={() => void control("pause")}>Hold</button>
-            <button type="button" disabled={!selectedRun || !["RUNNING", "PAUSED"].includes(selectedRun.status) || Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>RTL</button>
-            <button type="button" className="execution-response-context__land" disabled={!selectedRun || terminalStates.has(selectedRun.status) || targetAircraft?.connectionStatus !== "connected" || targetAircraft.telemetry?.status !== "live" || targetAircraft.telemetry.inAir !== true || Boolean(pendingOperation)} onClick={() => void landAircraft()}>Land</button>
+            <button type="button" disabled={!selectedRun || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status) || Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>RTL</button>
+            <button type="button" className="execution-response-context__land" disabled={!selectedRun || isTerminalRun(selectedRun) || targetAircraft?.connectionStatus !== "connected" || targetAircraft.telemetry?.status !== "live" || targetAircraft.telemetry.inAir !== true || Boolean(pendingOperation)} onClick={() => void landAircraft()}>Land</button>
             {safetyCommandResult && <small role="status">{safetyCommandResult}</small>}
           </div>
         </section>
@@ -410,12 +415,13 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
                   {selectedRun.status === "RUNNING" && <button type="button" className="execution-primary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("pause")}>Pause to hold</button>}
                   {selectedRun.status === "PAUSED" && <button type="button" className="execution-primary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("resume")}>Resume mission</button>}
                   {["READY", "RUNNING", "PAUSED"].includes(selectedRun.status) && <button type="button" className="execution-secondary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("cancel")}>Cancel mission</button>}
-                  {["RUNNING", "PAUSED"].includes(selectedRun.status) && <button type="button" className="execution-critical-action" disabled={Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>End & RTL</button>}
+                  {["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status) && <button type="button" className="execution-critical-action" disabled={Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>{selectedRun.status === "ROUTE_COMPLETE" ? "Return to launch" : "End & RTL"}</button>}
                 </div>
                 {pendingOperation && <p className="execution-pending">Sending {pendingOperation.replace(/_/g, " ")}…</p>}
                 {selectedRun.status === "READY" && <p className="execution-command-note">Atlas checks PX4 readiness, arms the aircraft, then starts the uploaded mission. A failed start commands HOLD.</p>}
                 {selectedRun.status === "CANCELLED" && <p className="execution-command-note">Mission cleared. The aircraft remains in HOLD.</p>}
-                {selectedRun.status === "RTL" && <p className="execution-command-note">PX4 accepted RTL. Monitor until landed and disarmed.</p>}
+                {selectedRun.status === "ROUTE_COMPLETE" && <p className="execution-command-note">The reviewed route is complete. The aircraft is holding and this mission remains active until you Land or RTL.</p>}
+                {selectedRun.status === "RTL" && <p className="execution-command-note">PX4 accepted RTL. The mission remains active until telemetry confirms the aircraft has landed and disarmed.</p>}
               </section>
 
               {selectedRun.actions.length > 0 && <ArrivalActionRuntime run={selectedRun} />}
@@ -563,15 +569,16 @@ function progressLabel(run: MissionRun) {
   if (run.status === "UPLOADING") return "Flight-controller upload";
   if (run.status === "READY") return "Uploaded · awaiting arm & start";
   if (run.status === "PAUSED") return "Paused · aircraft holding";
+  if (run.status === "ROUTE_COMPLETE") return "Route complete · awaiting Land or RTL";
   if (run.status === "COMPLETED") return "Mission complete";
-  if (run.status === "RTL") return "Mission ended · returning";
+  if (run.status === "RTL") return "Returning · completion awaits landing";
   if (run.status === "FAILED") return "Execution failed";
   return "Mission execution";
 }
 
 function waypointLabel(run: MissionRun) {
   if (run.currentWaypoint === undefined) return `— / ${run.totalWaypoints}`;
-  if (run.status === "COMPLETED") return `${run.totalWaypoints} / ${run.totalWaypoints}`;
+  if (["ROUTE_COMPLETE", "RTL", "COMPLETED"].includes(run.status)) return `${run.totalWaypoints} / ${run.totalWaypoints}`;
   return `${Math.min(run.currentWaypoint + 1, run.totalWaypoints)} / ${run.totalWaypoints}`;
 }
 

@@ -746,15 +746,14 @@ fn validate_command_policy(
             PayloadControlContext::MissionOverride(run_id) => {
                 let run_ready: bool = connection
                     .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE id = ?1 AND drone_id = ?2 AND status IN ('RUNNING', 'PAUSED'))",
+                        "SELECT EXISTS(SELECT 1 FROM mission_runs WHERE id = ?1 AND drone_id = ?2 AND completed_at_unix_ms IS NULL AND status IN ('RUNNING', 'PAUSED', 'ROUTE_COMPLETE', 'RTL'))",
                         params![run_id, drone_id],
                         |row| row.get(0),
                     )
                     .map_err(|error| format!("check payload mission policy: {error}"))?;
                 if !run_ready {
                     return Err(
-                        "mission override requires this drone's RUNNING or PAUSED mission run"
-                            .into(),
+                        "mission override requires this drone's active mission operation".into(),
                     );
                 }
             }

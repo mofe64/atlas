@@ -3417,7 +3417,29 @@ fn arrival_hold_lifecycle_requires_acknowledgement_before_on_scene() {
 
     database
         .apply_mission_run_update(&MissionRunUpdateInput {
-            event_id: "arrival-completed-after-hold".into(),
+            event_id: "arrival-route-completed-after-hold".into(),
+            operation_id: String::new(),
+            mission_run_id: run_id.clone(),
+            event_type: "route_completed".into(),
+            run_state: "ROUTE_COMPLETE".into(),
+            occurred_at_unix_ms: unix_time_ms(),
+            progress_percent: Some(100.0),
+            current_waypoint: Some(1),
+            total_waypoints: Some(1),
+            error_code: String::new(),
+            message: "Arrival route complete; aircraft holding".into(),
+            evidence_json: None,
+        })
+        .expect("keep response active after route completion");
+    let holding = database
+        .incident(&incident_id)
+        .expect("read holding response");
+    assert_eq!(holding.assignments[0].status, "ON_SCENE");
+    assert!(holding.assignments[0].ended_at_unix_ms.is_none());
+
+    database
+        .apply_mission_run_update(&MissionRunUpdateInput {
+            event_id: "arrival-completed-after-recovery".into(),
             operation_id: String::new(),
             mission_run_id: run_id,
             event_type: "completed".into(),
@@ -3427,10 +3449,10 @@ fn arrival_hold_lifecycle_requires_acknowledgement_before_on_scene() {
             current_waypoint: Some(1),
             total_waypoints: Some(1),
             error_code: String::new(),
-            message: "Arrival actions completed".into(),
+            message: "Aircraft landed and disarmed".into(),
             evidence_json: None,
         })
-        .expect("complete response after Hold acknowledgement");
+        .expect("complete response after aircraft recovery");
     let completed = database
         .incident(&incident_id)
         .expect("read completed response");

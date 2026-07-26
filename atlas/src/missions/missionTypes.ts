@@ -136,7 +136,7 @@ export type MissionPlan = {
   validationWarnings: string[];
 };
 
-export type MissionRunStatus = "UPLOADING" | "READY" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED" | "RTL";
+export type MissionRunStatus = "UPLOADING" | "READY" | "RUNNING" | "PAUSED" | "ROUTE_COMPLETE" | "RTL" | "COMPLETED" | "FAILED" | "CANCELLED";
 
 export type MissionRunEvent = {
   id: string;

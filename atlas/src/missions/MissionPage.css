@@ -679,6 +679,7 @@
 .run-state--failed,
 .run-state--cancelled { border-color: var(--critical); color: var(--critical); }
 .run-state--paused,
+.run-state--route_complete,
 .run-state--uploading,
 .run-state--rtl { border-color: var(--sky); color: color-mix(in oklch, var(--sky) 58%, var(--ink)); }
 

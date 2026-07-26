@@ -124,11 +124,11 @@ test("Completed response assignments retain a route back to mission history", ()
   assert.match(operationsPage, /assignment\.endedAtUnixMs\s*\?\s*"View mission"/);
 });
 
-test("An acknowledged arrival hold remains reopenable while the aircraft is live and airborne", () => {
-  assert.match(app, /const heldMissionRuns = operationalMissionRuns/);
-  assert.match(app, /action\.actionType === "HOLD_AT_ARRIVAL" && action\.state === "SUCCEEDED"/);
-  assert.match(app, /aircraft\.telemetry\.inAir === true/);
-  assert.match(app, /activeMissionRuns\[0\] \?\? heldMissionRuns\[0\]/);
+test("Route completion and RTL retain mission authority until aircraft recovery", () => {
+  assert.match(app, /\["RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"\]\.includes\(run\.status\)/);
+  assert.doesNotMatch(app, /const heldMissionRuns = operationalMissionRuns/);
+  assert.match(app, /primaryMission\?\.status === "ROUTE_COMPLETE"/);
+  assert.match(app, /Route complete · Land or RTL required/);
   assert.match(app, /:\s*"Open mission"\}/);
 });
 

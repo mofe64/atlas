@@ -100,7 +100,7 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
   const draftDistance = points[0] && planningAircraft ? missionDistanceStatus(points[0], planningAircraft) : undefined;
   const activeMissionRuns = useMemo(
     () => missionRuns
-      .filter((run) => ["UPLOADING", "READY", "RUNNING", "PAUSED"].includes(run.status))
+      .filter((run) => !run.completedAtUnixMs && ["UPLOADING", "READY", "RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"].includes(run.status))
       .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs),
     [missionRuns],
   );

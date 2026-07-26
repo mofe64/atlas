@@ -280,7 +280,9 @@ impl LocalDatabase {
                 r#"
                 SELECT mission_id, id
                 FROM mission_runs
-                WHERE drone_id = ?1 AND status IN ('RUNNING', 'PAUSED')
+                WHERE drone_id = ?1
+                  AND completed_at_unix_ms IS NULL
+                  AND status IN ('RUNNING', 'PAUSED', 'ROUTE_COMPLETE', 'RTL')
                 ORDER BY COALESCE(started_at_unix_ms, updated_at_unix_ms) DESC
                 LIMIT 1
                 "#,

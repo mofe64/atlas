@@ -12,7 +12,7 @@ use super::{
     unix_time_ms, LocalDatabase, MissionActionExecutionSnapshot,
 };
 
-const TERMINAL_STATES: &[&str] = &["COMPLETED", "FAILED", "CANCELLED", "RTL"];
+const TERMINAL_STATES: &[&str] = &["COMPLETED", "FAILED", "CANCELLED"];
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -416,6 +416,7 @@ impl LocalDatabase {
                 | "progress"
                 | "paused"
                 | "resumed"
+                | "route_completed"
                 | "completed"
                 | "cancelled"
                 | "rtl_started"
@@ -568,7 +569,7 @@ fn validate_operation(operation: &str, state: &str) -> Result<(), String> {
         "pause" => state == "RUNNING",
         "resume" => state == "PAUSED",
         "cancel" => matches!(state, "READY" | "RUNNING" | "PAUSED"),
-        "return_to_launch" => matches!(state, "RUNNING" | "PAUSED"),
+        "return_to_launch" => matches!(state, "RUNNING" | "PAUSED" | "ROUTE_COMPLETE"),
         _ => return Err("unsupported mission operation".to_string()),
     };
     allowed
@@ -579,7 +580,15 @@ fn validate_operation(operation: &str, state: &str) -> Result<(), String> {
 fn validate_state(state: &str) -> Result<(), String> {
     matches!(
         state,
-        "UPLOADING" | "READY" | "RUNNING" | "PAUSED" | "COMPLETED" | "FAILED" | "CANCELLED" | "RTL"
+        "UPLOADING"
+            | "READY"
+            | "RUNNING"
+            | "PAUSED"
+            | "ROUTE_COMPLETE"
+            | "RTL"
+            | "COMPLETED"
+            | "FAILED"
+            | "CANCELLED"
     )
     .then_some(())
     .ok_or_else(|| format!("unsupported mission run state {state}"))
@@ -593,9 +602,11 @@ fn validate_transition(current: &str, next: &str) -> Result<(), String> {
                 | ("READY", "RUNNING" | "CANCELLED" | "FAILED")
                 | (
                     "RUNNING",
-                    "PAUSED" | "COMPLETED" | "CANCELLED" | "RTL" | "FAILED"
+                    "PAUSED" | "ROUTE_COMPLETE" | "CANCELLED" | "RTL" | "FAILED"
                 )
                 | ("PAUSED", "RUNNING" | "CANCELLED" | "RTL" | "FAILED")
+                | ("ROUTE_COMPLETE", "RTL" | "COMPLETED")
+                | ("RTL", "COMPLETED")
         );
     allowed
         .then_some(())
@@ -685,6 +696,27 @@ mod tests {
             })
             .unwrap();
         assert_eq!(running.status, "RUNNING");
+        let route_complete = database
+            .apply_mission_run_update(&MissionRunUpdateInput {
+                event_id: "route-completed-1".into(),
+                operation_id: String::new(),
+                mission_run_id: ready.id.clone(),
+                event_type: "route_completed".into(),
+                run_state: "ROUTE_COMPLETE".into(),
+                occurred_at_unix_ms: 30,
+                progress_percent: Some(100.0),
+                current_waypoint: Some(1),
+                total_waypoints: Some(1),
+                error_code: String::new(),
+                message: "Route complete; aircraft holding".into(),
+                evidence_json: None,
+            })
+            .unwrap();
+        assert_eq!(route_complete.status, "ROUTE_COMPLETE");
+        assert!(route_complete.completed_at_unix_ms.is_none());
+        assert!(database
+            .create_mission_run(&mission.id, "drone-1", None)
+            .is_err());
         let completed = database
             .apply_mission_run_update(&MissionRunUpdateInput {
                 event_id: "completed-1".into(),
@@ -692,12 +724,12 @@ mod tests {
                 mission_run_id: ready.id.clone(),
                 event_type: "completed".into(),
                 run_state: "COMPLETED".into(),
-                occurred_at_unix_ms: 30,
+                occurred_at_unix_ms: 40,
                 progress_percent: Some(100.0),
                 current_waypoint: Some(1),
                 total_waypoints: Some(1),
                 error_code: String::new(),
-                message: "Completed".into(),
+                message: "Aircraft landed and disarmed".into(),
                 evidence_json: None,
             })
             .unwrap();

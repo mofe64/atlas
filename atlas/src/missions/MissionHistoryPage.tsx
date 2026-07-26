@@ -10,7 +10,7 @@ type MissionHistoryPageProps = {
   onOpenMission: (missionId: string, droneId?: string) => void;
 };
 
-const terminalStates = new Set(["COMPLETED", "FAILED", "CANCELLED", "RTL"]);
+const terminalStates = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
 
 export function MissionHistoryPage({ nativeAvailable, onBack, onEditMission, onOpenMission }: MissionHistoryPageProps) {
   const [missions, setMissions] = useState<Mission[]>([]);
@@ -46,7 +46,7 @@ export function MissionHistoryPage({ nativeAvailable, onBack, onEditMission, onO
 
   const pastRuns = useMemo(
     () => runs
-      .filter((run) => terminalStates.has(run.status))
+      .filter((run) => Boolean(run.completedAtUnixMs) || terminalStates.has(run.status))
       .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs),
     [runs],
   );

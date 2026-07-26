@@ -873,7 +873,7 @@ async fn sitl_reconciles_native_run_after_agent_process_restart() {
     let _restarted_agent =
         spawn_sitl_agent(&agent_binary, &agent_directory, &state_directory, address);
     let mut reconciliation_seen = false;
-    let mut completed = None;
+    let mut route_complete = None;
     for _ in 0..600 {
         let run = database
             .mission_run(&upload.run.id)
@@ -882,22 +882,22 @@ async fn sitl_reconciles_native_run_after_agent_process_restart() {
             .events
             .iter()
             .any(|event| event.event_type == "reconciliation_accepted");
-        if run.status == "COMPLETED" {
-            completed = Some(run);
+        if run.status == "ROUTE_COMPLETE" {
+            route_complete = Some(run);
             break;
         }
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let completed =
-        completed.expect("restarted Agent did not complete the PX4 mission in 150 seconds");
+    let route_complete =
+        route_complete.expect("restarted Agent did not finish the PX4 route in 150 seconds");
     assert!(
         reconciliation_seen,
         "Native never recorded reconciliation acceptance"
     );
-    assert_eq!(completed.actions[0].state, "SUCCEEDED");
-    assert_eq!(completed.actions[0].attempt, 1);
+    assert_eq!(route_complete.actions[0].state, "SUCCEEDED");
+    assert_eq!(route_complete.actions[0].attempt, 1);
     assert_eq!(
-        completed.actions[0]
+        route_complete.actions[0]
             .events
             .iter()
             .map(|event| event.state.as_str())
@@ -906,24 +906,29 @@ async fn sitl_reconciles_native_run_after_agent_process_restart() {
         "restart must execute only the attempt permitted by Native's durable checkpoint"
     );
     assert_eq!(
+        route_complete
+            .events
+            .iter()
+            .filter(|event| event.event_type == "completed")
+            .count(),
+        0,
+        "the reconciled run must remain active while the aircraft is holding"
+    );
+    assert!(route_complete.current_waypoint.is_some());
+    return_sitl_run_to_launch(&database, &command_router, &drone_id, &upload.run.id).await;
+    let completed = database
+        .mission_run(&upload.run.id)
+        .expect("read reconciled run after recovery");
+    assert_eq!(completed.status, "COMPLETED");
+    assert_eq!(
         completed
             .events
             .iter()
             .filter(|event| event.event_type == "completed")
             .count(),
         1,
-        "the reconciled run must complete exactly once"
+        "the reconciled run must complete exactly once after recovery"
     );
-    assert!(completed.current_waypoint.is_some());
-    let rtl = execute_sitl_command(
-        &database,
-        &command_router,
-        &drone_id,
-        "return_to_launch",
-        "{}",
-    )
-    .await;
-    assert_eq!(rtl.status, "succeeded");
 
     server.abort();
     drop(database);
@@ -999,7 +1004,7 @@ async fn wait_for_sitl_airborne(database: &LocalDatabase, drone_id: &str, run_id
             .mission_run(run_id)
             .expect("read SITL run while waiting for takeoff");
         assert!(
-            !matches!(run.status.as_str(), "FAILED" | "CANCELLED" | "RTL"),
+            !matches!(run.status.as_str(), "FAILED" | "CANCELLED"),
             "mission {} entered {} before airborne telemetry: {} {}",
             run.id,
             run.status,
@@ -1306,7 +1311,7 @@ async fn return_sitl_run_to_launch(
     let run = database
         .mission_run(run_id)
         .expect("read SITL run before RTL cleanup");
-    if matches!(run.status.as_str(), "RUNNING" | "PAUSED") {
+    if matches!(run.status.as_str(), "RUNNING" | "PAUSED" | "ROUTE_COMPLETE") {
         let rtl = database
             .record_mission_operation_requested(run_id, "return_to_launch")
             .expect("request mission RTL cleanup");
@@ -1335,6 +1340,7 @@ async fn return_sitl_run_to_launch(
         );
     }
     wait_for_sitl_grounded(database, drone_id).await;
+    wait_for_mission_run_state(database, run_id, "COMPLETED", 240).await;
     let (ready_drone_id, _) = wait_for_sitl_aircraft_ready(database).await;
     assert_eq!(ready_drone_id, drone_id);
 }
@@ -1522,11 +1528,14 @@ async fn sitl_flies_response_patterns_with_continuous_video() {
         "during Bounded Area Scan",
     )
     .await;
-    let area_completed =
-        wait_for_mission_run_state(&database, &area_ready.id, "COMPLETED", 1_200).await;
+    let area_route_complete =
+        wait_for_mission_run_state(&database, &area_ready.id, "ROUTE_COMPLETE", 1_200).await;
     return_sitl_run_to_launch(&database, &command_router, &drone_id, &area_ready.id).await;
+    let area_completed = database
+        .mission_run(&area_ready.id)
+        .expect("read recovered Bounded Area Scan");
     assert_sitl_action_chain(
-        &area_completed,
+        &area_route_complete,
         &["HOLD_AT_ARRIVAL", "RESUME_AFTER_ARRIVAL"],
     );
     assert_sitl_completed_route(&area_completed, area_waypoints);
@@ -1583,11 +1592,14 @@ async fn sitl_flies_response_patterns_with_continuous_video() {
         "during single-level Orbit",
     )
     .await;
-    let orbit_completed =
-        wait_for_mission_run_state(&database, &orbit_ready.id, "COMPLETED", 1_200).await;
+    let orbit_route_complete =
+        wait_for_mission_run_state(&database, &orbit_ready.id, "ROUTE_COMPLETE", 1_200).await;
     return_sitl_run_to_launch(&database, &command_router, &drone_id, &orbit_ready.id).await;
+    let orbit_completed = database
+        .mission_run(&orbit_ready.id)
+        .expect("read recovered Bounded Orbit");
     assert_sitl_action_chain(
-        &orbit_completed,
+        &orbit_route_complete,
         &[
             "HOLD_AT_ARRIVAL",
             "POINT_GIMBAL_AT_INCIDENT",
