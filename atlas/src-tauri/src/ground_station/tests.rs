@@ -1384,7 +1384,7 @@ async fn sitl_flies_response_patterns_with_continuous_video() {
 
     let (drone_id, origin) = wait_for_sitl_aircraft_ready(&database).await;
     let video = VideoManager::from_environment().expect("configure Native SITL video decoder");
-    println!("SITL video source: {}", video.source_config().rtsp_url);
+    println!("SITL video source: {:?}", video.source_config().input);
     video
         .start(&drone_id)
         .expect("start Native SITL video decoder");

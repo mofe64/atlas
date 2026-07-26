@@ -64,7 +64,7 @@ planned work.
 | [`atlas-spatial-runtime/`](../atlas-spatial-runtime/) | Pi-native calibrated-depth provider and local health service | [`runtime.py`](../atlas-spatial-runtime/src/atlas_spatial_runtime/runtime.py), [`depthai_provider.py`](../atlas-spatial-runtime/src/atlas_spatial_runtime/depthai_provider.py) |
 | [`atlas-backend/`](../atlas-backend/) | Independent Go/Gin/PostgreSQL identity and coordinated-services foundation | [`cmd/atlas-backend/main.go`](../atlas-backend/cmd/atlas-backend/main.go) |
 | [`proto/atlas/ground_station.proto`](../proto/atlas/ground_station.proto) | Shared Native-Agent wire contract | Generated into Rust at build time and committed as Go code |
-| [`scripts/`](../scripts/) | SITL, isolated Native development, database reset, and code generation | [`start-sitl.sh`](../scripts/start-sitl.sh) |
+| [`scripts/`](../scripts/) | SITL, isolated Native development, database reset, and code generation | [`start-sitl-interactive.sh`](../scripts/start-sitl-interactive.sh), [`start-sitl.sh`](../scripts/start-sitl.sh) |
 | [`third_party/mavsdk-proto/`](../third_party/mavsdk-proto/) | Pinned MAVSDK protobuf source | Version contract in [`atlas-agent/packaging/mavsdk.env`](../atlas-agent/packaging/mavsdk.env) |
 
 ## The four boundaries to understand first

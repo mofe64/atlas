@@ -4281,8 +4281,10 @@ fn still_capture_publishes_thumbnail_and_moves_media_through_recoverable_trash()
     let recorder = crate::recording::EvidenceRecorder::for_test(
         Arc::clone(&database),
         crate::video::VideoSourceConfig {
-            rtsp_url: "rtsp://camera/source".into(),
-            rtsp_transport: "tcp".into(),
+            input: crate::video::VideoInput::Rtsp {
+                url: "rtsp://camera/source".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: thumbnailer.to_string_lossy().into_owned(),
             source_id: "still-source".into(),
         },
@@ -4427,8 +4429,10 @@ fn track_event_clip_waits_for_verified_segments_then_publishes_media() {
     let recorder = crate::recording::EvidenceRecorder::for_test(
         Arc::clone(&database),
         crate::video::VideoSourceConfig {
-            rtsp_url: "rtsp://camera/source".into(),
-            rtsp_transport: "tcp".into(),
+            input: crate::video::VideoInput::Rtsp {
+                url: "rtsp://camera/source".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: media_tool.to_string_lossy().into_owned(),
             source_id: "test-source".into(),
         },
@@ -4566,8 +4570,10 @@ fn recorder_restart_marks_open_partial_as_a_gap_not_valid_evidence() {
     let recorder = crate::recording::EvidenceRecorder::for_test(
         Arc::clone(&database),
         crate::video::VideoSourceConfig {
-            rtsp_url: "rtsp://camera/source".into(),
-            rtsp_transport: "tcp".into(),
+            input: crate::video::VideoInput::Rtsp {
+                url: "rtsp://camera/source".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: "ffmpeg".into(),
             source_id: "test-source".into(),
         },
@@ -4614,8 +4620,10 @@ fn low_disk_guard_fails_before_spawn_and_emits_gap_and_alert() {
     let recorder = crate::recording::EvidenceRecorder::for_test(
         Arc::clone(&database),
         crate::video::VideoSourceConfig {
-            rtsp_url: "rtsp://camera/source".into(),
-            rtsp_transport: "tcp".into(),
+            input: crate::video::VideoInput::Rtsp {
+                url: "rtsp://camera/source".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: "recorder-must-not-spawn".into(),
             source_id: "low-disk-source".into(),
         },
@@ -4661,8 +4669,10 @@ fn recorder_directory_setup_failure_is_terminal_and_releases_the_source() {
     let recorder = crate::recording::EvidenceRecorder::for_test(
         Arc::clone(&database),
         crate::video::VideoSourceConfig {
-            rtsp_url: "rtsp://camera/source".into(),
-            rtsp_transport: "tcp".into(),
+            input: crate::video::VideoInput::Rtsp {
+                url: "rtsp://camera/source".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: "recorder-must-not-spawn".into(),
             source_id: "setup-failure-source".into(),
         },

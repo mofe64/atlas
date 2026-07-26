@@ -91,11 +91,24 @@ stack for telemetry and command testing.
 
 ## Full SITL
 
-The supported launcher is:
+The interactive developer launcher is:
+
+```sh
+scripts/start-sitl-interactive.sh
+```
+
+It prompts for the Gazebo camera or a prerecorded file from the repository's
+gitignored `sampleVids/` directory. Sample files with `.mp4`, `.mov`, `.mkv`,
+`.avi`, `.webm`, or `.m4v` extensions are listed for selection.
+
+The underlying non-interactive launcher is:
 
 ```sh
 scripts/start-sitl.sh
 ```
+
+Use the non-interactive launcher for automation, acceptance tests, dry-runs, or
+explicit environment overrides.
 
 It starts:
 
@@ -163,6 +176,20 @@ Set `ATLAS_SITL_VIDEO_ENABLED=0` or pass `--skip-video` when attaching Atlas to
 an external camera stream or when using a Gazebo model without a camera. If
 `ATLAS_VIDEO_RTSP_URL` is explicitly set, Native uses that URL while the local
 bridge remains available at the independently configured SITL URL.
+
+For deterministic development video without an RTSP server, point Native at an
+existing absolute video-file path and skip the Gazebo camera bridge:
+
+```sh
+ATLAS_VIDEO_SOURCE=/absolute/path/to/test-flight.mp4 \
+ATLAS_VIDEO_SOURCE_ID=dummy-camera \
+  scripts/start-sitl.sh --skip-video
+```
+
+Native reads the file at its encoded rate and loops it continuously. The
+aircraft and gimbal simulation do not alter prerecorded pixels, so this mode is
+suited to repeatable video, overlay, perception, and evidence tests rather than
+camera-to-aircraft spatial validation.
 
 ### Incident-response flight acceptance
 

@@ -43,6 +43,7 @@ This separation is intentional:
 | `atlas-spatial-runtime/` | Independent Pi-native depth runtime, direct DepthAI provider, health contract, and Debian packaging |
 | `atlas-backend/` | Optional Go/Gin/PostgreSQL backend foundation |
 | `proto/atlas/ground_station.proto` | Shared Native/Agent transport contract |
+| `scripts/start-sitl-interactive.sh` | Interactive Gazebo-or-sample-video SITL launcher |
 | `scripts/start-sitl.sh` | Complete local PX4 Gazebo development stack |
 | `scripts/transfer-onboard-release.sh` | Transfer one selected Agent/Spatial package pair to a Pi |
 | `scripts/tauri-dev-isolated.sh` | Native development with a repository-local SQLite database |
@@ -171,7 +172,18 @@ will otherwise continue reconnecting while reporting the unavailable runtime.
 
 ## Run the complete PX4 SITL stack
 
-The launcher starts the supported development path:
+For interactive development, start SITL with:
+
+```sh
+scripts/start-sitl-interactive.sh
+```
+
+It asks whether Atlas Native should use the Gazebo gimbal camera or a
+prerecorded file, and lists supported files from `sampleVids/` when that option
+is selected. The directory is intentionally gitignored so local video fixtures
+are not committed.
+
+The underlying non-interactive launcher starts the supported development path:
 
 ```text
 PX4 Gazebo camera -> local H.264 RTSP stream -> Atlas Native video
@@ -183,6 +195,9 @@ From the repository root:
 ```sh
 scripts/start-sitl.sh
 ```
+
+Keep using `start-sitl.sh` directly for automation, acceptance tests, explicit
+environment configuration, and dry-runs.
 
 The default PX4 checkout is the sibling directory `../PX4-Autopilot`. Override
 it or inspect the resolved commands before launch with:
@@ -211,6 +226,18 @@ and GStreamer app / RTSP-server development packages discoverable through
 `pkg-config`; it uses an installed `x264enc`, `vtenc_h264`, or `openh264enc`
 H.264 encoder. Run `scripts/start-sitl.sh --help` for video topic, port, path,
 bitrate, and source-ID overrides.
+
+To use a prerecorded file as the continuously looping development camera
+without running an RTSP server:
+
+```sh
+ATLAS_VIDEO_SOURCE=/absolute/path/to/test-flight.mp4 \
+ATLAS_VIDEO_SOURCE_ID=dummy-camera \
+  scripts/start-sitl.sh --skip-video
+```
+
+`ATLAS_VIDEO_SOURCE` also accepts RTSP URLs. When it is unset, the existing
+`ATLAS_VIDEO_RTSP_URL` configuration remains the backward-compatible fallback.
 
 To fly the serial Hold at Staging, Bounded Area Scan, and single-level Orbit
 acceptance matrix against that stack, launch the simulator without its normal

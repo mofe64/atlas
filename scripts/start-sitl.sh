@@ -32,6 +32,7 @@ ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS="${ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS
 ATLAS_SITL_VIDEO_BUILD_DIR="${ATLAS_SITL_VIDEO_BUILD_DIR:-${ROOT_DIR}/.atlas-run/bin}"
 ATLAS_SITL_VIDEO_SOURCE="${ROOT_DIR}/scripts/sitl-video-bridge.cpp"
 ATLAS_SITL_VIDEO_BRIDGE="${ATLAS_SITL_VIDEO_BUILD_DIR}/sitl-video-bridge"
+ATLAS_VIDEO_SOURCE="${ATLAS_VIDEO_SOURCE:-}"
 ATLAS_VIDEO_RTSP_URL="${ATLAS_VIDEO_RTSP_URL:-}"
 ATLAS_VIDEO_SOURCE_ID="${ATLAS_VIDEO_SOURCE_ID:-}"
 
@@ -117,6 +118,7 @@ Useful environment overrides:
   ATLAS_SITL_VIDEO_BITRATE_KBPS
   ATLAS_SITL_VIDEO_FRAME_TIMEOUT_SECONDS
   ATLAS_SITL_VIDEO_BUILD_DIR
+  ATLAS_VIDEO_SOURCE
   ATLAS_VIDEO_RTSP_URL
   ATLAS_VIDEO_SOURCE_ID
   ATLAS_SITL_STARTUP_TIMEOUT_SECONDS
@@ -404,10 +406,11 @@ native_runtime_prefix() {
 }
 
 native_command() {
-  printf '%senv ATLAS_GROUND_STATION_LISTEN_ADDR="%s" ATLAS_SQLITE_PATH="%s" ATLAS_VIDEO_RTSP_URL="%s" ATLAS_VIDEO_SOURCE_ID="%s" npm run tauri dev' \
+  printf '%senv ATLAS_GROUND_STATION_LISTEN_ADDR="%s" ATLAS_SQLITE_PATH="%s" ATLAS_VIDEO_SOURCE="%s" ATLAS_VIDEO_RTSP_URL="%s" ATLAS_VIDEO_SOURCE_ID="%s" npm run tauri dev' \
     "$(native_runtime_prefix)" \
     "$ATLAS_GROUND_STATION_LISTEN_ADDR" \
     "$ATLAS_SQLITE_PATH" \
+    "$ATLAS_VIDEO_SOURCE" \
     "$ATLAS_VIDEO_RTSP_URL" \
     "$ATLAS_VIDEO_SOURCE_ID"
 }
@@ -541,6 +544,21 @@ assert_prerequisites() {
   if [[ "$SKIP_NATIVE" -eq 0 ]]; then
     require_command cargo
     require_path "${ROOT_DIR}/atlas/node_modules" "Atlas Native dependencies"
+    if [[ -n "$ATLAS_VIDEO_SOURCE" ]]; then
+      case "$ATLAS_VIDEO_SOURCE" in
+        rtsp://*|rtsps://*)
+          ;;
+        /*)
+          require_path "$ATLAS_VIDEO_SOURCE" "Atlas video source file"
+          if [[ ! -f "$ATLAS_VIDEO_SOURCE" ]]; then
+            fail "Atlas video source is not a regular file: ${ATLAS_VIDEO_SOURCE}"
+          fi
+          ;;
+        *)
+          fail "ATLAS_VIDEO_SOURCE must be an RTSP URL or an absolute video file path"
+          ;;
+      esac
+    fi
     validate_native_runtime
     require_tcp_port_free "Atlas Native UI" "$ATLAS_NATIVE_UI_PORT"
     require_tcp_port_free "Atlas Native gRPC" "$(tcp_port_from_addr "$ATLAS_GROUND_STATION_LISTEN_ADDR")"
@@ -652,7 +670,11 @@ log "using SITL state=${SITL_STATE_DIR}"
 if [[ "$SKIP_VIDEO" -eq 0 ]]; then
   log "using Gazebo camera topic=${ATLAS_SITL_VIDEO_TOPIC}"
   log "publishing SITL video=${SITL_VIDEO_RTSP_URL}"
-  log "using Atlas video source=${ATLAS_VIDEO_RTSP_URL} (${ATLAS_VIDEO_SOURCE_ID})"
+fi
+if [[ -n "$ATLAS_VIDEO_SOURCE" ]]; then
+  log "using Atlas video source=${ATLAS_VIDEO_SOURCE} (${ATLAS_VIDEO_SOURCE_ID:-a8-main})"
+else
+  log "using Atlas video source=${ATLAS_VIDEO_RTSP_URL:-rtsp://192.168.144.25:8554/main.264} (${ATLAS_VIDEO_SOURCE_ID:-a8-main})"
 fi
 log "using logs=${LOG_DIR}"
 

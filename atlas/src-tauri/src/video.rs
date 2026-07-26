@@ -2,6 +2,7 @@ use std::{
     collections::VecDeque,
     env,
     io::{BufRead, BufReader, Read},
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
     thread,
@@ -27,8 +28,7 @@ struct VideoShared {
 
 #[derive(Clone)]
 struct VideoConfig {
-    rtsp_url: String,
-    rtsp_transport: String,
+    input: VideoInput,
     decoder_path: String,
     source_id: String,
     width: u32,
@@ -89,10 +89,75 @@ pub(crate) struct VideoStreamSnapshot {
 
 #[derive(Clone)]
 pub(crate) struct VideoSourceConfig {
-    pub(crate) rtsp_url: String,
-    pub(crate) rtsp_transport: String,
+    pub(crate) input: VideoInput,
     pub(crate) decoder_path: String,
     pub(crate) source_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum VideoInput {
+    Rtsp { url: String, transport: String },
+    File { path: PathBuf },
+}
+
+impl VideoInput {
+    fn from_environment() -> Result<Self, String> {
+        let source = env::var("ATLAS_VIDEO_SOURCE")
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| {
+                env::var("ATLAS_VIDEO_RTSP_URL")
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or_else(|| "rtsp://192.168.144.25:8554/main.264".to_string());
+        let transport = environment_or("ATLAS_VIDEO_RTSP_TRANSPORT", "tcp");
+        Self::parse(&source, &transport)
+    }
+
+    fn parse(source: &str, rtsp_transport: &str) -> Result<Self, String> {
+        if source.starts_with("rtsp://") || source.starts_with("rtsps://") {
+            if source.chars().any(char::is_whitespace) {
+                return Err("Atlas video RTSP source cannot contain whitespace".to_string());
+            }
+            let transport = rtsp_transport.to_lowercase();
+            if !matches!(transport.as_str(), "tcp" | "udp") {
+                return Err("ATLAS_VIDEO_RTSP_TRANSPORT must be tcp or udp".to_string());
+            }
+            return Ok(Self::Rtsp {
+                url: source.to_string(),
+                transport,
+            });
+        }
+
+        let path = Path::new(source);
+        if !path.is_absolute() {
+            return Err(
+                "ATLAS_VIDEO_SOURCE must be an rtsp:// or rtsps:// URL, or an absolute video file path"
+                    .to_string(),
+            );
+        }
+        if !path.is_file() {
+            return Err(format!(
+                "ATLAS_VIDEO_SOURCE file does not exist or is not a regular file: {}",
+                path.display()
+            ));
+        }
+        Ok(Self::File {
+            path: path.to_path_buf(),
+        })
+    }
+
+    pub(crate) fn append_ffmpeg_input(&self, command: &mut Command) {
+        match self {
+            Self::Rtsp { url, transport } => {
+                command.args(["-rtsp_transport", transport, "-i", url]);
+            }
+            Self::File { path } => {
+                command.args(["-re", "-stream_loop", "-1", "-i"]).arg(path);
+            }
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -221,8 +286,7 @@ impl VideoManager {
 
     pub(crate) fn source_config(&self) -> VideoSourceConfig {
         VideoSourceConfig {
-            rtsp_url: self.config.rtsp_url.clone(),
-            rtsp_transport: self.config.rtsp_transport.clone(),
+            input: self.config.input.clone(),
             decoder_path: self.config.decoder_path.clone(),
             source_id: self.config.source_id.clone(),
         }
@@ -321,39 +385,26 @@ impl VideoManager {
             self.config.height,
         );
         let mut command = Command::new(&self.config.decoder_path);
+        command.args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "warning",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-analyzeduration",
+            "1000000",
+            "-probesize",
+            "1000000",
+        ]);
+        self.config.input.append_ffmpeg_input(&mut command);
         command
-            .args([
-                "-nostdin",
-                "-hide_banner",
-                "-loglevel",
-                "warning",
-                "-rtsp_transport",
-                &self.config.rtsp_transport,
-                "-fflags",
-                "nobuffer",
-                "-flags",
-                "low_delay",
-                "-analyzeduration",
-                "1000000",
-                "-probesize",
-                "1000000",
-                "-i",
-                &self.config.rtsp_url,
-                "-map",
-                "0:v:0",
-                "-an",
-                "-sn",
-                "-dn",
-                "-vf",
-                &scale,
-                "-c:v",
-                "mjpeg",
-                "-q:v",
-                &self.config.jpeg_quality.to_string(),
-                "-f",
-                "image2pipe",
-                "pipe:1",
-            ])
+            .args(["-map", "0:v:0", "-an", "-sn", "-dn", "-vf", &scale])
+            .args(["-c:v", "mjpeg", "-q:v"])
+            .arg(self.config.jpeg_quality.to_string())
+            .args(["-f", "image2pipe", "pipe:1"])
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -363,18 +414,7 @@ impl VideoManager {
 
 impl VideoConfig {
     fn from_environment() -> Result<Self, String> {
-        let rtsp_url = environment_or(
-            "ATLAS_VIDEO_RTSP_URL",
-            "rtsp://192.168.144.25:8554/main.264",
-        );
-        if !(rtsp_url.starts_with("rtsp://") || rtsp_url.starts_with("rtsps://"))
-            || rtsp_url.chars().any(char::is_whitespace)
-        {
-            return Err(
-                "ATLAS_VIDEO_RTSP_URL must be an rtsp:// or rtsps:// URL without whitespace"
-                    .to_string(),
-            );
-        }
+        let input = VideoInput::from_environment()?;
         let decoder_path = environment_or("ATLAS_VIDEO_DECODER_PATH", "ffmpeg");
         if decoder_path.trim().is_empty() {
             return Err("ATLAS_VIDEO_DECODER_PATH cannot be empty".to_string());
@@ -383,13 +423,8 @@ impl VideoConfig {
         if source_id.trim().is_empty() || source_id.len() > 128 {
             return Err("ATLAS_VIDEO_SOURCE_ID must contain 1 to 128 characters".to_string());
         }
-        let rtsp_transport = environment_or("ATLAS_VIDEO_RTSP_TRANSPORT", "tcp").to_lowercase();
-        if !matches!(rtsp_transport.as_str(), "tcp" | "udp") {
-            return Err("ATLAS_VIDEO_RTSP_TRANSPORT must be tcp or udp".to_string());
-        }
         Ok(Self {
-            rtsp_url,
-            rtsp_transport,
+            input,
             decoder_path,
             source_id,
             width: environment_number("ATLAS_VIDEO_WIDTH", 1280, 320, 3840)?,
@@ -633,6 +668,55 @@ mod tests {
         assert_eq!(&packet[8 + header_length..], jpeg);
     }
 
+    #[test]
+    fn rtsp_input_uses_transport_without_file_playback_options() {
+        let input = VideoInput::parse("rtsp://camera/main.264", "udp").expect("parse RTSP input");
+        let mut command = Command::new("ffmpeg");
+        input.append_ffmpeg_input(&mut command);
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            ["-rtsp_transport", "udp", "-i", "rtsp://camera/main.264"]
+        );
+    }
+
+    #[test]
+    fn file_input_is_absolute_existing_realtime_loop() {
+        let path = std::env::temp_dir().join(format!(
+            "atlas-video-source-{}-{}.mp4",
+            std::process::id(),
+            unix_time_ms()
+        ));
+        std::fs::write(&path, b"fixture").expect("write video source fixture");
+        let input = VideoInput::parse(&path.to_string_lossy(), "invalid-but-unused")
+            .expect("parse file input");
+        let mut command = Command::new("ffmpeg");
+        input.append_ffmpeg_input(&mut command);
+        let arguments = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arguments,
+            ["-re", "-stream_loop", "-1", "-i", &path.to_string_lossy()]
+        );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn file_input_rejects_relative_and_missing_paths() {
+        assert!(VideoInput::parse("fixtures/video.mp4", "tcp").is_err());
+        let missing = std::env::temp_dir().join(format!(
+            "atlas-missing-video-source-{}-{}.mp4",
+            std::process::id(),
+            unix_time_ms()
+        ));
+        assert!(VideoInput::parse(&missing.to_string_lossy(), "tcp").is_err());
+    }
+
     #[cfg(unix)]
     #[test]
     fn supervised_decoder_publishes_a_pull_based_frame() {
@@ -651,8 +735,10 @@ mod tests {
         fs::set_permissions(&decoder, fs::Permissions::from_mode(0o700))
             .expect("protect fake decoder");
         let manager = VideoManager::with_config(VideoConfig {
-            rtsp_url: "rtsp://camera/main".into(),
-            rtsp_transport: "tcp".into(),
+            input: VideoInput::Rtsp {
+                url: "rtsp://camera/main".into(),
+                transport: "tcp".into(),
+            },
             decoder_path: decoder.to_string_lossy().into_owned(),
             source_id: "a8-main".into(),
             width: 640,

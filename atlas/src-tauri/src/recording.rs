@@ -1084,15 +1084,10 @@ impl EvidenceRecorder {
         let segment_list = temporary_directory.join("segments.csv.partial");
         let segment_pattern = temporary_directory.join("%06d.partial.mp4");
         let mut command = Command::new(&self.config.source.decoder_path);
+        command.args(["-hide_banner", "-loglevel", "warning"]);
+        self.config.source.input.append_ffmpeg_input(&mut command);
         command
             .args([
-                "-hide_banner",
-                "-loglevel",
-                "warning",
-                "-rtsp_transport",
-                &self.config.source.rtsp_transport,
-                "-i",
-                &self.config.source.rtsp_url,
                 "-map",
                 "0:v:0",
                 "-an",
@@ -1103,7 +1098,9 @@ impl EvidenceRecorder {
                 "-f",
                 "segment",
                 "-segment_time",
-                &self.config.segment_duration_seconds.to_string(),
+            ])
+            .arg(self.config.segment_duration_seconds.to_string())
+            .args([
                 "-reset_timestamps",
                 "1",
                 "-segment_format",
@@ -1113,9 +1110,9 @@ impl EvidenceRecorder {
                 "-segment_list_flags",
                 "+live",
                 "-segment_list",
-                &segment_list.to_string_lossy(),
-                &segment_pattern.to_string_lossy(),
             ])
+            .arg(&segment_list)
+            .arg(&segment_pattern)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped());

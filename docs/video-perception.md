@@ -51,6 +51,7 @@ Defaults:
 
 | Variable | Default |
 | --- | --- |
+| `ATLAS_VIDEO_SOURCE` | Unset; falls back to `ATLAS_VIDEO_RTSP_URL` |
 | `ATLAS_VIDEO_RTSP_URL` | `rtsp://192.168.144.25:8554/main.264` |
 | `ATLAS_VIDEO_DECODER_PATH` | `ffmpeg` |
 | `ATLAS_VIDEO_RTSP_TRANSPORT` | `tcp` |
@@ -63,8 +64,14 @@ Defaults:
 | `ATLAS_VIDEO_ALIGNMENT_TOLERANCE_MS` | `180` |
 | `ATLAS_VIDEO_OVERLAY_OFFSET_MS` | `0` |
 
-Configuration rejects malformed RTSP URLs, unsupported transport, empty source
-IDs, and out-of-range dimensions, rates, quality, delays, or offsets.
+`ATLAS_VIDEO_SOURCE` accepts an RTSP URL or an existing absolute video-file
+path. RTSP remains the production default and `ATLAS_VIDEO_RTSP_URL` remains a
+backward-compatible fallback. File sources are read at their encoded pace and
+loop continuously so a finite recording behaves like a development camera.
+
+Configuration rejects malformed RTSP URLs, relative or missing file paths,
+unsupported RTSP transport, empty source IDs, and out-of-range dimensions,
+rates, quality, delays, or offsets.
 
 ## Local evidence recording
 
