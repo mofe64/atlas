@@ -1,8 +1,8 @@
 # Atlas Backend
 
-Atlas Backend is a Go 1.25 + Gin service with PostgreSQL-backed organization,
-user, and session authentication. It is independently deployable and is not on
-the current direct Atlas Native-to-Agent flight-control path.
+Atlas Backend is an independently deployable Go 1.25 and Gin service. It stores
+organization, user, and session data in PostgreSQL. It is not in the current
+direct flight-control path between Atlas Native and Atlas Agent.
 
 For the system-wide boundary and newcomer reading path, see
 [`../docs/README.md`](../docs/README.md). Backend architecture and its current
@@ -11,8 +11,8 @@ integration limits are documented in
 
 ## Start the complete local stack
 
-Docker Compose starts PostgreSQL, applies migrations once, builds the API image,
-then waits until the API can reach PostgreSQL:
+Docker Compose starts PostgreSQL and applies the migrations once. It then
+builds the API image and waits for the API to connect to PostgreSQL.
 
 ```sh
 cp .env.example .env
@@ -88,10 +88,11 @@ Authorization: Bearer atlas_session_...
 ## Passwords and sessions
 
 Passwords use Argon2id with a unique salt. `password_hash` stores the algorithm,
-parameters, salt, and digest; it never stores reversible password material.
+parameters, salt, and digest. It does not store reversible password material.
 
 Session tokens contain 256 random bits. PostgreSQL stores only their SHA-256
-digest, so a sessions-table leak is not immediately usable as bearer credentials.
+digest. Thus, a sessions-table disclosure does not directly disclose bearer
+tokens.
 
 A session becomes invalid when any condition is true:
 
@@ -101,9 +102,9 @@ A session becomes invalid when any condition is true:
 - its user is disabled;
 - its organization is suspended.
 
-`last_seen_at` is updated at most every five minutes to avoid writing on every API
-request. Records that have been inactive for 30 days are removed by a six-hour
-cleanup loop. These values are configurable, but invalid combinations fail startup.
+Atlas Backend updates `last_seen_at` at most once every five minutes. A
+six-hour cleanup loop removes records that have been inactive for 30 days.
+These values are configurable. An invalid combination causes startup to fail.
 
 ## Database schema and migrations
 
@@ -138,17 +139,20 @@ down migration for the next schema change.
 To reset both the backend and native databases together, run
 `./scripts/reset-databases.sh` from the repository root.
 
-The following commands permanently delete the local Compose PostgreSQL volume,
-including every organization, user, and session, and then create a fresh database:
+**Caution:** The following commands permanently delete the local Compose
+PostgreSQL volume. This operation deletes every local organization, user, and
+session.
 
 ```sh
 docker compose down -v --remove-orphans
 docker compose up --build -d
 ```
 
-The second command starts PostgreSQL, applies all migrations to the empty database,
-and starts the backend. Use this only for disposable local development data; never
-reset a shared or production database this way.
+The second command starts PostgreSQL, applies all migrations, and starts Atlas
+Backend.
+
+Do not use these commands for a shared or production database. Use them only
+for disposable local development data.
 
 ## Transactions and TxManager
 

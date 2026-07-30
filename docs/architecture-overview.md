@@ -2,13 +2,13 @@
 
 ## Purpose and system context
 
-Atlas is a local-first drone operations system designed to keep the current
-aircraft-control path available without an internet connection or central
-backend. The ground computer runs Atlas Native. The onboard computer runs Atlas
-Agent and `mavsdk_server`. PX4 remains the flight-control authority.
+Atlas is a local-first drone operations system. The current aircraft-control
+path does not require an internet connection or a central service. The ground
+computer runs Atlas Native. The onboard computer runs Atlas Agent and
+`mavsdk_server`. PX4 remains the flight-control authority.
 
-The system separates operator intent, durable operational history, transport,
-hardware integration, and future coordinated services:
+The following diagram shows the separation between operator intent, durable
+history, transport, hardware integration, and future coordinated services:
 
 ```mermaid
 flowchart TB
@@ -65,19 +65,19 @@ Detailed operational behavior is split into
 
 ## Component responsibilities
 
-| Component | Owns | Deliberately does not own |
-| --- | --- | --- |
-| React UI | Operator navigation, forms, map interaction, rendering, polling Native state | Network sessions, durable policy, direct MAVSDK or PX4 access |
-| Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog | Physical flight-controller, gimbal, camera, or accelerator drivers |
-| SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history | Multi-user tenancy or cross-ground-station synchronization |
-| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry, high-level mission/action execution, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and explicitly authorized aircraft-follow control | Operator workflow, mission-definition editing, local ground-station history, depth-camera processing, or a parallel local navigation stack |
-| `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services | Atlas policy or durable Atlas records |
-| PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes | Atlas operator workflow and product-level audit history |
-| Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output | Drawing the operator overlay or authorizing flight |
-| Spatial runtime | Independent depth-camera ownership, fresh native depth, matching calibration, and bounded local health | Mapping, pose estimation, projection, obstacle extraction, PX4 fusion, navigation authority, aircraft commands, Agent transport, or Native rendering |
-| Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation | Current direct Agent transport and current aircraft-control authority |
+| Component | Owns |
+| --- | --- |
+| React UI | Operator navigation, forms, map interaction, rendering, polling Native state |
+| Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog |
+| SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history |
+| Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry, high-level mission/action execution, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and explicitly authorized aircraft-follow control |
+| `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services |
+| PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes |
+| Perception runtime | Camera decoding for inference, accelerator-specific model execution, normalized detection/health output |
+| Spatial runtime | Independent depth-camera ownership, fresh native depth, matching calibration, and bounded local health |
+| Atlas Backend | Organizations, users, sessions, PostgreSQL service foundation |
 
-## Deployment topology
+## Current Deployment Topology
 
 The supported field topology uses a dedicated `192.168.144.0/24` HM30/Ethernet
 network:
@@ -135,9 +135,9 @@ sequenceDiagram
     Native-->>React: Durable current state + history
 ```
 
-This ordering prevents the webview from becoming the source of truth. A button
-click is not considered success. Success is the terminal state written after
-the Agent and MAVSDK/PX4 report the outcome.
+This ordering prevents the webview from becoming the source of truth. Success
+is the terminal state written after Atlas Agent and MAVSDK/PX4 report the
+outcome.
 
 ## Data flow
 
@@ -214,12 +214,12 @@ These rules explain many implementation choices:
 9. **Live media is latest-biased.** Slow consumers cause old frames to be
    dropped, not accumulated.
 10. **Backend availability must not determine local flight continuity.**
-11. **Arrival is an explicit mission phase.** Pattern missions Hold and perform
-    reviewed arrival actions at their immutable waypoint trigger, then resume
-    through a separate acknowledged action before later pattern waypoints.
-    Hold at Staging is intentionally different: acknowledged Hold pauses the
-    run and preserves `STAGED` until an explicit operator decision; it does not
-    imply `ON_SCENE` or incident gimbal targeting.
+11. **Arrival is an explicit mission phase.** A pattern mission commands Hold
+    and performs reviewed arrival actions at its immutable trigger. A separate
+    acknowledged action resumes later pattern waypoints. Hold at Staging is
+    different. An acknowledged Hold pauses the run and preserves `STAGED` until
+    an operator decision. It does not imply `ON_SCENE` or incident-gimbal
+    targeting.
 12. **Evidence success proves finalization.** Recorder setup failures become
     terminal sessions, and SQLite cannot transition a recording to `SUCCEEDED`
     while a segment is still `FINALIZING`.

@@ -1,11 +1,12 @@
 # Atlas Obstacle Avoidance TODO
 
-**Status:** Obstacle observations and avoidance control are unimplemented and
-unauthorized for flight.
+**Status:** Planned. Atlas does not implement obstacle observations or
+obstacle-avoidance control. Atlas does not authorize these functions for
+flight.
 
-Spatial currently owns fresh calibrated depth and local diagnostics. It does
-not expose obstacle observations, Atlas Agent has no Spatial obstacle consumer,
-and no component has obstacle-avoidance movement authority.
+Atlas Spatial Runtime owns calibrated depth and local diagnostics. It does not
+produce obstacle observations. Atlas Agent does not consume Spatial obstacle
+data. No Atlas component has obstacle-avoidance movement authority.
 
 ## 1. Define the obstacle-observation contract
 
@@ -18,7 +19,7 @@ not a persistent map.
 - [ ] Define sensor-frame and body-FRD fields and the transform boundary.
 - [ ] Define units, valid distance range, invalid values, and quality semantics.
 - [ ] Define horizontal and vertical partitioning and the clearance envelope.
-- [ ] Define stale, missing, malformed, and incompatible-observation behaviour.
+- [ ] Define stale, missing, malformed, and incompatible-observation behavior.
 - [ ] Add focused tests for bounds, units, frames, timestamps, and expiry.
 
 The contract is complete when Agent can decide whether an observation is usable
@@ -39,7 +40,7 @@ fresh depth frame
   → deliver the latest observations to Agent
 ```
 
-- [ ] Consume only a fresh calibrated `uint16` millimetre depth frame.
+- [ ] Consume only a fresh calibrated `uint16` millimeter depth frame.
 - [ ] Reject invalid calibration, dimensions, depth values, offsets, and stale
       frames.
 - [ ] Implement projection as part of the extractor, with explicit CPU and
@@ -66,10 +67,10 @@ define:
 - [ ] How avoidance interacts with missions, manual control, and Follow.
 - [ ] Whether it modifies setpoints, requests Hold, or uses another explicit
       PX4 boundary.
-- [ ] Hold/stop behaviour when observations expire, become invalid, or stop.
+- [ ] Hold/stop behavior when observations expire, become invalid, or stop.
 - [ ] Speed, acceleration, clearance, direction, altitude, and operating
       envelopes.
-- [ ] Controller ownership, watchdog, shutdown, and restart behaviour.
+- [ ] Controller ownership, watchdog, shutdown, and restart behavior.
 - [ ] Precedence between mission, Follow, operator, PX4 failsafe, and avoidance
       intent.
 - [ ] Operator-visible status and audit events that do not put Native in the

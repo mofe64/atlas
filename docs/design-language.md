@@ -1,24 +1,24 @@
-# Atlas design language
+# Atlas Design Language
 
-This document defines how the Atlas Native operator interface should look, behave,
-and be structured. It is the design counterpart to the
-[developer documentation](README.md): where those documents describe what the system *is*, this one describes how an operator
-*experiences* it.
+This document defines the structure, behavior, and visual language of the Atlas
+Native operator interface. The [developer documentation](README.md) explains
+the system behavior. This document explains how the interface must communicate
+that behavior to an operator.
 
-The shipped implementation is authoritative for visual detail. This document is
-authoritative for design intent, reusable contracts, language, and the decisions
-that still need product review.
+The implemented interface is authoritative for current visual detail. This
+document is authoritative for design intent, reusable contracts, interface
+language, and open product decisions.
 
 ---
 
 ## 1. What we are designing
 
-Atlas is a **local command-and-control console for a fleet of drones**. Not a
-dashboard, not a documentation site, not a marketing surface. An operator uses it for
-hours at a time during flight testing and incident response, and during that time it
-is the only thing standing between them and an aircraft they cannot see.
+Atlas is a **local command-and-control console for a fleet of drones**. It is
+not a general dashboard, documentation site, or marketing surface. An operator
+can use it for long periods during flight tests and incident response. The
+interface can be the operator's primary source of aircraft state.
 
-That single sentence drives every rule in this document.
+This operational role controls each rule in this document.
 
 ### The operator
 
@@ -39,15 +39,15 @@ about what it does and does not know.
 
 ## 2. The five principles
 
-Every design decision should be traceable to one of these.
+Each design decision must support one or more of these principles.
 
 ### 2.1 Structure follows the operator's job, not the codebase
 
-Navigation must map to what the operator is doing, not to which subsystem owns the
-code. When the nav starts to mirror the documentation's table of contents, that is a
-signal something has gone wrong.
+Navigation must represent the operator's task. It must not represent the
+software-component structure. A component name is not sufficient reason for a
+top-level navigation item.
 
-Organise by **intent and tempo**:
+Organize the interface by **intent and tempo**:
 
 | Surface | Tempo | Answers |
 |---|---|---|
@@ -57,7 +57,8 @@ Organise by **intent and tempo**:
 | **Plan** | Authoring | What mission do I want to fly later? |
 | **Evidence** | Review | What did we capture, and what does it mean? |
 
-**Aircraft** is itself sectioned, because inspecting one vehicle is several jobs:
+Divide **Aircraft** into sections because an operator performs several tasks on
+one aircraft:
 
 | Section | Contains |
 |---|---|
@@ -106,7 +107,7 @@ budget goes to **state transitions**, never to decoration:
 Degraded states that require an operator decision — `DEGRADED_HOLD` above all — must
 be impossible to miss from any screen.
 
-### 2.5 Say what is true, derive it from the same source as the colour
+### 2.5 Say what is true, derive it from the same source as the color
 
 Never hardcode a status string that state can contradict. If a panel is coloured by
 `gates.every(ok)`, its heading must be derived from `gates.every(ok)` too. A heading
@@ -161,12 +162,12 @@ Compressed. No hero sizes on working screens.
 Field mode raises the floor rather than scaling everything — outdoor legibility is a
 minimum-size problem, not a proportion problem.
 
-### 3.3 Colour
+### 3.3 Color
 
 OKLCH throughout. Neutrals are tinted toward the brand hue (145–150) — never pure
 grey, never pure black or white.
 
-**Colour is status language. It is never decoration.**
+**Color is status language. It is never decoration.**
 
 | Token | Role |
 |---|---|
@@ -193,7 +194,7 @@ office, and a glowing dark console is a fashion choice, not a field requirement.
 | Surfaces | Soft mist tones | Pushed toward white |
 | Text | `oklch(22%)` primary | `oklch(15%)` primary |
 | Rules | 1px, subtle | 2px, stronger |
-| Status colours | Standard chroma | Higher chroma, lower lightness |
+| Status colors | Standard chroma | Higher chroma, lower lightness |
 | Type floor | 0.6875rem | 0.75rem |
 
 Implemented as a semantic-token override on `:root[data-mode="field"]`. Primitives do
@@ -220,16 +221,17 @@ a laptop screen.
 
 ### Aircraft strip
 
-The core fleet component. Always shows, in this order: identity, **authority badge**,
-current activity, four key instruments, and a progress meter when the activity has a
-measurable extent. Never collapses to just a name and a status dot.
+The aircraft strip is the core fleet component. It shows identity, the
+**authority badge**, current activity, and four key instruments. It also shows
+a progress meter when the activity has a measurable extent. Do not reduce it to
+an aircraft name and a status indicator.
 
 ### Authority badge
 
 `IDLE` · `MISSION` · `RESPONSE` · `CAM FOLLOW` · `AIRCRAFT FOLLOW` · `PX4 HOLD` · `LINK STALE`
 
 Filled treatment for authorities that are actively commanding; outlined for passive
-states. Always accompanied by a non-colour cue (text) so it survives colour-blindness
+states. Always accompanied by a non-color cue (text) so it survives color-blindness
 and greyscale.
 
 ### Safety cluster
@@ -257,34 +259,32 @@ capture — uses one pattern:
 4. **Keep the confirm button disabled** until the reason is entered.
 5. **State why it is available or blocked** underneath.
 
-Atlas has no hard deletes in the operator interface. Archive is reversible; binning
-evidence is recoverable for a grace period. The UI should say so, every time — an
-operator who believes an action is irreversible will avoid it and let stale records
-accumulate instead.
+The operator interface has no immediate permanent deletion. Archive is
+reversible. Binned evidence is recoverable during its grace period. State this
+recovery behavior at each applicable action.
 
 ### Evidence row
 
-Thumbnail, type and duration, timestamp, source aircraft and incident, one-line
-description, and a decision chip. Non-ready states (assembling, failed, binned) are
-shown in the list rather than filtered out — an operator needs to know a clip did not
-save, and a list that silently omits failures teaches the wrong thing.
+Show the thumbnail, type, duration, timestamp, source aircraft, incident,
+description, and decision state. Keep non-ready evidence in the list. An
+operator must see each assembling, failed, or binned item.
 
 ### Flight history row
 
-Mission name, **outcome chip**, timestamp, the reason when the outcome was not a clean
-completion, then progress and duration. Outcomes are stated as what happened, not as
-enum names: *Completed*, *Returned home early*, *Stopped by you*, *Never started*.
+Show the mission name, **outcome chip**, timestamp, progress, and duration. If
+the mission did not complete normally, show the reason. Use outcome text, not
+enum names: *Completed*, *Returned home early*, *Stopped by you*, or *Never
+started*.
 
 Progress bars are for flights **in motion**. A finished flight states its progress as a
 number ("12 of 18 waypoints") — a bar frozen at 67% implies something is still running.
 
 ### Mutual-exclusion notice
 
-When an aircraft cannot do something because it is already doing something else, say
-so **where the operator would attempt it**, name the conflict, and offer the action
-that resolves it. A mission cannot start while a follow holds the aircraft; the
-Missions section says that plainly and offers "Stop following" inline, rather than
-letting the operator discover it from a rejected command later.
+If current activity blocks an action, show the conflict at the attempted
+action. Name the activity and give the operator a safe resolution. For example,
+a mission cannot start during Follow from standoff. The Missions section must
+offer **Stop following** at the blocked control.
 
 ### Instrument readout
 
@@ -342,7 +342,7 @@ both failure directions are real.
 | Telemetry age | Telemetry staleness | **Telem · 0.4 s** | "Data" |
 | Relative altitude | Relative altitude (rel) | **Altitude (AGL)** | "height above home" |
 | Absolute altitude | Absolute altitude AMSL | **Altitude (AMSL)** | "height above sea" |
-| Lease renewing | Operator lease renewing at 1 Hz | **Link · good, 0.4 s ago** | "we're still talking to it" |
+| Lease renewing | Operator lease renewing at 1 Hz | **Link · good, 0.4 s ago** | "the control link is still active" |
 | Degraded hold | DEGRADED_HOLD | **Follow stopped · holding** | "it gave up and is hovering" |
 | Link stale | Heartbeat threshold exceeded | **No signal · 3m 12s** | "we lost it" |
 | Response pattern | BOUNDED_AREA_SCAN | **Area scan** | "search an area" |
@@ -360,26 +360,31 @@ both failure directions are real.
 | Capability set | Agent capabilities | **Capabilities** | "can do" |
 | Upload | Upload mission plan | **Upload** / **Send to aircraft** | "give it to the drone" |
 
-`RTL` stays as a **flight-mode label** in logs and telemetry. As a **button** it reads
-"Return home", because a button is an instruction and a readout is a state.
+Use `RTL` as a **flight-mode label** in logs and telemetry. Use **Return home**
+as a button label. A button gives an instruction, while a readout reports a
+state.
 
 ### 5.4 General rules
 
-- **Say the consequence, not the mechanism.** "Stopping commands PX4 Hold. It never triggers RTL or Land." beats both "commands zero velocity and stops Offboard" and "the aircraft stops and hovers where it is".
+- **State the consequence, not only the mechanism.** Use "Stopping commands PX4
+  Hold. It does not trigger RTL or Land."
 - **Every word earns its place.** No intro sentence restating the heading.
-- **Blocked controls name the blocker and where to fix it.** "Held by the mission — take control above".
+- **Blocked controls name the blocker and the recovery action.** For example,
+  use "Held by the mission. Take control above."
 - **Empty states teach.** Say what to do next and where.
-- **Errors state the condition and the recovery.** "Telemetry is 8 s old — reconnect before starting."
+- **Errors state the condition and recovery.** For example, use "Telemetry is 8
+  seconds old. Reconnect before you start."
 - **Never repeat what is already on screen.**
-- **Units and precision are copy.** `±3.1 m` says more than "accurate", and takes less room.
+- **Units and precision are part of the message.** Prefer `±3.1 m` to
+  "accurate."
 
 
 ## 6. Accessibility and resilience
 
-Non-negotiable, and mostly already true of the current app — keep it that way.
+Accessibility and resilience are requirements for each interface change.
 
 - WCAG AA contrast minimum for all text including placeholders and micro-labels. Field mode targets AAA for body text.
-- Never encode status in colour alone; always pair with text or a glyph.
+- Never encode status in color alone; always pair with text or a glyph.
 - Visible `:focus-visible` on every interactive element.
 - Full keyboard reachability, including safety controls.
 - `aria-current` on navigation, `role="status"`/`role="alert"` on live regions, `aria-selected` on selection lists.
@@ -446,7 +451,7 @@ product resolution:
 
 ## 9. Using this document
 
-When adding or changing operator-facing behaviour:
+When adding or changing operator-facing behavior:
 
 1. Identify which of the five principles the change serves.
 2. Reuse an existing component contract before inventing a new one.

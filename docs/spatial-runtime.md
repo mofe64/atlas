@@ -1,16 +1,19 @@
 # Spatial Depth Runtime
 
 Atlas Spatial Runtime is the independently supervised depth-camera process. It
-owns acquisition, calibration, freshness, and its local diagnostic socket. It
-does not project obstacles, map, estimate aircraft pose, command movement, or
-stream spatial data to Atlas Agent or Native.
+owns depth acquisition, calibration, freshness, and the local diagnostic
+socket.
+
+Atlas Spatial Runtime does not project obstacles or create a map. It does not
+estimate aircraft pose, command movement, or stream spatial data to Atlas Agent
+or Atlas Native.
 
 ## Current boundary
 
 ```mermaid
 flowchart LR
     OAK["OAK stereo camera"] --> DepthAI["Direct DepthAI v3 provider"]
-    DepthAI --> Frame["Latest uint16 depth frame in millimetres"]
+    DepthAI --> Frame["Latest uint16 depth frame in millimeters"]
     DepthAI --> Calibration["Intrinsics for aligned RGB optical frame"]
     Frame --> Health["Local health socket"]
     Calibration --> Health
@@ -38,13 +41,13 @@ with the selected profile.
 | Property | Value |
 | --- | --- |
 | Storage | Two-dimensional NumPy `uint16` |
-| Unit | Millimetres |
+| Unit | Millimeters |
 | Invalid value | `0` |
 | Default size/rate | 640 × 400 at 20 fps |
 | Default frame | `oak_rgb_camera_optical_frame` |
 | Queueing | Latest frame only |
 
-Keeping native millimetres avoids converting and doubling the size of every
+Keeping native millimeters avoids converting and doubling the size of every
 frame before a consumer exists.
 
 DepthAI aligns stereo depth to the RGB optical output. This preserves Ariadne's
@@ -64,14 +67,14 @@ The Unix socket defaults to `/run/atlas-agent/spatial.sock`. A client sends:
 Readiness requires:
 
 - a fresh depth frame;
-- `16UC1` millimetre encoding with a declared `0.001` metre scale;
+- `16UC1` millimeter encoding with a declared `0.001` meter scale;
 - a non-empty frame ID and positive dimensions;
 - finite, valid intrinsics for the same frame and dimensions; and
 - no current acquisition error.
 
 The response includes provider/device diagnostics, frame rate and age,
 calibration, and errors. It has no map epoch, transform provenance graph,
-calibration digest, pose, colour stream, or movement-authority fields.
+calibration digest, pose, color stream, or movement-authority fields.
 
 `atlas-setup doctor` invokes a private Spatial diagnostic that combines the
 socket response with live USB discovery. A waiting OAK can initially enumerate

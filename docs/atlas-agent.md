@@ -1,12 +1,13 @@
 # Atlas Agent
 
-This document owns Agent architecture and runtime behaviour. Use
+This document is the canonical description of Atlas Agent architecture and
+runtime behavior. Use
 [`atlas-agent/README.md`](../atlas-agent/README.md) for the developer entry
 point and
 [`atlas-agent/INSTALLATION.md`](../atlas-agent/INSTALLATION.md) for Pi
 installation, service operation, updates, and troubleshooting.
 
-## Role
+## Purpose and boundary
 
 Atlas Agent is the Go onboard runtime. It sits between Atlas Native and the
 aircraft-side services:
@@ -21,7 +22,7 @@ flowchart LR
     Agent --> Camera["Camera through MAVSDK or SIYI UDP"]
 ```
 
-Agent does not connect to Atlas Backend. Its main composition is
+Atlas Agent does not connect to Atlas Backend. The process entry point is
 [`atlas-agent/cmd/atlas-agent/main.go`](../atlas-agent/cmd/atlas-agent/main.go).
 
 Mission and dispatch semantics are documented in
@@ -153,24 +154,27 @@ navigation-field age and GPS uncertainty on every synthesized pose sample. It
 also correlates the autopilot boot clock and autopilot Unix clock to companion
 `CLOCK_MONOTONIC`.
 
-The payload controller subscribes observationally to measured MAVSDK Gimbal v2
-attitude, including the gimbal timestamp, forward/North quaternions, Euler
-angles, and angular rates. This subscription never takes payload control.
-Aircraft and per-gimbal histories are bounded and are cleared across their
-respective timestamp rollbacks so interpolation cannot cross a reboot or clock
+The payload controller observes measured MAVSDK Gimbal v2 attitude. Samples
+include the gimbal timestamp, forward/North quaternions, Euler angles, and
+angular rates. This subscription does not take payload control.
+
+Aircraft and per-gimbal histories are bounded. Atlas Agent clears a history
+after a timestamp rollback. Thus, interpolation cannot cross a reboot or clock
 epoch.
 
-Perception protocol v3 contributes a pre-inference PTS/companion-clock anchor.
-The foundation resolves a selected track's exact frame time, interpolates
-aircraft and measured gimbal state around it, and performs the bounded centred-
-boresight horizontal-plane estimate. A pipeline-ingress anchor is intentionally
-labelled as an estimate. Native uses that first result to sample the configured
-DEM at the target coordinate and iterates against the same immutable world-NED
-ray; it does not reissue the Agent command against a newer video frame. The
-final terrain coordinate, ordered samples, residual, uncertainty, lifecycle,
-and filtered world-space motion are durable. Arbitrary-pixel projection,
-measured range, and surveyed accuracy acceptance remain outside this
-implementation.
+Perception protocol v3 supplies a pre-inference PTS and companion-clock anchor.
+The geolocation foundation resolves the exact frame time for the selected
+track. It interpolates aircraft and measured gimbal state at that time. It then
+calculates the bounded, centered-boresight horizontal-plane estimate.
+
+A pipeline-ingress anchor is explicitly an estimate. Atlas Native uses the
+first coordinate to sample the configured DEM. It refines the same immutable
+world-NED ray and does not request a newer video frame.
+
+Atlas stores the final terrain coordinate, ordered samples, residual,
+uncertainty, lifecycle, and filtered world-space motion. This implementation
+does not include arbitrary-pixel projection, measured range, or surveyed
+accuracy acceptance.
 
 Every estimate records the configured static boresight angular-error bound.
 That numeric bound contributes to geolocation uncertainty; it is not a
@@ -244,7 +248,7 @@ Mission activation is rejected while inspection control owns the payload.
 runs the low-latency image-space gimbal loop onboard. Native starts it only for
 the exact selected `(track_session_id, track_id)` under an existing manual
 payload lease. The controller reads measured MAVSDK gimbal attitude, aims at
-the confirmed box centre, applies deadband, rate, acceleration, configured
+the confirmed box center, applies deadband, rate, acceleration, configured
 angle, and braking-distance limits, and sends aircraft-relative angular rates.
 
 `TEMPORARILY_OCCLUDED` or stale input holds the current angle with zero rates.
@@ -304,13 +308,17 @@ first, then optional `POINT_GIMBAL_AT_INCIDENT`. Area Scan and Orbit add a
 durable `RESUME_AFTER_ARRIVAL` action and trigger the chain after generated
 waypoint zero, before their remaining pattern waypoints. One-waypoint Offset
 Observe triggers at its final waypoint and completes after its acknowledged
-observation chain. Hold at Staging carries a Hold-only
-`waitForOperatorDecision` action at the final waypoint; after Hold succeeds,
-Agent reports the run `PAUSED`, stops its progress watcher, and waits for an
-explicit mission Resume, RTL, or Cancel command. Land remains an independent
-immediate safety action and does not close the run by itself. Agent emits acknowledged action
-states for every attempt; exhausted retries apply only the immutable plan's
-explicit Return to Launch or operator-intervention policy.
+observation chain.
+
+Hold at Staging has a Hold-only `waitForOperatorDecision` action at the final
+waypoint. After Hold succeeds, Atlas Agent reports the mission run as `PAUSED`
+and stops its progress watcher. It then waits for an explicit Resume, RTL, or
+Cancel command.
+
+Land is an independent immediate safety action. Land does not close the mission
+run. Atlas Agent reports an acknowledged action state for each attempt. After
+the final retry, it applies the mission plan's Return to Launch or
+operator-intervention policy.
 
 On initial start, Agent first executes any required `START_PERCEPTION` action
 and waits for a fresh inference frame. It then arms before requesting mission

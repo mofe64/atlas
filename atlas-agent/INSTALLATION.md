@@ -1,10 +1,14 @@
 # Atlas Agent Installation Guide
 
-This guide installs or updates Atlas Agent on the supported Raspberry Pi. Keep
-the aircraft landed and disarmed throughout package and service changes.
-It is the canonical document for onboard networking, package installation,
-service operation, updates, and deployment troubleshooting. Agent architecture
-is documented in [`../docs/atlas-agent.md`](../docs/atlas-agent.md).
+Use this procedure to install or update Atlas Agent on the supported Raspberry
+Pi. This document is the canonical procedure for onboard networking, package
+installation, service operation, updates, and deployment troubleshooting.
+
+**Warning:** Keep the aircraft landed, disarmed, and without propellers during
+package and service changes. An unexpected motor command can cause injury.
+
+For Agent architecture, see
+[`../docs/atlas-agent.md`](../docs/atlas-agent.md).
 
 ## Supported onboard computer
 
@@ -15,8 +19,8 @@ is documented in [`../docs/atlas-agent.md`](../docs/atlas-agent.md).
 - Optional DepthAI camera on a direct USB 3 connection
 - Optional H-Flow connected to PX4 through DroneCAN
 
-Atlas setup does not commission H-Flow, geolocation boresight, or aircraft
-Follow. Use their dedicated setup and acceptance procedures.
+Atlas setup does not commission H-Flow, geolocation boresight, or Follow from
+standoff. Use the applicable setup and acceptance procedure.
 
 ## HM30 network
 
@@ -31,43 +35,52 @@ carried by the HM30 radio link:
 | Raspberry Pi | `192.168.144.168` | Atlas Agent and onboard services |
 | Ground computer | `192.168.144.50` | Atlas Native listener on port `7443` |
 
-The Pi connects to Atlas Native at `192.168.144.50:7443`; it does not connect
-to the HM30 Ground management address. Use subnet mask `255.255.255.0`, keep
-every address unique, and leave the gateway empty on the dedicated HM30
-interfaces. The Pi should continue using Wi-Fi for its default internet route.
+Configure the Pi to connect to Atlas Native at `192.168.144.50:7443`. Do not
+use the HM30 Ground management address as the Atlas Native address.
 
-If the ground computer intentionally uses another address, configure Native's
-`ATLAS_GROUND_STATION_LISTEN_ADDR` and Agent's
-`ATLAS_GROUND_STATION_ADDR` to the same address and port.
+Use subnet mask `255.255.255.0`. Give each device a unique address. Leave the
+gateway empty on each dedicated HM30 interface. Keep Wi-Fi as the default
+internet route for the Pi.
+
+If the ground computer uses a different address, set both applicable
+configuration values:
+
+- Set `ATLAS_GROUND_STATION_LISTEN_ADDR` in Atlas Native.
+- Set `ATLAS_GROUND_STATION_ADDR` in Atlas Agent.
+- Use the same address and port in both values.
 
 ## Build and transfer the latest packages
 
-Validate Agent source before packaging:
+From the Agent source directory, run the tests:
 
 ```sh
 cd /path/to/sunnyside/atlas/atlas-agent
 go test ./...
 ```
 
-Build the Agent package and the independently versioned Spatial package:
+Build the Agent package:
 
 ```sh
 cd /path/to/sunnyside/atlas/atlas-agent
 ./packaging/release.sh build 0.1.29
+```
 
+Build the independently versioned Spatial package:
+
+```sh
 cd /path/to/sunnyside/atlas/atlas-spatial-runtime
 ./packaging/release.sh build 0.1.0
 ```
 
-The Spatial build command runs its provider-neutral source tests before
-packaging. The two outputs are:
+The Spatial build runs the provider-neutral source tests before packaging.
+Confirm that these package files exist:
 
 ```text
 atlas-agent/dist/atlas-agent_0.1.29_arm64.deb
 atlas-spatial-runtime/dist/atlas-spatial-runtime_0.1.0_arm64.deb
 ```
 
-Transfer both selected packages to the Pi:
+Transfer the selected packages to the Pi:
 
 ```sh
 cd /path/to/sunnyside/atlas
@@ -75,14 +88,15 @@ cd /path/to/sunnyside/atlas
   0.1.29 0.1.0 mofe@ariadne-robot
 ```
 
-Each component also has its own `packaging/release.sh transfer` command when
-only one package changed. Each `dist` directory retains only its latest
-package. The release paths create no Spatial image archive, Atlas checksum
-bundle, cross-component manifest, or rollback set.
+If only one component changed, use its `packaging/release.sh transfer` command.
+Each `dist` directory keeps only its latest package.
+
+The release process does not create a Spatial image archive, an Atlas checksum
+bundle, a cross-component manifest, or a rollback set.
 
 ## Install on the Pi
 
-On the landed and disarmed Pi:
+On the landed, disarmed, and propeller-free aircraft, install the packages:
 
 ```sh
 cd /tmp
@@ -93,13 +107,14 @@ sudo apt install \
 sudo atlas-setup
 ```
 
-The Pi needs neither a repository checkout nor PyPI access. The Spatial package
-contains its Linux-arm64 DepthAI and NumPy runtime. Skip that package only on
-an aircraft that will not use the depth camera. Agent and Spatial remain
-independent packages: installing an Agent `.deb` never replaces camera code,
-and installing Spatial never replaces Agent.
+The Pi does not need a repository checkout or PyPI access. The Spatial package
+contains its Linux-arm64 DepthAI and NumPy runtime.
 
-The interactive setup:
+Install the Spatial package only if the aircraft uses the depth camera. The
+Agent and Spatial packages are independent. An Agent installation does not
+replace Spatial code. A Spatial installation does not replace Agent code.
+
+The interactive setup does these operations:
 
 1. Selects and validates one installed aircraft profile.
 2. Verifies the Pi/Ubuntu platform and discovers PX4 serial, camera, Hailo, and
@@ -109,7 +124,7 @@ The interactive setup:
 5. Offers the DepthAI provider when supported hardware is present.
 6. Shows the configuration and services before applying changes.
 
-For a first non-interactive setup, select the profile explicitly:
+For the first non-interactive setup, specify the aircraft profile:
 
 ```sh
 sudo atlas-setup --non-interactive --aircraft-profile ariadne
@@ -129,14 +144,20 @@ The Agent package installs all tracked aircraft profiles under:
 /usr/share/atlas-agent/aircraft-profiles/
 ```
 
-Setup copies the selected profile to
-`/etc/atlas-agent/aircraft-profile.json`. Setup validates the profile and
-Spatial loads the active copy. The Agent process does not load it because it
-currently has no depth consumer. A profile contains only its id, the
-depth-camera device id, and the camera-to-body mounting translation and
-rotation. It contains no runtime capabilities, calibration catalogue, safety
-thresholds, hashes, or controller authorization. A different aircraft must
-provide and verify its own physical measurements.
+Setup validates the selected profile and copies it to
+`/etc/atlas-agent/aircraft-profile.json`. Atlas Spatial Runtime loads this
+active copy. Atlas Agent does not load the profile because it has no depth
+consumer.
+
+The profile contains:
+
+- its ID;
+- the depth-camera device ID; and
+- the camera-to-body mounting translation and rotation.
+
+The profile does not contain runtime capabilities, a calibration catalogue,
+safety thresholds, hashes, or controller authorization. Measure and verify the
+values for each different aircraft.
 
 ## Hailo profile
 
@@ -146,14 +167,14 @@ For the pinned container-backed Hailo profile:
 sudo atlas-hailo-setup
 ```
 
-If an existing host userspace installation is detected, setup stops. Replace
-it only when that migration is deliberate:
+If setup finds an existing host userspace installation, it stops. To approve
+the replacement, run:
 
 ```sh
 sudo atlas-hailo-setup --replace-existing
 ```
 
-Ordinary Agent updates do not require rerunning `atlas-hailo-setup`.
+Do not run `atlas-hailo-setup` again for an ordinary Agent update.
 
 The default A8 camera contract is:
 
@@ -161,9 +182,8 @@ The default A8 camera contract is:
 ATLAS_CAMERA_TRANSPORT=siyi_udp
 ```
 
-This keeps MAVSDK Camera discovery disabled for a payload controlled through
-the SIYI UDP SDK. Use `mavsdk` or `hybrid` only for an intentionally different
-installation.
+This value disables MAVSDK Camera discovery for a SIYI UDP payload. Use
+`mavsdk` or `hybrid` only when the installed camera configuration requires it.
 
 ## Spatial runtime
 
@@ -172,7 +192,8 @@ package. It uses DepthAI directly and owns its private runtime under
 `/opt/atlas-spatial-runtime`, udev rule, service unit, source tests, and
 diagnostic commands. It requires neither ROS nor a Spatial Docker image.
 
-Update Spatial only when its source or DepthAI dependency changed:
+If Spatial source or its DepthAI dependency changed, build and transfer a new
+Spatial package:
 
 ```sh
 cd /path/to/sunnyside/atlas/atlas-spatial-runtime
@@ -185,27 +206,27 @@ sudo atlas-setup
 sudo atlas-setup doctor
 ```
 
-Package installation replaces the one private runtime under
-`/opt/atlas-spatial-runtime`; no old environments, images, or Spatial rollback
-artifacts are retained. The first package installation also removes the exact
-legacy `/opt/atlas-spatial-runtime/venv` path used by the retired checkout
-installer. An Agent-only release does not trigger this update.
+Package installation replaces the private runtime under
+`/opt/atlas-spatial-runtime`. It does not keep old environments, images, or
+Spatial rollback artifacts. The first package installation also removes the
+legacy `/opt/atlas-spatial-runtime/venv` path. An Agent-only release does not
+change Spatial.
 
-After `sudo atlas-setup doctor` reports Spatial ready, remove the former
-Spatial container and image once:
+If `sudo atlas-setup doctor` reports Spatial ready, remove the former Spatial
+container and image:
 
 ```sh
 sudo docker rm -f atlas-spatial-runtime 2>/dev/null || true
 sudo docker image rm atlas-spatial-runtime:local
 ```
 
-Do not uninstall Docker when the selected Hailo profile still uses its
-container-backed adapter. Docker is removed from Spatial ownership, not
-implicitly from unrelated onboard services.
+**Caution:** Do not uninstall Docker if the selected Hailo profile uses the
+container adapter. The Spatial migration does not remove dependencies of other
+onboard services.
 
-A waiting DepthAI device can report `03e7:2485`, an artificial `03e72485`
-identity, and 480 Mb/s before firmware upload. Do not configure that value as
-the camera MXID. The live doctor check reconciles the booted camera with sysfs.
+A DepthAI device that waits for firmware can report `03e7:2485`, artificial
+identity `03e72485`, and 480 Mb/s. Do not use `03e72485` as the camera MXID.
+The live doctor check matches the booted camera to sysfs.
 
 The selected services are:
 
@@ -221,7 +242,7 @@ stop ordinary telemetry or commands.
 
 ## Validate the deployment
 
-Run:
+Run these deployment checks:
 
 ```sh
 dpkg-query -W -f='${Package} ${Version}\n' \
@@ -229,20 +250,20 @@ dpkg-query -W -f='${Package} ${Version}\n' \
 sudo atlas-setup doctor
 ```
 
-For spatial, doctor checks:
+For Spatial, `atlas-setup doctor` checks:
 
 - independently installed runtime, diagnostic command, and service state;
 - configured camera discovery and live USB transport;
-- fresh native `16UC1` depth in millimetres with an explicit metre scale;
+- fresh native `16UC1` depth in millimeters with an explicit meter scale;
 - a non-empty depth frame ID;
 - valid calibration with matching frame ID and dimensions; and
 - current provider errors.
 
-Colour, pose estimation, mapping, transform digests, and cloud streaming are
-not part of this readiness contract. A passing check does not commission
-obstacle avoidance or repeat the source test suite.
+This readiness contract does not include color, pose estimation, mapping,
+transform digests, or cloud streaming. A successful check does not authorize
+obstacle avoidance. It also does not repeat the source test suite.
 
-Inspect services when needed:
+If a check fails, inspect the services:
 
 ```sh
 systemctl --no-pager --full status \
@@ -257,7 +278,8 @@ journalctl -u atlas-spatial-runtime.service -n 200 --no-pager
 
 ## Update policy
 
-Update only while landed, disarmed, and outside a mission:
+**Warning:** Update the onboard software only when the aircraft is landed,
+disarmed, without propellers, and outside a mission.
 
 ```sh
 sudo systemctl stop \
@@ -273,11 +295,12 @@ sudo atlas-setup
 sudo atlas-setup doctor
 ```
 
-Install only the component packages that changed, but install multiple changed
-packages in one `apt` transaction. Keep only the Agent and Spatial package
-versions used by the Pi. Atlas provides no rollback workflow: correct a failed
-update with a new source change and package. This policy accepts longer
-recovery in exchange for much lower release and storage complexity.
+Install only the component packages that changed. Install multiple changed
+packages in one `apt` transaction.
+
+Keep only the Agent and Spatial package versions that the Pi uses. Atlas does
+not provide a rollback workflow. Correct a failed update with a new source
+change and package.
 
 ## Troubleshooting
 
@@ -304,10 +327,11 @@ sudo atlas-setup doctor
 sudo journalctl -u atlas-spatial-runtime.service -n 200 --no-pager
 ```
 
-The doctor output includes the concrete Spatial diagnostic, including USB
-discovery, depth frame/encoding, calibration validity and frame, or the
-runtime's `lastError`. Keep the aircraft grounded while diagnosing acquisition
-or calibration failures.
+The doctor output identifies the failed Spatial check. It includes USB
+discovery, depth encoding, calibration, frame, and the runtime `lastError`.
+
+**Warning:** Keep the aircraft grounded while you diagnose an acquisition or
+calibration failure.
 
 ## Related runbooks
 

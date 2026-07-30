@@ -5,7 +5,7 @@
 [`proto/atlas/ground_station.proto`](../proto/atlas/ground_station.proto) is the
 single source of truth for communication between Atlas Native and Atlas Agent.
 
-Native compiles Rust client/server types during the Cargo build through
+Atlas Native compiles Rust client and server types during the Cargo build with
 [`atlas/src-tauri/build.rs`](../atlas/src-tauri/build.rs). Agent's Go types are
 generated and committed under
 [`atlas-agent/internal/transport/groundstationpb/`](../atlas-agent/internal/transport/groundstationpb/).
@@ -158,7 +158,7 @@ The supported command types are:
 - Return to Launch.
 - Land.
 - Begin, renew, and end payload control.
-- Gimbal angles, rates, centre, and geographic ROI.
+- Gimbal angles, rates, center, and geographic ROI.
 - Camera zoom.
 
 The normal lifecycle is:

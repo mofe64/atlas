@@ -1,10 +1,10 @@
 # Aircraft Operations Implementation
 
-## Objective
+## Purpose and boundary
 
-This document explains the shipped aircraft-operation contracts: fleet
-lifecycle, freshness, commands, mission planning and execution, payload
-ownership, safety gates, state transitions, and failure handling.
+This document explains the implemented aircraft-operation contracts. It covers
+fleet lifecycle, data freshness, commands, missions, payload ownership, safety
+gates, state transitions, and failure handling.
 
 For the pattern-generation algorithms and terrain model, continue with
 [Mission types and flight patterns](mission-types-and-flight-patterns.md). For
@@ -15,10 +15,10 @@ aircraft Follow from standoff are described end to end in
 
 The central rule is:
 
-> React proposes an operation, Native authorizes and records it, Agent executes
-> it through the appropriate hardware boundary, and Native records the result.
+> The React interface proposes an operation. Atlas Native authorizes and
+> records it. Atlas Agent executes it. Atlas Native records the result.
 
-No individual layer is sufficient by itself:
+Each layer has a separate responsibility:
 
 - UI gating improves operator experience but is not trusted policy.
 - Native policy prevents unsafe or inconsistent requests.
@@ -212,7 +212,7 @@ A definition contains:
 - Name and description.
 - Operator parameters and map geometry.
 - Camera, gimbal, zoom, detection, recording, and RTL intent.
-- A pointer to the current generated plan.
+- A pointer to the current mission plan.
 
 Editing returns the definition to `DRAFT` and clears the current plan pointer.
 Editing is blocked while any run for that definition is unfinished.
@@ -231,7 +231,7 @@ Supported planning:
 Validation includes:
 
 - Coordinates.
-- Altitude from 2 to 120 metres for base mission geometry.
+- Altitude from 2 to 120 meters for base mission geometry.
 - Speed from 0.5 to 15 m/s.
 - Template-specific minimum geometry.
 - Gimbal pitch, yaw mode, target, and zoom.
@@ -251,13 +251,14 @@ Plans contain ordered actions such as:
 - Navigate to waypoint.
 - Return to Launch.
 
-Navigation is translated to MAVSDK Mission items. Payload actions are translated
-into a separate Agent payload plan. Recording maps to MAVSDK mission camera
-actions where the plan shape permits it. Perception actions are executed by the
-Agent's inference runtime rather than MAVSDK: required `START_PERCEPTION` claims
-must produce a fresh acknowledgement before arming, and `STOP_PERCEPTION`
-releases the mission claim during normal or terminal cleanup. Only semantic
-actions that have no supported executor remain translation warnings.
+Atlas Agent translates navigation into MAVSDK Mission items. It translates
+payload actions into a separate payload plan. It maps recording to MAVSDK
+mission-camera actions when the mission plan permits the mapping.
+
+The perception runtime executes perception actions. A required
+`START_PERCEPTION` claim must produce a fresh acknowledgement before arming.
+`STOP_PERCEPTION` releases the mission claim during normal or terminal cleanup.
+Atlas Agent reports an unsupported semantic action as a translation warning.
 
 ## Terrain-aware planning
 
@@ -290,7 +291,7 @@ Native rejects:
 - Climb/descent smoothing that requires exceeding the configured ceiling.
 
 A terrain-aware plan records the profiled home. Upload is blocked if the
-aircraft home has moved more than 30 metres.
+aircraft home has moved more than 30 meters.
 
 ## Mission upload
 
@@ -409,13 +410,15 @@ The Agent lease is the final fail-safe when UI cleanup or the network fails.
 
 ## Follow from standoff
 
-The Follow workspace is a supervised dynamic-navigation workflow, separate
-from missions and image-space gimbal following. Native accepts a request only
-for the exact active operator selection when the latest coordinate is terrain
-`CONVERGED`, motion is `FILTERED`, uncertainty/confidence fit the reviewed
-limits, aircraft telemetry is fresh and flight-ready, and both physical
-boresight angular uncertainty is finite and Agent Follow protocol support is
-advertised.
+The Follow workspace is a supervised dynamic-navigation workflow. It is
+separate from missions and Camera follow.
+
+Atlas Native accepts a request only when all applicable start gates pass. The
+exact selection must be active. Terrain status must be `CONVERGED`, and motion
+status must be `FILTERED`. Uncertainty and confidence must be inside the
+reviewed limits. Telemetry must be fresh and flight-ready. Boresight angular
+uncertainty must be finite. Atlas Agent must advertise Follow from standoff
+protocol support.
 
 The operator reviews a fixed standoff, relative-altitude target and band,
 groundspeed, acceleration, maximum duration, circular geographic boundary,
@@ -424,13 +427,15 @@ reason. Native persists these values before requesting control. A unique
 non-ended follow session prevents two authorities
 for one aircraft, and unfinished mission runs block entry.
 
-During follow, the UI repeatedly reacquires the exact track coordinate, samples
-terrain at the estimated target point, iteratively refines the same immutable
-observation ray, and renews a four-second lease only after world velocity and
-quality pass again. Native also runs a 250 ms watchdog. Agent runs the 10 Hz
-PX4 Offboard controller and its independent onboard watchdog. Loss of the UI,
-Native delivery, or the ground link therefore stops renewal; the onboard lease
-causes Hold without depending on a final network message.
+During follow, the interface reacquires the exact track coordinate and samples
+terrain at the estimated target point. It refines the same immutable
+observation ray. It renews the four-second lease only after velocity and quality
+pass the gates again.
+
+Atlas Native runs a 250 ms watchdog. Atlas Agent runs the 10 Hz PX4 Offboard
+controller and an independent onboard watchdog. Loss of the interface, Native
+delivery, or ground link stops lease renewal. Lease expiry causes Hold without
+a final network message.
 
 `REQUESTED -> VALIDATING -> ACQUIRING -> FOLLOWING` is durable. Any watchdog
 can move the session to `DEGRADED_HOLD` with a reason, after which the operator

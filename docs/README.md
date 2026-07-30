@@ -1,10 +1,12 @@
 # Atlas Developer Documentation
 
-This directory is the starting point for understanding and contributing to the
-current Atlas system. It documents the code that exists at this checkpoint,
-including Atlas Native, Atlas Agent, their direct transport, aircraft operations,
-mission patterns, incident dispatch, perception and follow controllers, evidence,
-and the separate Atlas Backend foundation.
+Start here to understand or change the current Atlas system. These documents
+describe the implemented components, their boundaries, and their failure
+behavior. They also describe the current operational procedures.
+
+The documentation uses the
+[Atlas Technical Documentation Standard](documentation-standard.md). Use the
+[controlled terminology](terminology.md) when you add or change a document.
 
 The shortest correct mental model is:
 
@@ -25,17 +27,18 @@ flowchart LR
     Backend["Atlas Backend"] -. "future coordinated services; not flight control" .-> Host
 ```
 
-Atlas is local-first. Atlas Native is the operational authority and durable
-source of truth for the current flight-control path. Atlas Agent runs on the
-aircraft and translates Native requests into MAVSDK, PX4, gimbal, camera, and
-perception-runtime operations. The optional Backend does not sit between Native
-and Agent.
+Atlas is local-first. Atlas Native authorizes and records local operations.
+Atlas Agent translates approved requests into aircraft-side operations. PX4
+remains the flight-control authority. Atlas Backend is not in this control
+path.
 
 ## Recommended reading order
 
 | Order | Document | What it answers |
 | --- | --- | --- |
 | Start | [Design language](design-language.md) | How should the operator interface communicate authority, state, safety, and operational intent? |
+| Reference | [Documentation standard](documentation-standard.md) | How must contributors write and review Atlas technical documentation? |
+| Reference | [Atlas terminology](terminology.md) | Which term identifies each Atlas component, state, and control concept? |
 | 1 | [Architecture overview](architecture-overview.md) | What are the major components, boundaries, and invariants? |
 | 2 | [Atlas Native](atlas-native.md) | How does the desktop application, Rust host, SQLite, and React UI work? |
 | 3 | [Atlas Agent](atlas-agent.md) | How does the onboard runtime integrate with MAVSDK, PX4, payload hardware, and perception? |
@@ -130,27 +133,13 @@ These are architectural facts at this checkpoint:
 
 ## Terminology
 
-| Term | Meaning |
-| --- | --- |
-| **Atlas Native** | The desktop Tauri application: React webview plus Rust host. |
-| **Atlas Agent** | The Go runtime on the onboard computer. |
-| **Atlas Backend** | The separate HTTP/PostgreSQL service, not the current flight-control transport. |
-| **Drone** | The durable physical aircraft identity in Native. |
-| **Vehicle Agent** | One installed Agent identity on an onboard computer. |
-| **Binding** | The durable attachment between an Agent installation and a drone. |
-| **Communication link** | One concrete Agent-to-Native session. Reconnects create new links. |
-| **Mission definition** | Editable operator intent and template parameters. |
-| **Mission plan** | An immutable generated set of waypoints and semantic actions. |
-| **Mission run** | One upload/execution history for one plan on one aircraft. |
-| **Incident** | A revisioned operational event and target location that may need an aircraft response. |
-| **Incident assignment** | The durable reservation linking an incident, selected aircraft, response plan, and execution state. |
-| **Response pattern** | The reviewed incident-specific geometry and arrival behavior, such as staging, offset observation, area scan, or orbit. |
-| **Payload control lease** | Short-lived ownership of gimbal/camera manual control. |
-| **Perception source** | An accelerator-neutral stream of health and normalized detections for one camera source ID. |
-| **Track session** | A continuity boundary within which Atlas-owned track IDs are meaningful. |
-| **Camera follow** | Image-space controller that moves only the gimbal to center an exact selected track. |
-| **Follow from standoff** | Geographic-space PX4 Offboard controller that moves the aircraft using a filtered selected-target estimate. |
-| **Evidence** | Explicitly retained still or event media plus provenance; distinct from the bounded live frame history. |
+The [Atlas terminology](terminology.md) document is the controlled glossary.
+The most important distinction is:
+
+- Atlas Native authorizes and records local operations.
+- Atlas Agent owns the onboard hardware integration.
+- PX4 owns flight control and failsafe behavior.
+- Atlas Backend provides separate coordinated-service foundations.
 
 ## How to use these docs while changing code
 
@@ -162,8 +151,10 @@ These are architectural facts at this checkpoint:
    Native-Agent message changes.
 5. Add or update tests for state transitions, safety gates, validation, and
    failure behavior.
-6. Update the relevant document in the same change when behavior, ownership,
-   configuration, schema, or operational procedure changes.
+6. Update the owning document in the same change when behavior, ownership,
+   configuration, schema, or an operational procedure changes.
+7. Apply the review checklist in the
+   [documentation standard](documentation-standard.md).
 
 The code is authoritative when documentation and implementation disagree. Treat
 that disagreement as a documentation bug unless the implementation is itself

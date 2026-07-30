@@ -1,14 +1,15 @@
-# Incident dispatch
+# Incident Dispatch
 
-Incident dispatch turns a reported location into a reviewed, auditable response
-mission for one suitable aircraft. It reuses Atlas's normal mission planner and
-mission-run state machine, then adds incident lifecycle, aircraft suitability,
-known-building assessment, assignment reservations, and durable arrival actions.
+Incident dispatch converts a reported location into a reviewed and auditable
+response mission for one suitable aircraft. It uses the standard mission
+planner and mission-run state machine. It adds incident lifecycle, aircraft
+suitability, building assessment, assignment reservations, and durable arrival
+actions.
 
-This guide describes the current implementation. It is not a roadmap and does
-not imply autonomous dispatch: an operator reviews the incident, response
-pattern, aircraft, route assessment, and failure policy before preparation and
-again controls upload and start.
+This guide describes current behavior. Atlas does not perform autonomous
+dispatch. An operator reviews the incident, response pattern, drone, route
+assessment, and failure policy. The operator also controls mission upload and
+start.
 
 ## System boundary
 
@@ -71,9 +72,9 @@ If another writer changed the incident first, Atlas rejects the stale update
 instead of silently overwriting it.
 
 Any incident update makes a prepared-but-not-uploaded assignment `STALE`.
-Location-specific artifacts therefore cannot survive a change simply because
-the change looked small. A run already in the air keeps its immutable plan and
-raises operator-visible alerts; Atlas does not mutate an airborne route.
+Location-specific artifacts do not remain valid because a change appears
+small. An airborne mission run keeps its immutable mission plan. Atlas raises
+operator-visible alerts and does not change the airborne route.
 
 An incident cannot be resolved or cancelled while its response has an unfinished
 mission run. The operator must first bring that aircraft/run into an explicit
@@ -104,7 +105,7 @@ revalidate the conditions relevant to their boundary.
 ### 4. Preview the response
 
 Preview deterministically turns the incident, response parameters, and selected
-aircraft context into a normal Atlas mission definition and generated plan. It
+aircraft context into a normal Atlas mission definition and mission plan. It
 also performs the known-building assessment described below.
 
 Preview sends no aircraft command and reserves no aircraft.
@@ -191,14 +192,14 @@ integration documentation as available.
 
 Current bounds are:
 
-- radius: 5–500 metres;
+- radius: 5–500 meters;
 - laps: 1–10;
 - direction: clockwise or counter-clockwise;
-- altitude: 2–120 metres;
-- speed: 0.5–15 metres per second;
+- altitude: 2–120 meters;
+- speed: 0.5–15 meters per second;
 - 24 points per lap, plus a closure point.
 
-The vertical-rate field is validated between 0.2 and 5 metres per second for
+The vertical-rate field is validated between 0.2 and 5 meters per second for
 schema consistency, but no inter-level transition is generated while the orbit
 is single-level.
 
@@ -246,7 +247,7 @@ the operator.
 
 ## Aircraft suitability
 
-Suitability filters out an aircraft when any blocker is present, including:
+Suitability rejects a drone when one or more of these blockers are present:
 
 - the aircraft lifecycle is not active;
 - it already has an active incident assignment or unfinished mission run;
@@ -266,20 +267,22 @@ Base capability requirements include mission upload/start and the Hold action.
 Area scan and orbit also require Resume. Offset observe and orbit require point-
 gimbal support plus the detected gimbal/ROI capabilities.
 
-Atlas ranks available aircraft ahead of unavailable ones, then considers blocker
-count, estimated travel time, battery, and finally stable name/ID ordering. The
-first available aircraft is presented as recommended. Estimated arrival time is
-straight-line distance divided by reviewed response speed; it is a ranking aid,
-not a forecast that accounts for wind, airspace, route constraints, or take-off
-time.
+Atlas ranks available drones before unavailable drones. It then considers
+blocker count, estimated travel time, battery, and stable name or ID order. The
+interface recommends the first available drone.
+
+Estimated arrival time is the straight-line distance divided by the reviewed
+response speed. Use this value only for ranking. It does not include wind,
+airspace, route constraints, or takeoff time.
 
 ## Known-building assessment
 
 Atlas can load optional known-building GeoJSON from
-`ATLAS_KNOWN_BUILDINGS_GEOJSON`. Source provenance is required. The preview
-checks the route from the aircraft's current position through every generated
-waypoint against buffered known-building footprints and their vertical volumes,
-using the reviewed home absolute-altitude datum.
+`ATLAS_KNOWN_BUILDINGS_GEOJSON`. Source provenance is required.
+
+The preview checks the route from the current drone position through each
+generated waypoint. It compares the route with buffered building footprints
+and vertical volumes. The check uses the reviewed absolute home-altitude datum.
 
 The result is one of:
 
@@ -293,24 +296,23 @@ The result is one of:
 Only the first result is clear without override. Every other result requires an
 explicit reason before preparation.
 
-This is **not obstacle avoidance** and not a declaration that a route is safe.
-It sees only the loaded dataset and modeled volumes. It does not account for
-wires, cranes, vegetation, temporary structures, unmapped buildings, people,
-airspace restrictions, or vehicle dynamics.
+This assessment is **not obstacle avoidance** and does not declare that a route
+is safe. It uses only the loaded dataset and modeled volumes. It does not
+include wires, cranes, vegetation, temporary structures, unmapped buildings,
+people, airspace restrictions, or vehicle dynamics.
 
 ## Departure-context freshness
 
 Known-building assessment begins at the reviewed aircraft departure context.
-At upload Atlas requires that context still be current:
+At upload, Atlas requires this departure context:
 
 - telemetry age no more than 5 seconds;
-- horizontal movement no more than 30 metres;
-- relative-altitude change no more than 5 metres;
-- home absolute-datum change no more than 5 metres.
+- horizontal movement no more than 30 meters;
+- relative-altitude change no more than 5 meters;
+- home absolute-datum change no more than 5 meters.
 
-If any threshold is exceeded, the operator must preview and prepare again. This
-prevents a route assessed from one take-off context being reused after the
-aircraft or home reference has materially moved.
+If a threshold is exceeded, the operator must preview and prepare the response
+again. This gate prevents reuse after the drone or home reference moves.
 
 ## Assignment states and reservations
 

@@ -1,9 +1,11 @@
 # Atlas
 
-Atlas is a local-first drone operations system. The Tauri desktop application
-is the ground station, the Go Agent runs on the aircraft, and the two processes
-communicate directly over the HM30/local Ethernet link. The operational flight
-path does not require the Atlas Backend or an internet connection.
+Atlas is a local-first drone operations system. Atlas Native is the Tauri
+desktop ground station. Atlas Agent is the Go runtime on the aircraft. The two
+components communicate directly across the HM30 or local Ethernet link.
+
+The current flight-control path does not require Atlas Backend or an internet
+connection.
 
 ## Supported topology
 
@@ -21,7 +23,7 @@ SIYI A8 stream -> Hailo inference -> Atlas Agent --> perception metadata
 Depth camera -> independent Atlas Spatial Runtime --> calibrated metric depth
 ```
 
-This separation is intentional:
+Each component has a separate responsibility:
 
 - **Atlas Native** owns the operator UI, safety policy, durable command and
   mission records, SQLite, RTSP decoding, and the ground-station gRPC server.
@@ -60,6 +62,8 @@ This separation is intentional:
 Start with [`docs/README.md`](docs/README.md) for the newcomer reading path and
 repository map. The detailed architecture set covers:
 
+- [Technical documentation standard](docs/documentation-standard.md)
+- [Controlled Atlas terminology](docs/terminology.md)
 - [System architecture and component boundaries](docs/architecture-overview.md)
 - [Atlas Native internals](docs/atlas-native.md)
 - [Atlas Agent internals](docs/atlas-agent.md)
@@ -103,7 +107,7 @@ architecture.
 - Durable Hold, Return-to-Launch, Land, mission, gimbal, and zoom command
   lifecycles.
 - An independent Pi-native OAK-D Lite USB 3 depth-provider runtime with
-  calibrated `uint16` millimetre depth and local health. It does not yet
+  calibrated `uint16` millimeter depth and local health. It does not yet
   produce obstacle observations or authorize avoidance.
 
 The detailed component contracts are indexed in
@@ -167,8 +171,8 @@ ATLAS_AGENT_STATE_DIR=/tmp/atlas-agent-dev \
 go run ./cmd/atlas-agent
 ```
 
-Telemetry and vehicle commands require a reachable `mavsdk_server`; the Agent
-will otherwise continue reconnecting while reporting the unavailable runtime.
+Telemetry and vehicle commands require a reachable `mavsdk_server`. If it is
+unavailable, Atlas Agent continues to reconnect and reports the failure.
 
 ## Run the complete PX4 SITL stack
 
@@ -178,10 +182,9 @@ For interactive development, start SITL with:
 scripts/start-sitl-interactive.sh
 ```
 
-It asks whether Atlas Native should use the Gazebo gimbal camera or a
-prerecorded file, and lists supported files from `sampleVids/` when that option
-is selected. The directory is intentionally gitignored so local video fixtures
-are not committed.
+The launcher asks you to select the Gazebo gimbal camera or a prerecorded file.
+It lists supported files from `sampleVids/` when you select a file. Git ignores
+this directory so that local video fixtures are not committed.
 
 The underlying non-interactive launcher starts the supported development path:
 
@@ -239,9 +242,10 @@ ATLAS_VIDEO_SOURCE_ID=dummy-camera \
 `ATLAS_VIDEO_SOURCE` also accepts RTSP URLs. When it is unset, the existing
 `ATLAS_VIDEO_RTSP_URL` configuration remains the backward-compatible fallback.
 
-To fly the serial Hold at Staging, Bounded Area Scan, and single-level Orbit
-acceptance matrix against that stack, launch the simulator without its normal
-Native and Agent processes, then run the dedicated wrapper in another terminal:
+To run the serial response-pattern acceptance matrix:
+
+1. Start the simulator without its normal Native and Agent processes.
+2. Run the dedicated wrapper in another terminal.
 
 ```sh
 scripts/start-sitl.sh --skip-native --skip-agent

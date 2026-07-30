@@ -1,9 +1,9 @@
 # Atlas Development Guide
 
-## Goal
+## Purpose and boundary
 
-This guide takes a new developer from a clean checkout to a safe local workflow,
-then explains where to make common changes and how to validate them.
+This guide gives a new developer a safe local workflow. It also identifies the
+correct change boundary and validation commands for common work.
 
 Read the [architecture overview](architecture-overview.md) before changing
 behavior across Native and Agent. Read the relevant behavioral guide before
@@ -15,7 +15,7 @@ changing a control path:
 
 ## Prerequisites
 
-Install only what your workflow needs:
+Install the requirements for your workflow:
 
 | Workflow | Requirements |
 | --- | --- |
@@ -28,10 +28,11 @@ Install only what your workflow needs:
 | Agent package | Linux build host, Debian packaging tools, network access for pinned artifacts |
 | Spatial package | Python 3 with pip, Debian packaging tools, network access for ARM64 DepthAI/NumPy wheels |
 
-The repository README recommends Node `22.13.1`; `package.json` requires at
-least `20.19.0`. Rust `1.97.0` is the toolchain validated against the current
-Cargo lockfile; the older default `1.86.0` cannot resolve the current dependency
-minimums.
+The repository validates Node.js `22.13.1`. `package.json` requires Node.js
+`20.19.0` or later.
+
+The repository validates Rust `1.97.0` against the current Cargo lockfile. Rust
+`1.86.0` cannot resolve the current minimum dependency versions.
 
 Initialize the MAVSDK protobuf submodule:
 
@@ -50,16 +51,15 @@ npm install
 npm run tauri:dev:isolated
 ```
 
-The isolated launcher sets an absolute database path under
-`.atlas-run/native-dev/atlas.db`. It avoids modifying the normal installed
-application database.
+The isolated launcher uses `.atlas-run/native-dev/atlas.db`. It does not change
+the normal installed-application database.
 
-Use ordinary `npm run tauri dev` only when you intentionally want the platform
+Use `npm run tauri dev` only when the test must use the platform
 application-data database.
 
 ### Native-only expectations
 
-Without Agent:
+Without Atlas Agent, expect these results:
 
 - The UI and local SQLite should start.
 - The fleet may show previously registered local aircraft.
@@ -85,21 +85,21 @@ ATLAS_AGENT_STATE_DIR=/tmp/atlas-agent-dev \
 go run ./cmd/atlas-agent
 ```
 
-The Agent requires an absolute state directory. If `mavsdk_server` is not
-reachable, the hardware-facing features will not be healthy. Use the full SITL
-stack for telemetry and command testing.
+Atlas Agent requires an absolute state-directory path. If `mavsdk_server` is
+unavailable, hardware-facing functions report an unhealthy state. Use the full
+SITL stack to test telemetry and commands.
 
 ## Full SITL
 
-The interactive developer launcher is:
+To start the interactive developer environment, run:
 
 ```sh
 scripts/start-sitl-interactive.sh
 ```
 
-It prompts for the Gazebo camera or a prerecorded file from the repository's
-gitignored `sampleVids/` directory. Sample files with `.mp4`, `.mov`, `.mkv`,
-`.avi`, `.webm`, or `.m4v` extensions are listed for selection.
+The launcher asks you to select the Gazebo camera or a prerecorded file. Put
+prerecorded files in the ignored `sampleVids/` directory. The launcher lists
+files with `.mp4`, `.mov`, `.mkv`, `.avi`, `.webm`, or `.m4v` extensions.
 
 The underlying non-interactive launcher is:
 
@@ -107,7 +107,7 @@ The underlying non-interactive launcher is:
 scripts/start-sitl.sh
 ```
 
-Use the non-interactive launcher for automation, acceptance tests, dry-runs, or
+Use the non-interactive launcher for automation, acceptance tests, dry runs, or
 explicit environment overrides.
 
 It starts:
@@ -142,9 +142,9 @@ scripts/start-sitl.sh --skip-px4 --skip-mavsdk
 scripts/start-sitl.sh --skip-video
 ```
 
-The launcher checks dependencies and ports, waits for services, records logs,
-probes the RTSP endpoint for decodable H.264 before starting Native, and stops
-managed child processes on exit.
+The launcher checks dependencies and ports. It waits for services and records
+logs. Before it starts Atlas Native, it checks the RTSP endpoint for decodable
+H.264. The launcher stops its managed child processes when it exits.
 
 ### SITL video path
 
@@ -186,22 +186,22 @@ ATLAS_VIDEO_SOURCE_ID=dummy-camera \
   scripts/start-sitl.sh --skip-video
 ```
 
-Native reads the file at its encoded rate and loops it continuously. The
-aircraft and gimbal simulation do not alter prerecorded pixels, so this mode is
-suited to repeatable video, overlay, perception, and evidence tests rather than
-camera-to-aircraft spatial validation.
+Atlas Native reads the file at its encoded rate and repeats it continuously.
+The aircraft and gimbal simulation do not change the prerecorded pixels. Use
+this mode for repeatable video, overlay, perception, and evidence tests. Do not
+use it for camera-to-aircraft spatial validation.
 
 ### Incident-response flight acceptance
 
-The expanded response-pattern acceptance owns the one simulated aircraft for
-its whole run. Start only PX4, `mavsdk_server`, and the RTSP bridge in one
-terminal:
+The response-pattern acceptance test requires exclusive control of the
+simulated aircraft. In the first terminal, start PX4, `mavsdk_server`, and the
+RTSP bridge:
 
 ```sh
 scripts/start-sitl.sh --skip-native --skip-agent
 ```
 
-Then run the serial Native-to-Agent acceptance matrix in a second terminal:
+In the second terminal, run the serial Native-to-Agent acceptance matrix:
 
 ```sh
 scripts/test-sitl-response-patterns.sh
@@ -231,9 +231,9 @@ ATLAS_TEST_SITL_RTSP_URL=rtsp://127.0.0.1:9554/main.264 \
 scripts/test-sitl-response-patterns.sh
 ```
 
-Do not run this matrix alongside another live SITL test or an interactive
-Native/Agent pair. They would compete for mission, gimbal, and vehicle state on
-the same simulated aircraft.
+**Caution:** Do not run this matrix with another live SITL test or an
+interactive Native-Agent pair. The processes will compete for mission, gimbal,
+and vehicle state.
 
 ## Backend workflow
 
@@ -243,14 +243,14 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Verify:
+Confirm that both health endpoints return a successful response:
 
 ```sh
 curl http://127.0.0.1:8080/healthz
 curl http://127.0.0.1:8080/readyz
 ```
 
-Remember that this does not connect the Backend to Native or Agent.
+This workflow does not connect Atlas Backend to Atlas Native or Atlas Agent.
 
 ## Common change workflows
 
@@ -464,7 +464,7 @@ Do not edit an already applied shared migration.
 
 ## Validation commands
 
-Run checks from the relevant component.
+Run the checks for each changed component.
 
 ### Native
 
@@ -490,10 +490,11 @@ cd atlas-spatial-runtime
 ./scripts/test-source.sh
 ```
 
-`packaging/release.sh build VERSION` reruns the Spatial source tests and then
-creates the self-contained ARM64 `.deb`. The Pi does not rerun the suite against
-the installed package; `sudo atlas-setup doctor` is the operator-facing
-hardware/runtime smoke check and invokes Spatial's private diagnostic.
+`packaging/release.sh build VERSION` runs the Spatial source tests. It then
+creates the self-contained ARM64 `.deb`.
+
+The Pi does not run the source test suite against the installed package. Use
+`sudo atlas-setup doctor` for the hardware and runtime smoke check.
 
 ### Backend
 
@@ -510,8 +511,9 @@ cd atlas-agent
 python3 scripts/atlas_hailort_adapter_test.py
 ```
 
-Hardware changes still require a field check for serial MAVLink, HM30 routing,
-RTSP, Hailo, gimbal movement, camera zoom, and real PX4 safety behavior.
+For a hardware change, also complete the applicable field checks. Check serial
+MAVLink, HM30 routing, RTSP, Hailo, gimbal movement, camera zoom, and PX4 safety
+behavior.
 
 ## Debugging map
 
@@ -530,7 +532,7 @@ RTSP, Hailo, gimbal movement, camera zoom, and real PX4 safety behavior.
 | Gimbal control unavailable | Capability list, discovered gimbal, payload context, lease owner, ground safety state |
 | Video unavailable | FFmpeg path, RTSP URL/transport, camera reachability, decoder stderr |
 | No overlays | Source-ID match, perception health, frame lease, alignment delta/tolerance, Hailo adapter |
-| Selection disappeared | Tracker session reset reason, source/stream epoch, lifecycle (`LOST`/`CLOSED`), exact selection ID |
+| Selection disappeared | Track-session reset reason, source/stream epoch, lifecycle (`LOST`/`CLOSED`), exact selection ID |
 | Geolocation rejected | Track state/centering, frame timing, pose/gimbal history, boresight uncertainty, depression/range, DEM source |
 | Camera follow stopped | Exact track lifecycle/freshness, payload lease, measured gimbal state, angle limits, read/write result |
 | Follow entered `DEGRADED_HOLD` | Durable exit reason, operator lease, target/telemetry age, battery, altitude/boundary, PX4 Offboard state |
@@ -557,20 +559,21 @@ journalctl -u atlas-spatial-runtime.service -f
 
 ## Database safety
 
-Prefer isolated Native or SITL databases for development.
+Use isolated Native or SITL databases for development.
 
-The root reset script is destructive:
+**Caution:** The following script deletes development data:
 
 ```sh
 scripts/reset-databases.sh
 ```
 
-It deletes the normal Native database and the Backend Compose PostgreSQL volume,
-requires confirmation, and refuses to run while Native is open. It does not
-delete isolated `.atlas-run/` databases.
+The script deletes the normal Atlas Native database and the Backend Compose
+PostgreSQL volume. It requires confirmation and stops if Atlas Native is open.
+It does not delete isolated `.atlas-run/` databases.
 
-Never delete Agent identity state as routine troubleshooting. That changes the
-installation and drone IDs presented to Native.
+**Caution:** Do not delete Atlas Agent identity state during routine
+troubleshooting. Deletion changes the installation and drone IDs that Atlas
+Agent sends to Atlas Native.
 
 ## First contribution suggestions
 
@@ -600,5 +603,8 @@ Update documentation when a change affects:
 - Deployment/service topology.
 - A supported development, installation, or recovery procedure.
 
-Keep future proposals in the feature-gap assessment or a dedicated design
-document. Keep these architecture documents focused on shipped behavior.
+Put a future proposal in the applicable feature-gap assessment or design
+document. Keep architecture documents focused on current behavior.
+
+Apply the [documentation review checklist](documentation-standard.md#review-checklist)
+before you merge the change.

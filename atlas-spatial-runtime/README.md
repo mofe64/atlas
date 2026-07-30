@@ -1,10 +1,11 @@
 # Atlas Spatial Runtime
 
-`atlas-spatial-runtime` is a small native service that owns one depth camera.
-It acquires fresh calibrated depth and exposes bounded local health.
+`atlas-spatial-runtime` is a native service that owns one depth camera. It
+acquires fresh calibrated depth and supplies bounded local health data.
 
-It has no ROS dependency, Docker image, map, pose estimator, transform graph,
-flight command, Agent stream, or Native UI contract.
+The service does not depend on ROS or Docker. It does not create a map, estimate
+pose, command flight, stream to Atlas Agent, or integrate with the Atlas Native
+interface.
 
 ## Data boundary
 
@@ -12,7 +13,7 @@ The provider returns one in-process `DepthFrame`:
 
 | Field | Contract |
 | --- | --- |
-| Depth | `uint16` millimetres; zero means invalid |
+| Depth | `uint16` millimeters; zero means invalid |
 | Timestamp | Capture time on the host monotonic clock |
 | Frame | `oak_rgb_camera_optical_frame` by default |
 | Calibration | Intrinsics for the exact aligned depth dimensions |
@@ -33,7 +34,7 @@ The Unix socket defaults to `/run/atlas-agent/spatial.sock`. Send:
 {"protocolVersion":"2","type":"probe"}
 ```
 
-Readiness requires a fresh `16UC1` millimetre depth frame and matching valid
+Readiness requires a fresh `16UC1` millimeter depth frame and matching valid
 intrinsics. The response explicitly reports `scaleToMetres: 0.001`. It does not
 expose obstacle observations.
 
@@ -52,14 +53,17 @@ installed as routine `/usr/bin` operator commands.
 
 ## Development
 
-Run source tests directly:
+Run the source tests:
 
 ```sh
 ./scripts/test-source.sh
 ```
 
-Run a local synthetic process after installing the package into a virtual
-environment:
+To run a local synthetic process:
+
+1. Create a virtual environment.
+2. Install the package.
+3. Start the synthetic provider.
 
 ```sh
 python3 -m venv .venv
@@ -77,22 +81,25 @@ DepthAI is an optional development dependency:
 
 ## Package and Pi installation
 
-Build and transfer Spatial from the development checkout:
+From the development checkout, build and transfer the Spatial package:
 
 ```sh
 ./packaging/release.sh build 0.1.0
 ./packaging/release.sh transfer 0.1.0 mofe@ariadne-robot
 ```
 
-The build command runs `scripts/test-source.sh`, resolves the declared
-Linux-arm64 DepthAI/NumPy runtime, and creates:
+The build command runs `scripts/test-source.sh` and resolves the declared
+Linux-arm64 DepthAI and NumPy runtime. Confirm that it creates:
 
 ```text
 dist/atlas-spatial-runtime_0.1.0_arm64.deb
 ```
 
-Install it on the landed, disarmed Pi together with the independently built
-Agent package, then configure both:
+**Warning:** Keep the aircraft landed, disarmed, and without propellers during
+package installation.
+
+Install Spatial with the independently built Agent package. Then configure both
+services:
 
 ```sh
 cd /tmp

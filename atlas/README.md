@@ -1,11 +1,12 @@
 # Atlas Native Ground Station
 
-Atlas is a local-first Tauri v2 ground station. React renders the operator
-interface while Rust owns the agent-facing gRPC server, embedded SQLite,
-vehicle policy, mission execution records, and video/perception alignment.
+Atlas Native is the local-first Tauri v2 ground station. The React interface
+presents operational state and accepts operator intent. The Rust host owns the
+Agent-facing gRPC server, embedded SQLite, vehicle policy, mission records, and
+video-to-perception alignment.
 
-There is currently no backend dependency, organization, user login, enrollment
-token, or operator authentication.
+Atlas Native does not currently depend on Atlas Backend. It has no organization,
+user login, enrollment token, or operator-authentication model.
 
 For the system-wide newcomer path, component boundaries, state machines, and
 code map, start with
@@ -62,9 +63,10 @@ Real HM30 agent configuration:
 ATLAS_GROUND_STATION_ADDR=192.168.144.50:7443
 ```
 
-The mission execution camera view is decoded by the Rust host, not by the
-WebView. Install FFmpeg on the operator computer or point Atlas at a bundled
-binary, then configure the clean camera stream before startup:
+The Rust host decodes the mission camera view. The WebView does not decode it.
+
+Install FFmpeg on the operator computer or configure a bundled binary. Then
+configure the clean camera stream before startup:
 
 ```sh
 ATLAS_VIDEO_RTSP_URL=rtsp://192.168.144.25:8554/main.264 \
@@ -217,7 +219,7 @@ reconnects are rejected and audited until an operator restores the drone.
 
 The protocol is defined in `../proto/atlas/ground_station.proto`. The current
 slice contains registration, heartbeat, telemetry, PX4 status events, durable
-Hold/RTL/Land commands, and acknowledged gimbal angle/rate/centre commands.
+Hold/RTL/Land commands, and acknowledged gimbal angle/rate/center commands.
 Mission plans can be uploaded and controlled through the same agent-initiated
 session, with agent/MAVSDK progress written back to durable mission runs.
 
@@ -284,7 +286,7 @@ For ordinary native development, prefer the repeatable isolated shortcut:
 npm run tauri:dev:isolated
 ```
 
-The current schema version is 24. It contains durable records for:
+Schema version 24 stores these durable records:
 
 - aircraft/Agent identity, bindings, communication links, lifecycle, telemetry,
   PX4 events, and command history;
@@ -323,7 +325,7 @@ post-planning command. The v1 defaults are:
 
 Operators can override these defaults for the whole definition. Waypoint
 definitions can also override the view at an individual point, including a
-`LOOK_AT_POINT` target. Generated plans emit semantic camera intent plus gimbal
+`LOOK_AT_POINT` target. Mission plans emit semantic camera intent plus gimbal
 and zoom actions before navigation, with point-scoped overrides on the relevant
 waypoint. Agent translates supported vehicle yaw, gimbal, zoom, and recording
 behavior. `SET_CAMERA_MODE` itself remains semantic intent rather than a promise
@@ -369,17 +371,23 @@ Planning validates coordinates and 2–120 m altitude / 0.5–15 m/s speed bound
 before writing a definition. The lawn-mower planner clips scan lines in a local
 tangent plane; this is suitable for small local sites but is not GIS-grade.
 
-Every template can use either a fixed home-relative altitude or a v1
-`TERRAIN_CLEARANCE` profile. Terrain-aware planning is deliberately two-pass:
-Native first generates the route geometry, the webview samples the configured
-raster DEM at the centre and both edges of the flight corridor, and Native then
-validates those samples and persists a second immutable plan. The final relative
-altitude at each station is based on terrain height above the profiled home,
-requested ground clearance, and the operator safety margin. A backwards/forwards
-envelope raises earlier or later stations when the configured climb or descent
-rate would otherwise be exceeded. Missing DEM tiles, stale geometry, incomplete
-corridor samples, and relative-ceiling breaches fail planning rather than
-silently falling back to a flat altitude.
+Each template can use a fixed home-relative altitude or a v1
+`TERRAIN_CLEARANCE` profile. Terrain-aware planning has two passes:
+
+1. Atlas Native generates the route geometry.
+2. The interface samples the configured raster DEM at the center and both
+   corridor edges.
+3. Atlas Native validates the samples and stores a second immutable generated
+   plan.
+
+The relative altitude at each station includes terrain height above the
+profiled home, requested clearance, and the operator safety margin. A backward
+and forward envelope raises stations when necessary to meet climb or descent
+limits.
+
+Missing DEM tiles, stale geometry, incomplete corridor samples, and ceiling
+breaches cause planning to fail. Atlas does not replace a failed terrain
+profile with a flat altitude.
 
 This is preflight route profiling, not PX4 live terrain following or obstacle
 avoidance. A terrain-aware plan is tied to its sampled home; upload is blocked
@@ -432,13 +440,13 @@ live points, so navigating away does not erase the flight path.
 Mission geometry is authored directly on a MapLibre map rather than through a
 JSON field. Map clicks append waypoints, polygon vertices, or route points;
 numbered vertices can be dragged or edited as precise coordinates. The map
-renders the operator definition in green and the native-generated plan in orange.
+renders the operator definition in green and the Native mission plan in orange.
 When the planner opens, it centres on the previously selected connected aircraft
 or the first connected aircraft. Live position is preferred and reported home is
 the fallback; London is used only when neither is available. The planner displays
 the active reference and warns immediately when the first point is outside the
 5 km deployment boundary.
-Saving a generated plan opens a separate execution workspace rather than adding
+Saving a mission plan opens a separate execution workspace rather than adding
 flight controls below the editor. That workspace renders the full route, current
 mission item, completed/current legs, live aircraft heading and position, and an
 aircraft trail merged from persisted snapshots and one-second native telemetry
@@ -480,9 +488,9 @@ operational safety margin and operator review.
 
 Selected-track geolocation uses this same configured DEM automatically. For
 the calibration-free MVP it samples ground AMSL at the aircraft position and
-projects the centred track onto that horizontal plane. If the DEM is
+projects the centered track onto that horizontal plane. If the DEM is
 temporarily unavailable, Atlas falls back to the autopilot home-altitude plane
-derived from absolute minus relative altitude with a conservative 25-metre
+derived from absolute minus relative altitude with a conservative 25-meter
 vertical uncertainty. Both paths store their source and assumptions; neither
 is a claim of target-area terrain intersection or surveyed accuracy.
 

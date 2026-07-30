@@ -1,12 +1,13 @@
 # Atlas Native
 
-## Role
+## Purpose and boundary
 
 Atlas Native is the local ground-station authority. It is one Tauri v2
 application with two cooperating runtimes:
 
-- A React 19 webview renders the operator experience.
-- A Rust host owns policy, persistence, Agent transport, video decoding, and
+- The React 19 interface presents operational state and accepts operator
+  intent.
+- The Rust host owns policy, persistence, Agent transport, video decoding, and
   Native services.
 
 The main process composition is
@@ -186,30 +187,30 @@ every frame as an unbounded historical dataset.
 
 ## Local SQLite
 
-[`database/mod.rs`](../atlas/src-tauri/src/database/mod.rs) opens the database,
-enables foreign keys, uses `synchronous=FULL`, requires WAL mode, configures a
-five-second busy timeout, validates the SQLite version, applies migrations, and
-prunes expired telemetry snapshots.
+[`database/mod.rs`](../atlas/src-tauri/src/database/mod.rs) opens and configures
+the database. It enables foreign keys, uses `synchronous=FULL`, and requires WAL
+mode. It also sets a five-second busy timeout, validates SQLite, applies
+migrations, and prunes expired telemetry snapshots.
 
 The normal file is `atlas.db` in the platform application-data directory.
 `ATLAS_SQLITE_PATH` accepts only an absolute path and is used by isolated
 development and SITL.
 
 Schema 21 adds durable selected-track geolocation attempts. Each row references
-the vehicle command, operator selection, tracker session, and track; retains the
-automatically resolved ground altitude/source/version and MVP aim-point-height
-assumptions; and
-ends as either a coordinate with horizontal uncertainty or an explicit
-rejection code/reason. Command completion and geolocation resolution occur in
-the same SQLite transaction.
+the vehicle command, operator selection, track session, and track. It stores the
+resolved ground altitude, source, version, and MVP aim-point-height assumption.
+It ends with a coordinate and uncertainty or an explicit rejection.
+
+Command completion and geolocation resolution occur in one SQLite transaction.
 
 Schema 22 extends successful attempts without replacing the original Agent
-evidence. It retains the initial horizontal-plane coordinate, validates ordered
-target-area DEM samples against the original observation ray, stores the final
-iterative terrain intersection and residual, and filters successive finalized
-coordinates into North/East target velocity, speed, direction, and velocity
-uncertainty. A latest-per-track operational query joins coordinates to current
-lifecycle, selection, annotations, and evidence-marker counts for the map.
+evidence. It retains the initial horizontal-plane coordinate. It validates
+ordered DEM samples against the original observation ray and stores the final
+terrain intersection and residual.
+
+The schema also stores filtered target velocity, speed, direction, and velocity
+uncertainty. A latest-per-track query joins coordinates to lifecycle,
+selection, annotations, and map evidence counts.
 
 The current schema version is 24. Its durable state is grouped as follows (the
 list names the main tables rather than every index or migration-era rebuild):
@@ -319,7 +320,7 @@ Old plans remain available to old mission runs.
 Terrain clearance is a two-stage process:
 
 1. Rust generates route geometry.
-2. React samples the configured DEM along the centre and corridor edges.
+2. React samples the configured DEM along the center and corridor edges.
 3. Rust validates the evidence, climb/descent envelope, home reference, and
    ceiling before persisting a second immutable plan.
 

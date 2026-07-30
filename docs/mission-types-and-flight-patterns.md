@@ -1,20 +1,23 @@
-# Mission types and flight patterns
+# Mission Types and Flight Patterns
 
-This guide explains how Atlas turns an operator's intent into a reviewed,
-immutable flight plan and how that plan is executed on an aircraft. It is the
-canonical reference for the generic mission system. Incident response uses the
-same planner and run machinery, but adds dispatch-specific review and arrival
-actions; see [Incident dispatch](incident-dispatch.md).
+This guide explains how Atlas converts operator intent into a reviewed and
+immutable mission plan. It also explains how Atlas executes the plan on an
+aircraft. This document is the canonical reference for the generic mission
+system.
+
+Incident response uses the same planner and mission-run state machine. It adds
+dispatch-specific review and arrival actions. See
+[Incident dispatch](incident-dispatch.md).
 
 ## The short mental model
 
-Atlas deliberately separates four things that are easy to confuse:
+Atlas separates four related records:
 
 1. A **mission definition** is editable operator intent, such as a polygon to
    scan or a route to follow.
-2. A **generated plan** is the exact, reviewed sequence of actions and
+2. A **mission plan** is the exact, reviewed sequence of actions and
    waypoints produced from that definition. It is immutable.
-3. A **mission run** binds one generated plan to one aircraft and records its
+3. A **mission run** binds one mission plan to one aircraft and records its
    execution state.
 4. The **Agent** translates the plan into MAVSDK/PX4 operations and reports
    durable acknowledgements and progress back to Native.
@@ -30,7 +33,7 @@ editable definition
 generate + validate geometry
        |
        v
-immutable generated plan --upload--> aircraft mission storage
+immutable mission plan --upload--> aircraft mission storage
        |                                  |
        +-------- mission run <------------+
                          |
@@ -52,8 +55,8 @@ three pairings above; arbitrary combinations are rejected rather than guessed.
 
 All generic missions share these base limits:
 
-- altitude: 2–120 metres;
-- speed: 0.5–15 metres per second;
+- altitude: 2–120 meters;
+- speed: 0.5–15 meters per second;
 - valid latitude/longitude coordinates;
 - at least the minimum geometry required by the selected pattern.
 
@@ -125,7 +128,7 @@ the point; a positive hold asks it to remain there for the reviewed duration.
 
 1. Require at least three polygon vertices.
 2. Build a local tangent plane whose origin is the first polygon point. This
-   lets the planner work in metres instead of angular latitude/longitude units.
+   lets the planner work in meters instead of angular latitude/longitude units.
 3. Rotate the polygon by the negative sweep heading so desired scan lanes are
    horizontal in the working coordinate system.
 4. Move a horizontal scan line from the polygon's minimum to maximum `y`
@@ -142,11 +145,11 @@ segment on a scan line.
 
 ### Lane spacing
 
-An explicit spacing must be between 1 and 500 metres. When it is omitted, Atlas
+An explicit spacing must be between 1 and 500 meters. When it is omitted, Atlas
 derives it from altitude and requested overlap:
 
 ```text
-lane spacing = max(altitude × (1 - overlap / 100), 5 metres)
+lane spacing = max(altitude × (1 - overlap / 100), 5 meters)
 ```
 
 Overlap must be at least 0% and less than 90%. This is a simple planning model,
@@ -174,7 +177,7 @@ division count = ceil(segment distance / sample spacing)
 ```
 
 It then linearly interpolates latitude and longitude at those divisions. Sample
-spacing must be between 1 and 10,000 metres. Without sample spacing, the original
+spacing must be between 1 and 10,000 meters. Without sample spacing, the original
 route endpoints are used.
 
 `corridorWidthMeters` describes the corridor used by planning and terrain
@@ -207,7 +210,7 @@ max(
   terrain elevation - home elevation
   + requested clearance
   + safety margin,
-  2 metres
+  2 meters
 )
 ```
 
@@ -222,17 +225,17 @@ The planner raises the route; it does not silently violate clearance to satisfy
 a rate limit. Generation fails when the resulting profile would exceed the
 configured ceiling.
 
-At upload, the current home position must remain within 30 metres of the home
-position used to build the profile. A moved home datum invalidates the meaning
-of every relative altitude, so the mission must be regenerated.
+At upload, the current home position must be within 30 meters of the profile
+home position. A changed home datum changes the meaning of each relative
+altitude. Generate a new plan if the home-position gate fails.
 
 ## Upload and execution lifecycle
 
 ### Upload checks
 
-Native rejects an upload when, among other checks:
+Atlas Native rejects an upload when one or more of these conditions are true:
 
-- the generated plan is not ready;
+- the mission plan is not ready;
 - the aircraft is not connected;
 - the aircraft already has an unfinished mission run;
 - the first waypoint is more than 5 km from the reported home position, falling
@@ -243,10 +246,10 @@ Upload creates a run and transfers the immutable plan. It does not start flight.
 
 ### Start checks
 
-Starting a run requires fresh live telemetry and appropriate PX4 health. Global
-position and home must be valid, and the aircraft must be armed or armable. A
-reported battery below 15% blocks start. If a battery value is unavailable,
-other mission and incident paths may apply stricter policy; callers should not
+Starting a mission run requires fresh telemetry and applicable PX4 health.
+Global position and home must be valid. The aircraft must be armed or armable.
+A reported battery value below 15% blocks start. If battery data is unavailable,
+other mission and incident paths can apply a stricter policy. Callers must not
 interpret missing telemetry as proof of safety.
 
 On the Agent, required perception activation is acknowledged first. The Agent
@@ -286,7 +289,7 @@ control.
 
 ## Safety and correctness invariants
 
-- Definitions are editable; generated plans and active runs are historical
+- Definitions are editable; mission plans and active runs are historical
   records and are not edited in place.
 - A plan is bound to one aircraft for a run.
 - Only one unfinished mission run may control an aircraft.

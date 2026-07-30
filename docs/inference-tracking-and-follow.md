@@ -1,18 +1,18 @@
-# Inference, tracking, geolocation, and follow modes
+# Inference, Tracking, Geolocation, and Follow Modes
 
-Atlas's perception stack detects objects in clean aircraft video, associates
-detections over time, optionally estimates a selected target's ground position,
-and exposes two very different follow controllers. This guide explains the data
-flow and the safety boundaries between those stages.
+The Atlas perception stack detects objects in clean aircraft video. It
+associates detections across frames and can estimate the ground position of a
+selected target. This guide explains the data flow and the safety boundaries
+between the two follow controllers.
 
 The most important distinction is:
 
-- **camera follow** moves the gimbal to keep a selected image-space track near
-  the frame centre;
+- **Camera follow** moves the gimbal to keep a selected image-space track near
+  the frame center;
 - **Follow from standoff** moves the aircraft using a filtered geographic target
   estimate.
 
-Neither mode silently enables the other. They have separate control authority,
+One mode does not enable the other mode. Each mode has separate authority,
 prerequisites, watchdogs, and failure behavior.
 
 ## End-to-end data flow
@@ -148,11 +148,19 @@ Default lifecycle timing is:
 eligible for prediction but lacks a current matched observation. Predicted
 positions are normalized image-space estimates with decaying confidence.
 
-Atlas resets the tracking session when continuity is no longer trustworthy,
-including activation/deactivation, inference runtime reconnect, source or stream
-epoch change, model or image-dimension change, timestamp regression, a gap over
-2 seconds, or tracker failure. A reset creates new IDs; selection and control do
-not jump old intent onto a new association.
+Atlas resets the track session when it cannot trust continuity. Reset causes
+include:
+
+- perception activation or deactivation;
+- inference-runtime reconnect;
+- source or stream-epoch change;
+- model or image-dimension change;
+- timestamp regression;
+- a gap longer than two seconds; or
+- tracker failure.
+
+A reset creates new track IDs. Atlas does not transfer selection or control
+intent to a new association.
 
 ## Selection is exact, not best-effort
 
@@ -166,7 +174,7 @@ for analytics but is not sufficient authority to move a gimbal or aircraft.
 
 ## Counting
 
-Line and polygon counts are session-scoped. Atlas counts only the centre of a
+Line and polygon counts are session-scoped. Atlas counts only the center of a
 confirmed, observed bounding box crossing the configured geometry. Predicted
 samples never increment counts. A continuity gap resets the relevant geometry
 state so reconnects or seeks cannot manufacture crossings.
@@ -184,8 +192,8 @@ coordinate. It is intentionally strict because a plausible-looking coordinate
 can be more dangerous than no coordinate.
 
 The Agent accepts only the exact selected `ACTIVE` track. The current model uses
-a centred-boresight approximation: the bounding-box centre must be within 0.04
-normalized units of frame centre on each axis. This limitation keeps the ray
+a centered-boresight approximation: the bounding-box center must be within 0.04
+normalized units of frame center on each axis. This limitation keeps the ray
 model consistent with the configured static boresight uncertainty; it is not a
 general camera intrinsic/extrinsic projection for arbitrary pixels.
 
@@ -197,7 +205,7 @@ The calculation aligns:
 - aircraft position and attitude history;
 - measured gimbal orientation history;
 - the static boresight model and configured angular-error bound;
-- an initial ground plane or target-centre height.
+- an initial ground plane or target-center height.
 
 It casts a downward ray and rejects geometry outside its validity envelope,
 including more than 3 km range, less than 20° depression, or more than 500 ms
@@ -209,7 +217,7 @@ must not treat the latitude/longitude alone as exact truth.
 Native samples the DEM at the initial coordinate and sends the updated target
 height back through the geolocation calculation. It repeats target-area samples
 for up to five refinement iterations after the initial estimate and stops when
-coordinate movement is at most 0.75 metres. The ray is recomputed each time;
+coordinate movement is at most 0.75 meters. The ray is recomputed each time;
 Native does not merely replace the altitude field on an old coordinate.
 
 This iterative loop matters on sloped terrain: changing assumed ground height
@@ -218,8 +226,9 @@ height at the new coordinate.
 
 ## Motion filtering
 
-Follow from standoff requires motion, not just a sequence of noisy points. Native
-therefore filters consecutive finalized coordinates for the same selected track.
+Follow from standoff requires estimated motion, not only a sequence of noisy
+points. Atlas Native filters consecutive finalized coordinates for the same
+selected track.
 
 The filter:
 
@@ -247,7 +256,7 @@ interpreted as target velocity.
 
 ## Camera follow: gimbal control in image space
 
-Camera follow keeps the selected object near the image centre by commanding
+Camera follow keeps the selected object near the image center by commanding
 gimbal angular rates. It does not geolocate the target and does not move the
 aircraft.
 
@@ -267,8 +276,8 @@ and zoom intent.
 
 ### Controller logic
 
-At the default 10 Hz update rate, Atlas measures bounding-box-centre error from
-frame centre and applies proportional pitch/yaw control:
+At the default 10 Hz update rate, Atlas measures the bounding-box-center error.
+It then applies proportional pitch and yaw control:
 
 - normalized deadband: 0.025;
 - pitch gain: 60;
@@ -317,14 +326,16 @@ REQUESTED -> VALIDATING -> ACQUIRING -> FOLLOWING
 explicit operator end -> ENDED
 ```
 
-The UI normally grants a 4-second operator lease and renews it every second;
-Native accepts 1–5 seconds and runs a 250 ms watchdog. The Agent has an
-independent watchdog. Losing the desktop or the network therefore does not rely
-on the UI being alive to stop Offboard control.
+The interface normally grants a four-second operator lease and renews it each
+second. Atlas Native accepts a duration from one to five seconds. It also runs
+a 250 ms watchdog. Atlas Agent has an independent watchdog.
+
+Offboard control does not depend on a final interface message when the desktop
+or network fails.
 
 ### Start prerequisites
 
-Native requires, among other checks:
+Atlas Native requires these start conditions:
 
 - no unfinished mission run on the aircraft;
 - the exact current selection;

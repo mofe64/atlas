@@ -1,19 +1,21 @@
 # Atlas Agent
 
-Atlas Agent is the Go onboard runtime. It initiates the direct local/HM30 gRPC
-session to Atlas Native and integrates the aircraft-side MAVSDK, PX4, payload,
-perception, and diagnostic services. It does not connect to Atlas Backend.
+Atlas Agent is the Go runtime on the onboard computer. It starts a direct gRPC
+session to Atlas Native across the HM30 or local Ethernet network. It integrates
+MAVSDK, PX4, payload, perception, and diagnostic services.
+
+Atlas Agent does not connect to Atlas Backend.
 
 ## Documentation ownership
 
-This README is the developer entry point for the Agent source tree. Detailed
-material has one canonical home:
+This README is the developer entry point for the Agent source tree. Use the
+following canonical documents for detailed information:
 
 | Need | Canonical document |
 | --- | --- |
 | Agent responsibilities, control flow, state, and component boundaries | [Agent architecture](../docs/atlas-agent.md) |
 | Pi build, installation, configuration, services, updates, and troubleshooting | [Installation guide](INSTALLATION.md) |
-| HM30/Pi deployment topology | [Architecture overview](../docs/architecture-overview.md#deployment-topology) |
+| HM30/Pi deployment topology | [Architecture overview](../docs/architecture-overview.md#current-deployment-topology) |
 | Native-Agent gRPC messages and compatibility | [Native-Agent protocol](../docs/native-agent-protocol.md) |
 | Missions and arrival actions | [Mission types and flight patterns](../docs/mission-types-and-flight-patterns.md) |
 | Inference, tracking, geolocation, and follow | [Inference, tracking, geolocation, and follow](../docs/inference-tracking-and-follow.md) |

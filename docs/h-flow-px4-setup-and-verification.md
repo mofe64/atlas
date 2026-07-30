@@ -1,12 +1,13 @@
 # H-Flow PX4 Setup and Verification
 
-**Status:** Practical setup and bench-verification runbook
+**Document type:** Operational setup and verification procedure
+
 **Last updated:** 25 July 2026
 
 ## Purpose and boundary
 
-This runbook covers installing a Holybro H-Flow, configuring PX4 to consume its
-optical-flow and range data, and confirming that the data reaches the PX4
+Use this procedure to install a Holybro H-Flow. The procedure configures PX4 to
+use optical-flow and range data. It also verifies that the data reaches the PX4
 estimator.
 
 H-Flow connects directly to PX4 over DroneCAN. PX4 owns its validation, sensor
@@ -14,20 +15,22 @@ fusion, and any resulting estimator state. Atlas Agent does not mirror that
 state into a separate navigation layer.
 
 This procedure does not authorize autonomous flight. If the aircraft will use
-flow or range aiding in flight, finish with a low, supervised acceptance flight
-under the normal PX4 and RC failsafes.
+the sensor in flight, complete a low and supervised acceptance flight. Keep the
+normal PX4 and RC failsafes active.
 
 ## Safety
 
-For installation and bench checks:
+**Warning:** An unexpected motor command can cause injury. Before installation
+or a bench check:
 
-- disarm the aircraft and remove the propellers;
-- disconnect the battery before changing CAN wiring or termination;
-- keep mission, Offboard, and autonomous movement processes stopped; and
-- secure the aircraft whenever it is powered on the bench.
+- Disarm the aircraft.
+- Remove the propellers.
+- Disconnect the battery before you change CAN wiring or termination.
+- Stop mission, Offboard, and autonomous-movement processes.
+- Secure the aircraft before you apply power on the bench.
 
-Do not weaken PX4 safeguards or estimator thresholds merely to make the sensor
-appear healthy.
+**Warning:** Do not weaken a PX4 safeguard or estimator threshold to get a
+healthy indication. The changed value can permit unsafe flight behavior.
 
 ## Before changing the aircraft
 
@@ -40,27 +43,28 @@ In QGroundControl:
    uavcan status
    ```
 
-2. Save the current parameters from **Vehicle Setup > Parameters > Tools > Save
-   to file**.
+2. Select **Vehicle Setup > Parameters > Tools > Save to file**.
 
-The parameter file is a practical recovery reference if a value is entered
-incorrectly. It does not need a checksum, manifest, evidence bundle, or
-versioned Atlas release archive.
+3. Confirm that QGroundControl writes the parameter file.
+
+Use the parameter file to recover from an incorrect value. Atlas does not
+require a checksum, manifest, evidence bundle, or versioned release archive for
+this file.
 
 ## Install the sensor
 
 ### Orientation
 
-Mount the H-Flow facing downward with an unobstructed view. With the Holybro
-default orientation, the board connectors point toward the rear and
+Mount the H-Flow with an unobstructed downward view. For the Holybro default
+orientation, point the board connectors toward the rear. Set
 `SENS_FLOW_ROT=0`.
 
-If the physical orientation differs, use the matching PX4 rotation. Do not copy
-the rotation from another aircraft without checking the mount.
+If the physical orientation is different, select the applicable PX4 rotation.
+Verify the mount before you use a value from another aircraft.
 
 ### Body-frame offsets
 
-Measure from the aircraft centre of gravity to the optical-flow focal point and
+Measure from the aircraft center of gravity to the optical-flow focal point and
 rangefinder origin in PX4 body axes:
 
 - X is positive forward;
@@ -72,17 +76,22 @@ Configure their offsets independently.
 
 ### CAN wiring
 
-Connect the sensor to the intended DroneCAN bus with a Pixhawk-compatible CAN
-cable. Terminate only the two physical ends of the bus. Check connector seating,
-cable routing, and strain relief before applying power.
+Connect the sensor to the specified DroneCAN bus with a Pixhawk-compatible CAN
+cable. Terminate only the two physical ends of the bus.
 
-The Ariadne installation uses CAN1. A different port or topology must be
-checked on its own merits.
+Before you apply power, examine:
+
+- connector seating;
+- cable routing; and
+- strain relief.
+
+The Ariadne installation uses CAN1. Verify the wiring and termination if a
+different aircraft uses another port or topology.
 
 ## Configure PX4
 
-Parameter availability can depend on the active subscriptions. Apply the
-settings in this order and reboot when QGroundControl requests it.
+Available parameters can depend on the active subscriptions. Apply the settings
+in the specified order. Reboot when QGroundControl tells you to reboot.
 
 ### Enable DroneCAN and H-Flow subscriptions
 
@@ -92,7 +101,11 @@ settings in this order and reboot when QGroundControl requests it.
 | `UAVCAN_SUB_FLOW` | `1` | Subscribe to optical flow. |
 | `UAVCAN_SUB_RNG` | `1` | Subscribe to range data. |
 
-Set `UAVCAN_ENABLE`, reboot, enable both subscriptions, and reboot again.
+1. Set `UAVCAN_ENABLE`.
+2. Reboot PX4.
+3. Set `UAVCAN_SUB_FLOW=1`.
+4. Set `UAVCAN_SUB_RNG=1`.
+5. Reboot PX4.
 
 ### Describe the sensor
 
@@ -106,9 +119,9 @@ Set `UAVCAN_ENABLE`, reboot, enable both subscriptions, and reboot again.
 | `SENS_FLOW_RATE` | `70 Hz` | Sensor publication rate. |
 | `SENS_FLOW_SCALE` | `1.0` | Initial scale; change only after a measured rotation check. |
 
-Keep the DroneCAN range and optical-flow height limits consistent. These values
-describe the device; the operational flight envelope should be more
-conservative.
+Keep the DroneCAN range limits and optical-flow height limits consistent. These
+values describe sensor capability. They do not define the approved flight
+envelope.
 
 ### Enable estimator aiding
 
@@ -121,16 +134,16 @@ conservative.
 | `EKF2_OF_QMIN` | `1` | Minimum in-flight flow quality. |
 | `EKF2_OF_QMIN_GND` | `0` | Minimum on-ground flow quality. |
 
-Do not disable GNSS as part of ordinary H-Flow setup. Sensor delivery and
-estimator fusion can be verified with GNSS still enabled.
+Do not disable GNSS for this procedure. You can verify sensor delivery and
+estimator fusion while GNSS is enabled.
 
 ### Apply aircraft geometry
 
 | Parameter | Value source |
 | --- | --- |
 | `SENS_FLOW_ROT` | Physical sensor orientation |
-| `EKF2_OF_POS_X/Y/Z` | Measured centre-of-gravity-to-flow-origin offset |
-| `EKF2_RNG_POS_X/Y/Z` | Measured centre-of-gravity-to-range-origin offset |
+| `EKF2_OF_POS_X/Y/Z` | Measured center-of-gravity-to-flow-origin offset |
+| `EKF2_RNG_POS_X/Y/Z` | Measured center-of-gravity-to-range-origin offset |
 
 The current Ariadne values are:
 
@@ -144,9 +157,14 @@ EKF2_RNG_POS_Y=0 m
 EKF2_RNG_POS_Z=0 m
 ```
 
-They are an Ariadne reference, not a template for another airframe. After
-saving the parameters, reboot PX4 and refresh the QGroundControl parameter
-view.
+These values apply only to Ariadne. Measure the values for a different
+airframe.
+
+After you save the parameters:
+
+1. Reboot PX4.
+2. Refresh the QGroundControl parameter view.
+3. Confirm that QGroundControl shows the saved values.
 
 ## Verify the installation
 
@@ -178,15 +196,22 @@ listener distance_sensor -n 5
 uorb top
 ```
 
-Check for fresh timestamps, plausible publication rates, non-zero range,
-reasonable quality, stable device IDs, and no increasing sensor error count.
-Lift the aircraft vertically by hand and confirm that range changes in the
-expected direction.
+Confirm these results:
+
+- timestamps are fresh;
+- publication rates agree with the configured rates;
+- range is nonzero and changes with height;
+- quality is valid for the test surface;
+- device IDs are stable; and
+- sensor error counts do not increase.
+
+Lift the aircraft vertically by hand. Confirm that the reported range changes
+in the correct direction.
 
 ### 3. Orientation and signs
 
-Hold the disarmed aircraft level over a textured surface and move it forward,
-backward, right, and left.
+Hold the disarmed aircraft level above a textured surface. Move it in each
+direction in the table.
 
 | Vehicle translation | Expected integrated flow |
 | --- | --- |
@@ -195,8 +220,9 @@ backward, right, and left.
 | Right | `-X` |
 | Left | `+X` |
 
-If the signs are wrong, correct the physical orientation or `SENS_FLOW_ROT`.
-Do not compensate by inventing offset signs.
+If a sign is incorrect, correct the physical orientation or
+`SENS_FLOW_ROT`. Do not change an offset sign to compensate for incorrect
+orientation.
 
 ### 4. Estimator health
 
@@ -221,14 +247,14 @@ Check that:
 When multiple EKF instances are enabled, check each one. Heading readiness is a
 separate condition and must not be inferred from healthy flow or range data.
 
-Capture a ULog only when a console check is inconclusive or a flight anomaly
-needs diagnosis. Routine installation does not require a hashed log archive.
+Capture a ULog if the console check is inconclusive or you must diagnose a
+flight anomaly. A routine installation does not require a hashed log archive.
 
 ## Finish and, when required, flight-check
 
-Save the final current parameter set in QGroundControl. Keep that one current
-configuration file with the aircraft maintenance material; Atlas does not
-require a separate hash, evidence ledger, or per-aircraft completion table.
+Save the final parameter set in QGroundControl. Keep the current configuration
+file with the aircraft maintenance material. Atlas does not require a separate
+hash, evidence ledger, or completion table.
 
 If H-Flow will be used for in-flight aiding, perform a low, manually supervised
 hover in a clear area with:
@@ -238,9 +264,11 @@ hover in a clear area with:
 - a textured, adequately lit surface within sensor range; and
 - predefined Hold/land/takeover actions for invalid flow, range, or position.
 
-Confirm stable position/height behaviour and safe degradation when the aiding
-source becomes unavailable. This check validates PX4 behaviour; it does not
-commission Atlas obstacle avoidance.
+Confirm stable position and height behavior. Confirm safe degradation when the
+aiding source becomes unavailable.
+
+This flight check validates PX4 behavior. It does not authorize Atlas obstacle
+avoidance.
 
 ## References
 

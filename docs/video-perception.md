@@ -1,8 +1,8 @@
 # Video and Perception
 
-## Architectural split
+## Purpose and boundary
 
-Atlas deliberately keeps clean video and perception metadata as separate paths:
+Atlas uses separate paths for clean video and perception metadata:
 
 ```mermaid
 flowchart LR
@@ -24,11 +24,10 @@ flowchart LR
     Packet --> OverlayCanvas["Optional transparent overlay canvas"]
 ```
 
-This design preserves source pixels, isolates high-rate metadata from the
-command stream, and lets operators hide annotations without switching streams.
-This document focuses on transport, media, alignment, and detailed tracker
-implementation. For the end-to-end mental model from inference through exact
-selection, geolocation, camera follow, and aircraft follow, see
+This separation preserves source pixels and keeps high-rate metadata out of the
+command stream. It also lets an operator hide annotations without a stream
+change. This document describes transport, media, alignment, and tracker
+implementation. For the complete inference-to-control flow, see
 [Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md).
 
 ## Clean video path
@@ -298,52 +297,59 @@ unclosed session as `SESSION_SUPERSEDED`, covering a lost final message during
 stream reconnection. Native's ten-second frame history remains an ephemeral
 video-alignment cache and is not the durable track store.
 
-Configured normalized image-space lines and polygons are revisioned in Native
-and sent to Agent as a complete source-specific rule set. Agent evaluates only
-confirmed observations, using the latest confirmed box centre: predicted boxes
-never create a count. Line direction and polygon entry/exit events, current
-visible confirmed tracks, and unique confirmed tracks are scoped to the tracker
-session. A gap beyond the prediction horizon reinitializes a rule's per-track
-geometry state instead of inferring a crossing through unseen space. Native
-also maps confirmed tracks into the current mission run, so mission-unique and
-session-unique totals remain separate.
+Atlas Native versions normalized image-space lines and polygons. It sends the
+complete source-specific rule set to Atlas Agent.
 
-An operator selection is an exact `(track_session_id, track_id)` reference, not
-a bare tracker ID. Selection follows the same track through a bounded
-`TEMPORARILY_OCCLUDED` interval and becomes an explicit `LOST` or `CLOSED`
-result. Terminal selection metadata is frozen, so a later backend association
-using the same local key cannot silently revive the operator's selection.
-Native stores append-only selection events, notes, evidence markers tied to an
-active recording, and bounded periodic or significant track samples. The live
-video surface exposes count-rule drawing, current/session/mission totals,
-selection state, recent samples, clear, note, and evidence-marker actions.
+Atlas Agent evaluates only confirmed observations and uses the latest confirmed
+box center. A predicted box does not create a count. Line direction, polygon
+events, visible confirmed tracks, and unique tracks are scoped to the track
+session. A gap beyond the prediction horizon resets the applicable geometry
+state. Atlas does not infer a crossing through unseen space.
 
-For a visible `ACTIVE` selection, the same surface can request a centred-
-boresight coordinate without asking the operator for geodesy inputs. Native
-samples the configured DEM at the aircraft position or uses the explicitly
-labelled autopilot home-plane fallback, attaches bounded uncertainty and the
-MVP target-centre assumption, and authorizes the full
-selection/session/track/source tuple. Agent uses that
-track's retained frame timing with measured pose/gimbal histories, and Native
-stores either the coordinate/error radius or the explicit rejection code and
-reason. No result is silently transferred to another track ID.
+Atlas Native also associates confirmed tracks with the current mission run.
+Mission-unique totals remain separate from track-session totals.
 
-After the initial coordinate is durable, the UI samples the configured DEM at
-that coordinate and repeats until the intersection moves by at most 0.75 m or
-six samples have been recorded. Native independently recomputes every step
-from the original evidence ray before accepting schema-22 refinement. Only the
-finalized coordinate enters the world-space motion filter, so terrain
-iterations from one observation cannot masquerade as target speed. The
-operations map renders the latest coordinate per track, its uncertainty
-footprint, a velocity vector when motion exceeds uncertainty, and a popup tied
-to lifecycle, observation time, selection, and evidence counts.
+An operator selection is an exact `(track_session_id, track_id)` reference. It
+is not a bare tracker ID. Selection can follow that track through a bounded
+`TEMPORARILY_OCCLUDED` interval. It then becomes an explicit `LOST` or `CLOSED`
+result.
+
+Atlas freezes terminal selection metadata. A later association that uses the
+same local key cannot reactivate the selection. Atlas Native stores append-only
+selection events, notes, recording evidence markers, and bounded track samples.
+
+For a visible `ACTIVE` selection, the interface can request a
+centered-boresight coordinate. The operator does not supply geodesy inputs.
+
+Atlas Native samples the configured DEM or uses the labeled autopilot
+home-plane fallback. It adds bounded uncertainty and the MVP target-center
+assumption. It authorizes the complete selection, session, track, and source
+tuple. Atlas Agent uses retained frame timing with measured pose and gimbal
+history. Atlas Native stores the result or an explicit rejection.
+
+Atlas does not transfer a result to another track ID.
+
+After Atlas stores the initial coordinate, the interface samples the configured
+DEM at that point. Refinement stops when movement is at most 0.75 m or after
+six samples.
+
+Atlas Native recomputes each step from the original evidence ray. Only the
+final coordinate enters the world-space motion filter. Thus, terrain iterations
+from one observation cannot appear as target speed.
+
+The operations map shows the latest coordinate, uncertainty, and applicable
+velocity vector. Its detail view includes lifecycle, observation time,
+selection, and evidence counts.
 
 Recorded-video testing is available through
 `scripts/atlas-sample-video-detections.py` and
-`cmd/atlas-tracker-replay`. The generator uses OpenCV's built-in HOG person
-detector plus the same sparse-optical-flow CMC shape as the Hailo adapter; the
-replay command feeds its NDJSON into either mode of the supervised ByteTrack
-worker. This is a repeatable real-motion smoke test, not detector-accuracy acceptance.
+`cmd/atlas-tracker-replay`. The generator uses the OpenCV HOG person detector.
+It also uses the same sparse-optical-flow CMC shape as the Hailo adapter. The
+replay command sends its NDJSON to either mode of the supervised ByteTrack
+worker.
+
+This procedure is a repeatable real-motion smoke test. It is not a
+detector-accuracy acceptance test.
 
 ### Supervision
 
@@ -413,8 +419,8 @@ perception configuration. The default is `a8-main`.
 
 The ground and aircraft clocks do not need to be synchronized.
 
-For each recent perception frame, Native estimates camera capture time in the
-ground clock domain:
+For each recent perception frame, Atlas Native estimates camera capture time in
+the ground-clock domain:
 
 ```text
 estimated capture time
@@ -423,8 +429,8 @@ estimated capture time
     + configured overlay offset
 ```
 
-It compares that estimate with the clean video's Native receive time and selects
-the smallest absolute delta within the configured tolerance.
+Atlas Native compares the estimate with the receive time of each clean frame.
+It selects the smallest absolute delta inside the configured tolerance.
 
 The playout delay gives metadata time to arrive before the clean frame is
 released to the webview. The overlay offset compensates for asymmetric RTSP and
@@ -481,7 +487,7 @@ running.
 - FoundationVision ByteTrack and the Atlas CMC extension still require
   annotated representative aerial footage and target companion-computer acceptance.
 - Recorded-video HOG smoke tests do not validate Hailo/YOLO inference quality.
-- Selected-track centred-boresight geolocation, iterative target-area terrain
+- Selected-track centered-boresight geolocation, iterative target-area terrain
   refinement, operational map markers, and filtered world motion are
   implemented. Arbitrary-pixel projection, measured range, physical boresight
   calibration measurement, and surveyed accuracy acceptance remain.

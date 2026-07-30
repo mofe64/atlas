@@ -1,11 +1,11 @@
 # Atlas Backend
 
-## Current role
+## Purpose and boundary
 
 Atlas Backend is a separate Go/Gin/PostgreSQL service. It is a foundation for
 identity, tenancy, vehicle enrollment, and future coordinated services.
 
-It is not currently:
+Atlas Backend currently does not:
 
 - Called by Atlas Native during local flight operations.
 - Connected to Atlas Agent.
@@ -13,8 +13,8 @@ It is not currently:
 - The source of truth for current local commands, missions, telemetry, or
   aircraft history.
 
-This boundary is deliberate. Backend or internet failure must not stop the
-current local control loop.
+This boundary protects local flight continuity. An internet or Backend failure
+does not stop the current local control loop.
 
 ## Runtime architecture
 
@@ -230,4 +230,3 @@ commands. A future design should state:
 | Repository contracts | [`internal/repositories/`](../atlas-backend/internal/repositories/) |
 | PostgreSQL implementation | [`internal/repositories/postgres/`](../atlas-backend/internal/repositories/postgres/) |
 | Schema | [`migrations/`](../atlas-backend/migrations/) |
-
