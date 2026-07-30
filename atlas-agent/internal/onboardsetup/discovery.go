@@ -17,11 +17,26 @@ import (
 	agentconfig "github.com/sunnyside/atlas/atlas-agent/internal/config"
 )
 
+// Note: for hailo readiness, we have two modes:
+// 1. Process mode: which requires:
+// -PCI device visible
+// -AND HailoRT installed
+// -AND device responds
+// -AND GStreamer plugins work
+// -AND Python bindings work
+
+// 2. Container mode: which additionally requires:
+// - /dev/hailo0 ready
+// - pinned container image installed
+// - host/container versions compatible
+
 func Discover(ctx context.Context, runner Runner, options Options) (Discovery, error) {
 	paths := options.Paths
 	if paths.ConfigFile == "" {
 		paths = DefaultPaths("/")
 	}
+	// read the operating system release information from the /etc/os-release file
+	// this file contains the operating system name, version, and other information
 	release, err := readOSRelease(rootPath(paths.Root, "/etc/os-release"))
 	if err != nil {
 		return Discovery{}, err
@@ -90,6 +105,8 @@ func rootPath(root, path string) string {
 	return filepath.Join(root, strings.TrimPrefix(path, "/"))
 }
 
+// readOSRelease reads the operating system release information from the /etc/os-release file
+// this file contains the operating system name, version, and other information in key=value pairs
 func readOSRelease(path string) (OSRelease, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -99,10 +116,12 @@ func readOSRelease(path string) (OSRelease, error) {
 	values := map[string]string{}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
+		// split the line into key and value using the = character since os-release file is a key=value pair file
 		key, value, found := strings.Cut(scanner.Text(), "=")
 		if !found {
 			continue
 		}
+		// trim any whitespace and quotes from the value and store it in the values map
 		values[key] = strings.Trim(strings.TrimSpace(value), "\"")
 	}
 	if err := scanner.Err(); err != nil {
@@ -119,7 +138,11 @@ func readBoardModel(path string) string {
 	return strings.TrimSpace(strings.TrimRight(string(raw), "\x00"))
 }
 
+// discoverSerial finds all possible serial devices for the PX4 flight controller
+// it used file system based detection to find the serial devices
 func discoverSerial(root string) []SerialCandidate {
+	// possible serail device locations
+	// these cover common linux serial device names
 	patterns := []string{
 		"/dev/serial/by-id/*",
 		"/dev/serial/by-path/*",
@@ -129,10 +152,15 @@ func discoverSerial(root string) []SerialCandidate {
 	}
 	seenResolved := map[string]bool{}
 	var candidates []SerialCandidate
+	// look for device paths matching the patterns
+	// -> resolve symbolic links
+	// -> remove duplicates
+	// -> prefer persistent devices (by-id or by-path) over non-persistent devices (ttyUSB, ttyACM, serial0)
 	for _, pattern := range patterns {
 		matches, _ := filepath.Glob(rootPath(root, pattern))
 		sort.Strings(matches)
 		for _, match := range matches {
+			// resolve symbolic links to get the actual device path
 			resolved, err := filepath.EvalSymlinks(match)
 			if err != nil {
 				resolved = match
@@ -163,20 +191,59 @@ func discoverSerial(root string) []SerialCandidate {
 	return candidates
 }
 
+// discoverHailo determines whether the complete Hailo perception stack is installed and ready to use
 func discoverHailo(ctx context.Context, runner Runner, paths Paths) HailoStatus {
+	// intial status
 	status := HailoStatus{RuntimeMode: AdapterModeProcess, Accelerator: "unknown", VersionsCompatible: true}
+	// checks PCI visibility using lspci command
 	if _, err := runner.LookPath("lspci"); err == nil {
+		//lspci is a command line tool to list all PCI devices
+		// -Dnn is the format to display device information in a human-readable format
 		result := runner.Run(ctx, "lspci", "-Dnn")
 		lower := strings.ToLower(result.Output)
+		// examine output for hailo text or hailo PCI vendor ID, if found, set PCIVisible to true
 		status.PCIVisible = result.Err == nil && (strings.Contains(lower, "hailo") || strings.Contains(lower, "[1e60:"))
 	}
+	// checks if the hailo0 device node is ready using the test command
+	// test is a command line tool to test file attributes
+	// -c checks if the file exists and is a character device
+	// A character device is how userspace software communicates with the kernel driver
+	// so the following answers the question Has the driver exposed the Hailo device to userspace?
 	status.DeviceNodeReady = commandSucceeds(ctx, runner, "test", "-c", rootPath(paths.Root, "/dev/hailo0"))
 
+	// read the Hailo container environment file to check if the Hailo container is configured
 	containerConfig := readEnvironmentFile(paths.HailoContainerEnv)
 	if containerConfig["ATLAS_HAILO_CONTAINER_IMAGE"] != "" {
+		// if hailo container is configured, use the discoverHailoContainer function to check the status
+		// and resturn the container status
 		return discoverHailoContainer(ctx, runner, status, containerConfig)
 	}
 
+	// if we are not using the hailo container, we are in process mode
+	// note this is the legacy path, when we first set this up we ran hailo libraries and tools directly on the host
+	// this required a lot of additonal work and complexity since hailo rt is more optimised for raspberry pi os, and not ubuntu
+	// we still kept this path for backwards compatibility, but newer versions of the agent do not use this path
+
+	// checks if the hailortcli command is available using the lookpath command
+	// hailortcli is a command line tool to interact with the HailoRT device
+	// fw-control is a subcommand to identify the HailoRT device
+	// identify is a subcommand to identify the HailoRT device
+	// if the hailortcli command is available, set the RuntimeInstalled to true
+	// and run the hailortcli fw-control identify command to get the identify output
+	// the identify output contains the device information, including the device name, device type, and device status
+	// if the command succeeds, set the DeviceReady to true
+	// and parse the accelerator from the identify output using the parseHailoAccelerator function
+	// the accelerator is the type of the HailoRT device, such as hailo-8l or hailo-8
+	// if the command fails, set the DeviceReady to false
+	// and set the Accelerator to unknown
+	// if the command succeeds, set the GStreamerReady to true if the gst-inspect-1.0 hailonet and gst-inspect-1.0 hailofilter commands are available
+	// and set the PythonReady to true if the python3 command is available and the python bindings are installed
+	// if the PCIVisible is false, add the Hailo PCIe device to the MissingComponents list
+	// if the RuntimeInstalled is false, add the hailortcli to the MissingComponents list
+	// if the DeviceReady is false, add the working HailoRT device to the MissingComponents list
+	// if the GStreamerReady is false, add the hailonet/hailofilter to the MissingComponents list
+	// if the PythonReady is false, add the Hailo/OpenCV/NumPy Python bindings to the MissingComponents list
+	// return the status
 	if _, err := runner.LookPath("hailortcli"); err == nil {
 		status.RuntimeInstalled = true
 		result := runner.Run(ctx, "hailortcli", "fw-control", "identify")
@@ -203,44 +270,62 @@ func discoverHailo(ctx context.Context, runner Runner, paths Paths) HailoStatus 
 	return status
 }
 
+// discoverHailoContainer checks the status of the Hailo container
+// hailo in container mode keeps hailo userspace deps inside a pinned Docker image, while kernel driver remains on host
+// answers the question: Is the host driver, configured Docker image, container userspace, Hailo device, and their versions a compatible working stack?
 func discoverHailoContainer(ctx context.Context, runner Runner, status HailoStatus, config map[string]string) HailoStatus {
+	// set the runtime mode to container mode
+	// and load the expected, pinned versions from our config
 	status.RuntimeMode = AdapterModeContainer
-	status.ContainerImage = config["ATLAS_HAILO_CONTAINER_IMAGE"]
+	status.ContainerImage = config["ATLAS_HAILO_CONTAINER_IMAGE"] // exact docker image to use
 	status.ContainerName = fallback(config["ATLAS_HAILO_CONTAINER_NAME"], "atlas-hailo-adapter")
-	status.ExpectedDriverVersion = config["ATLAS_HAILO_DRIVER_VERSION"]
-	status.ExpectedDriverPackageVersion = config["ATLAS_HAILO_DRIVER_PACKAGE_VERSION"]
-	status.ExpectedFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_PACKAGE_VERSION"]
-	status.ExpectedDeviceFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_VERSION"]
-	status.ExpectedUserspaceVersion = config["ATLAS_HAILORT_PACKAGE_VERSION"]
-	status.ExpectedTAPPASVersion = config["ATLAS_HAILO_TAPPAS_PACKAGE_VERSION"]
+	status.ExpectedDriverVersion = config["ATLAS_HAILO_DRIVER_VERSION"]                // expected version of the loaded hailo_pci kernel module
+	status.ExpectedDriverPackageVersion = config["ATLAS_HAILO_DRIVER_PACKAGE_VERSION"] // expected version of the hailo-dkms package
+	status.ExpectedFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_PACKAGE_VERSION"]    // expected version of the hailo-fw package
+	status.ExpectedDeviceFirmwareVersion = config["ATLAS_HAILO_FIRMWARE_VERSION"]      // expcted firmware version of the Hailo device
+	status.ExpectedUserspaceVersion = config["ATLAS_HAILORT_PACKAGE_VERSION"]          // expected HailoRT userspace version inside the container.
+	status.ExpectedTAPPASVersion = config["ATLAS_HAILO_TAPPAS_PACKAGE_VERSION"]        // expected TAPPAS version of the Hailo device, Tappas provided the hailo GStreamer components used by
+	// the perception pipeline
 
+	// read the loaded host driver version
+	// linux exposes info about loaded kernel modules under /sys/module
 	if result := runner.Run(ctx, "cat", "/sys/module/hailo_pci/version"); result.Err == nil {
 		status.HostDriverVersion = strings.TrimSpace(result.Output)
 	}
-	if status.HostDriverVersion == "" {
+	if status.HostDriverVersion == "" { // if the host driver version is not found, use modinfo to get the version
+		// modinfo is a cli tool to read metadata from installled kernel modules
 		if result := runner.Run(ctx, "modinfo", "-F", "version", "hailo_pci"); result.Err == nil {
 			status.HostDriverVersion = strings.TrimSpace(result.Output)
 		}
 	}
+	// Note /sys/module/hailo_pci/version → version of the currently loaded module
+	// modinfo hailo_pci → version of the installed module available on disk
+	// The loaded-module value is preferred because it describes what the running kernel is actually using.
+
+	// read the installed driver package version
 	if result := runner.Run(ctx, "dpkg-query", "-W", "-f=${Version}", "hailo-dkms"); result.Err == nil {
 		status.HostDriverPackageVersion = strings.TrimSpace(result.Output)
 	}
+	// read the installed firmware package version
 	if result := runner.Run(ctx, "dpkg-query", "-W", "-f=${Version}", "hailofw"); result.Err == nil {
 		status.HostFirmwareVersion = strings.TrimSpace(result.Output)
 	}
 
+	// check if docker is installed and running
 	if _, err := runner.LookPath("docker"); err == nil {
 		image := runner.Run(ctx, "docker", "image", "inspect", status.ContainerImage)
 		status.RuntimeInstalled = image.Err == nil
 	}
 	if status.RuntimeInstalled {
+		// run hailo container health check
 		result := runHailoContainerCheck(ctx, runner, status, "")
 		values := parseKeyValueOutput(result.Output)
-		status.ContainerReady = result.Err == nil
-		status.DeviceReady = values["DEVICE_READY"] == "true"
+		status.ContainerReady = result.Err == nil             // mark container as ready if health check result does not contain errors
+		status.DeviceReady = values["DEVICE_READY"] == "true" // mark device ready if health check conforms that hailort inside container can access the accelerator
+		// we mark device node ready if host can see the /dev/hailo0 device and the container can also see the /dev/hailo0 device
 		status.DeviceNodeReady = status.DeviceNodeReady && values["DEVICE_NODE_READY"] == "true"
-		status.GStreamerReady = values["GSTREAMER_READY"] == "true"
-		status.PythonReady = values["PYTHON_READY"] == "true"
+		status.GStreamerReady = values["GSTREAMER_READY"] == "true" // mark gstreamer ready if health check conforms that hailonet and hailofilter plugins are installed and working
+		status.PythonReady = values["PYTHON_READY"] == "true"       // mark python ready if health check conforms that the Hailo/OpenCV/NumPy Python bindings are installed and working
 		status.Accelerator = fallback(values["DEVICE_ARCHITECTURE"], "unknown")
 		status.FirmwareVersion = values["FIRMWARE_VERSION"]
 		status.UserspaceVersion = values["HAILORT_VERSION"]
@@ -248,6 +333,7 @@ func discoverHailoContainer(ctx context.Context, runner Runner, status HailoStat
 		status.IdentifyOutput = result.Output
 	}
 
+	// confirm that driver, hailo-dkms, hailo-fw, container hailort, container tappas, and actual device firmware versions are compatible with the expected versions
 	status.VersionsCompatible =
 		versionMatches(status.HostDriverVersion, status.ExpectedDriverVersion) &&
 			versionMatches(status.HostDriverPackageVersion, status.ExpectedDriverPackageVersion) &&
@@ -256,6 +342,7 @@ func discoverHailoContainer(ctx context.Context, runner Runner, status HailoStat
 			versionMatches(status.TAPPASVersion, status.ExpectedTAPPASVersion) &&
 			versionCoreMatches(status.FirmwareVersion, status.ExpectedDeviceFirmwareVersion)
 
+	// build missing components list
 	if !status.PCIVisible {
 		status.MissingComponents = append(status.MissingComponents, "Hailo PCIe device")
 	}
@@ -279,25 +366,47 @@ func discoverHailoContainer(ctx context.Context, runner Runner, status HailoStat
 	return status
 }
 
+// runHailoContainerCheck runs the Hailo container health check script
+// it checks if the configured container is running and if it is, it runs the container check script
+// if the container is not running, it runs the container check script in a new container
+// the container check script is a simple bash script that checks if the Hailo device is accessible and if the GStreamer plugins are installed and working
+// it also checks if the Python bindings are installed and working
+// it returns the command result
 func runHailoContainerCheck(ctx context.Context, runner Runner, status HailoStatus, modelPath string) CommandResult {
+	// path to the container check script, which should be inside the container image
 	checkPath := "/usr/local/bin/atlas-hailo-container-check"
 	arguments := []string{}
 	if modelPath != "" {
 		arguments = append(arguments, "--model", modelPath)
 	}
+	// check if configured container is running
 	running := runner.Run(ctx, "docker", "inspect", "--format", "{{.State.Running}}", status.ContainerName)
 	if running.Err == nil && strings.TrimSpace(running.Output) == "true" {
 		return runner.Run(ctx, "docker", append([]string{"exec", status.ContainerName, checkPath}, arguments...)...)
 	}
+	// if container is running, first prepare args  for the container check script
 	dockerArguments := []string{
 		"run", "--rm", "--network", "none", "--device", "/dev/hailo0:/dev/hailo0",
 		"--env", "ATLAS_HAILO_ACCELERATOR=" + status.Accelerator, "--entrypoint", checkPath,
 	}
+
+	// if model path is provided, add the model path to the docker arguments, so that the container check script can access the model file
 	if modelPath != "" {
 		dockerArguments = append(dockerArguments, "--volume", filepath.Dir(modelPath)+":"+filepath.Dir(modelPath)+":ro")
 	}
 	dockerArguments = append(dockerArguments, status.ContainerImage)
 	dockerArguments = append(dockerArguments, arguments...)
+
+	// run the container check script
+	// final command will be something like
+	// 	docker run \
+	//   --rm \
+	//   --network none \
+	//   --device /dev/hailo0:/dev/hailo0 \
+	//   --env ATLAS_HAILO_ACCELERATOR=hailo-8l \
+	//   --entrypoint /usr/local/bin/atlas-hailo-container-check \
+	//   sha256:configured-image \
+	//   --model /usr/share/atlas-agent/models/objects.hef
 	return runner.Run(ctx, "docker", dockerArguments...)
 }
 
@@ -419,6 +528,13 @@ func parseEnvironmentValue(value string) string {
 	return strings.Trim(value, "\"")
 }
 
+// installConfigFromDiscovery converts our discovery object into a validated installation Config
+// chooses the first discovered serial device;
+// uses the detected Hailo accelerator;
+// switches to container mode when container Hailo was discovered;
+// initially enables perception if Hailo and its files are ready;
+// restores values from an existing installation;
+// carries forward the existing or newly discovered Spatial state.
 func installConfigFromDiscovery(discovery Discovery, paths Paths) InstallConfig {
 	config := DefaultInstallConfig(paths)
 	if len(discovery.Serial) > 0 {

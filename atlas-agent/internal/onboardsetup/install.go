@@ -27,10 +27,13 @@ func Install(ctx context.Context, runner Runner, options Options) (ApplyResult, 
 	if options.Paths.ConfigFile == "" {
 		options.Paths = DefaultPaths("/")
 	}
+	// run discovery process to determine initial config, default paths, board model, serial device, hailo, spatial, etc.
 	discovery, err := Discover(ctx, runner, options)
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	// validate discovery results, we are just essentially checking that the platform is supported (arm64 ubuntu 24.04) since thats the only platform I have for now.
+	// should allow for other platform when if i get jetson nano
 	if err := validateDiscovery(discovery, options.AllowUnsupported); err != nil {
 		return ApplyResult{}, err
 	}
@@ -40,18 +43,22 @@ func Install(ctx context.Context, runner Runner, options Options) (ApplyResult, 
 	if version := manifest["ATLAS_RELEASE_VERSION"]; version != "" {
 		discovery.ExistingConfig["ATLAS_AGENT_VERSION"] = version
 	}
+	// build the install plan
 	plan, err := BuildInstallPlan(ctx, runner, discovery, options)
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	// validate the model accelerator if perception is enabled
 	if plan.Config.PerceptionEnabled {
 		if err := validateModelAccelerator(modelAccelerator, discovery.Hailo); err != nil {
 			return ApplyResult{}, err
 		}
 	}
+	// set the agent version
 	if version := manifest["ATLAS_RELEASE_VERSION"]; version != "" {
 		plan.Config.AgentVersion = version
 	}
+	// apply the install plan
 	return ApplyInstallPlan(ctx, runner, options, plan)
 }
 

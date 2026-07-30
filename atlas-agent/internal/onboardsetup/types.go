@@ -53,13 +53,21 @@ type Paths struct {
 	DefaultPostprocessSO  string
 }
 
+// DefaultPaths defines the canonical filesystem layout for the Atlas Agent
 func DefaultPaths(root string) Paths {
+	// helper function to place a path under the system root dir or another supplied dir
 	rooted := func(path string) string {
+		// if root is empty (caller did not supply a root) or "/" (the root directory), return the path unchanged
 		if root == "" || root == "/" {
 			return path
 		}
+		// otherwise, join the supplied root dir with the path
+		// we strip leading "/" from the path to avoid double slashes
+		// eg root =  "/tmp/atlas-test", path = "/etc/atlas-agent/atlas-agent.env" -> "/tmp/atlas-test/etc/atlas-agent/atlas-agent.env"
 		return filepath.Join(root, strings.TrimPrefix(path, "/"))
 	}
+
+	// return the Paths struct with the paths populated using the rooted function
 	return Paths{
 		Root:                  root,
 		ConfigFile:            rooted("/etc/atlas-agent/atlas-agent.env"),
