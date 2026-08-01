@@ -75,6 +75,12 @@
   font-weight: 760;
 }
 
+.mission-safety-note button + button {
+  border-color: var(--line-strong);
+  color: var(--text-primary);
+  background: transparent;
+}
+
 .mission-builder {
   display: grid;
   flex: 1 1 auto;
@@ -113,28 +119,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-}
-
-.control-rail-heading > div,
-.map-stage-heading > div:first-child,
-.coordinate-editor > header > div,
-.plan-console > header > div,
-.plan-console--empty > div {
-  display: flex;
-  align-items: center;
-  gap: .65rem;
-}
-
-.control-rail-heading span,
-.map-stage-heading span,
-.coordinate-editor > header span,
-.plan-console > header div span,
-.plan-console--empty > div span {
-  color: var(--field);
-  font-family: var(--font-display);
-  font-size: .72rem;
-  font-weight: 800;
-  letter-spacing: .08em;
 }
 
 .control-rail-heading strong,
@@ -204,30 +188,6 @@
   display: grid;
   gap: .75rem;
   margin-top: 1rem;
-}
-
-.editing-context {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .75rem;
-  margin-top: .7rem;
-  padding: .5rem .6rem;
-  border: 1px solid var(--field);
-  background: var(--field-soft);
-  color: var(--field);
-  font-size: .64rem;
-  font-weight: 750;
-}
-
-.editing-context button {
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid currentColor;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  font: inherit;
 }
 
 .mission-identity-fields label,
@@ -367,6 +327,9 @@
 }
 
 .mission-advanced-settings summary {
+  display: flex;
+  justify-content: space-between;
+  gap: .75rem;
   padding: .8rem 0 .15rem;
   color: var(--ink-soft);
   cursor: pointer;
@@ -375,6 +338,20 @@
   letter-spacing: .06em;
   text-transform: uppercase;
 }
+
+.mission-advanced-settings summary span {
+  color: var(--muted);
+  font-size: .54rem;
+  font-weight: 550;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: none;
+}
+
+.mission-customization { padding-top: .25rem; }
+.mission-customization .view-settings { margin-top: .7rem; }
+.completion-settings { margin-top: .8rem; padding: .85rem; border: 1px solid var(--line); background: var(--mist); }
+.completion-settings h2 { margin: 0; color: var(--muted); font-size: .64rem; letter-spacing: .08em; text-transform: uppercase; }
 
 .toggle-field {
   display: flex;
@@ -807,126 +784,6 @@
 .run-dot--uploading,
 .run-dot--rtl { background: var(--sky); }
 .mission-history-empty { margin: 0; padding: 1.4rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .72rem; }
-
-.mission-launchpad {
-  margin: calc(var(--s-3) * -1);
-  margin-bottom: var(--s-3);
-  padding: var(--s-3);
-  border-bottom: 1px solid var(--line-strong);
-  background: var(--surface-sunken);
-}
-
-.mission-new-primary,
-.mission-history-cta,
-.active-missions button {
-  width: 100%;
-  border-radius: 0;
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.mission-new-primary {
-  display: grid;
-  min-height: 6.4rem;
-  align-content: center;
-  padding: var(--s-3);
-  border: 1px solid var(--field);
-  color: var(--text-inverse);
-  background: var(--field);
-}
-
-.mission-new-primary > span,
-.mission-history-cta > span {
-  font-size: var(--t-micro);
-  font-weight: 800;
-  letter-spacing: .07em;
-  text-transform: uppercase;
-}
-
-.mission-new-primary > strong {
-  margin-top: .3rem;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  letter-spacing: .025em;
-  text-transform: uppercase;
-}
-
-.mission-new-primary > small {
-  margin-top: .35rem;
-  color: color-mix(in oklch, var(--text-inverse) 76%, transparent);
-  font-size: var(--t-micro);
-  line-height: 1.4;
-}
-
-.active-missions {
-  margin-top: var(--s-3);
-  border: 1px solid var(--line);
-  background: var(--surface-raised);
-}
-
-.active-missions > header {
-  display: flex;
-  min-height: 2.7rem;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--s-3);
-  border-bottom: 1px solid var(--line);
-}
-
-.active-missions h2 {
-  margin: 0;
-  font-size: var(--t-xs);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-
-.active-missions > header > span {
-  color: var(--text-tertiary);
-  font-family: var(--font-instrument);
-  font-size: var(--t-sm);
-}
-
-.active-missions > p {
-  margin: 0;
-  padding: var(--s-3);
-  color: var(--text-tertiary);
-  font-size: var(--t-micro);
-  line-height: 1.45;
-}
-
-.active-missions button {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--ink);
-  background: transparent;
-}
-
-.active-missions button:hover { background: var(--mist); }
-.active-missions button:last-child { border-bottom: 0; }
-.active-missions button strong,
-.active-missions button small { display: block; }
-.active-missions button strong { font-size: var(--t-xs); }
-.active-missions button small { margin-top: .18rem; color: var(--text-tertiary); font-size: var(--t-micro); }
-.active-missions button i { color: var(--field); font-size: var(--t-micro); font-style: normal; font-weight: 800; }
-
-.mission-history-cta {
-  display: grid;
-  margin-top: var(--s-2);
-  padding: var(--s-2) var(--s-3);
-  border: 1px solid var(--line-strong);
-  color: var(--ink);
-  background: transparent;
-}
-
-.mission-history-cta > span { color: var(--text-tertiary); }
-.mission-history-cta > strong { margin-top: .28rem; font-size: var(--t-xs); }
-.mission-history-cta:hover { border-color: var(--field); color: var(--field); background: var(--field-soft); }
 
 .mission-library {
   margin: 0;

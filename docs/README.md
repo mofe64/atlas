@@ -117,9 +117,10 @@ These are architectural facts at this checkpoint:
 - Native keeps only a bounded live frame history rather than persisting every
   detection box. It does persist track/session summaries, lifecycle events,
   selections, counts, geolocation results, and explicitly captured evidence.
-- Native supports local segmented recording plus verified evidence stills and
-  bounded event clips with provenance and retention. Remote evidence replication
-  and a complete export workflow are separate future concerns.
+- Native supports local segmented recording plus explicit photos and bounded
+  event clips with source context and integrity metadata. Review decisions,
+  retention/legal-hold administration, export, and remote replication are
+  separate future concerns.
 - Camera behavior is constrained by the physical payload and MAVSDK Mission v1.
   Perception start and stop are separately executed as durable Agent actions:
   required inference is acknowledged before arming and released during terminal

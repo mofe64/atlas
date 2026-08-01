@@ -423,17 +423,17 @@ operator intent or a separately reviewed policy.
 | Automatic replacement target | Never | Never |
 | Automatic RTL/Land | No | No |
 
-## Evidence and retention boundary
+## Capture boundary
 
-Atlas Native can preserve a verified still or bounded event clip around an
-important perception moment and records provenance linking the media to the
-aircraft, source, session, track, and timing context. Local segmented recording
-and evidence retention are separate from the short live overlay buffer.
+Atlas Native can preserve a photo or bounded event clip around an important
+perception moment and links the media to the aircraft, source, session, track,
+and timing context required to assemble and reopen it. Local segmented recording
+and explicit captures are separate from the short live overlay buffer.
 
 This does not mean every detection frame is archived indefinitely. The bounded
-ephemeral history supports correlation; explicit evidence workflows create
-durable media and metadata. Export and remote replication remain distinct
-product concerns.
+ephemeral history supports correlation; explicit capture actions create durable
+media and minimal source metadata. Review, retention/legal-hold administration,
+export, and remote replication remain distinct future product concerns.
 
 ## Where to make changes
 
@@ -448,7 +448,7 @@ product concerns.
 | Aircraft-follow Native state/watchdog | [`atlas/src-tauri/src/database/aircraft_follow.rs`](../atlas/src-tauri/src/database/aircraft_follow.rs) and Native command handling |
 | Aircraft-follow Agent controller | [`atlas-agent/internal/vehicle/aircraft_follow.go`](../atlas-agent/internal/vehicle/aircraft_follow.go) |
 | Operator follow UI | [`atlas/src/follow/FollowPage.tsx`](../atlas/src/follow/FollowPage.tsx) |
-| Evidence recording and retention | Native evidence/video database and recorder modules |
+| Recording and captures | Native recording/capture database and recorder modules |
 
 Changes to a threshold or state transition must be made at the authority that
 enforces it. UI validation improves feedback but cannot replace Native or Agent

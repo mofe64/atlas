@@ -361,7 +361,7 @@
 }
 
 .command-detail {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 .command-detail > .command-detail__scroll {
@@ -369,7 +369,7 @@
 }
 
 .command-detail__scroll {
-  padding-bottom: 11.5rem;
+  padding-bottom: var(--s-3);
 }
 
 .command-detail__state {
@@ -547,180 +547,15 @@
   font-size: var(--t-xs);
 }
 
-.command-safety {
-  position: absolute;
-  z-index: 4;
-  right: 0;
-  bottom: 0;
-  width: min(22rem, 100%);
-  padding: var(--s-3);
-  border-top: var(--line-weight) solid var(--line-strong);
-  background: var(--surface-sunken);
-}
-
 .command-detail {
   position: relative;
 }
 
-.command-safety > header,
-.command-safety > div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-2);
-}
-
-.command-safety > header {
-  margin-bottom: var(--s-2);
-  font-size: var(--t-micro);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.command-safety > header span {
-  color: var(--text-tertiary);
-}
-
-.command-safety > div button {
-  flex: 1;
-  min-height: 2.75rem;
-  padding: 0 var(--s-2);
-  border: 1px solid var(--line-strong);
-  background: var(--surface-raised);
-  cursor: pointer;
-  font-size: var(--t-xs);
-  font-weight: 750;
-}
-
-.command-safety > div .command-safety__land {
-  border-color: var(--critical);
-  color: var(--surface-raised);
-  background: var(--critical);
-}
-
-.command-safety > div button:disabled {
-  cursor: not-allowed;
-  opacity: 0.46;
-}
-
-.command-detail--confirming .command-detail__scroll {
-  padding-bottom: 18rem;
-}
-
-.command-safety__confirmation {
-  display: grid;
-  gap: var(--s-2);
-  margin-top: var(--s-2);
-  padding: var(--s-2);
-  border: 1px solid var(--caution);
-  background: var(--caution-bg);
-  color: var(--caution);
-}
-
-.command-safety__confirmation--critical {
-  border-color: var(--critical);
-  background: var(--critical-bg);
-  color: var(--critical);
-}
-
-.command-safety__confirmation > strong {
-  font-size: var(--t-xs);
-}
-
-.command-safety__confirmation > p {
-  margin: 0;
-  color: inherit;
-  font-size: var(--t-micro);
-  line-height: 1.4;
-}
-
-.command-safety__confirmation > div {
-  display: flex;
-  gap: var(--s-2);
-}
-
-.command-safety__confirmation > div button {
-  min-height: 2.5rem;
-  padding: 0 var(--s-2);
-  border: 1px solid currentColor;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--t-micro);
-  font-weight: 750;
-}
-
-.command-safety__confirmation > div button:last-child {
-  flex: 1;
-  color: var(--surface-raised);
-  background: var(--caution);
-}
-
-.command-safety__confirmation > div .command-safety__confirm-land {
-  background: var(--critical);
-}
-
-.command-safety__reason {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.18rem var(--s-2);
-  min-height: 2.6rem;
-  margin: var(--s-2) 0 0;
-  padding: var(--s-2);
-  border-left: 3px solid var(--nominal);
-  background: var(--surface-raised);
-  color: var(--text-secondary);
-  font-size: var(--t-micro);
-  line-height: 1.4;
-}
-
-.command-safety__reason > span {
-  min-width: 0;
-}
-
-.command-safety__reason > small {
-  grid-column: 1;
-  color: var(--text-tertiary);
-  font-family: var(--font-instrument);
-  font-size: var(--t-micro);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.command-safety__reason > button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  min-height: 2.25rem;
-  padding: 0 var(--s-2);
-  border: 1px solid currentColor;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-  font-size: var(--t-micro);
-  font-weight: 750;
-}
-
-.command-safety__reason--neutral {
-  border-color: var(--idle);
-}
-
-.command-safety__reason--nominal {
-  border-color: var(--nominal);
-  color: var(--nominal);
-}
-
-.command-safety__reason--caution {
-  border-color: var(--caution);
-  background: var(--caution-bg);
-  color: var(--caution);
-}
-
-.command-safety__reason--critical {
-  border-color: var(--critical);
-  background: var(--critical-bg);
-  color: var(--critical);
+.command-detail > .flight-safety {
+  grid-row: 3;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
 }
 
 .command-empty {

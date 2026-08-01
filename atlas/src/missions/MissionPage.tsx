@@ -13,18 +13,16 @@ import {
   type Mission,
   type MissionPlan,
   type MissionPoint,
-  type MissionRun,
   type MissionSettings,
   type MissionTemplate,
   type MissionTemplateType,
 } from "./missionTypes";
 import "./MissionPage.css";
 
-export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, missionRuns, initialMissionId, onInitialMissionLoaded, onMissionReady, onOpenHistory }: {
+export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, initialMissionId, onInitialMissionLoaded, onMissionReady, onOpenHistory }: {
   nativeAvailable: boolean;
   fleetAircraft: FleetAircraft[];
   preferredDroneId?: string;
-  missionRuns: MissionRun[];
   initialMissionId?: string;
   onInitialMissionLoaded: () => void;
   onMissionReady: (missionId: string, droneId?: string) => void;
@@ -98,13 +96,6 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
   const planningReference = planningPositionReference(planningAircraft);
   const planningHome = homePositionReference(planningAircraft);
   const draftDistance = points[0] && planningAircraft ? missionDistanceStatus(points[0], planningAircraft) : undefined;
-  const activeMissionRuns = useMemo(
-    () => missionRuns
-      .filter((run) => !run.completedAtUnixMs && ["UPLOADING", "READY", "RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"].includes(run.status))
-      .sort((left, right) => right.updatedAtUnixMs - left.updatedAtUnixMs),
-    [missionRuns],
-  );
-
   function selectTemplate(next: MissionTemplateType) {
     setTemplateType(next);
     setName(next === "WAYPOINT" ? "New waypoint mission" : next === "AREA_SCAN" ? "New area scan" : "New route scan");
@@ -201,49 +192,19 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
         <div>
           <p className="eyebrow">Mission authoring</p>
           <h1>Plan</h1>
+          <p>Choose a template, set the flight defaults, then draw the route.</p>
         </div>
         <div className="mission-safety-note">
-          <span><strong>Nothing is sent while planning.</strong> Save the flight path, then open it in Command when an aircraft is ready.</span>
+          <span><strong>Nothing is sent while planning.</strong></span>
+          <button type="button" onClick={beginNewMission}>New mission</button>
           <button type="button" onClick={onOpenHistory}>Mission history</button>
         </div>
       </header>
 
       <section className="mission-builder" aria-label="Mission builder">
         <aside className="mission-control-rail">
-          <section className="mission-launchpad" aria-label="Mission actions">
-            <button type="button" className="mission-new-primary" onClick={beginNewMission}>
-              <span>Primary action</span>
-              <strong>Create new mission</strong>
-              <small>Define a route, coverage area, or waypoint operation.</small>
-            </button>
-
-            <section className="active-missions" aria-labelledby="active-missions-title">
-              <header>
-                <h2 id="active-missions-title">Active missions</h2>
-                <span>{activeMissionRuns.length}</span>
-              </header>
-              {activeMissionRuns.length === 0 ? (
-                <p>No missions are currently being prepared or flown.</p>
-              ) : (
-                <div role="list">
-                  {activeMissionRuns.map((run) => (
-                    <button key={run.id} type="button" role="listitem" onClick={() => onMissionReady(run.missionId, run.droneId)}>
-                      <span><strong>{run.missionName}</strong><small>{run.droneName}</small></span>
-                      <i>{run.status.replace(/_/g, " ")}</i>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <button type="button" className="mission-history-cta" onClick={onOpenHistory}>
-              <span>Mission history</span>
-              <strong>Review saved plans and past runs →</strong>
-            </button>
-          </section>
-
           <header className="control-rail-heading" id="mission-definition-title">
-            <div><span>01</span><strong>Mission definition</strong></div>
+            <strong>Mission definition</strong>
             <small>{selectedTemplate.defaultPattern.replace(/_/g, " ")}</small>
           </header>
 
@@ -263,27 +224,25 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
             ))}
           </fieldset>
 
+          <TemplateSettings templateType={templateType} settings={settings} onChange={changeSettings} />
+
           <div className="mission-identity-fields">
             <label>Mission name<input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
             <label>Description <span>optional</span><input value={description} onChange={(event) => setDescription(event.target.value)} /></label>
           </div>
-          {editingMissionId && (
-            <div className="editing-context">
-              <span>Editing saved definition</span>
-              <button type="button" onClick={() => selectTemplate(templateType)}>Start new</button>
-            </div>
-          )}
-
-          <TemplateSettings templateType={templateType} settings={settings} onChange={changeSettings} />
-
-          <ViewSettings templateType={templateType} settings={settings} onChange={changeSettings} />
 
           <details className="mission-advanced-settings">
-            <summary>Detection and completion</summary>
-            <div className="settings-grid settings-grid--single">
-              <label>Detection classes<input value={settings.detectionClasses} placeholder="person, vehicle, smoke" onChange={(event) => changeSettings({ detectionClasses: event.target.value })} /></label>
-              <label className="toggle-field"><input type="checkbox" checked={settings.recordVideo} onChange={(event) => changeSettings({ recordVideo: event.target.checked })} /><span>Record video during scan</span></label>
-              <label className="toggle-field"><input type="checkbox" checked={settings.returnToLaunch} onChange={(event) => changeSettings({ returnToLaunch: event.target.checked })} /><span>Return to launch on completion</span></label>
+            <summary>Customize mission <span>Camera, gimbal, detection, and completion</span></summary>
+            <div className="mission-customization">
+              <ViewSettings templateType={templateType} settings={settings} onChange={changeSettings} />
+              <section className="completion-settings" aria-labelledby="completion-settings-title">
+                <h2 id="completion-settings-title">Detection and completion</h2>
+                <div className="settings-grid settings-grid--single">
+                  <label>Detection classes<input value={settings.detectionClasses} placeholder="person, vehicle, smoke" onChange={(event) => changeSettings({ detectionClasses: event.target.value })} /></label>
+                  <label className="toggle-field"><input type="checkbox" checked={settings.recordVideo} onChange={(event) => changeSettings({ recordVideo: event.target.checked })} /><span>Record video during scan</span></label>
+                  <label className="toggle-field"><input type="checkbox" checked={settings.returnToLaunch} onChange={(event) => changeSettings({ returnToLaunch: event.target.checked })} /><span>Return home on completion</span></label>
+                </div>
+              </section>
             </div>
           </details>
 
@@ -311,7 +270,7 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
 
         <div className="mission-map-stage">
           <header className="map-stage-heading">
-            <div><span>02</span><strong>{geometryTitle(templateType)}</strong></div>
+            <strong>{geometryTitle(templateType)}</strong>
             <div className="map-stage-actions">
               <button type="button" disabled={points.length === 0} onClick={() => { setPoints((current) => current.slice(0, -1)); setPlan(undefined); }}>Undo point</button>
               <button type="button" disabled={points.length === 0} onClick={() => { setPoints([]); setPlan(undefined); }}>Clear</button>
@@ -338,7 +297,7 @@ export function MissionPage({ nativeAvailable, fleetAircraft, preferredDroneId, 
 
         <aside className="mission-plan-rail" aria-label="Generated flight path">
           <header className="control-rail-heading">
-            <div><span>03</span><strong>Flight path</strong></div>
+            <strong>Flight path</strong>
             <small>{plan ? "Generated" : "Not generated"}</small>
           </header>
           <PlanConsole plan={plan} />
@@ -521,7 +480,7 @@ function CoordinateEditor({ templateType, points, settings, onUpdate, onRemove, 
 }) {
   return (
     <section className="coordinate-editor" aria-labelledby="coordinate-editor-title">
-      <header><div><span>02</span><strong id="coordinate-editor-title">{vertexLabel(templateType)} coordinates</strong></div><small>Drag on map or edit precisely</small></header>
+      <header><strong id="coordinate-editor-title">{vertexLabel(templateType)} coordinates</strong><small>Drag on map or edit precisely</small></header>
       {points.length === 0 ? (
         <p className="coordinate-empty">Click the map to begin drawing.</p>
       ) : (
@@ -590,11 +549,11 @@ function WaypointViewOverride({ point, onUpdate }: {
 
 function PlanConsole({ plan }: { plan?: MissionPlan }) {
   if (!plan) {
-    return <section className="plan-console plan-console--empty"><div><span>04</span><strong>Generated plan</strong></div><p>The planned path will overlay in orange after native validation succeeds.</p></section>;
+    return <section className="plan-console plan-console--empty"><strong>Generated plan</strong><p>The planned path will overlay in orange after native validation succeeds.</p></section>;
   }
   return (
     <section className="plan-console" aria-labelledby="plan-console-title">
-      <header><div><span>04</span><strong id="plan-console-title">Generated plan</strong></div><span className="plan-status">{plan.status}</span></header>
+      <header><strong id="plan-console-title">Generated plan</strong><span className="plan-status">{plan.status}</span></header>
       <div className="plan-metrics">
         <div><span>Waypoints</span><strong>{plan.generatedWaypoints.length}</strong></div>
         <div><span>Distance</span><strong>{formatDistance(plan.metadata.estimatedDistanceMeters)}</strong></div>

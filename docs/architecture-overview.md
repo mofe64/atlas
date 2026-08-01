@@ -69,7 +69,7 @@ Detailed operational behavior is split into
 | --- | --- |
 | React UI | Operator navigation, forms, map interaction, rendering, polling Native state |
 | Rust Native host | Safety policy, Tauri commands, Agent-facing gRPC server, SQLite, command routing, mission/incident planning, evidence recording, video decoding, perception alignment, and aircraft-follow authorization/watchdog |
-| SQLite | Local operational source of truth for fleet, command, mission, incident, evidence, perception, and follow audit history |
+| SQLite | Local operational source of truth for fleet, command, mission, incident, captures, perception, and follow history |
 | Atlas Agent | Stable onboard identity, outbound Native session, MAVSDK telemetry, high-level mission/action execution, payload ownership, inference/tracker supervision, geolocation, gimbal follow, and explicitly authorized aircraft-follow control |
 | `mavsdk_server` | MAVLink connection and typed MAVSDK gRPC services |
 | PX4 | Vehicle state estimation, arming checks, navigation, flight modes, failsafes |
@@ -159,6 +159,7 @@ Atlas uses different delivery semantics for different kinds of information:
 | Aircraft follow | Short operator lease and latest validated target updates; high-rate setpoints stay onboard | Ground loss must stop Offboard through the Agent watchdog without a final UI message |
 | Video frames | Bounded delayed buffer in Native | Match detections while avoiding a growing live backlog |
 | Evidence recording | Segmented source-RTSP media files plus SQLite session/segment/gap manifests | Large bytes remain outside SQLite while finalization, integrity, associations, and gaps remain auditable |
+| Camera captures | Local photo/event-clip files plus one SQLite capture row | Operators can reopen explicit captures without introducing review, retention, or legal-administration state |
 
 ## Runtime startup
 
@@ -171,10 +172,10 @@ desktop host:
 2. Open and migrate SQLite.
 3. Create the in-memory command router and perception store.
 4. Load video configuration.
-5. Validate the local evidence root, recover interrupted recorder state, and load source-RTSP recorder policy.
+5. Validate the local media root, recover interrupted recorder and capture state, and load source-RTSP recorder policy.
 6. Start the Agent-facing gRPC server.
 7. Start operational-alert refresh (two seconds), command expiration (one
-   second), aircraft-follow watchdog (250 ms), and evidence retention (hourly).
+   second), and the aircraft-follow watchdog (250 ms).
 8. Register Tauri commands and graceful video/recorder window cleanup.
 
 ### Agent

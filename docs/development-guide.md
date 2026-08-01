@@ -338,6 +338,14 @@ The end-to-end path spans:
 Define the allowed state transition first. Preserve the prior run state when a
 control operation fails but the actual mission remains healthy.
 
+Keep execution presentation phase-sensitive: deployment, ready-to-start,
+active flight, and completed runs should not expose the same primary controls.
+Command, Dispatch, and mission execution must use the shared
+`FlightSafetyControls` component so labels, confirmation consequences, and
+receipt presentation remain consistent. Context-specific callbacks may target
+a mission-run operation or a direct vehicle command, but must not recreate the
+safety UI locally.
+
 ### Incident response change
 
 Start with [Incident dispatch](incident-dispatch.md), then trace the behavior
@@ -407,15 +415,17 @@ moving target test alone does not validate a controller.
 
 ### Evidence or recording change
 
-Evidence metadata is durable in SQLite while media bytes live under the
-configured evidence root. Preserve the finalization invariant: a file is not a
-valid asset merely because some bytes were written. Hashing, database state,
-associations, and retention transitions must agree before Atlas reports success.
+Recording and capture metadata is durable in SQLite while media bytes live under
+the configured evidence root. Preserve the finalization invariant: a file is not
+a ready capture merely because some bytes were written. Hashing, database state,
+and required source associations must agree before Atlas reports success.
 
 Start with [`atlas/src-tauri/src/recording.rs`](../atlas/src-tauri/src/recording.rs),
 the evidence database modules, and [`atlas/src/evidence/`](../atlas/src/evidence/).
-Test interrupted recording/finalization, low storage, missing media, trash and
-restore, retention, and startup recovery in addition to the happy path.
+Test interrupted recording/finalization, low storage, missing media, capture
+publication, and startup recovery in addition to the happy path. Review,
+retention/legal-hold, annotation, and trash workflows are not part of the
+current capture model.
 
 ### Protobuf change
 
@@ -536,7 +546,7 @@ behavior.
 | Geolocation rejected | Track state/centering, frame timing, pose/gimbal history, boresight uncertainty, depression/range, DEM source |
 | Camera follow stopped | Exact track lifecycle/freshness, payload lease, measured gimbal state, angle limits, read/write result |
 | Follow entered `DEGRADED_HOLD` | Durable exit reason, operator lease, target/telemetry age, battery, altitude/boundary, PX4 Offboard state |
-| Evidence asset unavailable | Recorder session/segment state, evidence gap events, hash/finalization, retention/trash state, local bytes |
+| Capture unavailable | Recorder session/segment state, capture processing state, evidence gap events, hash/finalization, local bytes |
 | Backend not ready | PostgreSQL health, migration service, database URL |
 
 ### Logs and diagnostics

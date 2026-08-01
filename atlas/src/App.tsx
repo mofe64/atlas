@@ -357,6 +357,7 @@ function App() {
   const primaryMission = activeMissionRuns[0];
   const primaryMissionIsHeldOnScene = primaryMission?.status === "ROUTE_COMPLETE";
   const selectedFollow = activeFollowSessions.find((session) => session.droneId === selectedDroneId);
+  const selectedMissionRun = activeMissionRuns.find((run) => run.droneId === selectedDroneId);
   const activeAuthorityCount = activeFollowSessions.length + activeMissionRuns.length;
   const additionalAuthorityCopy = activeAuthorityCount > 1
     ? ` · ${activeAuthorityCount - 1} more under control`
@@ -420,7 +421,7 @@ function App() {
               setWorkspaceView("evidence");
             }}
           >
-            Evidence
+            Captures
           </button>
         </nav>
         <div className="operations-header__spacer" />
@@ -606,7 +607,6 @@ function App() {
             nativeAvailable={nativeState === "available"}
             fleetAircraft={operationalAircraft}
             preferredDroneId={selectedDroneId}
-            missionRuns={operationalMissionRuns}
             initialMissionId={missionDraftId}
             onInitialMissionLoaded={() => setMissionDraftId(undefined)}
             onMissionReady={(missionId, droneId) => {
@@ -652,7 +652,7 @@ function App() {
           />
         </Suspense>
       ) : workspaceView === "evidence" ? (
-        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening evidence ledger…</p></main>}>
+        <Suspense fallback={<main className="workspace-loading" id="main-content"><p>Opening captures…</p></main>}>
           <EvidencePage nativeAvailable={nativeState === "available"} />
         </Suspense>
       ) : (
@@ -714,7 +714,7 @@ function App() {
 
         {hasAircraft && nativeState === "available" && (
           <>
-            <TelemetryPanel telemetry={snapshot.telemetry} />
+            <TelemetryPanel telemetry={snapshot.telemetry} authority={aircraftAuthoritySummary(selectedFollow, selectedMissionRun)} />
             <StatusEventFeed events={snapshot.statusEvents} />
           </>
         )}
@@ -964,7 +964,7 @@ function formatDateTime(value: number) {
   return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(value);
 }
 
-function TelemetryPanel({ telemetry }: { telemetry?: AircraftTelemetry | null }) {
+function TelemetryPanel({ telemetry, authority }: { telemetry?: AircraftTelemetry | null; authority: string }) {
   if (!telemetry) {
     return (
       <section className="telemetry-section telemetry-section--empty" aria-labelledby="telemetry-title">
@@ -979,19 +979,22 @@ function TelemetryPanel({ telemetry }: { telemetry?: AircraftTelemetry | null })
 
   const freshnessTone: StatusTone = telemetry.status === "live" ? "positive" : "warning";
   const primaryBattery = selectPrimaryBattery(telemetry.batteries);
-  const metrics = [
+  const primaryMetrics = [
     ["Flight state", flightState(telemetry.armed, telemetry.inAir, telemetry.landedState)],
+    ["Authority", authority],
     ["Flight mode", displayEnum(telemetry.flightMode)],
-    ["Battery", batteryStatus(primaryBattery, telemetry.batteryPercent)],
-    ["RC link", rcStatus(telemetry.rcStatus)],
+    ["Battery", formatMeasurement(primaryBattery?.remainingPercent ?? telemetry.batteryPercent, 0, "%")],
     ["Relative altitude", formatMeasurement(telemetry.relativeAltitudeM, 1, " m")],
+    ["Ground speed", formatMeasurement(telemetry.groundSpeedMps, 1, " m/s")],
+    ["GPS", gpsStatus(telemetry.gpsFix, telemetry.satellitesVisible)],
+    ["Link", rcStatus(telemetry.rcStatus)],
+  ];
+  const diagnosticMetrics = [
+    ["Heading", formatMeasurement(telemetry.headingDeg, 0, "°")],
     ["Absolute altitude", formatMeasurement(telemetry.absoluteAltitudeM, 1, " m")],
     ["Terrain altitude", formatMeasurement(telemetry.terrainAltitudeM, 1, " m")],
     ["Bottom clearance", formatMeasurement(telemetry.bottomClearanceM, 1, " m")],
     ["Climb rate", formatSignedMeasurement(telemetry.climbRateMps, 1, " m/s")],
-    ["Ground speed", formatMeasurement(telemetry.groundSpeedMps, 1, " m/s")],
-    ["Heading", formatMeasurement(telemetry.headingDeg, 0, "°")],
-    ["GPS", gpsStatus(telemetry.gpsFix, telemetry.satellitesVisible)],
     ["GPS precision", gpsPrecision(telemetry.gpsQuality)],
     ["NED velocity", nedVelocity(telemetry)],
     ["Position", position(telemetry.latitude, telemetry.longitude)],
@@ -1014,17 +1017,28 @@ function TelemetryPanel({ telemetry }: { telemetry?: AircraftTelemetry | null })
         </div>
       </header>
       <div className="telemetry-grid">
-        {metrics.map(([label, value]) => (
+        {primaryMetrics.map(([label, value]) => (
           <article key={label}>
             <p>{label}</p>
             <strong>{value}</strong>
           </article>
         ))}
       </div>
-      <div className="telemetry-support">
+      <div className="telemetry-support telemetry-support--exceptions">
         <PreflightHealth health={telemetry.health} />
-        <BatterySummary batteries={telemetry.batteries} />
       </div>
+      <details className="telemetry-diagnostics">
+        <summary><span>Diagnostics</span><small>Precision, terrain, position, velocity, and electrical data</small></summary>
+        <div className="telemetry-grid telemetry-grid--diagnostics">
+          {diagnosticMetrics.map(([label, value]) => (
+            <article key={label}>
+              <p>{label}</p>
+              <strong>{value}</strong>
+            </article>
+          ))}
+        </div>
+        <BatterySummary batteries={telemetry.batteries} />
+      </details>
     </section>
   );
 }
@@ -1039,6 +1053,7 @@ function PreflightHealth({ health }: { health?: VehicleHealth | null }) {
     ["Global position", health.globalPositionOk],
     ["Home position", health.homePositionOk],
   ] as const : [];
+  const failedChecks = checks.filter(([, ready]) => !ready);
 
   return (
     <section className="telemetry-support-group" aria-labelledby="preflight-health-title">
@@ -1047,19 +1062,38 @@ function PreflightHealth({ health }: { health?: VehicleHealth | null }) {
         {health && <span>{health.armable ? "Ready to arm" : "Attention required"}</span>}
       </div>
       {health ? (
-        <ul className="health-list">
-          {checks.map(([label, ready]) => (
-            <li key={label} className={ready ? "health-check--ready" : "health-check--attention"}>
-              <span className="health-marker" aria-hidden="true">{ready ? "✓" : "!"}</span>
-              <span>{label}</span>
-              <strong>{ready ? "Ready" : "Check"}</strong>
-            </li>
-          ))}
-        </ul>
+        <>
+          {failedChecks.length > 0 ? (
+            <HealthCheckList checks={failedChecks} className="health-list--exceptions" />
+          ) : (
+            <p className="preflight-clear"><span aria-hidden="true">✓</span> No failed preflight checks</p>
+          )}
+          <details className="preflight-details">
+            <summary>{failedChecks.length > 0 ? `Show all ${checks.length} checks` : `All ${checks.length} checks ready`}</summary>
+            <HealthCheckList checks={checks} />
+          </details>
+        </>
       ) : (
         <p className="support-empty">Waiting for MAVSDK health checks.</p>
       )}
     </section>
+  );
+}
+
+function HealthCheckList({ checks, className = "" }: {
+  checks: readonly (readonly [string, boolean])[];
+  className?: string;
+}) {
+  return (
+    <ul className={`health-list ${className}`.trim()}>
+      {checks.map(([label, ready]) => (
+        <li key={label} className={ready ? "health-check--ready" : "health-check--attention"}>
+          <span className="health-marker" aria-hidden="true">{ready ? "✓" : "!"}</span>
+          <span>{label}</span>
+          <strong>{ready ? "Ready" : "Check"}</strong>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -1388,13 +1422,12 @@ function selectPrimaryBattery(batteries: BatteryTelemetry[]) {
     ?? batteries[0];
 }
 
-function batteryStatus(battery: Nullable<BatteryTelemetry>, fallback: Nullable<number>) {
-  const charge = battery?.remainingPercent ?? fallback;
-  if (!battery) return formatMeasurement(charge, 0, "%");
-  const parts = [formatMeasurement(charge, 0, "%")];
-  if (battery.voltageV != null) parts.push(`${battery.voltageV.toFixed(1)} V`);
-  if (battery.currentA != null) parts.push(`${battery.currentA.toFixed(1)} A`);
-  return parts.join(" · ");
+function aircraftAuthoritySummary(follow?: AircraftFollowSession, mission?: MissionRun) {
+  if (follow) return follow.state === "DEGRADED_HOLD" ? "PX4 hold · follow stopped" : "Aircraft follow";
+  if (mission?.status === "ROUTE_COMPLETE" || mission?.status === "PAUSED") return "Mission · held";
+  if (mission?.status === "RTL") return "Mission · return home";
+  if (mission) return "Mission execution";
+  return "Manual / PX4";
 }
 
 function batteryLabel(battery: BatteryTelemetry) {

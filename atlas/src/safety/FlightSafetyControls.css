@@ -1,0 +1,88 @@
+.flight-safety {
+  display: grid;
+  gap: .55rem;
+  padding: .8rem;
+  border: 1px solid var(--line-strong);
+  background: color-mix(in oklch, var(--panel) 90%, var(--mist));
+}
+
+.flight-safety > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
+.flight-safety > header strong,
+.flight-safety > header span {
+  font-size: .58rem;
+  font-weight: 800;
+  letter-spacing: .065em;
+  text-transform: uppercase;
+}
+
+.flight-safety > header span { color: var(--muted); }
+
+.flight-safety__actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: .35rem;
+}
+
+.flight-safety__actions button,
+.flight-safety__confirmation button,
+.flight-safety__receipt button {
+  min-height: 2.65rem;
+  border: 1px solid var(--ink);
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: .57rem;
+  font-weight: 820;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+}
+
+.flight-safety__actions button:hover:not(:disabled) { color: var(--panel); background: var(--ink); }
+.flight-safety__actions button:disabled { cursor: not-allowed; opacity: .38; }
+.flight-safety__actions .flight-safety__land { border-color: var(--critical); color: var(--critical); }
+.flight-safety__actions .flight-safety__land:hover:not(:disabled) { color: var(--panel); background: var(--critical); }
+
+.flight-safety__confirmation {
+  padding: .7rem;
+  border: 1px solid color-mix(in oklch, var(--signal) 55%, var(--line));
+  background: var(--signal-soft);
+}
+
+.flight-safety__confirmation--critical { border-color: color-mix(in oklch, var(--critical) 55%, var(--line)); background: var(--critical-soft); }
+.flight-safety__confirmation > strong { font-size: .68rem; }
+.flight-safety__confirmation > p { margin: .25rem 0 .65rem; color: var(--ink-soft); font-size: .58rem; line-height: 1.45; }
+.flight-safety__confirmation > div { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; }
+.flight-safety__confirmation button { min-height: 2.25rem; background: var(--panel); }
+.flight-safety__confirmation button:last-child { color: var(--panel); background: var(--ink); }
+.flight-safety__confirmation .flight-safety__confirm-land { border-color: var(--critical); background: var(--critical); }
+
+.flight-safety__receipt {
+  display: grid;
+  gap: .16rem;
+  min-height: 2.35rem;
+  align-content: center;
+  padding: .45rem .55rem;
+  border-left: 2px solid var(--line-strong);
+  background: var(--mist);
+}
+
+.flight-safety__receipt span { color: var(--muted); font-size: .55rem; line-height: 1.35; }
+.flight-safety__receipt small { color: var(--ink-soft); font-size: .5rem; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.flight-safety__receipt button { min-height: 1.9rem; margin-top: .25rem; }
+.flight-safety__receipt--nominal { border-color: var(--field); background: var(--field-soft); }
+.flight-safety__receipt--caution { border-color: var(--signal); background: var(--signal-soft); }
+.flight-safety__receipt--critical { border-color: var(--critical); background: var(--critical-soft); }
+.flight-safety__receipt--critical span { color: var(--critical); }
+
+@media (max-width: 34rem) {
+  .flight-safety__actions,
+  .flight-safety__confirmation > div { grid-template-columns: 1fr; }
+}

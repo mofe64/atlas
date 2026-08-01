@@ -55,14 +55,14 @@ Organize the interface by **intent and tempo**:
 | **Dispatch** | Deliberate | Which aircraft responds to this incident, and how? |
 | **Aircraft** | Drill-down | What is this specific vehicle doing, seeing, and holding? |
 | **Plan** | Authoring | What mission do I want to fly later? |
-| **Evidence** | Review | What did we capture, and what does it mean? |
+| **Captures** | Browse | What photos and clips did the camera save? |
 
 Divide **Aircraft** into sections because an operator performs several tasks on
 one aircraft:
 
 | Section | Contains |
 |---|---|
-| **Overview** | Flight data, preflight checks, power, PX4 messages, connection |
+| **Overview** | Primary flight state and authority, failed preflight checks, expandable diagnostics, PX4 messages, connection |
 | **Camera** | Live feed, detected objects, manual gimbal + zoom, and camera follow |
 | **Aircraft follow** | Reviewed target, standoff limits, readiness gates, and supervised aircraft movement |
 | **Missions** | Why it can or cannot take a mission now, plus past flights by outcome |
@@ -112,6 +112,12 @@ be impossible to miss from any screen.
 Never hardcode a status string that state can contradict. If a panel is coloured by
 `gates.every(ok)`, its heading must be derived from `gates.every(ok)` too. A heading
 reading "Ready to request" above eight blocked gates is worse than no heading.
+Aircraft Follow therefore uses **Ready to request** only when every displayed gate
+passes; otherwise it says **Not ready — review blockers**.
+
+Workflow numbers must communicate real order. Keep them for ordered connection
+instructions, route coordinates, and executable action sequences. Do not add
+zero-padded numbers to panel headings or static handoff copy merely as decoration.
 
 Corollaries:
 
@@ -248,10 +254,24 @@ current value or blocking reason. Gates are never summarised away — an operato
 denied an action is entitled to know exactly which condition failed and what it
 currently reads.
 
+For Aircraft Follow, keep standoff, flight altitude, maximum speed, duration,
+battery reserve, geographic boundary, and the review note in the primary flow.
+Altitude floor/ceiling, acceleration, confidence, and uncertainty thresholds use
+an **Advanced constraints** disclosure, but remain initialized to safe defaults
+and continue to participate in every readiness and Native validation check.
+
+### Aircraft overview
+
+Lead with flight state, control authority, flight mode, battery charge, relative
+altitude, ground speed, GPS state, link state, and telemetry freshness. Show
+failed preflight checks before successful ones, with the complete check set one
+disclosure away. NED velocity, precision, terrain, exact position, and electrical
+battery values are diagnostics rather than primary scanning information.
+
 ### Destructive action block
 
-Any action that removes something from normal use — archiving an aircraft, binning a
-capture — uses one pattern:
+Any action that removes something from normal use — currently archiving an
+aircraft — uses one pattern:
 
 1. **Name the action** on the aircraft or item, not generically.
 2. **List what survives and what changes**, marked ✓ and ✕. Never make the operator guess.
@@ -259,15 +279,19 @@ capture — uses one pattern:
 4. **Keep the confirm button disabled** until the reason is entered.
 5. **State why it is available or blocked** underneath.
 
-The operator interface has no immediate permanent deletion. Archive is
-reversible. Binned evidence is recoverable during its grace period. State this
-recovery behavior at each applicable action.
+The operator interface has no immediate permanent deletion. Aircraft archive is
+reversible. Capture deletion is deferred with the rest of formal evidence
+administration rather than partially implemented.
 
-### Evidence row
+### Capture row
 
-Show the thumbnail, type, duration, timestamp, source aircraft, incident,
-description, and decision state. Keep non-ready evidence in the list. An
-operator must see each assembling, failed, or binned item.
+Show the thumbnail, type, duration, timestamp, source aircraft, and the most
+useful incident, mission, or target context. Keep pending and failed captures in
+the list so processing never disappears from view. Technical IDs and hashes use
+progressive disclosure. When a capture is associated with a track, lead with a
+readable provenance sentence such as **“Person track · AV-04 · captured 14:32.”**
+Raw track/session IDs, exact frame timing, paths, byte counts, and integrity
+hashes belong under **Details**; they remain available for operational diagnosis.
 
 ### Flight history row
 
@@ -352,17 +376,20 @@ both failure directions are real.
 | Mission template | WAYPOINT / DIRECT_WAYPOINTS | **Waypoints** | "fly a set path" |
 | Prepared assignment | Prepared atomically | **Reserves the aircraft. Nothing is sent to it.** | "holds the drone for this job" |
 | Arrival failure policy | Arrival failure policy | **If an action fails** | "what to do if it goes wrong" |
-| Evidence item | Evidence asset | **Capture** / **Photo** / **Clip** | "thing the camera got" |
-| Review state | Review state UNREVIEWED | **Review decision** | "Is this useful?" |
-| Retention class | Retention class STANDARD | **Retention · 30 days** | "how long to keep it" |
-| Trash | Trash asset / recoverable trash | **Delete (recoverable)** | "move to the bin" |
-| Provenance | Provenance | **Source** | "where this came from" |
+| Capture item | Evidence asset | **Capture** / **Photo** / **Clip** | "thing the camera got" |
+| Capture source context | Aircraft/source/session/track IDs | **Technical capture details** | "where this came from" |
 | Capability set | Agent capabilities | **Capabilities** | "can do" |
 | Upload | Upload mission plan | **Upload** / **Send to aircraft** | "give it to the drone" |
 
 Use `RTL` as a **flight-mode label** in logs and telemetry. Use **Return home**
 as a button label. A button gives an instruction, while a readout reports a
 state.
+
+Command, Dispatch, and mission execution use the same **Flight safety** cluster
+in the operational control area: **Hold / Return home / Land**. Hold is
+immediate; Return home and Land reveal an inline consequence confirmation.
+Acknowledgements, failures, and receipt identifiers use the same presentation
+on every surface.
 
 ### 5.4 General rules
 
@@ -426,11 +453,9 @@ Deliberately unresolved:
 2. **Alert escalation.** Should `DEGRADED_HOLD` interrupt with a modal-equivalent, or is a persistent ribbon sufficient? Ribbon is the current proposal on the grounds that modals are usually laziness — but this may be the exception.
 3. **Follow lease ownership.** Hoisting renewal above the view layer keeps the session alive across navigation, at the cost of removing an implicit safety guarantee. Both watchdogs remain, so this is judged acceptable — but it should be an explicit decision, recorded here when made.
 4. **Narrow-laptop layout.** Below 68rem the three-column layouts collapse to one column. A field laptop at 1280×800 deserves a designed two-column arrangement rather than a fallback.
-5. **Evidence treatment.** It is non-real-time and may warrant a visually distinct treatment that signals "you are not supervising a flight right now".
-6. **Re-flying a partial mission.** The Missions section states that sending a mission again starts from waypoint 1, because Atlas does not resume a finished flight partway. Whether operators need a "fly the remaining waypoints" path is a real product question raised by the returned-home-early case.
-7. **Evidence export.** The proposed design offers "Export copy", which writes a file plus checksum outside Atlas. Remote replication and a full export workflow are named in the docs as separate future concerns; the button may be premature.
-8. **Aircraft switcher.** Sections now carry a dropdown to move between vehicles without returning to Command. Whether it should also switch the map focus, and what it does mid-follow, is undecided.
-9. **Manual camera control while following.** Taking camera control is blocked by mission intent. Whether an operator may aim the camera manually *during* an aircraft follow is a real product question — the airframe controller yaws to face the target, so manual pan may fight it.
+5. **Re-flying a partial mission.** The Missions section states that sending a mission again starts from waypoint 1, because Atlas does not resume a finished flight partway. Whether operators need a "fly the remaining waypoints" path is a real product question raised by the returned-home-early case.
+6. **Aircraft switcher.** Sections now carry a dropdown to move between vehicles without returning to Command. Whether it should also switch the map focus, and what it does mid-follow, is undecided.
+7. **Manual camera control while following.** Taking camera control is blocked by mission intent. Whether an operator may aim the camera manually *during* an aircraft follow is a real product question — the airframe controller yaws to face the target, so manual pan may fight it.
 
 ### Review questions carried forward
 
@@ -442,10 +467,9 @@ product resolution:
 2. **Alert escalation** — is a ribbon enough for `DEGRADED_HOLD`, or does it need to interrupt?
 3. **Follow lease ownership** — now implemented as hoisted, so this is settled in practice. Record the decision and its rationale in this document and close the question.
 4. **Narrow-laptop layout** — three columns at 1280×800 gives ~19rem rails. Needs a designed two-column arrangement.
-6. **Re-flying a partial mission** — unresolved.
-7. **Evidence export** — unresolved.
-8. **Aircraft switcher** — not implemented at the time of review; the intended switching behavior still needs a product decision.
-9. **Manual camera control during follow** — unresolved.
+5. **Re-flying a partial mission** — unresolved.
+6. **Aircraft switcher** — not implemented at the time of review; the intended switching behavior still needs a product decision.
+7. **Manual camera control during follow** — unresolved.
 
 ---
 

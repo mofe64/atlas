@@ -95,7 +95,7 @@ MicroSD. Evidence storage configuration:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `ATLAS_EVIDENCE_ROOT` | `<Atlas app data>/evidence` | Absolute local root containing recording `objects/`, reviewable `assets/`, recoverable `trash/`, and `temporary/` staging |
+| `ATLAS_EVIDENCE_ROOT` | `<Atlas app data>/evidence` | Absolute local root containing recording `objects/`, camera `assets/`, and `temporary/` staging |
 | `ATLAS_EVIDENCE_SEGMENT_SECONDS` | `30` | Closed-source segment target, from 2 to 600 seconds |
 | `ATLAS_EVIDENCE_WARNING_FREE_BYTES` | `5368709120` | Free-space threshold that raises a warning |
 | `ATLAS_EVIDENCE_STOP_FREE_BYTES` | `2147483648` | Reserved free-space boundary that safely stops/refuses recording |
@@ -107,7 +107,7 @@ rejects successful session completion while any segment remains `FINALIZING`,
 and recorder setup failures after `REQUESTED` become durable failed sessions so
 the source reservation is released.
 
-The Evidence workspace treats stills and event clips as first-class assets.
+The Captures workspace treats stills and event clips as first-class camera output.
 Stills are captured from the latest clean Native-decoded frame; when a track is
 selected, its session-scoped track identity is retained on the asset. A track
 evidence marker queues a pre/post-roll event clip and Atlas publishes it only
@@ -115,14 +115,16 @@ after verified recording segments cover the requested window. Both media types
 receive a generated JPEG thumbnail and local integrity metadata before their
 state changes from `PENDING` to `READY`.
 
-Review state, notes, tags, and retention changes are append-only events. The
-default retention policy keeps standard assets for 30 days, extended assets for
-365 days, and recoverable trash for 7 days; operators can edit those intervals.
-`LEGAL_HOLD` removes the expiry and blocks deletion. Deletion first moves the
-asset directory atomically from `assets/` to `trash/`; only the hourly policy
-worker can purge it after the recorded grace deadline. External export packages,
-export manifests, and export checksum workflows are intentionally not included
-in this slice.
+Capture browsing resolves the source aircraft name and saved track class into a
+readable provenance summary. Raw IDs, exact source/request timing, media paths,
+byte counts, and hashes remain available under Details without dominating the
+default view.
+
+The current capture scope ends at creation, processing, browsing, media preview,
+and technical source context. Review decisions, notes/tags, retention classes,
+legal holds, deletion administration, external export packages, and remote
+replication are intentionally deferred until Atlas has an investigation or
+reporting workflow.
 
 Expanded incident-response planning can assess a local, reproducible
 known-building snapshot without depending on internet availability:
@@ -256,6 +258,11 @@ loop and enters explicit Hold on lease, target, link, telemetry, battery,
 position, altitude, geofence, duration, or Offboard loss. This authority is
 independent of the image-space gimbal-follow control.
 
+The authorization form keeps the common operating limits and review note
+visible. Altitude-band, acceleration, confidence, and uncertainty limits are
+shown under Advanced constraints but retain their safe defaults and full policy
+enforcement.
+
 Real translation is available without an enablement environment variable or
 commissioning-reference token. Hardware-in-the-loop and controlled-flight
 acceptance remain operational responsibilities, not runtime string gates.
@@ -294,8 +301,7 @@ Schema version 24 stores these durable records:
   and run events;
 - incidents, revisioned audit events, aircraft assignments, arrival-action
   executions, and operational alerts;
-- evidence recording sessions/segments/gaps, reviewable assets, annotations,
-  events, and retention policy;
+- evidence recording sessions/segments/gaps and camera capture assets;
 - perception sessions/tracks/events/samples, selections, annotations, counting,
   and selected-track geolocation;
 - aircraft-follow sessions, target updates, and lifecycle events.
@@ -330,6 +336,11 @@ and zoom actions before navigation, with point-scoped overrides on the relevant
 waypoint. Agent translates supported vehicle yaw, gimbal, zoom, and recording
 behavior. `SET_CAMERA_MODE` itself remains semantic intent rather than a promise
 that every payload exposes an identical physical mode.
+
+The planner presents the template and common flight defaults first. Camera,
+gimbal, detection, and less-common completion behavior is grouped under
+`Customize mission`. The header owns the only `New mission` reset and the only
+`Mission history` entry, keeping active execution out of the authoring flow.
 
 The complete geometry algorithms, action order, terrain model, and run-state
 contract are documented in
@@ -450,9 +461,12 @@ Saving a mission plan opens a separate execution workspace rather than adding
 flight controls below the editor. That workspace renders the full route, current
 mission item, completed/current legs, live aircraft heading and position, and an
 aircraft trail merged from persisted snapshots and one-second native telemetry
-updates. It also keeps
-preflight readiness, arm/start/pause/resume/cancel/RTL controls, progress, durable
-events, and this mission's execution history visible around the map. Saved
+updates. Its control rail changes with the run phase: deployment shows aircraft,
+blockers, preflight, and Upload; readiness emphasizes Arm & start; active flight
+emphasizes progress, the current action, Resume when paused, and the shared
+Hold / Return home / Land cluster. Successful preflight checks collapse after
+upload. Cancel-and-hold remains under `More mission actions`, while durable
+events and prior executions move under `Run reports`. Saved
 definitions can either reopen execution or return to the structured editor.
 Updating one clears its current-plan pointer and generates a new immutable plan
 while retaining previous plans for audit history.

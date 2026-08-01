@@ -411,6 +411,9 @@ summary {
   border-top: 1px solid var(--ink);
 }
 
+.telemetry-support--exceptions { display: block; }
+.telemetry-support--exceptions .telemetry-support-group { padding-right: 0; }
+
 .telemetry-support-group {
   min-width: 0;
   padding: 1.5rem 0 2rem;
@@ -502,6 +505,70 @@ summary {
 .health-check--attention strong {
   color: var(--critical);
 }
+
+.preflight-clear {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 1rem 0 0;
+  color: var(--field);
+  font-size: 0.76rem;
+  font-weight: 680;
+}
+
+.preflight-clear span {
+  display: grid;
+  width: 1.05rem;
+  height: 1.05rem;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.62rem;
+}
+
+.preflight-details,
+.telemetry-diagnostics {
+  border-top: 1px solid var(--line);
+}
+
+.preflight-details { margin-top: 1rem; }
+
+.preflight-details summary,
+.telemetry-diagnostics > summary {
+  cursor: pointer;
+  font-size: 0.65rem;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.preflight-details summary { padding: 0.8rem 0; color: var(--muted); }
+.preflight-details[open] summary { color: var(--ink); }
+.preflight-details .health-list { margin-top: 0; }
+
+.telemetry-diagnostics > summary {
+  display: flex;
+  min-height: 3.4rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 0;
+  color: var(--ink);
+  list-style-position: inside;
+}
+
+.telemetry-diagnostics > summary small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 520;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: none;
+}
+
+.telemetry-diagnostics[open] > summary { border-bottom: 1px solid var(--line); }
+.telemetry-grid--diagnostics { border-top: 0; }
+.telemetry-diagnostics > .telemetry-support-group { border-top: 1px solid var(--line); }
 
 .battery-list > li {
   display: grid;

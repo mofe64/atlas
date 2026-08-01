@@ -81,67 +81,6 @@ pub(crate) fn evidence_asset_content(
         .map(Response::new)
 }
 
-#[tauri::command]
-pub(crate) fn review_evidence_asset(
-    state: State<'_, AppState>,
-    input: database::ReviewEvidenceAssetInput,
-) -> Result<database::EvidenceAssetSnapshot, String> {
-    state.database.review_evidence_asset(&input, unix_time_ms())
-}
-
-#[tauri::command]
-pub(crate) fn annotate_evidence_asset(
-    state: State<'_, AppState>,
-    input: database::AnnotateEvidenceAssetInput,
-) -> Result<database::EvidenceAssetSnapshot, String> {
-    state
-        .database
-        .annotate_evidence_asset(&input, unix_time_ms())
-}
-
-#[tauri::command]
-pub(crate) fn update_evidence_asset_retention(
-    state: State<'_, AppState>,
-    input: database::UpdateEvidenceAssetRetentionInput,
-) -> Result<database::EvidenceAssetSnapshot, String> {
-    state
-        .database
-        .update_evidence_asset_retention(&input, unix_time_ms())
-}
-
-#[tauri::command]
-pub(crate) fn trash_evidence_asset(
-    state: State<'_, AppState>,
-    input: database::TrashEvidenceAssetInput,
-) -> Result<database::EvidenceAssetSnapshot, String> {
-    state.recording.trash_asset(&input)
-}
-
-#[tauri::command]
-pub(crate) fn restore_evidence_asset(
-    state: State<'_, AppState>,
-    input: database::RestoreEvidenceAssetInput,
-) -> Result<database::EvidenceAssetSnapshot, String> {
-    state.recording.restore_asset(&input)
-}
-
-#[tauri::command]
-pub(crate) fn evidence_retention_policy(
-    state: State<'_, AppState>,
-) -> Result<database::EvidenceRetentionPolicySnapshot, String> {
-    state.database.evidence_retention_policy()
-}
-
-#[tauri::command]
-pub(crate) fn update_evidence_retention_policy(
-    state: State<'_, AppState>,
-    input: database::UpdateEvidenceRetentionPolicyInput,
-) -> Result<database::EvidenceRetentionPolicySnapshot, String> {
-    state
-        .database
-        .update_evidence_retention_policy(&input, unix_time_ms())
-}
-
 const MAX_FIRST_WAYPOINT_DISTANCE_METERS: f64 = 5_000.0;
 const MAX_TERRAIN_HOME_DRIFT_METERS: f64 = 30.0;
 

@@ -301,6 +301,7 @@ type PerceptionSnapshot = {
 
 type ParsedVideoFrame = { header: VideoFrameHeader; jpeg: Blob };
 type FrameSubscriptionState = "idle" | "requesting" | "active" | "waiting";
+type VideoTool = "targets" | "counting" | "diagnostics";
 
 type TrackingHealth = {
   algorithm: "DISABLED" | "BYTE_TRACK" | "BYTE_TRACK_CMC";
@@ -365,6 +366,7 @@ export function LiveVideo({
   const [error, setError] = useState<string>();
   const [frameSubscriptionState, setFrameSubscriptionState] = useState<FrameSubscriptionState>("idle");
   const [hudReduced, setHudReduced] = useState(false);
+  const [activeTool, setActiveTool] = useState<VideoTool>("targets");
   const [recording, setRecording] = useState<EvidenceRecordingStatus>();
   const [recordingPending, setRecordingPending] = useState<"start" | "stop">();
   const [recordingError, setRecordingError] = useState<string>();
@@ -580,6 +582,8 @@ export function LiveVideo({
   useEffect(() => {
     setPerceptionRequested(false);
     setFrameSubscriptionState("idle");
+    setActiveTool("targets");
+    setCountingRuleDraft(undefined);
   }, [droneId]);
 
   useEffect(() => {
@@ -1017,6 +1021,10 @@ export function LiveVideo({
   const recordingOwnedByAircraft = !recordingSession || recordingSession.droneId === droneId;
   const recordingActive = Boolean(recordingSession && ["REQUESTED", "RUNNING"].includes(recordingSession.status));
   const recordingLabel = evidenceRecordingLabel(recordingSession, recordingPlanned, recordingOwnedByAircraft);
+  const showRecordingDetails = recordingActive
+    || recordingSession?.status === "FAILED"
+    || recording?.diskState === "WARNING"
+    || recording?.diskState === "STOP";
   const followSupported = aircraft?.agentCapabilities?.includes("gimbal:track_follow") === true;
   const geolocationSupported = aircraft?.agentCapabilities?.includes("geolocation:selected_track_boresight") === true;
   const latestTrackGeolocation = trackGeolocations[0];
@@ -1131,7 +1139,14 @@ export function LiveVideo({
           </button>
           <button type="button" className={hudReduced ? "live-video__mode-active" : ""} aria-pressed={hudReduced} onClick={() => setHudReduced((current) => !current)}>{hudReduced ? "Expand flight HUD" : "Reduce flight HUD"}</button>
         </div>
-        <section className="track-operations" aria-label="Track counts and operator selection">
+        <div className="live-video__tool-switch" role="group" aria-label="Camera tools">
+          <button type="button" className={activeTool === "targets" ? "live-video__tool-active" : ""} aria-pressed={activeTool === "targets"} disabled={countingRuleDraft != null} onClick={() => setActiveTool("targets")}>Targets</button>
+          <button type="button" className={activeTool === "counting" ? "live-video__tool-active" : ""} aria-pressed={activeTool === "counting"} onClick={() => setActiveTool("counting")}>Counting tools</button>
+          <button type="button" className={activeTool === "diagnostics" ? "live-video__tool-active" : ""} aria-pressed={activeTool === "diagnostics"} disabled={countingRuleDraft != null} onClick={() => setActiveTool("diagnostics")}>Diagnostics</button>
+        </div>
+        {activeTool !== "diagnostics" && (
+        <section className={`track-operations track-operations--${activeTool}`} aria-label={activeTool === "counting" ? "Counting tools" : "Target selection"}>
+          {activeTool === "counting" && (
           <div className="track-operations__counts">
             <div className="track-operations__count-summary">
               <span><small>Visible now</small><strong>{counts?.currentVisibleCount ?? trackingSource?.trackSession?.currentVisibleCount ?? 0}</strong></span>
@@ -1175,6 +1190,8 @@ export function LiveVideo({
               )}
             </div>
           </div>
+          )}
+          {activeTool === "targets" && (
           <div className={`track-selection${selection ? ` track-selection--${selection.status.toLowerCase()}` : ""}`} aria-live="polite">
             {selection ? (
               <>
@@ -1274,8 +1291,10 @@ export function LiveVideo({
             )}
             {trackActionError && <p className="track-selection__error" role="alert">{trackActionError}</p>}
           </div>
+          )}
         </section>
-        <div className={`evidence-recorder evidence-recorder--${(recordingSession?.status ?? recording?.diskState ?? "idle").toLowerCase()}`} aria-live="polite">
+        )}
+        <div className={`evidence-recorder evidence-recorder--${(recordingSession?.status ?? recording?.diskState ?? "idle").toLowerCase()}${showRecordingDetails ? "" : " evidence-recorder--summary"}`} aria-live="polite">
           <div className="evidence-recorder__identity">
             <span aria-hidden="true">{recordingSession?.status === "RUNNING" ? "●" : recordingSession?.status === "FAILED" || recording?.diskState === "STOP" ? "!" : "○"}</span>
             <div>
@@ -1283,12 +1302,12 @@ export function LiveVideo({
               <strong>{recordingLabel}</strong>
             </div>
           </div>
-          <div className="evidence-recorder__facts">
+          {showRecordingDetails && <div className="evidence-recorder__facts">
             <span><small>Verified</small><strong>{recordingSession?.finalizedSegmentCount ?? 0} segments</strong></span>
             <span><small>Evidence</small><strong>{formatBytes(recordingSession?.totalBytes)}</strong></span>
             <span><small>Disk</small><strong>{recording?.availableBytes == null ? "UNKNOWN" : `${formatBytes(recording.availableBytes)} · ${recording.diskState}`}</strong></span>
             <span><small>Gaps</small><strong>{recordingSession?.gaps.length ?? 0}</strong></span>
-          </div>
+          </div>}
           <div className="evidence-recorder__actions">
             <button type="button" onClick={() => void captureStill()} disabled={!nativeAvailable || !droneId || !playing || evidenceAssetPending != null}>
               {evidenceAssetPending === "still" ? "Saving still…" : selection ? "Capture track still" : "Capture still"}
@@ -1307,16 +1326,24 @@ export function LiveVideo({
           )}
           {evidenceAssetMessage && <p className="evidence-recorder__message evidence-recorder__message--success" role="status">{evidenceAssetMessage}</p>}
         </div>
-        <div className="live-video__metrics" aria-live="polite">
-          <VideoMetric label="Provider" value={perception?.provider?.toUpperCase() || "OFFLINE"} />
-          <VideoMetric label="Accelerator" value={sourceHealth?.accelerator || "—"} />
-          <VideoMetric label="Inference" value={sourceHealth?.inferenceReady ? `${sourceHealth.inferenceFps.toFixed(1)} FPS` : sourceHealth?.activationState || "INACTIVE"} />
-          <VideoMetric label="Perception" value={perceptionOwnedElsewhere ? "MISSION / SHARED" : frameSubscriptionLabel(frameSubscriptionState)} />
-          <VideoMetric label="Tracking" value={trackingLabel(sourceHealth?.tracking)} />
-          <VideoMetric label="Detections" value={overlayEnabled ? String(detectionCount) : "HIDDEN"} />
-          <VideoMetric label="Alignment" value={alignmentDeltaMs == null ? "NO MATCH" : `${signed(alignmentDeltaMs)} MS`} />
-          <VideoMetric label="Playout" value={stream ? `${stream.playoutDelayMs} MS` : "—"} />
-        </div>
+        {activeTool === "diagnostics" && (
+          <section className="live-video__diagnostics" aria-label="Video diagnostics">
+            <header>
+              <strong>Video + perception diagnostics</strong>
+              <span>Source health, inference, tracking, and frame alignment</span>
+            </header>
+            <div className="live-video__metrics" aria-live="polite">
+              <VideoMetric label="Provider" value={perception?.provider?.toUpperCase() || "OFFLINE"} />
+              <VideoMetric label="Accelerator" value={sourceHealth?.accelerator || "—"} />
+              <VideoMetric label="Inference" value={sourceHealth?.inferenceReady ? `${sourceHealth.inferenceFps.toFixed(1)} FPS` : sourceHealth?.activationState || "INACTIVE"} />
+              <VideoMetric label="Perception" value={perceptionOwnedElsewhere ? "MISSION / SHARED" : frameSubscriptionLabel(frameSubscriptionState)} />
+              <VideoMetric label="Tracking" value={trackingLabel(sourceHealth?.tracking)} />
+              <VideoMetric label="Detections" value={overlayEnabled ? String(detectionCount) : "HIDDEN"} />
+              <VideoMetric label="Alignment" value={alignmentDeltaMs == null ? "NO MATCH" : `${signed(alignmentDeltaMs)} MS`} />
+              <VideoMetric label="Playout" value={stream ? `${stream.playoutDelayMs} MS` : "—"} />
+            </div>
+          </section>
+        )}
       </footer>}
     </section>
   );

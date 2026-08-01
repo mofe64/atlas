@@ -21,8 +21,7 @@ use crate::{
         unix_time_ms, AlertObservation, CaptureEvidenceStillInput, CreateEvidenceRecordingInput,
         CreateEvidenceStillAssetInput, EvidenceAssetFileInput, EvidenceAssetSnapshot,
         EvidenceRecordingSessionSnapshot, LocalDatabase, QueueEvidenceEventClipInput,
-        RestoreEvidenceAssetInput, SegmentFinalizationInput, StartEvidenceRecordingInput,
-        TrashEvidenceAssetInput,
+        SegmentFinalizationInput, StartEvidenceRecordingInput,
     },
     video::{CapturedVideoFrame, VideoSourceConfig},
 };
@@ -150,11 +149,9 @@ impl EvidenceRecorder {
                 }),
             }),
         };
-        recorder.recover_interrupted_purges()?;
         recorder.recover_pending_evidence_assets()?;
         recorder.recover_interrupted_recordings()?;
         recorder.finalize_pending_event_clips(None)?;
-        recorder.apply_retention_policy()?;
         Ok(recorder)
     }
 
@@ -425,9 +422,9 @@ impl EvidenceRecorder {
         thumbnail: bool,
     ) -> Result<Vec<u8>, String> {
         let asset = self.database.evidence_asset(asset_id)?;
-        if !matches!(asset.status.as_str(), "READY" | "TRASHED") {
+        if asset.status != "READY" {
             return Err(format!(
-                "evidence media is unavailable while the asset is {}",
+                "capture media is unavailable while the capture is {}",
                 asset.status
             ));
         }
@@ -438,97 +435,6 @@ impl EvidenceRecorder {
         };
         let path = self.safe_evidence_path(relative)?;
         fs::read(&path).map_err(|error| format!("read evidence media {}: {error}", path.display()))
-    }
-
-    pub(crate) fn trash_asset(
-        &self,
-        input: &TrashEvidenceAssetInput,
-    ) -> Result<EvidenceAssetSnapshot, String> {
-        self.trash_asset_at(input, unix_time_ms())
-    }
-
-    pub(crate) fn restore_asset(
-        &self,
-        input: &RestoreEvidenceAssetInput,
-    ) -> Result<EvidenceAssetSnapshot, String> {
-        let asset = self.database.evidence_asset(&input.asset_id)?;
-        if asset.status != "TRASHED" {
-            return Err("only trashed evidence can be restored".into());
-        }
-        validate_asset_id(&asset.id)?;
-        let source_directory = self.config.evidence_root.join("trash").join(&asset.id);
-        let destination_directory = self.config.evidence_root.join("assets").join(&asset.id);
-        if !source_directory.is_dir() {
-            return Err("trashed evidence bytes are missing and cannot be restored".into());
-        }
-        if destination_directory.exists() {
-            return Err("evidence restore destination already exists".into());
-        }
-        fs::rename(&source_directory, &destination_directory)
-            .map_err(|error| format!("restore evidence media: {error}"))?;
-        let relative_path = asset_relative_path("assets", &asset.id, &asset.relative_path)?;
-        let thumbnail_relative_path =
-            asset_relative_path("assets", &asset.id, &asset.thumbnail_relative_path)?;
-        match self.database.mark_evidence_asset_restored(
-            &asset.id,
-            &relative_path,
-            &thumbnail_relative_path,
-            &input.actor,
-            unix_time_ms(),
-        ) {
-            Ok(restored) => Ok(restored),
-            Err(error) => {
-                let _ = fs::rename(&destination_directory, &source_directory);
-                Err(error)
-            }
-        }
-    }
-
-    pub(crate) fn apply_retention_policy(&self) -> Result<(), String> {
-        let policy = self.database.evidence_retention_policy()?;
-        if !policy.enabled {
-            return Ok(());
-        }
-        let now = unix_time_ms();
-        let mut failures = Vec::new();
-        for asset in self.database.retention_trash_candidates(now)? {
-            if let Err(error) = self.trash_asset_at(
-                &TrashEvidenceAssetInput {
-                    asset_id: asset.id,
-                    reason: "Configured retention period elapsed".into(),
-                    actor: "atlas_retention_policy".into(),
-                },
-                now,
-            ) {
-                failures.push(error);
-            }
-        }
-        for asset in self.database.retention_purge_candidates(now)? {
-            validate_asset_id(&asset.id)?;
-            if let Err(error) = self.database.begin_evidence_asset_purge(&asset.id, now) {
-                failures.push(error);
-                continue;
-            }
-            let directory = self.config.evidence_root.join("trash").join(&asset.id);
-            if directory.exists() {
-                if let Err(error) = fs::remove_dir_all(&directory) {
-                    let _ = self.database.cancel_evidence_asset_purge(&asset.id, now);
-                    failures.push(format!("purge expired evidence media: {error}"));
-                    continue;
-                }
-            }
-            if let Err(error) = self.database.complete_evidence_asset_purge(
-                &asset.id,
-                "atlas_retention_policy",
-                now,
-            ) {
-                failures.push(error);
-            }
-        }
-        if !failures.is_empty() {
-            return Err(failures.join("; "));
-        }
-        Ok(())
     }
 
     pub(crate) fn shutdown(&self) {
@@ -1212,23 +1118,6 @@ impl EvidenceRecorder {
         })
     }
 
-    fn recover_interrupted_purges(&self) -> Result<(), String> {
-        for asset in self.database.purging_evidence_assets()? {
-            validate_asset_id(&asset.id)?;
-            let directory = self.config.evidence_root.join("trash").join(&asset.id);
-            if directory.exists() {
-                fs::remove_dir_all(&directory)
-                    .map_err(|error| format!("resume interrupted evidence purge: {error}"))?;
-            }
-            self.database.complete_evidence_asset_purge(
-                &asset.id,
-                "atlas_recovery",
-                unix_time_ms(),
-            )?;
-        }
-        Ok(())
-    }
-
     fn recover_pending_evidence_assets(&self) -> Result<(), String> {
         for asset in self.database.pending_evidence_assets()? {
             validate_asset_id(&asset.id)?;
@@ -1493,48 +1382,6 @@ impl EvidenceRecorder {
             .map_err(|error| format!("sync evidence thumbnail: {error}"))
     }
 
-    fn trash_asset_at(
-        &self,
-        input: &TrashEvidenceAssetInput,
-        now: i64,
-    ) -> Result<EvidenceAssetSnapshot, String> {
-        let asset = self.database.evidence_asset(&input.asset_id)?;
-        if asset.status != "READY" {
-            return Err("only ready evidence can be moved to trash".into());
-        }
-        if asset.retention_class == "LEGAL_HOLD" {
-            return Err("evidence under legal hold cannot be moved to trash".into());
-        }
-        validate_asset_id(&asset.id)?;
-        let source_directory = self.config.evidence_root.join("assets").join(&asset.id);
-        let destination_directory = self.config.evidence_root.join("trash").join(&asset.id);
-        if !source_directory.is_dir() {
-            return Err("evidence bytes are missing and cannot be moved to trash".into());
-        }
-        if destination_directory.exists() {
-            return Err("evidence trash destination already exists".into());
-        }
-        fs::rename(&source_directory, &destination_directory)
-            .map_err(|error| format!("move evidence to recoverable trash: {error}"))?;
-        let relative_path = asset_relative_path("trash", &asset.id, &asset.relative_path)?;
-        let thumbnail_relative_path =
-            asset_relative_path("trash", &asset.id, &asset.thumbnail_relative_path)?;
-        match self.database.mark_evidence_asset_trashed(
-            &asset.id,
-            &relative_path,
-            &thumbnail_relative_path,
-            &input.reason,
-            &input.actor,
-            now,
-        ) {
-            Ok(trashed) => Ok(trashed),
-            Err(error) => {
-                let _ = fs::rename(&destination_directory, &source_directory);
-                Err(error)
-            }
-        }
-    }
-
     fn temporary_asset_directory(&self, asset_id: &str) -> PathBuf {
         self.config
             .evidence_root
@@ -1589,7 +1436,6 @@ impl EvidenceRecorder {
                 }),
             }),
         };
-        recorder.recover_interrupted_purges()?;
         recorder.recover_pending_evidence_assets()?;
         recorder.recover_interrupted_recordings()?;
         recorder.finalize_pending_event_clips(None)?;
@@ -1602,8 +1448,6 @@ fn ensure_evidence_root(root: &Path) -> Result<(), String> {
         .map_err(|error| format!("create evidence object root: {error}"))?;
     fs::create_dir_all(root.join("assets"))
         .map_err(|error| format!("create evidence asset root: {error}"))?;
-    fs::create_dir_all(root.join("trash"))
-        .map_err(|error| format!("create evidence trash root: {error}"))?;
     fs::create_dir_all(root.join("temporary"))
         .map_err(|error| format!("create evidence temporary root: {error}"))?;
     fs::create_dir_all(root.join("temporary").join("assets"))
@@ -1652,16 +1496,6 @@ fn validate_asset_id(asset_id: &str) -> Result<(), String> {
         return Err("evidence asset id is invalid".into());
     }
     Ok(())
-}
-
-fn asset_relative_path(root: &str, asset_id: &str, previous: &str) -> Result<String, String> {
-    validate_asset_id(asset_id)?;
-    let filename = Path::new(previous)
-        .file_name()
-        .and_then(|value| value.to_str())
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| "evidence asset filename is invalid".to_string())?;
-    Ok(format!("{root}/{asset_id}/{filename}"))
 }
 
 fn environment_u64(name: &str, fallback: u64, minimum: u64, maximum: u64) -> Result<u64, String> {

@@ -69,7 +69,7 @@ literals unchanged when they use a different form.
 | **Follow from standoff** | Geographic-space control that moves the aircraft relative to a filtered selected-target estimate. Preserve this capitalization for the product feature. |
 | **payload control lease** | Time-limited authority for manual gimbal or camera control. |
 | **aircraft-follow lease** | Time-limited authority for Follow from standoff. |
-| **evidence** | Explicitly retained media plus provenance. Evidence is not the bounded live-frame history. |
+| **capture** | An explicit photo or bounded event clip saved from camera operations with the source context needed to reopen it. A capture is not the bounded live-frame history. |
 | **clean video** | Decoded or recorded source video without a permanently rendered detection overlay. |
 | **frame demand** | A bounded request for perception frames from an active consumer. |
 

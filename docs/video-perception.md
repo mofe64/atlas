@@ -482,8 +482,9 @@ running.
 - No persistent frame-level detection history; durable track storage retains
   bounded lifecycle samples rather than every detector box.
 - Native stores clean-frame stills and verified-segment event clips with
-  thumbnails, exact track/marker relationships, review history, and retention
-  state. Export packaging and verified remote replication remain deferred.
+  thumbnails, required track/marker relationships, and integrity metadata.
+  Review decisions, notes/tags, retention classes, legal holds, deletion
+  administration, export packaging, and remote replication remain deferred.
 - FoundationVision ByteTrack and the Atlas CMC extension still require
   annotated representative aerial footage and target companion-computer acceptance.
 - Recorded-video HOG smoke tests do not validate Hailo/YOLO inference quality.

@@ -184,12 +184,50 @@ test("Mission camera evidence actions remain available in compact layouts", () =
   assert.match(liveVideoStyles, /\.live-video__compact-evidence-actions/);
 });
 
-test("Plan is action-first and moves saved work into mission history", () => {
-  const createIndex = missionPage.indexOf("Create new mission");
-  const activeIndex = missionPage.indexOf("Active missions");
-  const historyIndex = missionPage.indexOf("Review saved plans and past runs");
-  assert.ok(createIndex >= 0 && createIndex < activeIndex);
-  assert.ok(activeIndex < historyIndex);
+test("Live video discloses specialist controls by operator task", () => {
+  assert.match(liveVideo, /type VideoTool = "targets" \| "counting" \| "diagnostics";/);
+  assert.match(liveVideo, /aria-label="Camera tools"/);
+  assert.match(liveVideo, />Targets<\/button>/);
+  assert.match(liveVideo, />Counting tools<\/button>/);
+  assert.match(liveVideo, />Diagnostics<\/button>/);
+  assert.match(liveVideo, /activeTool === "counting" && \(\s*<div className="track-operations__counts">/s);
+  assert.match(liveVideo, /activeTool === "targets" && \(\s*<div className=\{`track-selection/s);
+  assert.match(liveVideo, /activeTool === "diagnostics" && \(\s*<section className="live-video__diagnostics"/s);
+  assert.match(liveVideoStyles, /\.live-video__tool-switch/);
+  assert.match(liveVideoStyles, /\.live-video__diagnostics/);
+});
+
+test("Evidence actions stay persistent while idle evidence facts collapse", () => {
+  assert.match(liveVideo, /const showRecordingDetails = recordingActive[\s\S]*recording\?\.diskState === "STOP";/);
+  assert.match(liveVideo, /showRecordingDetails && <div className="evidence-recorder__facts">/);
+  assert.match(liveVideo, /showRecordingDetails \? "" : " evidence-recorder--summary"/);
+  assert.match(liveVideoStyles, /\.evidence-recorder--summary/);
+});
+
+test("Dispatch is map-first until an aircraft establishes video context", () => {
+  assert.match(operationsPage, /const videoAvailable = Boolean\(workspaceDroneId\);/);
+  assert.match(operationsPage, /if \(!videoAvailable && layout !== "map"\) setLayout\("map"\);/);
+  assert.match(operationsPage, /disabled=\{option !== "map" && !videoAvailable\}/);
+  assert.match(operationsPage, /Assign an aircraft to open response video\./);
+  assert.match(operationsPage, /\{videoAvailable \? \(\s*<LiveVideo/s);
+  assert.match(operationsPage, /Video opens after aircraft assignment/);
+});
+
+test("Dispatch map layers use a compact disclosure menu", () => {
+  assert.match(operationsPage, /<details className="response-layer-menu"/);
+  assert.match(operationsPage, /<summary>Layers <strong>\{enabledLayerCount\}<\/strong><\/summary>/);
+  assert.match(operationsPage, /<fieldset className="response-layer-controls">/);
+  assert.match(stylesheet, /\.response-layer-menu summary/);
+  assert.match(stylesheet, /\.response-layer-controls\s*\{[^}]*position:\s*absolute;/s);
+});
+
+test("Plan has one reset path and progressively discloses specialist settings", () => {
+  assert.equal((missionPage.match(/>New mission<\/button>/g) ?? []).length, 1);
+  assert.equal((missionPage.match(/>Mission history<\/button>/g) ?? []).length, 1);
+  assert.doesNotMatch(missionPage, /Create new mission|Start new|Active missions/);
+  assert.match(missionPage, /<summary>Customize mission <span>Camera, gimbal, detection, and completion<\/span><\/summary>/);
+  assert.match(missionPage, /<details className="mission-advanced-settings">[\s\S]*<ViewSettings[\s\S]*Detection and completion[\s\S]*<\/details>/);
+  assert.ok(missionPage.indexOf("<TemplateSettings") < missionPage.indexOf('className="mission-identity-fields"'));
   assert.doesNotMatch(missionPage, /Local mission library/);
   assert.match(missionHistoryPage, /invoke<Mission\[\]>\("mission_list"\)/);
   assert.match(missionHistoryPage, /invoke<MissionRun\[\]>\("mission_run_history"/);

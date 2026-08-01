@@ -6,6 +6,11 @@ import type { FleetAircraft, FleetSnapshot, IncidentDetail, IncidentSnapshot } f
 import { OperationalMissionMap, type PayloadTarget, type TrackedAircraft, type TrackedHome } from "./OperationalMissionMap";
 import { MissionPayloadControl } from "./MissionPayloadControl";
 import { LiveVideo } from "../video/LiveVideo";
+import {
+  FlightSafetyControls,
+  type FlightSafetyAction,
+  type FlightSafetyNotice,
+} from "../safety/FlightSafetyControls";
 import { formatDistance, missionDistanceStatus } from "./missionSafety";
 import type { Mission, MissionPlan, MissionRun } from "./missionTypes";
 import "./MissionPage.css";
@@ -60,7 +65,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   const [selectingPayloadTarget, setSelectingPayloadTarget] = useState(false);
   const [liveSurface, setLiveSurface] = useState<ResponseLayout>(() => storedExecutionLayout());
   const [responseIncident, setResponseIncident] = useState<IncidentSnapshot>();
-  const [safetyCommandResult, setSafetyCommandResult] = useState<string>();
+  const [safetyCommandNotice, setSafetyCommandNotice] = useState<FlightSafetyNotice>();
 
   useEffect(() => {
     if (!nativeAvailable) return;
@@ -199,6 +204,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   useEffect(() => {
     setPayloadTarget(undefined);
     setSelectingPayloadTarget(false);
+    setSafetyCommandNotice(undefined);
   }, [selectedRun?.id]);
 
   async function refreshRuns(preferredRunId?: string) {
@@ -232,9 +238,24 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
       const run = await invoke<MissionRun>("control_mission_run", { missionRunId: selectedRun.id, operation });
       setSelectedRunId(run.id);
       await refreshRuns(run.id);
-      if (run.errorCode) setError(run.errorMessage || `Mission ${operation.replace(/_/g, " ")} failed.`);
+      if (run.errorCode) {
+        const message = run.errorMessage || `Mission ${operation.replace(/_/g, " ")} failed.`;
+        setError(message);
+        if (operation === "pause" || operation === "return_to_launch") {
+          setSafetyCommandNotice({ tone: "critical", message, receipt: { id: run.id, status: run.status } });
+        }
+      } else if (operation === "pause" || operation === "return_to_launch") {
+        setSafetyCommandNotice({
+          tone: "nominal",
+          message: operation === "pause" ? "Hold acknowledged · run paused" : "Return home acknowledged · run ending",
+          receipt: { id: run.id, status: run.status },
+        });
+      }
     } catch (reason) {
       setError(messageFrom(reason));
+      if (operation === "pause" || operation === "return_to_launch") {
+        setSafetyCommandNotice({ tone: "critical", message: messageFrom(reason) });
+      }
     } finally {
       setPendingOperation(undefined);
     }
@@ -242,11 +263,9 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
 
   async function landAircraft() {
     if (!targetDroneId || !selectedRun || isTerminalRun(selectedRun)) return;
-    const confirmed = window.confirm("Request immediate Land for this aircraft? Use only when the landing area is safe.");
-    if (!confirmed) return;
     setPendingOperation("land");
     setError(undefined);
-    setSafetyCommandResult(undefined);
+    setSafetyCommandNotice(undefined);
     try {
       const initial = await invoke<VehicleCommandReceipt>("request_vehicle_command", {
         droneId: targetDroneId,
@@ -258,9 +277,14 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
       if (receipt.status !== "succeeded") {
         throw new Error(receipt.resultMessage || receipt.resultCode || `Land command ${receipt.status}`);
       }
-      setSafetyCommandResult(receipt.resultMessage || receipt.resultCode || "Land acknowledged by PX4");
+      setSafetyCommandNotice({
+        tone: "nominal",
+        message: receipt.resultMessage || receipt.resultCode || "Land acknowledged by PX4",
+        receipt: { id: receipt.id, status: receipt.status },
+      });
     } catch (reason) {
       setError(messageFrom(reason));
+      setSafetyCommandNotice({ tone: "critical", message: messageFrom(reason) });
     } finally {
       setPendingOperation(undefined);
     }
@@ -279,6 +303,20 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
   const progressStyle = { "--mission-progress": `${Math.max(0, Math.min(100, progress))}%` } as CSSProperties;
   const warnings = translationWarnings(selectedRun);
   const latestEvent = selectedRun?.events[selectedRun.events.length - 1];
+  const phase = executionPhase(selectedRun);
+  const uploadBlockers = deploymentBlockers({ nativeAvailable, selectedDroneId, uploadDistance, activeRun, targetActiveRun, connectedAircraftCount: connectedAircraft.length });
+  const safetyAvailable = Boolean(
+    phase === "ACTIVE"
+      && targetAircraft?.connectionStatus === "connected"
+      && targetAircraft.telemetry?.status === "live"
+      && targetAircraft.telemetry.inAir === true
+      && !isTerminalRun(selectedRun),
+  );
+  const safetyPendingAction = pendingOperation === "pause"
+    ? "hold"
+    : pendingOperation === "return_to_launch" || pendingOperation === "land"
+      ? pendingOperation as FlightSafetyAction
+      : undefined;
   const arrivalHold = selectedRun?.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
   const onSceneAcknowledged = arrivalHold?.state === "SUCCEEDED";
   const displayedRunState = onSceneAcknowledged
@@ -300,7 +338,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
       </header>
 
       {responseIncidentId && (
-        <section className={`execution-response-context execution-response-context--${(responseIncident?.priority ?? "MEDIUM").toLowerCase()}`} aria-label="Incident response identity and safety controls">
+        <section className={`execution-response-context execution-response-context--${(responseIncident?.priority ?? "MEDIUM").toLowerCase()}`} aria-label="Incident response identity">
           <div className="execution-response-context__identity">
             <span aria-hidden="true">{responseIncident?.priority === "CRITICAL" ? "▲" : "◆"}</span>
             <div>
@@ -314,12 +352,6 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
             <div><dt>Current revision</dt><dd>{responseIncident?.revision ?? "Loading"}</dd></div>
             <div><dt>Safety alert</dt><dd>{highestAlert ? `${highestAlert.severity} · ${highestAlert.title}` : "No active response alert"}</dd></div>
           </dl>
-          <div className="execution-response-context__controls">
-            <button type="button" disabled={selectedRun?.status !== "RUNNING" || Boolean(pendingOperation)} onClick={() => void control("pause")}>Hold</button>
-            <button type="button" disabled={!selectedRun || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status) || Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>RTL</button>
-            <button type="button" className="execution-response-context__land" disabled={!selectedRun || isTerminalRun(selectedRun) || targetAircraft?.connectionStatus !== "connected" || targetAircraft.telemetry?.status !== "live" || targetAircraft.telemetry.inAir !== true || Boolean(pendingOperation)} onClick={() => void landAircraft()}>Land</button>
-            {safetyCommandResult && <small role="status">{safetyCommandResult}</small>}
-          </div>
         </section>
       )}
 
@@ -384,7 +416,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
         <aside className="execution-command-column" aria-label="Mission command and status">
           {!selectedRun && (
             <section className="execution-card">
-              <div className="execution-card__title"><span>01</span><strong>Deploy plan</strong></div>
+              <div className="execution-card__title"><strong>Prepare upload</strong></div>
               <label className="execution-target">Target aircraft
                 <select value={selectedDroneId} onChange={(event) => setSelectedDroneId(event.target.value)} disabled={Boolean(lockedDroneId)}>
                   <option value="">Select connected aircraft</option>
@@ -392,41 +424,66 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
                 </select>
               </label>
               {lockedDroneId && <p className="execution-command-note">Aircraft selection is locked to the operator-reviewed incident assignment.</p>}
-              {uploadDistance && !uploadDistance.ok && <div className="mission-distance-warning" role="alert"><strong>Mission distance check</strong><span>{uploadDistance.message}</span></div>}
               {uploadDistance?.ok && uploadDistance.distanceMeters !== undefined && <p className="mission-distance-ready">First waypoint · {formatDistance(uploadDistance.distanceMeters)} from {uploadDistance.reference?.source} position</p>}
+              <PreflightReadiness preflight={preflight} />
+              <UploadBlockers blockers={uploadBlockers} />
               <button type="button" className="execution-primary-action" disabled={!canUpload} onClick={() => void upload()}>{pendingOperation === "upload" ? "Uploading to PX4…" : "Upload mission to aircraft"}</button>
-              {connectedAircraft.length === 0 && <p className="execution-blocker">No connected Atlas Agent is available.</p>}
-              {targetActiveRun && <p className="execution-blocker">This aircraft already has an unfinished run for “{targetActiveRun.missionName}”.</p>}
             </section>
           )}
 
           {selectedRun && (
             <>
-              <section className="execution-card execution-card--run">
-                <div className="execution-card__title"><span>01</span><strong>Run control</strong></div>
+              <section className={`execution-card execution-card--run execution-card--${phase.toLowerCase()}`}>
+                <div className="execution-card__title"><strong>{phaseTitle(phase)}</strong></div>
                 <div className="execution-run-identity"><strong>{selectedRun.droneName}</strong><small>Run {shortId(selectedRun.id)} · plan {shortId(selectedRun.missionPlanId)}</small></div>
                 <div className="mission-progress" style={progressStyle}>
                   <div className="mission-progress__track"><span /></div>
                   <div><strong>{Math.round(progress)}%</strong><span>{progressLabel(selectedRun)}</span></div>
                 </div>
-                {latestEvent && <p className="execution-latest-event"><span>{latestEvent.eventType.replace(/_/g, " ")}</span>{latestEvent.message || latestEvent.state}</p>}
+                {latestEvent && <p className="execution-latest-event"><span>Current action · {latestEvent.eventType.replace(/_/g, " ")}</span>{latestEvent.message || latestEvent.state}</p>}
                 <div className="execution-run-controls">
-                  {selectedRun.status === "READY" && <button type="button" className="execution-primary-action" disabled={Boolean(pendingOperation) || !preflight.ready} onClick={() => void control("start")}>Arm & start mission</button>}
-                  {selectedRun.status === "RUNNING" && <button type="button" className="execution-primary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("pause")}>Pause to hold</button>}
+                  {selectedRun.status === "READY" && <button type="button" className="execution-primary-action execution-primary-action--start" disabled={Boolean(pendingOperation) || !preflight.ready} onClick={() => void control("start")}>Arm & start mission</button>}
                   {selectedRun.status === "PAUSED" && <button type="button" className="execution-primary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("resume")}>Resume mission</button>}
-                  {["READY", "RUNNING", "PAUSED"].includes(selectedRun.status) && <button type="button" className="execution-secondary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("cancel")}>Cancel mission</button>}
-                  {["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status) && <button type="button" className="execution-critical-action" disabled={Boolean(pendingOperation)} onClick={() => void control("return_to_launch")}>{selectedRun.status === "ROUTE_COMPLETE" ? "Return to launch" : "End & RTL"}</button>}
+                  {selectedRun.status === "READY" && <button type="button" className="execution-secondary-action" disabled={Boolean(pendingOperation)} onClick={() => void control("cancel")}>Remove uploaded mission</button>}
                 </div>
                 {pendingOperation && <p className="execution-pending">Sending {pendingOperation.replace(/_/g, " ")}…</p>}
-                {selectedRun.status === "READY" && <p className="execution-command-note">Atlas checks PX4 readiness, arms the aircraft, then starts the uploaded mission. A failed start commands HOLD.</p>}
+                {selectedRun.status === "READY" && <p className="execution-command-note">Atlas rechecks PX4 readiness, arms the aircraft, then starts the uploaded mission.</p>}
                 {selectedRun.status === "CANCELLED" && <p className="execution-command-note">Mission cleared. The aircraft remains in HOLD.</p>}
                 {selectedRun.status === "ROUTE_COMPLETE" && <p className="execution-command-note">The reviewed route is complete. The aircraft is holding and this mission remains active until you Land or RTL.</p>}
                 {selectedRun.status === "RTL" && <p className="execution-command-note">PX4 accepted RTL. The mission remains active until telemetry confirms the aircraft has landed and disarmed.</p>}
               </section>
 
-              {selectedRun.actions.length > 0 && <ArrivalActionRuntime run={selectedRun} />}
+              {phase === "READY" && <PreflightReadiness preflight={preflight} compact />}
 
-              <MissionPayloadControl
+              {phase === "ACTIVE" && (
+                <FlightSafetyControls
+                  aircraftName={targetAircraft?.droneName || selectedRun.droneName}
+                  aircraftId={targetDroneId || undefined}
+                  availabilityMessage={safetyAvailability(targetAircraft, selectedRun)}
+                  pendingAction={safetyPendingAction}
+                  notice={safetyCommandNotice}
+                  holdDisabled={!safetyAvailable || selectedRun.status !== "RUNNING"}
+                  returnHomeDisabled={!safetyAvailable || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(selectedRun.status)}
+                  landDisabled={!safetyAvailable}
+                  onAction={(action) => action === "hold"
+                    ? void control("pause")
+                    : action === "return_to_launch"
+                      ? void control("return_to_launch")
+                      : void landAircraft()}
+                />
+              )}
+
+              {phase === "ACTIVE" && ["RUNNING", "PAUSED"].includes(selectedRun.status) && (
+                <details className="execution-more-actions">
+                  <summary>More mission actions</summary>
+                  <p>Cancel clears the uploaded route and commands PX4 Hold. It does not Return home or Land.</p>
+                  <button type="button" disabled={Boolean(pendingOperation)} onClick={() => void control("cancel")}>Cancel mission and hold</button>
+                </details>
+              )}
+
+              {phase === "ACTIVE" && selectedRun.actions.length > 0 && <ArrivalActionRuntime run={selectedRun} />}
+
+              {phase === "ACTIVE" && <MissionPayloadControl
                 key={selectedRun.id}
                 run={selectedRun}
                 plan={plan}
@@ -435,13 +492,7 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
                 selectingPayloadTarget={selectingPayloadTarget}
                 onSelectingPayloadTargetChange={setSelectingPayloadTarget}
                 onClearPayloadTarget={() => setPayloadTarget(undefined)}
-              />
-              <section className="execution-card">
-                <div className="execution-card__title"><span>03</span><strong>Preflight readiness</strong></div>
-                <ul className="preflight-list">
-                  {preflight.checks.map((check) => <li key={check.label} className={check.ok ? "preflight-check preflight-check--ready" : "preflight-check"}><span>{check.ok ? "✓" : "!"}</span><div><strong>{check.label}</strong><small>{check.detail}</small></div></li>)}
-                </ul>
-              </section>
+              />}
             </>
           )}
 
@@ -450,19 +501,22 @@ export function MissionExecutionPage({ nativeAvailable, missionId, preferredDron
         </aside>
       </section>
 
-      <section className="execution-report-grid">
-        <section className="mission-event-report" aria-label="Mission event report">
-          <header><strong>Run event report</strong><span>{selectedRun?.events.length ?? 0} events</span></header>
-          {selectedRun?.events.length ? (
-            <ol>{[...selectedRun.events].reverse().map((event) => <li key={event.id}><span className={`event-mark event-mark--${event.state.toLowerCase()}`} /><div><strong>{event.eventType.replace(/_/g, " ")}</strong><p>{event.message || event.state}</p></div><time dateTime={new Date(event.occurredAtUnixMs).toISOString()}>{formatClock(event.occurredAtUnixMs)}</time></li>)}</ol>
-          ) : <p className="event-report-empty">Upload this mission to begin its durable event report.</p>}
-        </section>
+      <details className="execution-reports">
+        <summary><span>Run reports</span><small>{selectedRun?.events.length ?? 0} events · {missionRuns.length} executions</small></summary>
+        <div className="execution-report-grid">
+          <section className="mission-event-report" aria-label="Mission event report">
+            <header><strong>Run event report</strong><span>{selectedRun?.events.length ?? 0} events</span></header>
+            {selectedRun?.events.length ? (
+              <ol>{[...selectedRun.events].reverse().map((event) => <li key={event.id}><span className={`event-mark event-mark--${event.state.toLowerCase()}`} /><div><strong>{event.eventType.replace(/_/g, " ")}</strong><p>{event.message || event.state}</p></div><time dateTime={new Date(event.occurredAtUnixMs).toISOString()}>{formatClock(event.occurredAtUnixMs)}</time></li>)}</ol>
+            ) : <p className="event-report-empty">Upload this mission to begin its durable event report.</p>}
+          </section>
 
-        <section className="mission-run-history" aria-labelledby="mission-run-history-title">
-          <header><div><h2 id="mission-run-history-title">Execution history</h2><span>Every upload creates a separate run</span></div><strong>{missionRuns.length}</strong></header>
-          {missionRuns.length ? <div className="execution-history-list">{missionRuns.map((run) => <button key={run.id} type="button" className={selectedRun?.id === run.id ? "execution-history-row execution-history-row--selected" : "execution-history-row"} onClick={() => { setSelectedRunId(run.id); setSelectedDroneId(run.droneId); }}><span><strong>{run.droneName}</strong><small>{formatDate(run.createdAtUnixMs)} · {shortId(run.id)}</small></span><span><i className={`run-dot run-dot--${run.status.toLowerCase()}`} />{run.status}</span><span>{Math.round(run.progressPercent)}%</span></button>)}</div> : <p className="mission-history-empty">No execution run exists for this mission.</p>}
-        </section>
-      </section>
+          <section className="mission-run-history" aria-labelledby="mission-run-history-title">
+            <header><div><h2 id="mission-run-history-title">Execution history</h2><span>Every upload creates a separate run</span></div><strong>{missionRuns.length}</strong></header>
+            {missionRuns.length ? <div className="execution-history-list">{missionRuns.map((run) => <button key={run.id} type="button" className={selectedRun?.id === run.id ? "execution-history-row execution-history-row--selected" : "execution-history-row"} onClick={() => { setSelectedRunId(run.id); setSelectedDroneId(run.droneId); }}><span><strong>{run.droneName}</strong><small>{formatDate(run.createdAtUnixMs)} · {shortId(run.id)}</small></span><span><i className={`run-dot run-dot--${run.status.toLowerCase()}`} />{run.status}</span><span>{Math.round(run.progressPercent)}%</span></button>)}</div> : <p className="mission-history-empty">No execution run exists for this mission.</p>}
+          </section>
+        </div>
+      </details>
     </main>
   );
 }
@@ -471,13 +525,75 @@ function Metric({ label, value, tone }: { label: string; value: string; tone?: "
   return <div className={tone ? `execution-metric execution-metric--${tone}` : "execution-metric"}><span>{label}</span><strong>{value}</strong></div>;
 }
 
+type ExecutionPhase = "DEPLOY" | "UPLOADING" | "READY" | "ACTIVE" | "COMPLETE";
+type PreflightCheck = { label: string; ok: boolean; detail: string };
+
+function executionPhase(run?: MissionRun): ExecutionPhase {
+  if (!run) return "DEPLOY";
+  if (run.status === "UPLOADING") return "UPLOADING";
+  if (run.status === "READY") return "READY";
+  if (["RUNNING", "PAUSED", "ROUTE_COMPLETE", "RTL"].includes(run.status)) return "ACTIVE";
+  return "COMPLETE";
+}
+
+function phaseTitle(phase: ExecutionPhase) {
+  if (phase === "UPLOADING") return "Uploading flight path";
+  if (phase === "READY") return "Ready to start";
+  if (phase === "ACTIVE") return "Mission in progress";
+  if (phase === "COMPLETE") return "Mission complete";
+  return "Prepare upload";
+}
+
+function PreflightReadiness({ preflight, compact = false }: { preflight: { checks: PreflightCheck[]; ready: boolean }; compact?: boolean }) {
+  const failed = preflight.checks.filter((check) => !check.ok);
+  const passed = preflight.checks.filter((check) => check.ok);
+
+  if (!compact) {
+    return (
+      <section className="execution-preflight" aria-labelledby="preflight-readiness-title">
+        <header><strong id="preflight-readiness-title">Preflight readiness</strong><span>{passed.length} / {preflight.checks.length}</span></header>
+        <PreflightList checks={preflight.checks} />
+      </section>
+    );
+  }
+
+  return (
+    <section className="execution-card execution-preflight execution-preflight--compact" aria-labelledby="ready-preflight-title">
+      <div className="execution-card__title"><strong id="ready-preflight-title">Preflight readiness</strong></div>
+      {failed.length > 0 && <PreflightList checks={failed} />}
+      <details>
+        <summary>{passed.length} successful {passed.length === 1 ? "check" : "checks"}</summary>
+        <PreflightList checks={passed} />
+      </details>
+    </section>
+  );
+}
+
+function PreflightList({ checks }: { checks: PreflightCheck[] }) {
+  return (
+    <ul className="preflight-list">
+      {checks.map((check) => <li key={check.label} className={check.ok ? "preflight-check preflight-check--ready" : "preflight-check"}><span>{check.ok ? "✓" : "!"}</span><div><strong>{check.label}</strong><small>{check.detail}</small></div></li>)}
+    </ul>
+  );
+}
+
+function UploadBlockers({ blockers }: { blockers: string[] }) {
+  if (blockers.length === 0) return <p className="execution-ready-note">Upload checks passed</p>;
+  return (
+    <section className="execution-blockers" aria-labelledby="upload-blockers-title">
+      <strong id="upload-blockers-title">Resolve before upload</strong>
+      <ul>{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+    </section>
+  );
+}
+
 function ArrivalActionRuntime({ run }: { run: MissionRun }) {
   const hold = run.actions.find((action) => action.actionType === "HOLD_AT_ARRIVAL");
   const onScene = hold?.state === "SUCCEEDED";
   const failed = run.actions.some((action) => action.state === "FAILED" || action.state === "POLICY_APPLIED");
   return (
     <section className={onScene ? "execution-card arrival-runtime arrival-runtime--on-scene" : failed ? "execution-card arrival-runtime arrival-runtime--failed" : "execution-card arrival-runtime"}>
-      <div className="execution-card__title"><span>02</span><strong>Arrival acknowledgement</strong></div>
+      <div className="execution-card__title"><strong>Arrival acknowledgement</strong></div>
       <header className="arrival-runtime__status">
         <span>{onScene ? "Hold acknowledged" : failed ? "Arrival action unresolved" : "Not yet on scene"}</span>
         <strong>{onScene ? "ON SCENE" : hold ? displayActionState(hold.state) : "WAITING"}</strong>
@@ -541,6 +657,39 @@ function preflightState(aircraft?: FleetAircraft) {
     { label: "Battery", ok: telemetry?.batteryPercent == null || telemetry.batteryPercent >= 15, detail: telemetry?.batteryPercent == null ? "No battery value reported" : `${Math.round(telemetry.batteryPercent)}% remaining` },
   ];
   return { checks, ready: checks.every((check) => check.ok) };
+}
+
+function deploymentBlockers({
+  nativeAvailable,
+  selectedDroneId,
+  uploadDistance,
+  activeRun,
+  targetActiveRun,
+  connectedAircraftCount,
+}: {
+  nativeAvailable: boolean;
+  selectedDroneId: string;
+  uploadDistance?: { ok: boolean; message?: string };
+  activeRun?: MissionRun;
+  targetActiveRun?: MissionRun;
+  connectedAircraftCount: number;
+}) {
+  const blockers: string[] = [];
+  if (!nativeAvailable) blockers.push("Atlas Native services are unavailable.");
+  if (connectedAircraftCount === 0) blockers.push("No connected Atlas Agent is available.");
+  if (!selectedDroneId) blockers.push("Select an aircraft.");
+  if (uploadDistance && !uploadDistance.ok) blockers.push(uploadDistance.message || "The mission distance check has not passed.");
+  if (activeRun) blockers.push("This mission already has an unfinished run.");
+  if (targetActiveRun && targetActiveRun.id !== activeRun?.id) blockers.push(`This aircraft is already assigned to “${targetActiveRun.missionName}”.`);
+  return blockers;
+}
+
+function safetyAvailability(aircraft: FleetAircraft | undefined, run: MissionRun) {
+  if (aircraft?.connectionStatus !== "connected") return "Unavailable — reconnect this aircraft before sending a flight command.";
+  if (aircraft.telemetry?.status !== "live") return "Unavailable — telemetry must be live before sending a flight command.";
+  if (aircraft.telemetry.inAir !== true) return "Unavailable — flight safety controls are available only while the aircraft is in air.";
+  if (run.status === "RTL") return "Return home is already active. Land remains available if the landing area is clear.";
+  return "Ready — every command requires acknowledgement from Atlas Agent and PX4.";
 }
 
 function storedExecutionLayout(): ResponseLayout {

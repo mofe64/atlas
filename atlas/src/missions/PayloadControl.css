@@ -3,7 +3,6 @@
 .payload-control--manual { background: color-mix(in oklch, var(--signal-soft) 38%, var(--panel)); }
 .payload-control:focus-visible { outline: 2px solid var(--field); outline-offset: -3px; }
 .payload-control__heading { display: flex; align-items: center; gap: .55rem; margin-bottom: .8rem; }
-.payload-control__heading > span { color: var(--field); font-size: .52rem; font-weight: 800; letter-spacing: .08em; }
 .payload-control__heading > strong { font-family: var(--font-display); font-size: .82rem; letter-spacing: .045em; text-transform: uppercase; }
 .payload-control__title i { margin-left: auto; color: var(--muted); font-size: .54rem; font-style: normal; font-weight: 780; letter-spacing: .055em; text-transform: uppercase; }
 .payload-control__title .payload-state--manual { color: color-mix(in oklch, var(--signal) 72%, var(--ink)); }

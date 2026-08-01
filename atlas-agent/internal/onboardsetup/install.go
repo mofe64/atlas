@@ -75,7 +75,9 @@ func validateModelAccelerator(modelAccelerator string, hailo HailoStatus) error 
 	return nil
 }
 
+// Takes the config produced by BuildInstallPlan and applies it to the operating system
 func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options, plan InstallPlan) (ApplyResult, error) {
+	// if this isn't a dry run, and we are not running as root, and the root path is not set, we return an error
 	if !options.DryRun && !isRoot() && (options.Paths.Root == "" || options.Paths.Root == "/") {
 		return ApplyResult{}, errors.New("atlas-setup install must run as root; use sudo atlas-setup")
 	}

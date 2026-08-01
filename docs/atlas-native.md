@@ -39,7 +39,7 @@ flowchart TB
 [`atlas/src/App.tsx`](../atlas/src/App.tsx) owns top-level navigation and the
 selected aircraft/mission context. The primary workspaces are:
 
-- Evidence review and retention.
+- Captured photo and event-clip browsing.
 - Incident Operations and response preparation.
 - Aircraft Follow from standoff.
 - Fleet and aircraft detail.
@@ -54,7 +54,7 @@ Important UI modules:
 
 | Module | Responsibility |
 | --- | --- |
-| [`evidence/EvidencePage.tsx`](../atlas/src/evidence/EvidencePage.tsx) | Evidence still/event-clip review, annotation, verification, trash, and retention |
+| [`evidence/EvidencePage.tsx`](../atlas/src/evidence/EvidencePage.tsx) | Capture browsing, media preview, processing state, and source context |
 | [`operations/OperationsPage.tsx`](../atlas/src/operations/OperationsPage.tsx) | Incident intake, suitability, response preview, review, assignment, and dispatch |
 | [`follow/FollowPage.tsx`](../atlas/src/follow/FollowPage.tsx) | Selected-target geolocation review and bounded aircraft Follow from standoff |
 | [`fleet/FleetPage.tsx`](../atlas/src/fleet/FleetPage.tsx) | Operational and archived aircraft list |
@@ -98,8 +98,7 @@ Write/delivery examples:
 - `create_incident`, `preview_incident_response`, and
   `prepare_incident_response`
 - `request_vehicle_command`
-- evidence recording, still/event-clip capture, review, retention, trash, and
-  restore commands
+- evidence recording and still/event-clip capture commands
 - track selection/geolocation and aircraft-follow create/renew/end commands
 - perception frame-subscription start/renew/stop
 - video stream start/stop
@@ -123,8 +122,8 @@ VideoManager
 
 The gRPC server and background watchdogs run on Tauri's async runtime. Native
 refreshes operational alerts every two seconds, expires vehicle commands every
-second, evaluates aircraft-follow leases every 250 ms, and applies evidence
-retention hourly. The video and evidence managers own their child processes and
+second, and evaluates aircraft-follow leases every 250 ms. The video and
+recording managers own their child processes and
 buffers. When the main window is destroyed, Native stops both recorder and
 decoder work so FFmpeg processes are not orphaned.
 
@@ -182,7 +181,7 @@ holds bounded live state per drone and source:
 
 This store is bounded live state. SQLite separately persists track sessions,
 lifecycle events, significant/periodic samples, counts, selections,
-geolocations, and evidence provenance. Atlas does not persist every box from
+geolocations, and capture source links. Atlas does not persist every box from
 every frame as an unbounded historical dataset.
 
 ## Local SQLite
@@ -212,7 +211,7 @@ The schema also stores filtered target velocity, speed, direction, and velocity
 uncertainty. A latest-per-track query joins coordinates to lifecycle,
 selection, annotations, and map evidence counts.
 
-The current schema version is 24. Its durable state is grouped as follows (the
+The current schema version is 26. Its durable state is grouped as follows (the
 list names the main tables rather than every index or migration-era rebuild):
 
 | Area | Tables |
@@ -224,7 +223,7 @@ list names the main tables rather than every index or migration-era rebuild):
 | Aircraft lifecycle | `drone_lifecycle_events` |
 | Incident dispatch | `incidents`, `incident_events`, `incident_assignments`, `mission_action_executions`, `mission_action_execution_events` |
 | Operational alerts | `operational_alerts`, `operational_alert_events` |
-| Recording and evidence | `evidence_recording_sessions`, `evidence_recording_segments`, `evidence_recording_events`, `evidence_gap_events`, `evidence_retention_policy`, `evidence_assets`, `evidence_asset_annotations`, `evidence_asset_events` |
+| Recording and captures | `evidence_recording_sessions`, `evidence_recording_segments`, `evidence_recording_events`, `evidence_gap_events`, `evidence_assets` |
 | Perception and counting | `perception_track_sessions`, `perception_tracks`, `perception_track_events`, `perception_track_samples`, `perception_mission_tracks`, `perception_counting_rules`, `perception_count_events`, `perception_track_rule_counts`, `perception_track_selections`, `perception_track_selection_events`, `perception_track_annotations`, `perception_track_geolocations` |
 | Aircraft follow | `aircraft_follow_sessions`, `aircraft_follow_target_updates`, `aircraft_follow_events` |
 
@@ -274,14 +273,26 @@ boundaries because state can change after preview. See
 [Incident dispatch](incident-dispatch.md) for the complete workflow and four
 response patterns.
 
-## Evidence recording and review
+## Recording and captures
 
 [`atlas/src-tauri/src/recording.rs`](../atlas/src-tauri/src/recording.rs)
 supervises source-RTSP segmented recording and explicit still/event-clip
 creation. Large media bytes live under the configured evidence root; SQLite
-stores session, segment, gap, asset, association, hash, annotation, review,
-trash, and retention state. Startup recovery and finalization prevent a partial
-file from being reported as verified evidence.
+stores session, segment, gap, capture, association, hash, and processing state.
+Startup recovery and finalization prevent a partial file from being reported as
+a ready capture.
+
+The current capture model intentionally stops at creation and browsing. Atlas
+does not currently implement review decisions, capture notes or tags, retention
+classes, legal holds, recoverable trash, or per-capture audit events. Those are
+formal evidence-administration concerns and remain deferred until Atlas needs an
+incident-investigation or reporting workflow.
+
+Capture snapshots resolve the aircraft display name and selected-track class
+through existing relationships when they are read. The Captures UI uses those
+values for readable provenance while retaining exact IDs, frame timing, paths,
+byte counts, and hashes under Details. This is a presentation join only; it adds
+no duplicated provenance columns to `evidence_assets`.
 
 Evidence recording is independent of the clean live decoder. This avoids making
 a UI viewer the owner of archival bytes and lets a short live frame buffer remain
@@ -295,6 +306,11 @@ exact selected-track binding, target updates, operator lease, events, and 250 ms
 watchdog. The Agent owns the PX4 Offboard controller. Native never converts a
 camera-follow selection directly into movement: it first requires converged
 geolocation and filtered motion, then sends the reviewed authority to Agent.
+
+The Follow UI presents the commonly reviewed standoff, altitude, speed,
+duration, reserve, boundary, and review note first. Acceleration, altitude-band,
+confidence, and uncertainty thresholds are grouped under Advanced constraints;
+their safe defaults, readiness checks, and Native validation are unchanged.
 
 Camera follow itself remains an Agent payload controller under a payload lease.
 See [Inference, tracking, geolocation, and follow](inference-tracking-and-follow.md)
@@ -317,6 +333,11 @@ Definitions contain editable parameters. Generating a plan inserts a new
 immutable plan, item, and action set, then points the definition at the new plan.
 Old plans remain available to old mission runs.
 
+The Plan workspace exposes one `New mission` reset and one `Mission history`
+entry. Template selection and common flight defaults are presented before
+mission identity and geometry; camera, gimbal, detection, and less-common
+completion settings remain available under `Customize mission`.
+
 Terrain clearance is a two-stage process:
 
 1. Rust generates route geometry.
@@ -328,6 +349,19 @@ The detailed terrain evidence remains in Native. Upload sends the operational
 plan while removing the bulky profile-point evidence from the wire payload.
 See [Mission types and flight patterns](mission-types-and-flight-patterns.md)
 for the generation algorithms, action ordering, and execution lifecycle.
+
+Mission execution is phase-sensitive. Before upload it presents aircraft
+selection, deployment blockers, preflight state, and Upload. A ready run makes
+Start the primary action and collapses successful checks. An active run focuses
+on progress, current action, Resume when paused, and the shared flight-safety
+cluster. Cancel-and-hold remains available under `More mission actions`. Event
+and prior-run reports are available from the secondary `Run reports` disclosure.
+
+Command, Dispatch, and mission execution all render the same
+`FlightSafetyControls` component. Hold is immediate; Return home and Land use
+the same inline consequence confirmation; every result uses the same receipt
+presentation. Each surface still calls the appropriate authoritative Native
+command for its context.
 
 ## Video manager
 

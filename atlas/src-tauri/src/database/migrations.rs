@@ -6,7 +6,7 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
     let current_version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .map_err(|error| format!("read local database schema version: {error}"))?;
-    if current_version > 25 {
+    if current_version > 26 {
         return Err(format!(
             "local database schema version {current_version} is newer than this Atlas build"
         ));
@@ -1871,6 +1871,106 @@ pub(super) fn run(connection: &Connection) -> Result<(), String> {
                 "#,
             )
             .map_err(|error| format!("apply local database migration 25: {error}"))?;
+    }
+    if current_version < 26 {
+        connection
+            .execute_batch(
+                r#"
+                BEGIN IMMEDIATE;
+
+                DROP TABLE evidence_asset_events;
+                DROP TABLE evidence_asset_annotations;
+                DROP TABLE evidence_retention_policy;
+
+                ALTER TABLE evidence_assets RENAME TO evidence_assets_administration_legacy;
+
+                CREATE TABLE evidence_assets (
+                    id TEXT PRIMARY KEY,
+                    asset_type TEXT NOT NULL CHECK (asset_type IN ('STILL', 'EVENT_CLIP')),
+                    status TEXT NOT NULL CHECK (status IN ('PENDING', 'READY', 'FAILED')),
+                    source_id TEXT NOT NULL,
+                    drone_id TEXT NOT NULL REFERENCES drones(id) ON DELETE RESTRICT,
+                    incident_id TEXT REFERENCES incidents(id) ON DELETE RESTRICT,
+                    mission_id TEXT REFERENCES missions(id) ON DELETE RESTRICT,
+                    mission_run_id TEXT REFERENCES mission_runs(id) ON DELETE RESTRICT,
+                    recording_session_id TEXT
+                        REFERENCES evidence_recording_sessions(id) ON DELETE RESTRICT,
+                    selection_id TEXT
+                        REFERENCES perception_track_selections(id) ON DELETE RESTRICT,
+                    track_session_id TEXT
+                        REFERENCES perception_track_sessions(id) ON DELETE RESTRICT,
+                    track_id TEXT REFERENCES perception_tracks(id) ON DELETE RESTRICT,
+                    evidence_marker_annotation_id TEXT
+                        REFERENCES perception_track_annotations(id) ON DELETE RESTRICT,
+                    captured_at_unix_ms INTEGER NOT NULL,
+                    source_started_at_unix_ms INTEGER,
+                    source_ended_at_unix_ms INTEGER,
+                    requested_start_at_unix_ms INTEGER,
+                    requested_end_at_unix_ms INTEGER,
+                    relative_path TEXT NOT NULL DEFAULT '',
+                    thumbnail_relative_path TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    thumbnail_mime_type TEXT NOT NULL DEFAULT '',
+                    byte_length INTEGER NOT NULL DEFAULT 0 CHECK (byte_length >= 0),
+                    sha256 TEXT NOT NULL DEFAULT '',
+                    thumbnail_byte_length INTEGER NOT NULL DEFAULT 0
+                        CHECK (thumbnail_byte_length >= 0),
+                    thumbnail_sha256 TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL,
+                    created_at_unix_ms INTEGER NOT NULL,
+                    updated_at_unix_ms INTEGER NOT NULL,
+                    error_message TEXT NOT NULL DEFAULT '',
+                    CHECK (source_ended_at_unix_ms IS NULL OR source_started_at_unix_ms IS NULL OR
+                           source_ended_at_unix_ms >= source_started_at_unix_ms),
+                    CHECK (requested_end_at_unix_ms IS NULL OR requested_start_at_unix_ms IS NULL OR
+                           requested_end_at_unix_ms >= requested_start_at_unix_ms),
+                    CHECK (status <> 'READY' OR
+                           (relative_path <> '' AND thumbnail_relative_path <> '' AND
+                            byte_length > 0 AND length(sha256) = 64 AND
+                            thumbnail_byte_length > 0 AND length(thumbnail_sha256) = 64)),
+                    CHECK (asset_type <> 'EVENT_CLIP' OR
+                           (recording_session_id IS NOT NULL AND evidence_marker_annotation_id IS NOT NULL AND
+                            requested_start_at_unix_ms IS NOT NULL AND requested_end_at_unix_ms IS NOT NULL))
+                );
+
+                INSERT INTO evidence_assets (
+                    id, asset_type, status, source_id, drone_id, incident_id, mission_id,
+                    mission_run_id, recording_session_id, selection_id, track_session_id,
+                    track_id, evidence_marker_annotation_id, captured_at_unix_ms,
+                    source_started_at_unix_ms, source_ended_at_unix_ms,
+                    requested_start_at_unix_ms, requested_end_at_unix_ms, relative_path,
+                    thumbnail_relative_path, mime_type, thumbnail_mime_type, byte_length,
+                    sha256, thumbnail_byte_length, thumbnail_sha256, created_by,
+                    created_at_unix_ms, updated_at_unix_ms, error_message
+                )
+                SELECT
+                    id, asset_type, status, source_id, drone_id, incident_id, mission_id,
+                    mission_run_id, recording_session_id, selection_id, track_session_id,
+                    track_id, evidence_marker_annotation_id, captured_at_unix_ms,
+                    source_started_at_unix_ms, source_ended_at_unix_ms,
+                    requested_start_at_unix_ms, requested_end_at_unix_ms, relative_path,
+                    thumbnail_relative_path, mime_type, thumbnail_mime_type, byte_length,
+                    sha256, thumbnail_byte_length, thumbnail_sha256, created_by,
+                    created_at_unix_ms, updated_at_unix_ms, error_message
+                FROM evidence_assets_administration_legacy
+                WHERE status IN ('PENDING', 'READY', 'FAILED');
+
+                DROP TABLE evidence_assets_administration_legacy;
+
+                CREATE INDEX evidence_assets_browse
+                    ON evidence_assets(status, captured_at_unix_ms DESC);
+                CREATE INDEX evidence_assets_drone_captured
+                    ON evidence_assets(drone_id, captured_at_unix_ms DESC);
+                CREATE INDEX evidence_assets_track_captured
+                    ON evidence_assets(track_session_id, track_id, captured_at_unix_ms DESC);
+                CREATE INDEX evidence_assets_recording_pending
+                    ON evidence_assets(recording_session_id, status, captured_at_unix_ms);
+
+                PRAGMA user_version = 26;
+                COMMIT;
+                "#,
+            )
+            .map_err(|error| format!("apply local database migration 26: {error}"))?;
     }
     Ok(())
 }

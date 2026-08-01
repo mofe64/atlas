@@ -12,19 +12,17 @@ use rusqlite::Connection;
 
 use super::{
     explicit_database_path, AbandonPreparedResponseInput, AircraftFollowAgentUpdateInput,
-    AlertObservation, AnnotateEvidenceAssetInput, BatteryTelemetry, CaptureEvidenceStillInput,
-    CountingPoint, CreateAircraftFollowSessionInput, CreateEvidenceStillAssetInput,
-    CreateIncidentInput, CreateMissionInput, EvidenceAssetFileInput,
-    ExpandedPrepareIncidentResponseInput, GpsQuality, HomePosition,
-    IncidentResponseAircraftSuitabilityInput, LocalDatabase, MissionActionUpdateInput,
-    MissionRunUpdateInput, PerceptionTrackBatchInput, PerceptionTrackUpdateInput,
-    PrepareIncidentResponseInput, QueueEvidenceEventClipInput, RcStatus, RegistrationInput,
-    RestoreEvidenceAssetInput, ReviewEvidenceAssetInput, SegmentFinalizationInput,
-    SelectTrackInput, StartEvidenceRecordingInput, StatusEventInput, TelemetryHistoryQuery,
-    TelemetryInput, TerrainRefinementInput, TerrainSampleInput, TrackAnnotationInput,
-    TrackBoundingBoxInput, TrackCountEventInput, TrackRuleCountInput, TrashEvidenceAssetInput,
-    UpdateEvidenceAssetRetentionInput, UpdateEvidenceRetentionPolicyInput, UpdateIncidentInput,
-    UpsertCountingRuleInput, VehicleCommandUpdateInput, VehicleHealth,
+    AlertObservation, BatteryTelemetry, CaptureEvidenceStillInput, CountingPoint,
+    CreateAircraftFollowSessionInput, CreateEvidenceStillAssetInput, CreateIncidentInput,
+    CreateMissionInput, EvidenceAssetFileInput, ExpandedPrepareIncidentResponseInput, GpsQuality,
+    HomePosition, IncidentResponseAircraftSuitabilityInput, LocalDatabase,
+    MissionActionUpdateInput, MissionRunUpdateInput, PerceptionTrackBatchInput,
+    PerceptionTrackUpdateInput, PrepareIncidentResponseInput, QueueEvidenceEventClipInput,
+    RcStatus, RegistrationInput, SegmentFinalizationInput, SelectTrackInput,
+    StartEvidenceRecordingInput, StatusEventInput, TelemetryHistoryQuery, TelemetryInput,
+    TerrainRefinementInput, TerrainSampleInput, TrackAnnotationInput, TrackBoundingBoxInput,
+    TrackCountEventInput, TrackRuleCountInput, UpdateIncidentInput, UpsertCountingRuleInput,
+    VehicleCommandUpdateInput, VehicleHealth,
 };
 use super::{incidents::IncidentResponseGeometryInput, known_buildings::KnownBuildingDataset};
 
@@ -53,7 +51,7 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read schema version");
-    assert_eq!(version, 25);
+    assert_eq!(version, 26);
     let cached_identity_tables: i64 = connection
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'cached_identity'",
@@ -88,12 +86,28 @@ fn migration_replaces_auth_cache_with_vehicle_operations_schema() {
     assert_eq!(alert_tables, 2);
     let evidence_tables: i64 = connection
         .query_row(
-            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('evidence_recording_sessions', 'evidence_recording_segments', 'evidence_gap_events', 'evidence_recording_events', 'evidence_retention_policy', 'evidence_assets', 'evidence_asset_annotations', 'evidence_asset_events')",
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('evidence_recording_sessions', 'evidence_recording_segments', 'evidence_gap_events', 'evidence_recording_events', 'evidence_assets')",
             [],
             |row| row.get(0),
         )
         .expect("inspect evidence recording tables");
-    assert_eq!(evidence_tables, 8);
+    assert_eq!(evidence_tables, 5);
+    let deferred_evidence_administration_tables: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('evidence_retention_policy', 'evidence_asset_annotations', 'evidence_asset_events')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect deferred evidence administration tables");
+    assert_eq!(deferred_evidence_administration_tables, 0);
+    let deferred_evidence_administration_columns: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM pragma_table_info('evidence_assets') WHERE name IN ('review_state', 'retention_class', 'retain_until_unix_ms', 'trashed_at_unix_ms', 'purge_after_unix_ms', 'delete_reason', 'purged_at_unix_ms')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("inspect deferred evidence administration columns");
+    assert_eq!(deferred_evidence_administration_columns, 0);
     let perception_track_tables: i64 = connection
         .query_row(
             "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('perception_track_sessions', 'perception_tracks', 'perception_track_events', 'perception_track_samples')",
@@ -162,7 +176,7 @@ fn migration_upgrades_existing_v3_telemetry_database_to_vehicle_tables() {
     let version: u32 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("read upgraded schema version");
-    assert_eq!(version, 25);
+    assert_eq!(version, 26);
     let new_columns: i64 = connection
         .query_row(
             "SELECT count(*) FROM pragma_table_info('vehicle_telemetry_current') WHERE name IN ('batteries_json', 'health_json', 'rc_status_json', 'gps_quality_json')",
@@ -1784,6 +1798,10 @@ fn counting_and_operator_selection_remain_session_scoped_and_explicit() {
         .expect("queue marker-linked event clip");
     assert_eq!(queued_clip.status, "PENDING");
     assert_eq!(queued_clip.track_id, Some(selection.track_id.clone()));
+    assert_eq!(
+        queued_clip.track_class_label,
+        Some(batch.tracks[0].class_label.clone())
+    );
     assert_eq!(
         queued_clip.requested_start_at_unix_ms,
         Some(now + 323 - 8_000)
@@ -4099,7 +4117,7 @@ fn evidence_recording_manifest_requires_checksum_before_verified_completion() {
 }
 
 #[test]
-fn evidence_assets_preserve_review_annotation_and_recoverable_retention_lifecycle() {
+fn evidence_assets_preserve_capture_media_and_source_context() {
     let (database, path) = test_database();
     insert_test_aircraft(
         &database,
@@ -4108,20 +4126,6 @@ fn evidence_assets_preserve_review_annotation_and_recoverable_retention_lifecycl
         "active",
     );
     let now = unix_time_ms();
-    let policy = database
-        .update_evidence_retention_policy(
-            &UpdateEvidenceRetentionPolicyInput {
-                enabled: true,
-                default_retention_days: 1,
-                extended_retention_days: 90,
-                trash_grace_days: 3,
-                actor: "test_operator".into(),
-            },
-            now,
-        )
-        .expect("configure test evidence retention");
-    assert_eq!(policy.default_retention_days, 1);
-
     let pending = database
         .create_evidence_still_asset(&CreateEvidenceStillAssetInput {
             source_id: "test-source".into(),
@@ -4135,7 +4139,9 @@ fn evidence_assets_preserve_review_annotation_and_recoverable_retention_lifecycl
         })
         .expect("create pending still asset");
     assert_eq!(pending.status, "PENDING");
-    assert_eq!(pending.retain_until_unix_ms, Some(now + 86_400_000));
+    assert_eq!(pending.source_id, "test-source");
+    assert_eq!(pending.drone_id, "asset-evidence-drone");
+    assert_eq!(pending.drone_name, "Asset Evidence");
 
     let ready = database
         .complete_evidence_asset(
@@ -4156,128 +4162,21 @@ fn evidence_assets_preserve_review_annotation_and_recoverable_retention_lifecycl
         )
         .expect("publish still asset");
     assert_eq!(ready.status, "READY");
-    assert_eq!(ready.events.last().unwrap().event_type, "READY");
-    assert_eq!(
-        database
-            .retention_trash_candidates(now + 86_400_001)
-            .expect("read due evidence")
-            .len(),
-        1
-    );
+    assert_eq!(ready.byte_length, 12);
+    assert_eq!(ready.sha256, "a".repeat(64));
+    assert_eq!(ready.thumbnail_sha256, "b".repeat(64));
+    assert_eq!(ready.source_started_at_unix_ms, Some(now));
+    assert_eq!(ready.source_ended_at_unix_ms, Some(now));
 
-    let reviewed = database
-        .review_evidence_asset(
-            &ReviewEvidenceAssetInput {
-                asset_id: pending.id.clone(),
-                review_state: "RELEVANT".into(),
-                note: "Confirms the gate crossing".into(),
-                actor: "reviewer".into(),
-            },
-            now + 2,
-        )
-        .expect("review evidence asset");
-    assert_eq!(reviewed.review_state, "RELEVANT");
-    assert_eq!(reviewed.annotations.len(), 1);
-
-    let annotated = database
-        .annotate_evidence_asset(
-            &AnnotateEvidenceAssetInput {
-                asset_id: pending.id.clone(),
-                annotation_type: "TAG".into(),
-                body: "gate-entry".into(),
-                actor: "reviewer".into(),
-            },
-            now + 3,
-        )
-        .expect("tag evidence asset");
-    assert_eq!(annotated.annotations.len(), 2);
-
-    let held = database
-        .update_evidence_asset_retention(
-            &UpdateEvidenceAssetRetentionInput {
-                asset_id: pending.id.clone(),
-                retention_class: "LEGAL_HOLD".into(),
-                actor: "reviewer".into(),
-            },
-            now + 4,
-        )
-        .expect("place evidence under legal hold");
-    assert_eq!(held.retain_until_unix_ms, None);
-    assert!(database
-        .mark_evidence_asset_trashed(
-            &pending.id,
-            &format!("trash/{}/original.jpg", pending.id),
-            &format!("trash/{}/thumbnail.jpg", pending.id),
-            "cleanup",
-            "reviewer",
-            now + 5,
-        )
-        .expect_err("legal hold must block trash")
-        .contains("legal hold"));
-
-    database
-        .update_evidence_asset_retention(
-            &UpdateEvidenceAssetRetentionInput {
-                asset_id: pending.id.clone(),
-                retention_class: "STANDARD".into(),
-                actor: "reviewer".into(),
-            },
-            now + 6,
-        )
-        .expect("release legal hold");
-    let trashed = database
-        .mark_evidence_asset_trashed(
-            &pending.id,
-            &format!("trash/{}/original.jpg", pending.id),
-            &format!("trash/{}/thumbnail.jpg", pending.id),
-            "retention elapsed",
-            "atlas_retention_policy",
-            now + 7,
-        )
-        .expect("move evidence to recoverable trash");
-    assert_eq!(trashed.status, "TRASHED");
-    assert_eq!(trashed.purge_after_unix_ms, Some(now + 7 + 3 * 86_400_000));
-    let restored = database
-        .mark_evidence_asset_restored(
-            &pending.id,
-            &format!("assets/{}/original.jpg", pending.id),
-            &format!("assets/{}/thumbnail.jpg", pending.id),
-            "reviewer",
-            now + 8,
-        )
-        .expect("restore recoverable evidence");
-    assert_eq!(restored.status, "READY");
-    assert_eq!(restored.events.last().unwrap().event_type, "RESTORED");
-
-    let trashed_again = database
-        .mark_evidence_asset_trashed(
-            &pending.id,
-            &format!("trash/{}/original.jpg", pending.id),
-            &format!("trash/{}/thumbnail.jpg", pending.id),
-            "retention elapsed again",
-            "atlas_retention_policy",
-            now + 9,
-        )
-        .expect("trash restored evidence again");
-    let purge_at = trashed_again.purge_after_unix_ms.unwrap();
-    database
-        .begin_evidence_asset_purge(&pending.id, purge_at)
-        .expect("atomically claim eligible purge");
-    assert_eq!(
-        database
-            .evidence_asset(&pending.id)
-            .expect("read claimed purge")
-            .status,
-        "PURGING"
-    );
-    database
-        .complete_evidence_asset_purge(&pending.id, "atlas_retention_policy", purge_at + 1)
-        .expect("complete claimed purge");
-    let purged = database
-        .evidence_asset(&pending.id)
-        .expect("read purged evidence record");
-    assert_eq!(purged.status, "PURGED");
-    assert_eq!(purged.events.last().unwrap().event_type, "PURGED");
+    let listed = database
+        .evidence_assets(&super::EvidenceAssetListInput {
+            asset_type: Some("STILL".into()),
+            drone_id: Some("asset-evidence-drone".into()),
+            limit: Some(10),
+        })
+        .expect("list captures");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, pending.id);
 
     drop(database);
     remove_sqlite_files(&path);
@@ -4285,7 +4184,7 @@ fn evidence_assets_preserve_review_annotation_and_recoverable_retention_lifecycl
 
 #[cfg(unix)]
 #[test]
-fn still_capture_publishes_thumbnail_and_moves_media_through_recoverable_trash() {
+fn still_capture_publishes_thumbnail_and_keeps_media_available() {
     use std::os::unix::fs::PermissionsExt;
 
     let (database, path) = test_database();
@@ -4340,54 +4239,13 @@ fn still_capture_publishes_thumbnail_and_moves_media_through_recoverable_trash()
         jpeg
     );
     assert!(evidence_root.join(&asset.thumbnail_relative_path).is_file());
-
-    let trashed = recorder
-        .trash_asset(&TrashEvidenceAssetInput {
-            asset_id: asset.id.clone(),
-            reason: "operator cleanup".into(),
-            actor: "operator".into(),
-        })
-        .expect("move still to recoverable trash");
-    assert_eq!(trashed.status, "TRASHED");
-    assert!(evidence_root.join("trash").join(&asset.id).is_dir());
-    assert!(!evidence_root.join("assets").join(&asset.id).exists());
-
-    let restored = recorder
-        .restore_asset(&RestoreEvidenceAssetInput {
-            asset_id: asset.id.clone(),
-            actor: "operator".into(),
-        })
-        .expect("restore still from trash");
-    assert_eq!(restored.status, "READY");
-    assert!(evidence_root.join("assets").join(&asset.id).is_dir());
-
-    recorder
-        .trash_asset(&TrashEvidenceAssetInput {
-            asset_id: asset.id.clone(),
-            reason: "retention fixture".into(),
-            actor: "operator".into(),
-        })
-        .expect("trash still for purge fixture");
-    database
-        .connection
-        .lock()
-        .expect("lock purge fixture database")
-        .execute(
-            "UPDATE evidence_assets SET purge_after_unix_ms = ?2 WHERE id = ?1",
-            rusqlite::params![&asset.id, unix_time_ms() - 1],
-        )
-        .expect("make trash eligible for policy purge");
-    recorder
-        .apply_retention_policy()
-        .expect("purge eligible recoverable trash");
     assert_eq!(
-        database
-            .evidence_asset(&asset.id)
-            .expect("read purged still")
-            .status,
-        "PURGED"
+        recorder
+            .evidence_asset_bytes(&asset.id, false)
+            .expect("read capture through recorder"),
+        jpeg
     );
-    assert!(!evidence_root.join("trash").join(&asset.id).exists());
+    assert!(!evidence_root.join("trash").exists());
 
     drop(recorder);
     drop(database);

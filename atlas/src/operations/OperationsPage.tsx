@@ -23,6 +23,11 @@ import type {
 } from "../operationsTypes";
 import type { Mission, MissionAction, MissionPlan, MissionRun } from "../missions/missionTypes";
 import { formatDistance, missionDistanceStatus } from "../missions/missionSafety";
+import {
+  FlightSafetyControls,
+  type FlightSafetyAction,
+  type FlightSafetyNotice,
+} from "../safety/FlightSafetyControls";
 import { LiveVideo } from "../video/LiveVideo";
 import {
   defaultOperationsMapLayers,
@@ -41,8 +46,6 @@ type OperationsPageProps = {
 
 type ResponseLayout = "map" | "video" | "split";
 type IncidentStatusFilter = "CURRENT" | "ALL" | IncidentStatus;
-type SafetyCommandType = "hold" | "return_to_launch" | "land";
-
 type TelemetryHistoryPage = {
   snapshots: Array<{
     telemetry: {
@@ -121,9 +124,8 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   const [aircraftTrail, setAircraftTrail] = useState<Array<{ latitude: number; longitude: number }>>([]);
   const [trackGeolocations, setTrackGeolocations] = useState<OperationalTrackGeolocation[]>([]);
   const [safetyCommand, setSafetyCommand] = useState<VehicleCommandReceipt>();
-  const [safetyCommandPending, setSafetyCommandPending] = useState<SafetyCommandType>();
-  const [safetyCommandResult, setSafetyCommandResult] = useState<string>();
-  const [safetyCommandError, setSafetyCommandError] = useState<string>();
+  const [safetyCommandPending, setSafetyCommandPending] = useState<FlightSafetyAction>();
+  const [safetyCommandNotice, setSafetyCommandNotice] = useState<FlightSafetyNotice>();
   const [creating, setCreating] = useState(false);
   const [responding, setResponding] = useState(false);
   const [responseDraft, setResponseDraft] = useState<ResponseDraft>();
@@ -226,6 +228,8 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   const workspaceRun = creating || responding ? undefined : observationRun;
   const workspaceTrail = creating || responding ? [] : aircraftTrail;
   const workspaceDroneId = creating ? undefined : observationDroneId;
+  const videoAvailable = Boolean(workspaceDroneId);
+  const enabledLayerCount = Object.values(mapLayers).filter(Boolean).length;
   const highestAlert = useMemo(
     () => highestRelatedOperationalAlert(alerts.alerts, {
       incidentId: creating ? undefined : selectedIncident?.id,
@@ -260,6 +264,16 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
   useEffect(() => {
     window.localStorage.setItem("atlas.operations.responseLayout", layout);
   }, [layout]);
+
+  useEffect(() => {
+    if (!videoAvailable && layout !== "map") setLayout("map");
+  }, [layout, videoAvailable]);
+
+  useEffect(() => {
+    setSafetyCommand(undefined);
+    setSafetyCommandPending(undefined);
+    setSafetyCommandNotice(undefined);
+  }, [liveDroneId]);
 
   useEffect(() => {
     if (incidentDetailRef.current) incidentDetailRef.current.scrollTop = 0;
@@ -388,10 +402,11 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
         .then((receipt) => {
           if (!active) return;
           setSafetyCommand(receipt);
+          setSafetyCommandNotice(noticeForVehicleCommand(receipt));
           if (terminalVehicleCommandStates.has(receipt.status)) setSafetyCommandPending(undefined);
         })
         .catch((reason) => {
-          if (active) setSafetyCommandError(messageFrom(reason));
+          if (active) setSafetyCommandNotice({ tone: "critical", message: messageFrom(reason) });
         });
     }, 300);
     return () => {
@@ -567,19 +582,10 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
     }
   }
 
-  async function requestSafetyCommand(commandType: SafetyCommandType) {
+  async function requestSafetyCommand(commandType: FlightSafetyAction) {
     if (!liveDroneId || !canIssueSafetyCommand) return;
-    if (commandType !== "hold") {
-      const confirmed = window.confirm(
-        commandType === "return_to_launch"
-          ? "Request Return to Launch for this aircraft? Atlas will retain the command acknowledgement as evidence."
-          : "Request immediate Land for this aircraft? Use only when the reviewed landing area is safe.",
-      );
-      if (!confirmed) return;
-    }
     setSafetyCommandPending(commandType);
-    setSafetyCommandError(undefined);
-    setSafetyCommandResult(undefined);
+    setSafetyCommandNotice(undefined);
     if (commandType === "hold" || commandType === "return_to_launch") {
       try {
         const updated = await invoke<MissionRun>("control_mission_run", {
@@ -587,9 +593,19 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
           operation: commandType === "hold" ? "pause" : "return_to_launch",
         });
         setRuns((current) => current.map((run) => run.id === updated.id ? updated : run));
-        setSafetyCommandResult(commandType === "hold" ? "Hold acknowledged · run paused" : "RTL acknowledged · run ending");
+        setSafetyCommandNotice(updated.errorCode
+          ? {
+              tone: "critical",
+              message: updated.errorMessage || `${commandType === "hold" ? "Hold" : "Return home"} failed.`,
+              receipt: { id: updated.id, status: updated.status },
+            }
+          : {
+              tone: "nominal",
+              message: commandType === "hold" ? "Hold acknowledged · run paused" : "Return home acknowledged · run ending",
+              receipt: { id: updated.id, status: updated.status },
+            });
       } catch (reason) {
-        setSafetyCommandError(messageFrom(reason));
+        setSafetyCommandNotice({ tone: "critical", message: messageFrom(reason) });
       } finally {
         setSafetyCommandPending(undefined);
       }
@@ -603,9 +619,10 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
         timeoutMs: 15_000,
       });
       setSafetyCommand(receipt);
+      setSafetyCommandNotice(noticeForVehicleCommand(receipt));
       if (terminalVehicleCommandStates.has(receipt.status)) setSafetyCommandPending(undefined);
     } catch (reason) {
-      setSafetyCommandError(messageFrom(reason));
+      setSafetyCommandNotice({ tone: "critical", message: messageFrom(reason) });
       setSafetyCommandPending(undefined);
     }
   }
@@ -724,24 +741,19 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
             <div><dt>Run</dt><dd>{workspaceRun ? shortId(workspaceRun.id) : "Not started"}</dd></div>
             <div><dt>Alert</dt><dd>{highestAlert ? `${highestAlert.severity} · ${highestAlert.title}` : "No active safety alerts"}</dd></div>
           </dl>
-          <div className="response-context__safety" aria-label="Immediate aircraft safety controls">
-            <span>Flight safety</span>
-            <div>
-              <button type="button" disabled={!canIssueSafetyCommand || liveRun?.status !== "RUNNING"} onClick={() => void requestSafetyCommand("hold")}>Hold</button>
-              <button type="button" disabled={!canIssueSafetyCommand || !liveRun || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(liveRun.status)} onClick={() => void requestSafetyCommand("return_to_launch")}>RTL</button>
-              <button type="button" className="response-context__land" disabled={!canIssueSafetyCommand} onClick={() => void requestSafetyCommand("land")}>Land</button>
-            </div>
-            <small>{safetyCommandPending
-              ? `Sending ${displayEnum(safetyCommandPending)}…`
-              : safetyCommandResult
-                ? safetyCommandResult
-                : safetyCommand && safetyCommand.droneId === liveDroneId
-                ? `${displayEnum(safetyCommand.commandType)} · ${displayEnum(safetyCommand.status)}${safetyCommand.resultMessage ? ` · ${safetyCommand.resultMessage}` : ""}`
-                : canIssueSafetyCommand
-                  ? "Commands require PX4 acknowledgement."
-                  : "Fresh in-air telemetry and a connected Agent are required."}</small>
-            {safetyCommandError && <small className="response-context__command-error" role="alert">{safetyCommandError}</small>}
-          </div>
+          <FlightSafetyControls
+            aircraftName={activeAircraft?.droneName || liveAssignment?.droneName}
+            aircraftId={liveDroneId}
+            availabilityMessage={canIssueSafetyCommand
+              ? "Ready — every command requires acknowledgement from Atlas Agent and PX4."
+              : "Fresh in-air telemetry, a connected Agent, and an active run are required."}
+            pendingAction={safetyCommandPending}
+            notice={safetyCommandNotice}
+            holdDisabled={!canIssueSafetyCommand || liveRun?.status !== "RUNNING"}
+            returnHomeDisabled={!canIssueSafetyCommand || !liveRun || !["RUNNING", "PAUSED", "ROUTE_COMPLETE"].includes(liveRun.status)}
+            landDisabled={!canIssueSafetyCommand}
+            onAction={(action) => void requestSafetyCommand(action)}
+          />
         </section>
       )}
 
@@ -817,15 +829,28 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
           <div className="response-workspace-toolbar">
             <div className="response-layout-switch" role="group" aria-label="Live response layout">
               {(["map", "video", "split"] as ResponseLayout[]).map((option) => (
-                <button key={option} type="button" className={layout === option ? "response-layout-switch--active" : ""} aria-pressed={layout === option} onClick={() => setLayout(option)}>{displayEnum(option)}</button>
+                <button
+                  key={option}
+                  type="button"
+                  className={layout === option ? "response-layout-switch--active" : ""}
+                  aria-pressed={layout === option}
+                  disabled={option !== "map" && !videoAvailable}
+                  title={option !== "map" && !videoAvailable ? "Assign an aircraft to open response video." : undefined}
+                  onClick={() => setLayout(option)}
+                >
+                  {displayEnum(option)}
+                </button>
               ))}
             </div>
-            <fieldset className="response-layer-controls" hidden={layout === "video"}>
-              <legend>Map layers</legend>
-              {(Object.keys(mapLayers) as Array<keyof OperationsMapLayerVisibility>).map((layer) => (
-                <label key={layer}><input type="checkbox" checked={mapLayers[layer]} onChange={(event) => setMapLayers((current) => ({ ...current, [layer]: event.target.checked }))} /><span>{mapLayerLabel(layer)}</span></label>
-              ))}
-            </fieldset>
+            <details className="response-layer-menu" hidden={layout === "video"}>
+              <summary>Layers <strong>{enabledLayerCount}</strong></summary>
+              <fieldset className="response-layer-controls">
+                <legend>Map layers</legend>
+                {(Object.keys(mapLayers) as Array<keyof OperationsMapLayerVisibility>).map((layer) => (
+                  <label key={layer}><input type="checkbox" checked={mapLayers[layer]} onChange={(event) => setMapLayers((current) => ({ ...current, [layer]: event.target.checked }))} /><span>{mapLayerLabel(layer)}</span></label>
+                ))}
+              </fieldset>
+            </details>
           </div>
           <div className={`response-live-surfaces response-live-surfaces--${layout}`} data-response-layout={layout}>
             <div className="response-live-panel response-live-panel--map" aria-label="Response map" aria-hidden={layout === "video"}>
@@ -862,19 +887,26 @@ export function OperationsPage({ nativeAvailable, fleet, alerts, onOpenAircraft,
             </div>
             <div className="response-live-panel response-live-panel--video" aria-label="Response video" aria-hidden={layout === "map"}>
               <span className="response-live-panel__label">Video + perception · persistent subscription</span>
-              <LiveVideo
-                nativeAvailable={nativeAvailable}
-                droneId={workspaceDroneId}
-                aircraft={creating ? undefined : observationAircraft}
-                highestAlert={highestAlert}
-                recordingPlanned={recordingPlanned}
-                recordingContext={{
-                  incidentId: selectedIncident?.id ?? undefined,
-                  missionId: recordingMissionId ?? undefined,
-                  missionRunId: workspaceRun?.id,
-                }}
-                compact={layout === "map"}
-              />
+              {videoAvailable ? (
+                <LiveVideo
+                  nativeAvailable={nativeAvailable}
+                  droneId={workspaceDroneId}
+                  aircraft={creating ? undefined : observationAircraft}
+                  highestAlert={highestAlert}
+                  recordingPlanned={recordingPlanned}
+                  recordingContext={{
+                    incidentId: selectedIncident?.id ?? undefined,
+                    missionId: recordingMissionId ?? undefined,
+                    missionRunId: workspaceRun?.id,
+                  }}
+                  compact={layout === "map"}
+                />
+              ) : (
+                <div className="response-video-locked">
+                  <strong>Video opens after aircraft assignment</strong>
+                  <p>Select an incident and prepare a response to establish the aircraft and evidence context.</p>
+                </div>
+              )}
             </div>
           </div>
           <div className="response-workspace-status">
@@ -1181,9 +1213,9 @@ function IncidentResponsePanel({
         {error && <p className="incident-form__error" role="alert">{error}</p>}
 
         <ol className="response-handoff">
-          <li className="response-handoff--complete"><span>01</span><div><strong>Response prepared</strong><small>Aircraft assignment and route saved together.</small></div></li>
-          <li><span>02</span><div><strong>Confirm deployment</strong><small>Open the existing upload and preflight workspace.</small></div></li>
-          <li><span>03</span><div><strong>Upload & start</strong><small>Connectivity, distance, position, and run locks are rechecked.</small></div></li>
+          <li className="response-handoff--complete"><strong>Response prepared</strong><small>Aircraft assignment and route saved together.</small></li>
+          <li><strong>Confirm deployment</strong><small>Open the existing upload and preflight workspace.</small></li>
+          <li><strong>Upload & start</strong><small>Connectivity, distance, position, and run locks are rechecked.</small></li>
         </ol>
 
         <button type="button" className="incident-response__confirm" onClick={onConfirm} disabled={!waypoint || abandoning}>
@@ -2071,6 +2103,18 @@ function formatRelativeTime(value?: number | null) {
 
 function formatDateTime(value: number) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(value);
+}
+
+function noticeForVehicleCommand(receipt: VehicleCommandReceipt): FlightSafetyNotice {
+  const failed = ["failed", "rejected", "timed_out", "cancelled"].includes(receipt.status);
+  const succeeded = receipt.status === "succeeded";
+  return {
+    tone: failed ? "critical" : succeeded ? "nominal" : "neutral",
+    message: receipt.resultMessage
+      || receipt.resultCode
+      || (succeeded ? `${displayEnum(receipt.commandType)} acknowledged by PX4` : `${displayEnum(receipt.commandType)} awaiting acknowledgement`),
+    receipt: { id: receipt.id, status: receipt.status },
+  };
 }
 
 function messageFrom(reason: unknown) {

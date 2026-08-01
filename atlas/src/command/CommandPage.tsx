@@ -14,6 +14,11 @@ import type {
   OperationalTrackGeolocation,
 } from "../operationsTypes";
 import {
+  FlightSafetyControls,
+  type FlightSafetyAction,
+  type FlightSafetyNotice,
+} from "../safety/FlightSafetyControls";
+import {
   classifyVehicleCommandReceipt,
   pollVehicleCommand,
   type VehicleCommandOutcome,
@@ -90,12 +95,6 @@ const authorityToneClasses: Record<
   },
 };
 
-type CommandNotice = {
-  tone: "neutral" | "nominal" | "caution" | "critical";
-  message: string;
-  receipt?: VehicleCommandReceipt;
-};
-
 export function CommandPage({
   nativeAvailable,
   fleet,
@@ -113,11 +112,8 @@ export function CommandPage({
   const [selectedDroneId, setSelectedDroneId] = useState<string>();
   const [selectedIncidentId, setSelectedIncidentId] = useState<string>();
   const [loadError, setLoadError] = useState<string>();
-  const [pendingCommand, setPendingCommand] = useState<string>();
-  const [commandNotice, setCommandNotice] = useState<CommandNotice>();
-  const [confirmingCommand, setConfirmingCommand] = useState<
-    "return_to_launch" | "land"
-  >();
+  const [pendingCommand, setPendingCommand] = useState<FlightSafetyAction>();
+  const [commandNotice, setCommandNotice] = useState<FlightSafetyNotice>();
   const appliedPreferredDroneId = useRef<string | undefined>(undefined);
 
   const operationalAircraft = useMemo(
@@ -196,7 +192,6 @@ export function CommandPage({
   }, [activeMissionRuns, liveFollowSessions, operationalAircraft, selectedDroneId]);
 
   useEffect(() => {
-    setConfirmingCommand(undefined);
     setCommandNotice(undefined);
   }, [selectedDroneId]);
 
@@ -211,9 +206,8 @@ export function CommandPage({
     (aircraft) => aircraft.telemetry?.inAir,
   ).length;
 
-  async function requestSafetyCommand(commandType: "hold" | "return_to_launch" | "land") {
+  async function requestSafetyCommand(commandType: FlightSafetyAction) {
     if (!selectedAircraft?.droneId || pendingCommand) return;
-    setConfirmingCommand(undefined);
     setPendingCommand(commandType);
     setCommandNotice({
       tone: "neutral",
@@ -254,8 +248,8 @@ export function CommandPage({
   }
 
   async function refreshCommandReceipt() {
-    if (!commandNotice?.receipt || pendingCommand) return;
-    setPendingCommand(commandNotice.receipt.commandType);
+    if (!commandNotice?.receipt?.commandType || pendingCommand) return;
+    setPendingCommand(commandNotice.receipt.commandType as FlightSafetyAction);
     try {
       const receipt = await invoke<VehicleCommandReceipt>("vehicle_command_detail", {
         commandId: commandNotice.receipt.id,
@@ -386,9 +380,7 @@ export function CommandPage({
       </section>
 
       <aside
-        className={`command-panel command-detail${
-          confirmingCommand ? " command-detail--confirming" : ""
-        }`}
+        className="command-panel command-detail"
         aria-label="Selected aircraft"
       >
         <header className="command-panel__head">
@@ -417,87 +409,18 @@ export function CommandPage({
               onOpenFollow={onOpenFollow}
               onOpenMission={onOpenMission}
             />
-            <section className="command-safety" aria-label="Flight safety">
-              <header>
-                <strong>Flight safety</strong>
-                <span>{shortAircraftId(selectedAircraft.droneId)}</span>
-              </header>
-              <div>
-                <button
-                  type="button"
-                  disabled={!canIssueSafetyCommand(selectedAircraft) || Boolean(pendingCommand)}
-                  onClick={() => void requestSafetyCommand("hold")}
-                >
-                  Hold
-                </button>
-                <button
-                  type="button"
-                  disabled={!canIssueSafetyCommand(selectedAircraft) || Boolean(pendingCommand)}
-                  aria-expanded={confirmingCommand === "return_to_launch"}
-                  onClick={() => setConfirmingCommand("return_to_launch")}
-                >
-                  Return home
-                </button>
-                <button
-                  type="button"
-                  className="command-safety__land"
-                  disabled={!canIssueSafetyCommand(selectedAircraft) || Boolean(pendingCommand)}
-                  aria-expanded={confirmingCommand === "land"}
-                  onClick={() => setConfirmingCommand("land")}
-                >
-                  Land
-                </button>
-              </div>
-              {confirmingCommand && (
-                <div
-                  className={`command-safety__confirmation command-safety__confirmation--${
-                    confirmingCommand === "land" ? "critical" : "caution"
-                  }`}
-                >
-                  <strong>{commandConfirmationTitle(confirmingCommand, selectedAircraft)}</strong>
-                  <p>{commandConfirmationConsequence(confirmingCommand)}</p>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingCommand(undefined)}
-                    >
-                      {confirmingCommand === "land" ? "Keep flying" : "Keep current flight"}
-                    </button>
-                    <button
-                      type="button"
-                      className={confirmingCommand === "land" ? "command-safety__confirm-land" : undefined}
-                      onClick={() => void requestSafetyCommand(confirmingCommand)}
-                    >
-                      {confirmingCommand === "land" ? "Confirm land" : "Confirm return home"}
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div
-                className={`command-safety__reason${
-                  commandNotice ? ` command-safety__reason--${commandNotice.tone}` : ""
-                }`}
-                role={commandNotice?.tone === "critical" ? "alert" : "status"}
-              >
-                <span>{commandNotice?.message || safetyAvailability(selectedAircraft)}</span>
-                {commandNotice?.receipt && (
-                  <small>
-                    Receipt {shortIdentifier(commandNotice.receipt.id)}
-                    {" · "}
-                    {humanize(commandNotice.receipt.status)}
-                  </small>
-                )}
-                {commandNotice?.tone === "caution" && commandNotice.receipt && (
-                  <button
-                    type="button"
-                    disabled={Boolean(pendingCommand)}
-                    onClick={() => void refreshCommandReceipt()}
-                  >
-                    {pendingCommand ? "Refreshing…" : "Refresh receipt"}
-                  </button>
-                )}
-              </div>
-            </section>
+            <FlightSafetyControls
+              aircraftName={selectedAircraft.droneName ?? undefined}
+              aircraftId={selectedAircraft.droneId ?? undefined}
+              availabilityMessage={safetyAvailability(selectedAircraft)}
+              pendingAction={pendingCommand}
+              notice={commandNotice}
+              holdDisabled={!canIssueSafetyCommand(selectedAircraft)}
+              returnHomeDisabled={!canIssueSafetyCommand(selectedAircraft)}
+              landDisabled={!canIssueSafetyCommand(selectedAircraft)}
+              onAction={(action) => void requestSafetyCommand(action)}
+              onRefreshReceipt={() => void refreshCommandReceipt()}
+            />
           </>
         ) : (
           <div className="command-empty command-empty--detail">
@@ -820,23 +743,6 @@ function commandLabel(commandType: string) {
   return humanize(commandType);
 }
 
-function commandConfirmationTitle(
-  commandType: "return_to_launch" | "land",
-  aircraft: FleetAircraft,
-) {
-  const name = aircraft.droneName || "this aircraft";
-  return commandType === "land" ? `Land ${name}?` : `Return ${name} home?`;
-}
-
-function commandConfirmationConsequence(
-  commandType: "return_to_launch" | "land",
-) {
-  if (commandType === "land") {
-    return "Land commands PX4 to descend at its current position. Continue only when the landing area is clear.";
-  }
-  return "Return home commands PX4 RTL. The aircraft leaves its current task and flies to its configured home position.";
-}
-
 function messageFrom(reason: unknown) {
   return reason instanceof Error ? reason.message : String(reason);
 }
@@ -844,7 +750,7 @@ function messageFrom(reason: unknown) {
 function noticeForCommandOutcome(
   outcome: VehicleCommandOutcome,
   commandType: string,
-): CommandNotice {
+): FlightSafetyNotice {
   if (outcome.kind === "success") {
     return {
       tone: "nominal",

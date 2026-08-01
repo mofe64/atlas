@@ -77,6 +77,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
     () => followReadiness(selected, selectedAircraft, draft, activeSession),
     [activeSession, draft, selected, selectedAircraft],
   );
+  const followReady = readiness.length > 0 && readiness.every((gate) => gate.ready);
 
   useEffect(() => {
     if (!activeSession || !activeStates.has(activeSession.state)) return;
@@ -140,7 +141,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
   }
 
   async function startFollow() {
-    if (!selected || !draft || pending || readiness.some((gate) => !gate.ready)) return;
+    if (!selected || !draft || pending || !followReady) return;
     setPending("start");
     setError(undefined);
     setMessage("Refreshing world-space target state before authorization…");
@@ -276,7 +277,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
           ) : (
             <>
               <section className="follow-readiness">
-                <header><p className="eyebrow">Authorization gates</p><h2>Ready to request</h2></header>
+                <header><p className="eyebrow">Authorization gates</p><h2>{followReady ? "Ready to request" : "Not ready — review blockers"}</h2></header>
                 <ol>
                   {readiness.map((gate) => (
                     <li key={gate.id} className={gate.ready ? "follow-gate--ready" : "follow-gate--blocked"}>
@@ -293,17 +294,25 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
                   <div className="follow-field-grid">
                     <NumberField label="Standoff" unit="m" value={draft.standoffM} min={10} max={500} onChange={(standoffM) => setDraft({ ...draft, standoffM })} />
                     <NumberField label="Flight altitude" unit="m rel" value={draft.altitudeRelativeM} min={5} max={120} onChange={(altitudeRelativeM) => setDraft({ ...draft, altitudeRelativeM })} />
-                    <NumberField label="Altitude floor" unit="m rel" value={draft.minimumAltitudeRelativeM} min={5} max={120} onChange={(minimumAltitudeRelativeM) => setDraft({ ...draft, minimumAltitudeRelativeM })} />
-                    <NumberField label="Altitude ceiling" unit="m rel" value={draft.maximumAltitudeRelativeM} min={5} max={120} onChange={(maximumAltitudeRelativeM) => setDraft({ ...draft, maximumAltitudeRelativeM })} />
                     <NumberField label="Max groundspeed" unit="m/s" value={draft.maximumGroundSpeedMps} min={0.5} max={15} step={0.5} onChange={(maximumGroundSpeedMps) => setDraft({ ...draft, maximumGroundSpeedMps })} />
-                    <NumberField label="Max acceleration" unit="m/s²" value={draft.maximumAccelerationMps2} min={0.1} max={5} step={0.1} onChange={(maximumAccelerationMps2) => setDraft({ ...draft, maximumAccelerationMps2 })} />
                     <NumberField label="Duration" unit="s" value={draft.maximumDurationSeconds} min={10} max={1800} onChange={(maximumDurationSeconds) => setDraft({ ...draft, maximumDurationSeconds })} />
-                    <NumberField label="Boundary radius" unit="m" value={draft.boundaryRadiusM} min={25} max={5000} onChange={(boundaryRadiusM) => setDraft({ ...draft, boundaryRadiusM })} />
                     <NumberField label="Battery reserve" unit="%" value={draft.minimumBatteryPercent} min={15} max={100} onChange={(minimumBatteryPercent) => setDraft({ ...draft, minimumBatteryPercent })} />
-                    <NumberField label="Track confidence" unit="min" value={draft.minimumTrackConfidence} min={0.5} max={1} step={0.05} onChange={(minimumTrackConfidence) => setDraft({ ...draft, minimumTrackConfidence })} />
-                    <NumberField label="Position uncertainty" unit="m max" value={draft.maximumGeolocationUncertaintyM} min={1} max={100} onChange={(maximumGeolocationUncertaintyM) => setDraft({ ...draft, maximumGeolocationUncertaintyM })} />
-                    <NumberField label="Velocity uncertainty" unit="m/s max" value={draft.maximumVelocityUncertaintyMps} min={0.1} max={25} step={0.1} onChange={(maximumVelocityUncertaintyMps) => setDraft({ ...draft, maximumVelocityUncertaintyMps })} />
+                    <NumberField label="Boundary radius" unit="m" value={draft.boundaryRadiusM} min={25} max={5000} onChange={(boundaryRadiusM) => setDraft({ ...draft, boundaryRadiusM })} />
                   </div>
+                  <details className="follow-advanced-constraints">
+                    <summary>
+                      <span>Advanced constraints</span>
+                      <small>Altitude band, acceleration, and target uncertainty</small>
+                    </summary>
+                    <div className="follow-field-grid">
+                      <NumberField label="Altitude floor" unit="m rel" value={draft.minimumAltitudeRelativeM} min={5} max={120} onChange={(minimumAltitudeRelativeM) => setDraft({ ...draft, minimumAltitudeRelativeM })} />
+                      <NumberField label="Altitude ceiling" unit="m rel" value={draft.maximumAltitudeRelativeM} min={5} max={120} onChange={(maximumAltitudeRelativeM) => setDraft({ ...draft, maximumAltitudeRelativeM })} />
+                      <NumberField label="Max acceleration" unit="m/s²" value={draft.maximumAccelerationMps2} min={0.1} max={5} step={0.1} onChange={(maximumAccelerationMps2) => setDraft({ ...draft, maximumAccelerationMps2 })} />
+                      <NumberField label="Track confidence" unit="min" value={draft.minimumTrackConfidence} min={0.5} max={1} step={0.05} onChange={(minimumTrackConfidence) => setDraft({ ...draft, minimumTrackConfidence })} />
+                      <NumberField label="Position uncertainty" unit="m max" value={draft.maximumGeolocationUncertaintyM} min={1} max={100} onChange={(maximumGeolocationUncertaintyM) => setDraft({ ...draft, maximumGeolocationUncertaintyM })} />
+                      <NumberField label="Velocity uncertainty" unit="m/s max" value={draft.maximumVelocityUncertaintyMps} min={0.1} max={25} step={0.1} onChange={(maximumVelocityUncertaintyMps) => setDraft({ ...draft, maximumVelocityUncertaintyMps })} />
+                    </div>
+                  </details>
                   <label className="follow-review-note">
                     <span>Review note</span>
                     <textarea value={draft.operatorReviewNote} maxLength={500} onChange={(event) => setDraft({ ...draft, operatorReviewNote: event.target.value })} />
@@ -312,7 +321,7 @@ export function FollowPage({ nativeAvailable, fleet }: FollowPageProps) {
                   <button
                     type="button"
                     className="follow-authorize"
-                    disabled={Boolean(pending) || readiness.some((gate) => !gate.ready)}
+                    disabled={Boolean(pending) || !followReady}
                     onClick={() => void startFollow()}
                   >
                     {pending === "start" ? "Validating + acquiring…" : "Authorize Follow from standoff"}

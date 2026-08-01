@@ -8,27 +8,26 @@ use std::{net::SocketAddr, sync::Arc};
 
 use commands::{
     abandon_prepared_response, acknowledge_operational_alert, aircraft_follow_session,
-    aircraft_follow_sessions, annotate_evidence_asset, annotate_perception_track,
-    apply_mission_terrain_profile, archive_drone, cancel_vehicle_command, capture_evidence_still,
+    aircraft_follow_sessions, annotate_perception_track, apply_mission_terrain_profile,
+    archive_drone, cancel_vehicle_command, capture_evidence_still,
     clear_perception_track_selection, control_mission_run, create_aircraft_follow_session,
     create_incident, create_mission, end_aircraft_follow_session, evidence_asset,
-    evidence_asset_content, evidence_assets, evidence_recording_status, evidence_retention_policy,
-    fleet_snapshot, generate_mission_plan, ground_station_snapshot, history_overview,
-    incident_detail, incident_list, incident_response_aircraft_suitability, mission_detail,
-    mission_list, mission_plan, mission_run_detail, mission_run_history, mission_templates,
-    operational_alerts, operational_track_geolocations, perception_counting_rules,
-    perception_counts, perception_frame_subscription_renew, perception_frame_subscription_start,
+    evidence_asset_content, evidence_assets, evidence_recording_status, fleet_snapshot,
+    generate_mission_plan, ground_station_snapshot, history_overview, incident_detail,
+    incident_list, incident_response_aircraft_suitability, mission_detail, mission_list,
+    mission_plan, mission_run_detail, mission_run_history, mission_templates, operational_alerts,
+    operational_track_geolocations, perception_counting_rules, perception_counts,
+    perception_frame_subscription_renew, perception_frame_subscription_start,
     perception_frame_subscription_stop, perception_snapshot, perception_track_geolocations,
     perception_track_history, perception_track_samples, perception_track_selection,
     prepare_incident_response, preview_incident_response, queue_evidence_event_clip,
     refine_perception_track_geolocation, renew_aircraft_follow_session, request_vehicle_command,
-    restore_drone, restore_evidence_asset, review_evidence_asset, runtime_info,
-    select_perception_track, start_evidence_recording, stop_evidence_recording,
-    trash_evidence_asset, update_evidence_asset_retention, update_evidence_retention_policy,
-    update_incident, update_mission, upload_mission, upsert_perception_counting_rule,
-    vehicle_command_detail, vehicle_command_history, vehicle_event_history,
-    vehicle_operations_snapshot, vehicle_telemetry_chart_series, vehicle_telemetry_history,
-    video_stream_frame, video_stream_snapshot, video_stream_start, video_stream_stop,
+    restore_drone, runtime_info, select_perception_track, start_evidence_recording,
+    stop_evidence_recording, update_incident, update_mission, upload_mission,
+    upsert_perception_counting_rule, vehicle_command_detail, vehicle_command_history,
+    vehicle_event_history, vehicle_operations_snapshot, vehicle_telemetry_chart_series,
+    vehicle_telemetry_history, video_stream_frame, video_stream_snapshot, video_stream_start,
+    video_stream_stop,
 };
 use database::LocalDatabase;
 use tauri::Manager;
@@ -72,7 +71,6 @@ pub fn run() {
                 video.source_config(),
             )
             .map_err(std::io::Error::other)?;
-            let retention_recording = recording.clone();
             let alert_database = Arc::clone(&database);
             let follow_database = Arc::clone(&database);
             let follow_router = command_router.clone();
@@ -134,15 +132,6 @@ pub fn run() {
                     }
                 }
             });
-            tauri::async_runtime::spawn(async move {
-                let mut interval = tokio::time::interval(std::time::Duration::from_secs(3_600));
-                loop {
-                    interval.tick().await;
-                    if let Err(error) = retention_recording.apply_retention_policy() {
-                        eprintln!("Apply Atlas evidence retention policy failed: {error}");
-                    }
-                }
-            });
             if let Some(window) = app.get_webview_window("main") {
                 let shutdown_video = video.clone();
                 let shutdown_recording = recording.clone();
@@ -173,13 +162,6 @@ pub fn run() {
             evidence_assets,
             evidence_asset,
             evidence_asset_content,
-            review_evidence_asset,
-            annotate_evidence_asset,
-            update_evidence_asset_retention,
-            trash_evidence_asset,
-            restore_evidence_asset,
-            evidence_retention_policy,
-            update_evidence_retention_policy,
             create_aircraft_follow_session,
             renew_aircraft_follow_session,
             end_aircraft_follow_session,

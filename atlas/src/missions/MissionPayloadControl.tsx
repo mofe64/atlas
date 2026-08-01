@@ -299,7 +299,6 @@ function PayloadControl({
       }}
     >
       <div className="execution-card__title payload-control__title payload-control__heading">
-        <span>{context.kind === "inspection" ? "CTRL" : "02"}</span>
         <strong id="payload-control-title">{context.kind === "inspection" ? "Inspection control" : "Camera & gimbal"}</strong>
         <i className={manual ? "payload-state payload-state--manual" : "payload-state"}>{baseStateLabel}</i>
       </div>
