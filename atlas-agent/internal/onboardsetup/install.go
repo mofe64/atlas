@@ -76,61 +76,113 @@ func validateModelAccelerator(modelAccelerator string, hailo HailoStatus) error 
 }
 
 // Takes the config produced by BuildInstallPlan and applies it to the operating system
+// Does the following:
+// 1. check for permissions to modify os
+// 2. verify that packages supplied all required files
+// 3. prepare the service user
+// 4. verify that the service user can access hardware
+// 5. write the configuration files
+// 6. reload and activate systemd services
+// 7. reports final readiness status
 func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options, plan InstallPlan) (ApplyResult, error) {
 	// if this isn't a dry run, and we are not running as root, and the root path is not set, we return an error
-	if !options.DryRun && !isRoot() && (options.Paths.Root == "" || options.Paths.Root == "/") {
+	// for actual installation, we need root, tor create system user, change group membership
+	// write under /etc, /var and /run and to realod and control systemd services
+	if !options.DryRun && !isRoot() && (options.Paths.Root == "" || options.Paths.Root == "/") { // isRoot() checks if effective user id is 0 (root)
+		// a custom Paths.Root bypasses this root check, but out cli currently enforces that custom root is only used for dry runs
+		// we should preserve this invariant for any other callers
 		return ApplyResult{}, errors.New("atlas-setup install must run as root; use sudo atlas-setup")
 	}
+
+	// if output destination is not set, use io.Discard to avoid logging to the console and avoid a panic
 	output := options.Output
 	if output == nil {
 		output = io.Discard
 	}
+
+	// we are wrapping the command runner with our own custom ApplyRunner that adds dry run functionality and output destination
 	runner := ApplyRunner{Runner: commandRunner, DryRun: options.DryRun, Output: output}
+
+	// validate the provided install payload
+	// this confirms that the relevant packages have already been installed, and we are good to go
 	if err := validateInstalledPayload(options.Paths, plan.Config, options.DryRun); err != nil {
 		return ApplyResult{}, err
 	}
+
+	// prepare service account, we run atlas under `atlas-agent` user, so this method will create the user if it doesn't exist
+	// and add it to the dialout group to access the serial device
 	if err := ensureServiceAccount(ctx, commandRunner, runner); err != nil {
 		return ApplyResult{}, err
 	}
+	// if we aren't in dry run mode,
 	if !options.DryRun {
+		// verify that the service user can access the serial device (should be on telem2 for the pixhawk device)
 		if err := verifySerialAccess(ctx, commandRunner, plan.Config.SerialDevice); err != nil {
 			return ApplyResult{}, err
 		}
+		// if we are running perception in process mode, we need to verify that the service user can access the Hailo device
+		// we don't do this for container mode, since this is already handled bu the docker service and the container health checks we did when we built the install plan
 		if plan.Config.PerceptionEnabled && plan.Config.PerceptionAdapterMode == AdapterModeProcess {
 			if err := ensureHailoAccess(ctx, commandRunner, runner); err != nil {
 				return ApplyResult{}, err
 			}
 		}
 	}
+	// prepare spatial runtime
+	// relaods device rules for DepthAI devices, and checks if the spatial runtime binary is present
 	spatialReady, err := ensureSpatialRuntime(ctx, runner, options, &plan.Config)
 	if err != nil {
 		return ApplyResult{}, err
 	}
+
+	// wriet the configuration files
+	// writes the followung
+	// /etc/atlas-agent/atlas-agent.env
+	// /etc/atlas-agent/spatial.env
+	// /etc/atlas-agent/aircraft-profile.json
+	// it also creates the state directory and runtime directory
 	if err := writeConfiguration(ctx, runner, options, plan.Config); err != nil {
 		return ApplyResult{}, err
 	}
+
+	// reload systemd daemon to pick up new configuration and services
 	if err := runner.Run(ctx, "systemctl", "daemon-reload"); err != nil {
 		return ApplyResult{}, err
 	}
-
+	// set out readiness status, if perception is disabled we mark it as ready
 	result := ApplyResult{PerceptionReady: !plan.Config.PerceptionEnabled, SpatialReady: spatialReady}
+
+	// if perception is enabled and we are not in dry run mode, we need to verify that the Hailo device is ready, the model is present, and the postprocess library is present, before we activate the service
 	if plan.Config.PerceptionEnabled && !options.DryRun {
-		hailo := discoverHailo(ctx, commandRunner, options.Paths)
-		postprocessReady := fileExists(plan.Config.PostprocessSO) || plan.Config.PerceptionAdapterMode == AdapterModeContainer
-		result.PerceptionReady = hailo.Ready() && fileExists(plan.Config.ModelPath) && postprocessReady
+		hailo := discoverHailo(ctx, commandRunner, options.Paths)                                                              // rerun hailo discovery to get the latest status, since things might have changed since we built the install plan
+		postprocessReady := fileExists(plan.Config.PostprocessSO) || plan.Config.PerceptionAdapterMode == AdapterModeContainer // postprocess library is optional for container mode, but required for process mode
+		result.PerceptionReady = hailo.Ready() && fileExists(plan.Config.ModelPath) && postprocessReady                        // determine final perception readiness status
 		if !result.PerceptionReady {
+			// throw error if any perception readiness condition is not met
 			return result, errors.New("Hailo perception was selected but its runtime, model, or postprocess library is not ready")
 		}
 	}
+
+	// disable old hailo adapter service if we are not running in container mode or perception is disabled
+	// In process mode, the Atlas Agent manages the host Hailo adapter process itself using the configured adapter binary,
+	// so if we are running in process mode, we need to disable the container service, Otherwise, both adapters could compete for /dev/hailo0 or the same perception socket
 	if plan.Config.PerceptionAdapterMode != AdapterModeContainer || !plan.Config.PerceptionEnabled {
 		runner.RunOptional(ctx, "systemctl", "disable", "--now", "atlas-hailo-adapter.service")
 	}
+	// disable spatial runtime service if spatial is disabled
 	if !plan.Config.SpatialEnabled {
 		runner.RunOptional(ctx, "systemctl", "disable", "--now", "atlas-spatial-runtime.service")
 	}
+
+	// now enable and start the services that are configured to run
+	// note configured service will always include atlas-agent.service and atlas-mavsdk.service
+	// it contiditionally adds atlas-hailo-adapter.service when container perception is enabled, in procecc mode, there is no indepenetent hailo systemd service, atlas uses
+	// the configured adapter binary directly
+	// and atlas-spatial-runtime.service when spatial is enabled
 	if err := runner.Run(ctx, "systemctl", append([]string{"enable", "--now"}, configuredServices(plan.Config)...)...); err != nil {
 		return ApplyResult{}, err
 	}
+	// restart spatail with the new environment
 	if plan.Config.SpatialEnabled {
 		// A package upgrade may have restarted Spatial with its previous
 		// environment. Restart once so this setup run's device selection and
@@ -147,35 +199,58 @@ func ApplyInstallPlan(ctx context.Context, commandRunner Runner, options Options
 	return result, nil
 }
 
+// ensure that the spatial runtime is ready
 func ensureSpatialRuntime(ctx context.Context, runner ApplyRunner, options Options, config *InstallConfig) (bool, error) {
+	// if the spatial config says spatial is disabled, we retrun true here
 	if !config.SpatialEnabled {
 		return true, nil
 	}
+
+	// if the spatial provider is DepthAI (oak-d lite), we need to reload the udev rules and trigger a USB device event
+	// this retriggers usb devices with vendor id 03e7 (DepthAI)
+	// the objective here is to apply newly installed permissions without requiring the camera to be unplugged and plugged back in
+	// we use runOptional so that a udev reload failure does not immediately abort our setup process. since later runtime and healht checks
+	// can provide a stronger readiness signal
 	if config.SpatialProvider == SpatialProviderDepthAI {
 		runner.RunOptional(ctx, "udevadm", "control", "--reload-rules")
 		runner.RunOptional(ctx, "udevadm", "trigger", "--subsystem-match=usb", "--attr-match=idVendor=03e7")
 	}
+	// if we are in dry run mode, we return true here
 	if options.DryRun {
 		return true, nil
 	}
+	// check if the spatial runtime binary exists
 	return fileExists(options.Paths.SpatialRuntimeBinary), nil
 }
 
 func validateInstalledPayload(paths Paths, config InstallConfig, dryRun bool) error {
+	// no validation for dry runs
 	if dryRun {
 		return nil
 	}
+	// the min required payload for installation
+	// should be
+	// 	/usr/bin/atlas-agent
+	// /usr/libexec/atlas-agent/mavsdk_server
+	// /usr/lib/systemd/system/atlas-agent.service
+	// /usr/lib/systemd/system/atlas-mavsdk.service
 	required := []string{paths.AgentBinary, paths.MAVSDKBinary, paths.AgentService, paths.MAVSDKService}
+
+	// if perception is enabled and adapter mode is process, we need to add the hailo adapter binary to the required paths
 	if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeProcess {
 		required = append(required, paths.HailoAdapter)
+		// if container mode, we need to add the hailo container service and environment file to the required paths
 	} else if config.PerceptionEnabled && config.PerceptionAdapterMode == AdapterModeContainer {
 		required = append(required, paths.HailoContainerService, paths.HailoContainerEnv)
 	}
+
+	// for each required path, we check if it exists
 	for _, path := range required {
 		if !fileExists(path) {
 			return fmt.Errorf("Atlas package payload is incomplete; missing %s", path)
 		}
 	}
+	// if spatial is enabled, we need to add the spatial runtime binary, check, and service to the required paths
 	if config.SpatialEnabled {
 		for _, path := range []string{paths.SpatialRuntimeBinary, paths.SpatialCheck, paths.SpatialService} {
 			if !fileExists(path) {
@@ -198,15 +273,29 @@ func configuredServices(config InstallConfig) []string {
 }
 
 func ensureServiceAccount(ctx context.Context, commandRunner Runner, runner ApplyRunner) error {
+	// check if the service account exists
 	if commandRunner.Run(ctx, "id", "-u", "atlas-agent").Err != nil {
+		// if it doesn't create it
+		// --system: create a system/service account rather than a normal login user.
+		// --user-group: create a matching atlas-agent group.
+		// --home-dir /var/lib/atlas-agent: set the service state directory as the account’s home.
+		// --shell /usr/sbin/nologin: prevent interactive login.
+		// atlas-agent: account name.
 		if err := runner.Run(ctx, "useradd", "--system", "--user-group", "--home-dir", "/var/lib/atlas-agent", "--shell", "/usr/sbin/nologin", "atlas-agent"); err != nil {
 			return err
 		}
 	}
+	// add the service account to the dialout group, allows the service account to access the serial device
+	// -G dialout: add dialout as a supplementary group.
+	// -a: append it without removing existing supplementary groups.
+	// Without -a, usermod -G could replace all the user’s other supplementary groups.
 	return runner.Run(ctx, "usermod", "-a", "-G", "dialout", "atlas-agent")
 }
 
 func verifySerialAccess(ctx context.Context, runner Runner, device string) error {
+	// we check two modes of access read and write
+	// we need to check both modes, since mavsdk needs ro readt telem and heartbeat messages
+	// and also needs write for commands and protocol messages
 	for _, mode := range []string{"-r", "-w"} {
 		result := runner.Run(ctx, "runuser", "-u", "atlas-agent", "--", "test", mode, device)
 		if result.Err != nil {
@@ -217,16 +306,20 @@ func verifySerialAccess(ctx context.Context, runner Runner, device string) error
 }
 
 func ensureHailoAccess(ctx context.Context, commandRunner Runner, runner ApplyRunner) error {
+	// find all hailo devices
 	devices, _ := filepath.Glob("/dev/hailo*")
+	// for each device, check its owning group
 	for _, device := range devices {
 		groupResult := commandRunner.Run(ctx, "stat", "-c", "%G", device)
 		group := strings.TrimSpace(groupResult.Output)
+		// if the device is not owned by root, add the atlas-agent user to the group
 		if groupResult.Err == nil && group != "" && group != "root" {
 			if err := runner.Run(ctx, "usermod", "-a", "-G", group, "atlas-agent"); err != nil {
 				return err
 			}
 		}
 	}
+	// perform a hailortcli command to confirm that hailo is setup and ready, and that the service user can access it
 	result := commandRunner.Run(ctx, "runuser", "-u", "atlas-agent", "--", "hailortcli", "fw-control", "identify")
 	if result.Err != nil {
 		return fmt.Errorf("atlas-agent service user cannot access the Hailo device: %w%s", result.Err, outputSuffix(result.Output))
@@ -235,14 +328,18 @@ func ensureHailoAccess(ctx context.Context, commandRunner Runner, runner ApplyRu
 }
 
 func writeConfiguration(ctx context.Context, runner ApplyRunner, options Options, config InstallConfig) error {
+	// generate string rep for the agent environment values
 	content, err := RenderEnvironment(config, options.Paths)
 	if err != nil {
 		return err
 	}
+	// generate string rep for the spatial environment values
 	spatialContent, err := RenderSpatialEnvironment(config, options.Paths)
 	if err != nil {
 		return err
 	}
+	// for dry run, we don't modify filesystem, so we just print the configuration files alongside, the aircraft profile,
+	// intended ownership and permissions to the output
 	if options.DryRun {
 		_, _ = fmt.Fprintf(
 			options.Output,
@@ -254,6 +351,13 @@ func writeConfiguration(ctx context.Context, runner ApplyRunner, options Options
 		_, _ = fmt.Fprintf(options.Output, "--- %s (0640 root:atlas-agent) ---\n%s", options.Paths.SpatialConfigFile, spatialContent)
 		return nil
 	}
+
+	// install the aircraft profile
+	// 	-D: create missing parent directories.
+	// -m 0640: owner can read/write, group can read, everyone else has no access.
+	// -o root: root owns the file.
+	// -g atlas-agent: Atlas services can read it.
+	// This produces a stable active-profile path. The source profile may remain among several packaged profiles, while the runtime always reads one selected copy.
 	if err := runner.Run(
 		ctx,
 		"install",
@@ -269,9 +373,22 @@ func writeConfiguration(ctx context.Context, runner ApplyRunner, options Options
 	); err != nil {
 		return err
 	}
+	// install the agent environment file
+	// the helper function
+	// 1. creates a temp file
+	// 2. writes the complete contet to the temp file
+	// 3. closes the temp file
+	// 4. invokes install to copy it to the destination with correct ownership and permissions;
+	// 5. removes the temp file
+	// 	The destination receives:
+	// mode:  0640
+	// owner: root
+	// group: atlas-agent
+	// Closing the temporary file before invoking install ensures all buffered content has been handed to the operating system.
 	if err := installEnvironmentFile(ctx, runner, content, options.Paths.ConfigFile); err != nil {
 		return err
 	}
+	// install the spatial environment file
 	if err := installEnvironmentFile(ctx, runner, spatialContent, options.Paths.SpatialConfigFile); err != nil {
 		return err
 	}
