@@ -906,6 +906,8 @@ func registration(cfg config.Config, localIdentity identity.Identity, requestID 
 	}
 }
 
+// converts a transport-independent telemetry.Snapshot into protobuf AircraftTelemetry.
+// includes all the telemetry data from the snapshot.
 func telemetryMessage(snapshot telemetry.Snapshot) *pb.AircraftTelemetry {
 	message := &pb.AircraftTelemetry{
 		ObservedAtUnixMs:  snapshot.ObservedAt.UTC().UnixMilli(),
@@ -982,6 +984,8 @@ func telemetryMessage(snapshot telemetry.Snapshot) *pb.AircraftTelemetry {
 	return message
 }
 
+// reads the machine ID from the system, this is used to identify the device.
+// if the machine ID is not found, an empty string is returned.
 func machineID() string {
 	for _, path := range []string{"/etc/machine-id", "/var/lib/dbus/machine-id"} {
 		if value, err := os.ReadFile(path); err == nil {
@@ -998,6 +1002,7 @@ func machineIDSource(machineID string) string {
 	return "linux_machine_id"
 }
 
+// reads the total memory bytes from the system, this is used to estimate the device memory.
 func totalMemoryBytes() uint64 {
 	contents, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
@@ -1006,6 +1011,7 @@ func totalMemoryBytes() uint64 {
 	return parseTotalMemoryBytes(string(contents))
 }
 
+// parses the total memory bytes from the system, this is used to estimate the device memory.
 func parseTotalMemoryBytes(meminfo string) uint64 {
 	for line := range strings.SplitSeq(meminfo, "\n") {
 		fields := strings.Fields(line)
