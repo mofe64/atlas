@@ -13,7 +13,14 @@ const (
 	maximumFrameLease = 30 * time.Second
 )
 
-// frameDemand combines short Native consumer leases with mission lifecycle
+// frameDemand at a high level is a smiple "does anyone need perception data" switch
+// perception frams are not actual video images, but rather info produced for a camera frame
+// the perception system system can produce these frames at a very high rate and
+// sending all of them back to the ground station would waste network bandwidth and processing resources
+// There are two reasons why we need to send perception frames to the ground station:
+// 1. The operator has opened the libve view screen
+// 2. A mission is currenlty running and uses perception data
+// our frame demand combines short Native consumer leases with mission lifecycle
 // demand. Runtime frames are always drained, but only forwarded while this
 // state says a consumer needs them. Health bypasses this gate.
 type frameDemand struct {

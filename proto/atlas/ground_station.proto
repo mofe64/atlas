@@ -5,9 +5,12 @@ package atlas.groundstation.v1;
 option go_package = "github.com/sunnyside/atlas/atlas-agent/internal/transport/groundstationpb;groundstationpb";
 
 // GroundStationService is hosted by the native Atlas application. The onboard
-// agent initiates this session and keeps reconnecting while the HM30 path is
+// agent initiates this session and keeps reconnecting while the communication path is
 // available. Registration must be the first message on every new session.
 service GroundStationService {
+  // here we decalare a bidrectional stream session between the agent and the ground stattion
+  //  stream AgentToGroundStation means the Agent can continuously send messages to Ground station.
+  // returns (stream GroundStationToAgent) means Native can continuously send messages back to the Agent.
   rpc OpenSession(stream AgentToGroundStation) returns (stream GroundStationToAgent);
 
   // Perception is isolated from the command/telemetry session so high-rate
@@ -17,6 +20,8 @@ service GroundStationService {
   rpc OpenPerceptionStream(stream AgentPerception) returns (stream GroundStationPerception);
 }
 
+// AgentToGroundStation is the message sent by the Agent to the Ground station.
+// we use oneof payload to declare the different types of messages that can be sent.
 message AgentToGroundStation {
   string session_id = 1;
   reserved 9;
@@ -32,6 +37,8 @@ message AgentToGroundStation {
   }
 }
 
+// GroundStationToAgent is the message sent by the Ground station to the Agent.
+// we use oneof payload to declare the different types of messages that can be sent.
 message GroundStationToAgent {
   reserved 7;
 
