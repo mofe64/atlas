@@ -1,4 +1,6 @@
-// Package mavsdk adapts mavsdk_server's streaming gRPC API into Atlas telemetry.
+// Package mavsdk adapts mavsdk_server's streaming gRPC API into Atlas telemetry snapshots.
+// A snapshot is the latest known value of every field, not a set of fields measured simultaneously.
+// ObservedAt is the time of the latest snapshot mutation.
 package mavsdk
 
 import (
@@ -19,16 +21,37 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// notes:
+// corepb: MAVSDK’s connection-state service.
+// telemetrypb: MAVSDK’s telemetry subscriptions and rate-setting RPCs.
+// both are generated from MAVSDK's protobuf definitions.
+
+// Note: the rates we use are the rates at which we measure or request values from MAVSDK.
+// The atlas agent uses the ATLAS_TELEMETRY_INTERNAL env var to control the rate at which we send the telem to the ground station.
+// its default is 1 second
+// so we collect all the values we need at the highest rate and then send the snapshot to the ground station at the slower rate.
 const (
-	streamRetryDelay       = 2 * time.Second
-	mavsdkRateHz           = 2.0
-	aircraftAttitudeRateHz = 30.0
-	aircraftPositionRateHz = 10.0
-	aircraftVelocityRateHz = 20.0
-	autopilotTimeRateHz    = 2.0
-	rateRefreshInterval    = 30 * time.Second
+	streamRetryDelay       = 2 * time.Second  // time to wait before retrying a failed stream
+	mavsdkRateHz           = 2.0              // rate at which we request telemetry from MAVSDK (twice per second)
+	aircraftAttitudeRateHz = 30.0             // rate at which we request aircraft rotation from MAVSDK (30 times per second)
+	aircraftPositionRateHz = 10.0             // rate at which we request position from MAVSDK (10 times per second)
+	aircraftVelocityRateHz = 20.0             // rate at which we request velocity from MAVSDK (20 times per second)
+	autopilotTimeRateHz    = 2.0              // rate at which we read the autopilot clock (twice per second), we do this so that we can align timestamps
+	rateRefreshInterval    = 30 * time.Second // we refresh the our requested rates every 30 seconds, so that if mavsdk restarts or reconnect, we resync our rates requests
 )
 
+// aircraftPoseState is the temporary navigation state used to construct high-rate geolocation poses
+// it holds the latest
+// - lat and long
+// - absolute and relative altitude
+// - ned velocity
+// - px4 position health flags
+// - GPS uncertainty
+// - Monotonic recieve times for position and velocity
+// the Valid booleans are used to distinguish zero values, from values that have not yet been received.
+// our recieve timestamps are based on the companion computer's monotonic clock.
+// a monotonic clock advances steadily forward and is not affected by NTP or wall clocl correcttions, thats why its perfect for a
+// age and interpolation.
 type aircraftPoseState struct {
 	positionReceivedMonotonicNS int64
 	velocityReceivedMonotonicNS int64
@@ -45,6 +68,27 @@ type aircraftPoseState struct {
 	gpsQualityValid             bool
 }
 
+// Source is our internal runtime object holding our state
+// its fields fall into four groups:
+//
+//   - mavsdk infra:
+//     -- logger: structured diagnostic logging.
+//     -- conn: shared gRPC connection.
+//     -- core: generated Core service client.
+//     -- telemetry: generated Telemetry service client.
+//
+//   - Operator snapshot state:
+//     -- mu: guards all fields below it that are concurrently accessed.
+//     -- snapshot: aggregate latest-known Atlas telemetry.
+//     -- connectionKnown: whether Core has ever reported a connection state.
+//     -- connected: most recently reported MAVSDK vehicle connection state.
+//     -- batteries: battery state indexed by MAVSDK battery ID.
+//
+//   - Geolocation state:
+//     -- pose: latest position, velocity, health, and quality used when attitude arrives.
+//     -- geolocation: optional bounded temporal foundation.
+//
+//   - Methods with receiver (s *source) operate on this shared runtime object.
 type source struct {
 	logger    *slog.Logger
 	conn      *grpc.ClientConn
@@ -61,21 +105,28 @@ type source struct {
 }
 
 type Outputs struct {
-	Snapshots   <-chan telemetry.Snapshot
-	StatusTexts <-chan telemetry.StatusTextEvent
-	Latest      func() (telemetry.Snapshot, bool)
+	// the channel types are receive-only. Callers can read them but cannot send into or close them.
+	Snapshots   <-chan telemetry.Snapshot         // periodic operator facing telemetry sent to the atlas ground station capacity is 1, old snapshots are dropped
+	StatusTexts <-chan telemetry.StatusTextEvent  // discrete px4 messages such as warnings and errors capacity is 64, old messages are dropped
+	Latest      func() (telemetry.Snapshot, bool) // used for synchronous access to the latest telem snapshot for onboard safety logic
+	//Latest is used by the aircraft-follow controller. That controller independently checks freshness, arm/in-air state, position health, battery, altitude, and geofence boundaries in aircraft_follow.go
 }
 
-// Start begins the MAVSDK subscriptions and returns a latest-only stream at the
-// requested publish interval. A slow ground-station link never queues stale
-// flight data.
+// Start begins the MAVSDK telem subscriptions without geolocation data.
+// the high rate geolocation pipelien is disabled, since we pass in nil for the geolocation foundation.
 func Start(ctx context.Context, logger *slog.Logger, address string, publishInterval time.Duration) (Outputs, error) {
 	return StartWithGeolocation(ctx, logger, address, publishInterval, nil)
 }
 
-// StartWithGeolocation adds high-rate timestamped pose publication without
-// changing the latest-only operator telemetry channel. Geolocation buffering
-// is local and bounded, so a slow ground-station link cannot affect it.
+// StartWithGeolocation creates our grpc client connection to mavsdk_server
+// it also creats the macsdk core and telemetry service clients.
+// it initialises our source runtime object and starts the MAVSDK telem subscriptions.
+// it also creates and starts the snapshot publisher and starys event stream
+// Snapshot publisher: periodically reads the latest combined aircraft telemetry—position, battery, flight mode, etc.
+// and sends it through Outputs.Snapshots. It only keeps the newest pending snapshot.
+// Status-event stream: continuously receives individual PX4 messages—warnings, errors, mission notices—and sends them through Outputs.StatusTexts.
+// clients can then read the telem snapshot and status events from these channels.
+// when the geolocation foundation is not nil, it also starts the high rate geolocation pipeline.
 func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address string, publishInterval time.Duration, foundation *geolocation.Foundation) (Outputs, error) {
 	if address == "" {
 		return Outputs{}, errors.New("MAVSDK gRPC address is required")
@@ -119,6 +170,10 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 	go s.streamHome(ctx)
 	go s.streamRawGPS(ctx)
 	if foundation != nil {
+		// high rate geolocation pipeline
+		// if the geolocation foundation is not nill, we start
+		// timestamoed attitude quaternions and
+		// autopilot unix time streams.
 		go s.streamAttitudeQuaternion(ctx)
 		go s.streamUnixEpochTime(ctx)
 	}
@@ -128,17 +183,25 @@ func StartWithGeolocation(ctx context.Context, logger *slog.Logger, address stri
 	go s.publish(ctx, updates, publishInterval)
 	go s.streamStatusText(ctx, statusTexts)
 	go func() {
+		// when the context is done, we close the grpc connection.
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
 	return Outputs{Snapshots: updates, StatusTexts: statusTexts, Latest: s.current}, nil
 }
 
+// publish converts continuously changing snapshot state, into periodic operator facing telemetry snapshots.
+// it creates a ticker at the requested publication interval.
+// waits for the ticker to fire, and then calls current to get the latest snapshot.
+// skips publication if the snapshot is not ready or if it is older than the last published snapshot.
+// it uses emitLatest to send the snapshot to the updates channel.
+// closes the output channel on shutdown.
 func (s *source) publish(ctx context.Context, updates chan telemetry.Snapshot, interval time.Duration) {
 	defer close(updates)
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	var lastPublished time.Time
+	// loop until the context is done.
 	for {
 		select {
 		case <-ctx.Done():
@@ -154,6 +217,17 @@ func (s *source) publish(ctx context.Context, updates chan telemetry.Snapshot, i
 	}
 }
 
+// current returns the latest snapshot and a bool indicating if it is ready to be published.
+// it is ready if:
+// - At least one update has set ObservedAt.
+// - and either:
+// - MAVSDK connection state has not been reported yet,
+// - It has been reported and the vehicle is connected.
+// it acuires a read lock on the mutex to prevent concurrent updates.
+// and returns a copy of the snapshot, plus the ready flag.
+// Allowing publication before connectionKnown prevents startup from being blocked if telemetry arrives before the Core connection-state stream.
+// Once a disconnection is explicitly reported, current returns ready=false. The snapshot remains stored; it is not erased.
+// The copy we return is shallow copy, and the pointer fields and batery slics refer to the same underlying data.
 func (s *source) current() (telemetry.Snapshot, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -161,6 +235,21 @@ func (s *source) current() (telemetry.Snapshot, bool) {
 	return s.snapshot, ready
 }
 
+// update is a helper function that updates the snapshot and sets the observed at time.
+// every telem goroutine needs to update the same snapshot obejct.
+// update centalises the locking procedure for them to update the snapshot.
+// 1. acquire the exclusive mutex lock
+// 2. invoke our mutation function (apply)
+// 3. set observedAt to the current UTC wall time
+// 4. release the mutex lock
+// this prevents paritally written state and data racess.
+// the closure approach lets each stream update one or several realated field atomically.
+// the closure here is the anon function that is passed to update,
+// so each stream creats an anon function describing the changes it wants and then passes it to update.
+// update then carries out our locking procedure and invokes the closure.
+// its called a closure because the anon function captures the variables
+// from its surrounding scope (the stream defining it)
+// and the closure applies the captured values to the snapshot.
 func (s *source) update(apply func(*telemetry.Snapshot)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,15 +258,38 @@ func (s *source) update(apply func(*telemetry.Snapshot)) {
 }
 
 func emitLatest(updates chan telemetry.Snapshot, snapshot telemetry.Snapshot) {
+	// our updates channel has a buffer of 1, so we can only have one pending snapshot.
 	select {
+	// we first check to see if we can send the snapshot to the channel.
+	// if we can, we send it and return.
+	// we do this check in a select statement to avoid blocking via the default branch.
 	case updates <- snapshot:
 		return
+	// if the channel is full, we execute our default branch.
+	// this prevents us from blocking until the the channel has room for our snapshot.
+	// if we didn't have the default branch, we would block here until the channel has room for our snapshot.
 	default:
 	}
+
+	// if we get here, the channel is full, so we need to drop the oldest snapshot.
+	// we do this be recieving from the channel and discarding the value.
+	// we do this in a select statment becuase outside the select, we could block if the channel is empty.
+	// so we do it in a select with a default branch to avoid blocking.
+	// especially during concurrent operations.
+	// The default handles concurrency safely. Between the first and second select,
+	// the ground-station goroutine might consume the old snapshot itself.
+	// In that case the channel is already empty,
+	// so this block simply continues instead of waiting for a value
 	select {
 	case <-updates:
 	default:
 	}
+
+	// finally we insert the latest snspshot into the channel.
+	// The send is non-blocking again. In the current architecture there is normally only one snapshot publisher,
+	//  so this send should succeed after the old value has been removed.
+	// The default is defensive: it guarantees that this function never blocks even if
+	// channel usage changes or another producer fills it concurrently in the future.
 	select {
 	case updates <- snapshot:
 	default:
