@@ -296,6 +296,11 @@ func emitLatest(updates chan telemetry.Snapshot, snapshot telemetry.Snapshot) {
 	}
 }
 
+// bestEffortSetRates sets the MAVSDK telemetry rates in a best-effort manner.
+// it continually calls setRatesOnce in a loop, and sleeps for the rate refresh interval.
+// our wait is interruptible, so a context cancellation will stop the loop.
+// the reason we continually set rates, is for resilience. after a mavsdk or px4 reconnection,
+// previusolt requeted rates may no longer be active, so we ensure that we set them again
 func (s *source) bestEffortSetRates(ctx context.Context) {
 	for ctx.Err() == nil {
 		s.setRatesOnce(ctx)
@@ -309,11 +314,28 @@ func (s *source) bestEffortSetRates(ctx context.Context) {
 	}
 }
 
+// setRatesOnce use a 5 sec context to set the subscription rates for the telemetry streams.
+// we do a best effort approach, and ignore errors.
 func (s *source) setRatesOnce(ctx context.Context) {
 	rateCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
+	// 	Without geolocation,Ordinary operator telemetry does not need extremely high-frequency data:
+	// Position: 2 updates per second
+	// Velocity: 2 updates per second
+	// Battery: 2 updates per second
+	// GPS: 2 updates per second
+	// Health: 5 updates per second
+	// This is enough for dashboards and status displays.
 	positionRate, velocityRate := mavsdkRateHz, mavsdkRateHz
 	if s.geolocation != nil {
+		// geolocation needs more precise timing
+		// Attitude: 30 updates per second
+		// Position: 10 updates per second
+		// Velocity: 20 updates per second
+		// This is because the system may need to answer:
+		// “Where was the aircraft, and which direction was it pointing, at the exact moment this camera frame was captured?”
+		//If the aircraft is moving and rotating, one measurement every half-second is too coarse.
+		// A 30 Hz attitude stream gives a new orientation roughly every 33 ms.
 		positionRate, velocityRate = aircraftPositionRateHz, aircraftVelocityRateHz
 		response, err := s.telemetry.SetRateAttitudeQuaternion(rateCtx, &telemetrypb.SetRateAttitudeQuaternionRequest{RateHz: aircraftAttitudeRateHz})
 		if err != nil || response.GetTelemetryResult().GetResult() != telemetrypb.TelemetryResult_RESULT_SUCCESS {
@@ -321,6 +343,10 @@ func (s *source) setRatesOnce(ctx context.Context) {
 		}
 		_, _ = s.telemetry.SetRateUnixEpochTime(rateCtx, &telemetrypb.SetRateUnixEpochTimeRequest{RateHz: autopilotTimeRateHz})
 	}
+
+	// set the rates for each of our telemetry streams.
+	// we ignore responses and errors here, because we are following a best-effort approach.
+	// except for the position and velocity streams, which we check for errors when we are using geolocation.
 	positionResponse, positionErr := s.telemetry.SetRatePosition(rateCtx, &telemetrypb.SetRatePositionRequest{RateHz: positionRate})
 	_, _ = s.telemetry.SetRateBattery(rateCtx, &telemetrypb.SetRateBatteryRequest{RateHz: mavsdkRateHz})
 	_, _ = s.telemetry.SetRateGpsInfo(rateCtx, &telemetrypb.SetRateGpsInfoRequest{RateHz: mavsdkRateHz})
@@ -342,6 +368,23 @@ func (s *source) setRatesOnce(ctx context.Context) {
 	}
 }
 
+// Note: For all our streams, we use the following pattern:
+// Outer loop: Keep trying to establish a working subscription.
+// Inner loop: Keep reading messages from the current subscription.
+// the outer loop owns the subscription's complete lifetime. it is essentially saying
+// as long as the agent is running (ctx is not done), we keep trying to establish a working subscription.
+// if the subscription cannot be opened, ot there is an error, we log the problem and retry after a delay.
+// the inner loop reads messages from the subscription once it exists using response, err := stream.Recv()
+// it extracts the relevant data from mavsdk, validates it, updates the shared atlas snapshot, and
+// calls recv() again to get the next message.
+// if there is an error, in the inner loop, we break out of the loop and go back to the outer loop which
+// is responsible for retrying the subscription, the outer loop will execute sleepOrDone(...)
+// which will use an interruptible timer to wait for the retry delay, and then continue the outer loop.
+
+// streamConnectionState subscribes to the connection state stream from the MAVSDK core service.
+// it doesn't update the snapshot using our establised update functiomn, but instead
+// directly updates the connectionKnown and connected fields.
+// it also handles concurrency by acquiring and releasing the mutex lock around the updates.
 func (s *source) streamConnectionState(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.core.SubscribeConnectionState(ctx, &corepb.SubscribeConnectionStateRequest{})
@@ -363,6 +406,11 @@ func (s *source) streamConnectionState(ctx context.Context) {
 	}
 }
 
+// streamPosition subscribes to the position stream from the MAVSDK telemetry service.
+// it updates the snapshot using our establised update function, with a closure that updates the snapshot fields.
+// the closure captures the position data from the mavsdk response, validates it, and updates the snapshot.
+// the closure is passed to the update function, which is responsible for ensuring thtat
+// the snapshot is updated in a thread-safe manner.
 func (s *source) streamPosition(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribePosition(ctx, &telemetrypb.SubscribePositionRequest{})
@@ -376,8 +424,10 @@ func (s *source) streamPosition(ctx context.Context) {
 				break
 			}
 			position := response.GetPosition()
+			// record when we received the position update
 			received := geolocation.Now()
 			s.update(func(snapshot *telemetry.Snapshot) {
+				// “Finite” rejects IEEE NaN, positive infinity, and negative infinity.
 				if latitude := position.GetLatitudeDeg(); finite(latitude) && latitude >= -90 && latitude <= 90 {
 					snapshot.Latitude = pointer(latitude)
 				}
@@ -390,14 +440,24 @@ func (s *source) streamPosition(ctx context.Context) {
 				if altitude := float64(position.GetAbsoluteAltitudeM()); finite(altitude) {
 					snapshot.AbsoluteAltitudeM = pointer(altitude)
 				}
+				// PX4 sends "home is set" and the aircraft position on separate streams.
+				// Position (coordinates) may arrive after the "home is set" message has arrived,
+				// in that case, px4 has confirmed that home exists, but we don't yet have coordinates for the actual home position
+				// so we call the setHomeFromCurrentPosition function to try to build the missing home position now.
 				setHomeFromCurrentPosition(snapshot)
+
 				latitude, longitude := position.GetLatitudeDeg(), position.GetLongitudeDeg()
 				absolute, relative := float64(position.GetAbsoluteAltitudeM()), float64(position.GetRelativeAltitudeM())
+				// For geolocation it applies a stricter all-or-nothing check.
+				// Latitude, longitude, absolute altitude, and relative altitude must all be valid
+				// before pose fields are updated and pose.positionValid is set.
 				if latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && finite(latitude) && finite(longitude) && finite(absolute) && finite(relative) {
 					s.pose.latitudeDeg = latitude
 					s.pose.longitudeDeg = longitude
 					s.pose.absoluteAltitudeM = absolute
 					s.pose.relativeAltitudeM = relative
+					// set the companion computer's monotonic receive time for position updates
+					// this will be used to calculate how old the position update is and how long it has been since the last update.
 					s.pose.positionReceivedMonotonicNS = received.MonotonicNS
 					s.pose.positionValid = true
 				}
@@ -407,6 +467,17 @@ func (s *source) streamPosition(ctx context.Context) {
 	}
 }
 
+// streamBattery subscribes to the battery stream from the MAVSDK telemetry service.
+// we validate the battery information received
+// Remaining percentage must be between 0 and 100.
+// Voltage, consumed capacity, and remaining time must be non-negative.
+// Current only needs to be finite because negative current can represent charging or regenerative flow.
+// Temperature only needs to be finite because legitimate temperatures may be below zero.
+// The battery is inserted into a map by ID since mavsdk can report multiple batteries.å
+// The entire map is then converted to a sorted slice.
+// The snapshot uses a slice because the complete battery collection is sent to Atlas GC as a list.
+// Sorting matters because Go map iteration order is intentionally unstable.
+// Deterministic ordering keeps serialization, tests, and UI behavior predictable.
 func (s *source) streamBattery(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeBattery(ctx, &telemetrypb.SubscribeBatteryRequest{})
@@ -433,6 +504,16 @@ func (s *source) streamBattery(ctx context.Context) {
 			s.update(func(snapshot *telemetry.Snapshot) {
 				s.batteries[value.ID] = value
 				snapshot.Batteries = sortedBatteries(s.batteries)
+				// The snapshot supports both:
+				// snapshot.Batteries - which contains every battery
+				// and:
+				// snapshot.BatteryPercent - which contains one convenient overall battery percentage.
+				// primaryBattery is used to determine which battery to use to provide the overall battery percentage
+				// itfirst looks for a battery whose function is:
+				// ALL: represents the aircraft’s combined battery state.
+				// PROPULSION: powers the motors and flight system.
+				// If neither exists, it uses the first battery in the sorted list—normally the lowest battery ID.
+				// If no batteries have been received, it returns nil.
 				if primary := primaryBattery(snapshot.Batteries); primary != nil {
 					snapshot.BatteryPercent = primary.RemainingPercent
 				}
@@ -442,6 +523,7 @@ func (s *source) streamBattery(ctx context.Context) {
 	}
 }
 
+// streamFlightMode subscribes to the flight mode stream from the MAVSDK telemetry service.
 func (s *source) streamFlightMode(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeFlightMode(ctx, &telemetrypb.SubscribeFlightModeRequest{})
@@ -461,6 +543,7 @@ func (s *source) streamFlightMode(ctx context.Context) {
 	}
 }
 
+// streamArmed subscribes to the armed state stream from the MAVSDK telemetry service.
 func (s *source) streamArmed(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeArmed(ctx, &telemetrypb.SubscribeArmedRequest{})
@@ -480,6 +563,7 @@ func (s *source) streamArmed(ctx context.Context) {
 	}
 }
 
+// streamInAir subscribes to the in-air state stream from the MAVSDK telemetry service.
 func (s *source) streamInAir(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeInAir(ctx, &telemetrypb.SubscribeInAirRequest{})
@@ -499,6 +583,14 @@ func (s *source) streamInAir(ctx context.Context) {
 	}
 }
 
+// streamGPSInfo subscribes to the GPS info stream from the MAVSDK telemetry service.
+// it extracts the GPS fix type and the number of satellites visible from the mavsdk response,
+// gpsFixString removes both possible generated prefixes. For example:
+// FIX_TYPE_FIX_3D → 3D
+// FIX_TYPE_RTK_FIXED → RTK_FIXED
+// A negative satellite count is converted to zero before conversion to uint32;
+// this avoids a negative signed integer wrapping into a huge unsigned value.
+// GPS fix state is separate from raw accuracy/uncertainty, which is handled by streamRawGPS.
 func (s *source) streamGPSInfo(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeGpsInfo(ctx, &telemetrypb.SubscribeGpsInfoRequest{})
@@ -523,6 +615,11 @@ func (s *source) streamGPSInfo(ctx context.Context) {
 	}
 }
 
+// streamHeading subscribes to the heading stream from the MAVSDK telemetry service.
+// it extracts the heading in degrees and accepts values from 0 through 360 inclusive.
+// Invalid, infinite, out-of-range, or NaN values are ignored completely, including not advancing ObservedAt.
+// Heading is operator telemetry only. High-rate geolocation orientation comes
+// from the quaternion stream because a heading alone cannot represent roll and pitch.
 func (s *source) streamHeading(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeHeading(ctx, &telemetrypb.SubscribeHeadingRequest{})
@@ -544,6 +641,19 @@ func (s *source) streamHeading(ctx context.Context) {
 	}
 }
 
+// streamVelocity subscribes to the velocity stream from the MAVSDK telemetry service.
+// we consume the velocity in the NED frame:
+// North: positive northward.
+// East: positive eastward.
+// Down: positive downward.
+// It stores the three components independently when valid.
+// Ground speed is calculated from horizontal velocity: math.Hypot(north, east) This is equivalent to: sqrt(north² + east²)
+// Climb rate is the negative of down velocity: ClimbRateMPS = -VelocityDownMPS
+// Therefore:
+// - Down = +2 means descending at 2 m/s, so climb rate is -2.
+// -Down = -2 means rising at 2 m/s, so climb rate is +2.
+// For geolocation, all three components must be finite before the vector becomes valid.
+// The receive time is stored in monotonic nanoseconds so its age can later be calculated.
 func (s *source) streamVelocity(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeVelocityNed(ctx, &telemetrypb.SubscribeVelocityNedRequest{})
@@ -584,6 +694,15 @@ func (s *source) streamVelocity(ctx context.Context) {
 	}
 }
 
+// streamAltitude subscribes to the altitude stream from the MAVSDK telemetry service.
+// MAVSDK’s altitude message exposes several reference frames:
+// Relative altitude.
+// AMSL altitude: altitude above mean sea level.
+// Terrain altitude.
+// Bottom clearance.
+// The code maps AMSL into Snapshot.AbsoluteAltitudeM.
+// Position messages also provide relative and absolute altitude, so streamPosition and streamAltitude
+// can both update those fields. Whichever valid message arrives last wins.
 func (s *source) streamAltitude(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeAltitude(ctx, &telemetrypb.SubscribeAltitudeRequest{})
@@ -617,6 +736,8 @@ func (s *source) streamAltitude(ctx context.Context) {
 	}
 }
 
+// streamHealth subscribes to the health stream from the MAVSDK telemetry service.
+// This creates telemetry.VehicleHealth from PX4 estimator and calibration state
 func (s *source) streamHealth(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeHealth(ctx, &telemetrypb.SubscribeHealthRequest{})
@@ -644,6 +765,7 @@ func (s *source) streamHealth(ctx context.Context) {
 				snapshot.Health = pointer(value)
 				s.pose.health = value
 				s.pose.healthValid = true
+				// Health may arrive after position. Trying here as well handles either order.
 				setHomeFromCurrentPosition(snapshot)
 			})
 		}
@@ -651,6 +773,7 @@ func (s *source) streamHealth(ctx context.Context) {
 	}
 }
 
+// streamLandedState subscribes to the landed state stream from the MAVSDK telemetry service.
 func (s *source) streamLandedState(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeLandedState(ctx, &telemetrypb.SubscribeLandedStateRequest{})
@@ -670,6 +793,12 @@ func (s *source) streamLandedState(ctx context.Context) {
 	}
 }
 
+// streamRCStatus subscribes to the RC status stream from the MAVSDK telemetry service.
+// Builds telemetry.RCStatus:
+// Available: RC is available now.
+// WasAvailableOnce: an RC connection existed previously.
+// SignalStrengthPercent: validated to 0–100.
+// This separates “never detected” from “was detected but has now disappeared.”
 func (s *source) streamRCStatus(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeRcStatus(ctx, &telemetrypb.SubscribeRcStatusRequest{})
@@ -694,6 +823,11 @@ func (s *source) streamRCStatus(ctx context.Context) {
 	}
 }
 
+// streamHome subscribes to the home position stream from the MAVSDK telemetry service.
+// This consumes MAVSDK’s explicit home-position stream.
+// Latitude and longitude are mandatory and range-checked. If either is invalid, the entire message is ignored.
+// Altitude fields are optional in Atlas terms: invalid values become nil.
+// A valid explicit home position replaces a fallback home position that may have been inferred earlier during position updates.
 func (s *source) streamHome(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeHome(ctx, &telemetrypb.SubscribeHomeRequest{})
@@ -724,10 +858,21 @@ func (s *source) streamHome(ctx context.Context) {
 	}
 }
 
+// setHomeFromCurrentPosition is a helper function that sets the home position to the  aircraft's current position
+// if the home position is not set yet.
 func setHomeFromCurrentPosition(snapshot *telemetry.Snapshot) {
+	// Do nothing until PX4 says that it has set a home position.
+	// Also do nothing if we already have a valid home, or do not know our current position.
 	if snapshot.HomePositionSet == nil || !*snapshot.HomePositionSet || validHomePosition(snapshot.HomePosition) || snapshot.Latitude == nil || snapshot.Longitude == nil {
 		return
 	}
+
+	// The dedicated MAVSDK home stream has not provided valid home coordinates yet,
+	// so we don't have coordinates for the actual home position.
+	// So we use the aircraft's current position as a temporary home position.
+	// We only do this once, so the home position will not move with the aircraft.
+	// Once a valid home exists, later aircraft-position updates will not move it.
+	// The dedicated home stream can still replace this fallback with the actual home.
 	snapshot.HomePosition = &telemetry.HomePosition{
 		Latitude:          pointer(*snapshot.Latitude),
 		Longitude:         pointer(*snapshot.Longitude),
@@ -736,6 +881,13 @@ func setHomeFromCurrentPosition(snapshot *telemetry.Snapshot) {
 	}
 }
 
+// validHomePosition is a helper function that checks if the home position is valid.
+// Checks that:
+// The home object exists.
+// Latitude and longitude pointers exist.
+// Both values are finite.
+// Both are in legal coordinate ranges.
+// Altitude is not required for a home position to count as valid.
 func validHomePosition(home *telemetry.HomePosition) bool {
 	return home != nil && home.Latitude != nil && home.Longitude != nil &&
 		finite(*home.Latitude) && finite(*home.Longitude) &&
@@ -743,6 +895,19 @@ func validHomePosition(home *telemetry.HomePosition) bool {
 		*home.Longitude >= -180 && *home.Longitude <= 180
 }
 
+// streamRawGPS subscribes to the raw GPS stream from the MAVSDK telemetry service.
+// This handles GPS quality rather than fix classification.
+// It records:
+// HDOP: horizontal dilution of precision.
+// VDOP: vertical dilution of precision.
+// Horizontal uncertainty.
+// Vertical uncertainty.
+// Velocity uncertainty.
+// Course over ground.
+// Uncertainties and dilution values must be non-negative. Course must be between 0 and 360 degrees.
+// The resulting value is stored in two places:
+// Snapshot.GPSQuality for operator telemetry.
+// pose.gpsQuality for geolocation uncertainty propagation.
 func (s *source) streamRawGPS(ctx context.Context) {
 	for ctx.Err() == nil {
 		stream, err := s.telemetry.SubscribeRawGps(ctx, &telemetrypb.SubscribeRawGpsRequest{})
